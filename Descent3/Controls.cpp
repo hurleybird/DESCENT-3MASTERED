@@ -945,10 +945,13 @@ void LoadControlConfig(pilot *plt)
 {
 	int j;
 	if (!plt) plt = &Current_pilot;
+	if (!Controller) return;
 
 	for (int i=0;i < NUM_CONTROLLER_FUNCTIONS; i++)
 	{
-		int id = Current_pilot.controls[i].id;
+		int id = plt->controls[i].id;
+		if (id != Controller_needs[i].id)
+			id = Controller_needs[i].id;
 		ct_type type[2];
 		ct_config_data ccfgdata;
 		ubyte flags[2];
@@ -968,6 +971,8 @@ void LoadControlConfig(pilot *plt)
 		Controller->set_axis_sensitivity(ctAxis, j+1, plt->joy_sensitivity[j]);
 
 	Key_ramp_speed = plt->key_ramping;
+	Controller->mask_controllers((plt->read_controller & READF_JOY) ? true : false,
+		(plt->read_controller & READF_MOUSE) ? true : false);
 }
 
 

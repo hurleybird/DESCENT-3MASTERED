@@ -579,6 +579,7 @@ void config_gamma()
 struct video_menu
 {
 	newuiSheet* sheet;
+	newuiMenu* parent_menu;
 
 	bool* filtering;									// settings
 	bool* mipmapping;
@@ -593,6 +594,54 @@ struct video_menu
 	int* backend;
 
 	int window_width, window_height;
+
+	void recenter_parent_menu()
+	{
+		if (!parent_menu)
+			return;
+
+		parent_menu->Move((Max_window_w - parent_menu->W()) / 2,
+			(Max_window_h - parent_menu->H()) / 2,
+			parent_menu->W(),
+			parent_menu->H());
+	}
+
+	bool can_apply_display_settings_live()
+	{
+		return GetFunctionMode() == GAME_MODE || GetFunctionMode() == EDITOR_GAME_MODE;
+	}
+
+	bool apply_display_settings(bool allow_menu)
+	{
+		if (!fullscreen)
+			return false;
+
+		if (window_width == Game_window_res_width &&
+			window_height == Game_window_res_height &&
+			*fullscreen == Game_fullscreen)
+		{
+			return false;
+		}
+
+		if (!allow_menu && !can_apply_display_settings_live())
+			return false;
+
+		void (*old_callback)() = GetUICallback();
+
+		Game_fullscreen = *fullscreen;
+		Game_window_res_width = window_width;
+		Game_window_res_height = window_height;
+
+		ForceFullGameWindowOnNextGameMode();
+		SetScreenMode(GetScreenMode(), true);
+		if (old_callback)
+			SetUICallback(old_callback);
+		if (GetScreenMode() == SM_GAME)
+			Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
+		recenter_parent_menu();
+
+		return true;
+	}
 
 	void apply_live_settings()
 	{
@@ -632,11 +681,14 @@ struct video_menu
 
 		if (changed)
 			rend_SetPreferredState(&Render_preferred_state);
+
+		apply_display_settings(false);
 	}
 
 	// sets the menu up.
 	newuiSheet* setup(newuiMenu* menu)
 	{
+		parent_menu = menu;
 		sheet = menu->AddOption(IDV_VCONFIG, TXT_OPTVIDEO, NEWUIMENU_MEDIUM);
 
 		sheet->NewGroup(TXT_RESOLUTION, 0, 0);
@@ -707,20 +759,7 @@ struct video_menu
 		if (Render_FOV != Render_FOV_desired)
 			Render_FOV = Render_FOV_desired; //this may cause discontinuities if FOV is changed while zoomed. hmm.
 
-		if (window_width != Game_window_res_width ||
-			window_height != Game_window_res_height ||
-			*fullscreen != Game_fullscreen)
-		{
-			Game_fullscreen = *fullscreen;
-			Game_window_res_width = window_width;
-			Game_window_res_height = window_height;
-
-			ForceFullGameWindowOnNextGameMode();
-			SetScreenMode(GetScreenMode(), true);
-			if (GetScreenMode() == SM_GAME)
-				Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
-		}
-		else
+		if (!apply_display_settings(true))
 		{
 			//Hopefully this doesn't do anything cursed..
 			rend_SetPreferredState(&Render_preferred_state);
@@ -751,6 +790,7 @@ struct video_menu
 			newuiTiledWindow menu;
 			newuiSheet* select_sheet;
 			newuiListBox* resolution_list;
+			bool display_settings_changed = false;
 
 			menu.Create("Resolution", 0, 0, 300, 384);
 			select_sheet = menu.GetSheet();
@@ -770,8 +810,8 @@ struct video_menu
 			//I think this needs to be done after the sheet is realized.
 			for (int i = 0; i < NUM_RESOLUTION; i++)
 			{
-				if (Game_window_res_width == New_video_res_list[i].width &&
-					Game_window_res_height == New_video_res_list[i].height)
+				if (window_width == New_video_res_list[i].width &&
+					window_height == New_video_res_list[i].height)
 				{
 					resolution_list->SetCurrentIndex(i);
 					break;
@@ -792,6 +832,7 @@ struct video_menu
 					newVideoResolution& res = New_video_res_list[resolution_list->GetCurrentIndex()];
 					window_width = res.width;
 					window_height = res.height;
+					display_settings_changed = true;
 				}
 
 				snprintf(buffer, RESBUFFER_SIZE, "%d x %d", window_width, window_height);
@@ -800,6 +841,8 @@ struct video_menu
 
 			menu.Close();
 			menu.Destroy();
+			if (display_settings_changed)
+				apply_display_settings(false);
 
 		}
 		break;

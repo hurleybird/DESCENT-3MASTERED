@@ -16,6 +16,13 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#if defined(WIN32) || defined(_WIN32)
+extern "C" __declspec(dllimport) short __stdcall GetAsyncKeyState(int vkey);
+constexpr int PICCU_VK_MENU = 0x12;
+constexpr int PICCU_VK_LMENU = 0xa4;
+constexpr int PICCU_VK_RMENU = 0xa5;
+#endif
+
 #include "game.h"
 #include "ddio.h"
 #include "pserror.h"
@@ -157,8 +164,7 @@ bool InitGame()
 	Skip_render_game_frame = false;
 
 	// reset controllers.
-	Controller->mask_controllers((Current_pilot.read_controller & READF_JOY) ? true : false,
-		(Current_pilot.read_controller & READF_MOUSE) ? true : false);
+	LoadControlConfig();
 
 	return true;
 }
@@ -315,7 +321,22 @@ bool IsAltEnterFullscreenEnabled()
 bool IsAltEnterFullscreenKey(int key)
 {
 	int base_key = key & 0xff;
-	return (key & KEY_ALTED) && (base_key == KEY_ENTER || base_key == KEY_PADENTER);
+	if (base_key != KEY_ENTER && base_key != KEY_PADENTER)
+		return false;
+
+	if (key & KEY_ALTED)
+		return true;
+
+	if (ddio_GetAdjKeyState(KEY_LALT) || ddio_GetAdjKeyState(KEY_RALT))
+		return true;
+
+#if defined(WIN32) || defined(_WIN32)
+	return (GetAsyncKeyState(PICCU_VK_MENU) & 0x8000) ||
+		(GetAsyncKeyState(PICCU_VK_LMENU) & 0x8000) ||
+		(GetAsyncKeyState(PICCU_VK_RMENU) & 0x8000);
+#else
+	return false;
+#endif
 }
 
 void ToggleFullscreenMode()
@@ -326,10 +347,11 @@ void ToggleFullscreenMode()
 	Game_fullscreen = !Game_fullscreen;
 	ForceFullGameWindowOnNextGameMode();
 	SetScreenMode(screen_mode, true);
-	if (screen_mode == SM_MENU && old_callback)
+	if (old_callback)
 		SetUICallback(old_callback);
 	if (GetScreenMode() == SM_GAME)
 		Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
+	ddio_KeyFlush();
 }
 
 static void NormalizeRenderScaleSettings()

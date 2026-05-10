@@ -1460,6 +1460,7 @@ void pilot::read_controls(CFILE* file, bool skip)
 {
 	float temp_f;
 	int i;
+	bool loaded_controls[NUM_CONTROLLER_FUNCTIONS] = {};
 
 	// Controller data
 	ubyte temp_b = cf_ReadByte(file);
@@ -1471,16 +1472,20 @@ void pilot::read_controls(CFILE* file, bool skip)
 
 	for (i = 0; i < temp_b; i++)
 	{
-		int id, y;
+		int id;
+		int controller_index = -1;
 		ct_type type[2];
 		ct_config_data value;
+		ubyte flags[2];
 
 		id = cf_ReadInt(file);
 		type[0] = (ct_type)cf_ReadInt(file);
 		type[1] = (ct_type)cf_ReadInt(file);
 		value = (ct_config_data)cf_ReadInt(file);
+		flags[0] = (ubyte)cf_ReadByte(file);
+		flags[1] = (ubyte)cf_ReadByte(file);
 
-		for (y = 0; y < temp_b; y++)
+		for (int y = 0; y < NUM_CONTROLLER_FUNCTIONS; y++)
 		{
 			if (Controller_needs[y].id == id)
 			{
@@ -1488,25 +1493,49 @@ void pilot::read_controls(CFILE* file, bool skip)
 					type[0] = Controller_needs[y].ctype[0];
 				if (type[1] == ctNone)			// do this if there are new functions that don't have ctNone.
 					type[1] = Controller_needs[y].ctype[1];
+				controller_index = y;
 				break;
 			}
 		}
 
-		controls[y].id = id;
-		controls[y].type[0] = type[0];
-		controls[y].type[1] = type[1];
-		controls[y].value = value;
-		controls[y].flags[0] = (ubyte)cf_ReadByte(file);
-		controls[y].flags[1] = (ubyte)cf_ReadByte(file);
+		if (controller_index < 0)
+			continue;
 
-		if (!skip)
-			Controller->set_controller_function(controls[y].id, controls[y].type, controls[y].value, controls[y].flags);
+		controls[controller_index].id = id;
+		controls[controller_index].type[0] = type[0];
+		controls[controller_index].type[1] = type[1];
+		controls[controller_index].value = value;
+		controls[controller_index].flags[0] = flags[0];
+		controls[controller_index].flags[1] = flags[1];
+		loaded_controls[controller_index] = true;
+
+		if (!skip && Controller)
+			Controller->set_controller_function(controls[controller_index].id, controls[controller_index].type,
+				controls[controller_index].value, controls[controller_index].flags);
 	}
 
 	// fill in remainder of pilot controls array.
-	for (; i < NUM_CONTROLLER_FUNCTIONS; i++)
+	for (i = 0; i < NUM_CONTROLLER_FUNCTIONS; i++)
 	{
-		Controller->get_controller_function(Controller_needs[i].id, controls[i].type, &controls[i].value, controls[i].flags);
+		if (loaded_controls[i])
+			continue;
+
+		controls[i].id = Controller_needs[i].id;
+		if (!skip && Controller)
+			Controller->assign_function(&Controller_needs[i]);
+
+		if (Controller)
+		{
+			Controller->get_controller_function(Controller_needs[i].id, controls[i].type, &controls[i].value, controls[i].flags);
+		}
+		else
+		{
+			controls[i].type[0] = Controller_needs[i].ctype[0];
+			controls[i].type[1] = Controller_needs[i].ctype[1];
+			controls[i].value = CONTROLLER_CTL_VALUE(Controller_needs[i].value[0], Controller_needs[i].value[1]);
+			controls[i].flags[0] = Controller_needs[i].flags[0];
+			controls[i].flags[1] = Controller_needs[i].flags[1];
+		}
 	}
 
 	// Set controller enabled masks
