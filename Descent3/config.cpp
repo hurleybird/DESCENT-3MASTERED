@@ -584,6 +584,46 @@ struct video_menu
 
 	int window_width, window_height;
 
+	void apply_live_settings()
+	{
+		bool changed = false;
+
+		if (filtering && sheet->HasChanged(filtering))
+		{
+			Render_preferred_state.filtering = (*filtering) ? 1 : 0;
+			changed = true;
+		}
+		if (mipmapping && sheet->HasChanged(mipmapping))
+		{
+			Render_preferred_state.mipping = (*mipmapping) ? 1 : 0;
+			changed = true;
+		}
+		if (vsync && sheet->HasChanged(vsync))
+		{
+			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
+			changed = true;
+		}
+		if (antialiasing && sheet->HasChanged(antialiasing))
+		{
+			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
+			Render_preferred_state.antialised = Render_preferred_state.msaa_samples > 0;
+			changed = true;
+		}
+		if (supersampling && sheet->HasChanged(supersampling))
+		{
+			Render_preferred_state.supersampling_factor = (ubyte)SupersamplingIndexToFactor(*supersampling);
+			changed = true;
+		}
+		if (fov && sheet->HasChanged(fov))
+		{
+			Render_FOV_desired = fov[0] + D3_DEFAULT_FOV;
+			Render_FOV = Render_FOV_desired;
+		}
+
+		if (changed)
+			rend_SetPreferredState(&Render_preferred_state);
+	}
+
 	// sets the menu up.
 	newuiSheet* setup(newuiMenu* menu)
 	{
@@ -639,8 +679,6 @@ struct video_menu
 	// retreive values from property sheet here.
 	void finish()
 	{
-		const int old_supersampling = ConfigNormalizeSupersamplingFactor(Render_preferred_state.supersampling_factor);
-
 		if (filtering)
 			Render_preferred_state.filtering = (*filtering) ? 1 : 0;
 		if (mipmapping)
@@ -655,9 +693,6 @@ struct video_menu
 		if (supersampling)
 			Render_preferred_state.supersampling_factor = (ubyte)SupersamplingIndexToFactor(*supersampling);
 
-		const bool supersampling_changed =
-			old_supersampling != ConfigNormalizeSupersamplingFactor(Render_preferred_state.supersampling_factor);
-
 		Render_FOV_desired = fov[0] + D3_DEFAULT_FOV;
 		if (Render_FOV != Render_FOV_desired)
 			Render_FOV = Render_FOV_desired; //this may cause discontinuities if FOV is changed while zoomed. hmm.
@@ -670,11 +705,6 @@ struct video_menu
 			Game_window_res_width = window_width;
 			Game_window_res_height = window_height;
 
-			SetScreenMode(GetScreenMode(), true);
-			Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
-		}
-		else if (supersampling_changed)
-		{
 			SetScreenMode(GetScreenMode(), true);
 			Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
 		}
@@ -700,6 +730,8 @@ struct video_menu
 	// process
 	void process(int res)
 	{
+		apply_live_settings();
+
 		switch (res)
 		{
 		case IDV_CHANGEWINDOW:
