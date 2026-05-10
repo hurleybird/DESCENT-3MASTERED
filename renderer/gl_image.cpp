@@ -206,7 +206,7 @@ void GL3Renderer::MakeWrapTypeCurrent(int handle, int map_type, int tn)
 
 	if (uwrap == dest_wrap)
 		return;
-	
+
 	if (UseMultitexture && Last_texel_unit_set != tn)
 	{
 		glActiveTexture(GL_TEXTURE0 + tn);
@@ -269,13 +269,25 @@ void GL3Renderer::MakeFilterTypeCurrent(int handle, int map_type, int tn)
 			dest_mip = 0;
 	}
 
-	if (magf == dest_filter && mmip == dest_mip)
-		return;
 	if (UseMultitexture && Last_texel_unit_set != tn)
 	{
 		glActiveTexture(GL_TEXTURE0 + tn);
 		Last_texel_unit_set = tn;
 	}
+
+	float lod_bias = 0.0f;
+	if (map_type != MAP_TYPE_LIGHTMAP && dest_mip)
+	{
+		int supersampling_factor = SupersamplingFactor();
+		if (supersampling_factor >= 4)
+			lod_bias = 2.0f;
+		else if (supersampling_factor >= 2)
+			lod_bias = 1.0f;
+	}
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, lod_bias);
+
+	if (magf == dest_filter && mmip == dest_mip)
+		return;
 
 	GLenum mag_filter = dest_filter ? GL_LINEAR : GL_NEAREST;
 	GLenum min_filter;
@@ -837,9 +849,9 @@ void GL3Renderer::ChangeChunkedBitmap(int bm_handle, chunked_bitmap* chunk)
 	int windex, hindex;
 	int s_y, s_x, d_y, d_x;
 
-	for (hindex = 0; hindex < how_many_down; hindex++) 
+	for (hindex = 0; hindex < how_many_down; hindex++)
 	{
-		for (windex = 0; windex < how_many_across; windex++) 
+		for (windex = 0; windex < how_many_across; windex++)
 		{
 			//loop through the chunks
 			//find end x and y
@@ -862,9 +874,9 @@ void GL3Renderer::ChangeChunkedBitmap(int bm_handle, chunked_bitmap* chunk)
 			sdata = &src_data[s_y * bw + s_x];
 
 			//copy the data
-			for (d_y = 0; d_y < maxy; d_y++) 
+			for (d_y = 0; d_y < maxy; d_y++)
 			{
-				for (d_x = 0; d_x < maxx; d_x++) 
+				for (d_x = 0; d_x < maxx; d_x++)
 				{
 					ddata[d_x] = sdata[d_x];
 				}//end for d_x
