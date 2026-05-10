@@ -1281,6 +1281,19 @@ void RunGameMenu()
 				Sound_system.StopAllSounds();
 			}
 		}break;
+		case GAME_QUIT_CONFIRM:
+		{
+			ui_ShowCursor();
+			int ret = DoMessageBox(TXT_CONFIRM, "Terminate Piccu Engine?", MSGBOX_YESNO);
+			if (ret || ret == NEWUIRES_FORCEQUIT)
+			{
+				Demo_looping = false;
+				if (Game_mode & GM_MULTI)
+					MultiLeaveGame();
+				SetFunctionMode(QUIT_MODE);
+				Sound_system.StopAllSounds();
+			}
+		}break;
 		case GAME_DLL_INTERFACE:
 		{
 			DLLInfo.me_handle = DLLInfo.it_handle = OBJECT_HANDLE_NONE;

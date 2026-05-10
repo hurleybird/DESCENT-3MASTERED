@@ -56,6 +56,10 @@ int GetScreenMode();
 void ToggleFullscreenMode();
 bool IsAltEnterFullscreenEnabled();
 bool IsAltEnterFullscreenKey(int key);
+bool IsAltF4QuitKey(int key);
+bool ShouldConfirmAltF4QuitInGame();
+void RequestAltF4QuitConfirmation();
+void SetDisplayModeChangedCallback(void (*fn)());
 void ForceFullGameWindowOnNextGameMode();
 
 //	ALWAYS CALL THESE TO START AND END RENDERING

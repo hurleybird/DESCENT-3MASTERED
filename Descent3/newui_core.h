@@ -254,6 +254,7 @@ public:
 //	refreshes gadget states with values passed to the pointers returned by the below functions
 // depends on no direct manipulation of gadgets outside framework.
 	void UpdateChanges();
+	bool IsRealized() const { return m_realized; }
 	
 //	refreshes return values of gadgets, so they are accessible by the pointers returned by below functions
 // if a gadget has changed since last call to DoUI, the user can tell this by calling HasChanged

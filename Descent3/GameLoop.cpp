@@ -475,6 +475,11 @@ void ProcessNormalKey(int key)
 		ToggleFullscreenMode();
 		return;
 	}
+	if (IsAltF4QuitKey(key) && ShouldConfirmAltF4QuitInGame())
+	{
+		RequestAltF4QuitConfirmation();
+		return;
+	}
 
 	//First do keys that work normally even when dead
 	switch (key) {

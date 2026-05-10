@@ -57,6 +57,7 @@ enum tGameState
 #define GAME_DEMO_LOOP				14
 #define GAME_LEVEL_WARP				15
 #define GAME_DEBUGGRAPH_INTERFACE	16
+#define GAME_QUIT_CONFIRM			17
 
 //	variables
 extern tGameState Game_state;

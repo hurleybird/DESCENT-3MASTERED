@@ -41,6 +41,7 @@ constexpr int PICCU_VK_RMENU = 0xa5;
 #include "newui.h"
 #include "gamesequence.h"
 #include "cinematics.h"
+#include "gamecinematics.h"
 #include "SmallViews.h"
 #include "Mission.h"
 #include "CFILE.H"
@@ -60,6 +61,8 @@ constexpr int PICCU_VK_RMENU = 0xa5;
 #include <string.h>
 #include "osiris_share.h"
 #include "demofile.h"
+
+extern bool Menu_interface_mode;
 
 ///////////////////////////////////////////////////////////////////////////////
 //	Variables
@@ -302,6 +305,7 @@ int GetScreenMode()
 }
 
 static bool Force_full_game_window_on_next_game_mode = false;
+static void (*Display_mode_changed_callback)() = NULL;
 
 void ForceFullGameWindowOnNextGameMode()
 {
@@ -318,12 +322,8 @@ bool IsAltEnterFullscreenEnabled()
 	return enabled != 0;
 }
 
-bool IsAltEnterFullscreenKey(int key)
+static bool IsAltKeyDown(int key)
 {
-	int base_key = key & 0xff;
-	if (base_key != KEY_ENTER && base_key != KEY_PADENTER)
-		return false;
-
 	if (key & KEY_ALTED)
 		return true;
 
@@ -339,6 +339,46 @@ bool IsAltEnterFullscreenKey(int key)
 #endif
 }
 
+bool IsAltEnterFullscreenKey(int key)
+{
+	int base_key = key & 0xff;
+	if (base_key != KEY_ENTER && base_key != KEY_PADENTER)
+		return false;
+
+	return IsAltKeyDown(key);
+}
+
+bool IsAltF4QuitKey(int key)
+{
+	if ((key & 0xff) != KEY_F4)
+		return false;
+
+	return IsAltKeyDown(key);
+}
+
+bool ShouldConfirmAltF4QuitInGame()
+{
+	return GetFunctionMode() == GAME_MODE &&
+		GetGameState() == GAMESTATE_LVLPLAYING &&
+		Game_interface_mode == GAME_INTERFACE &&
+		!Menu_interface_mode &&
+		!Cinematic_inuse;
+}
+
+void RequestAltF4QuitConfirmation()
+{
+	if (!ShouldConfirmAltF4QuitInGame())
+		return;
+
+	Game_interface_mode = GAME_QUIT_CONFIRM;
+	ddio_KeyFlush();
+}
+
+void SetDisplayModeChangedCallback(void (*fn)())
+{
+	Display_mode_changed_callback = fn;
+}
+
 void ToggleFullscreenMode()
 {
 	int screen_mode = GetScreenMode();
@@ -351,6 +391,8 @@ void ToggleFullscreenMode()
 		SetUICallback(old_callback);
 	if (GetScreenMode() == SM_GAME)
 		Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
+	if (Display_mode_changed_callback)
+		Display_mode_changed_callback();
 	ddio_KeyFlush();
 }
 

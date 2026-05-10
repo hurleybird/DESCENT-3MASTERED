@@ -576,6 +576,10 @@ void config_gamma()
 #define RESBUFFER_SIZE 50
 #define IDV_CHANGEWINDOW 10
 #define UID_RESOLUTION 110
+struct video_menu;
+static video_menu* Active_video_menu = NULL;
+static void SyncActiveVideoMenuDisplayMode();
+
 struct video_menu
 {
 	newuiSheet* sheet;
@@ -639,13 +643,25 @@ struct video_menu
 		if (GetScreenMode() == SM_GAME)
 			Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
 		recenter_parent_menu();
+		SyncActiveVideoMenuDisplayMode();
 
 		return true;
+	}
+
+	void sync_display_mode()
+	{
+		if (!fullscreen)
+			return;
+
+		*fullscreen = Game_fullscreen;
+		if (sheet && sheet->IsRealized())
+			sheet->UpdateChanges();
 	}
 
 	void apply_live_settings()
 	{
 		bool changed = false;
+		bool display_changed = fullscreen && sheet->HasChanged(fullscreen);
 
 		if (filtering && sheet->HasChanged(filtering))
 		{
@@ -682,7 +698,7 @@ struct video_menu
 		if (changed)
 			rend_SetPreferredState(&Render_preferred_state);
 
-		apply_display_settings(false);
+		apply_display_settings(display_changed);
 	}
 
 	// sets the menu up.
@@ -704,6 +720,8 @@ struct video_menu
 
 		window_width = Game_window_res_width;
 		window_height = Game_window_res_height;
+		Active_video_menu = this;
+		SetDisplayModeChangedCallback(SyncActiveVideoMenuDisplayMode);
 
 		sheet->NewGroup("OpenGL profile", 0, 80);
 		backend = sheet->AddFirstLongRadioButton("Compat (for NV)");
@@ -775,6 +793,11 @@ struct video_menu
 			}
 		}
 
+		if (Active_video_menu == this)
+		{
+			Active_video_menu = NULL;
+			SetDisplayModeChangedCallback(NULL);
+		}
 		sheet = NULL;
 	};
 
@@ -842,7 +865,7 @@ struct video_menu
 			menu.Close();
 			menu.Destroy();
 			if (display_settings_changed)
-				apply_display_settings(false);
+				apply_display_settings(true);
 
 		}
 		break;
@@ -852,6 +875,12 @@ struct video_menu
 		}
 	};
 };
+
+static void SyncActiveVideoMenuDisplayMode()
+{
+	if (Active_video_menu)
+		Active_video_menu->sync_display_mode();
+}
 
 //////////////////////////////////////////////////////////////////
 // SOUND MENU
