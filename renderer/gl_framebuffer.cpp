@@ -348,8 +348,8 @@ void Framebuffer::DownsampleTo(GLuint target, unsigned int x, unsigned int y, un
 		glEnable(GL_TEXTURE_2D);
 
 	glBindTexture(GL_TEXTURE_2D, sourcename);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
 #ifdef _DEBUG
 	err = glGetError();
