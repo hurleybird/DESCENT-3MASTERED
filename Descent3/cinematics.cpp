@@ -192,8 +192,17 @@ bool FrameMovie(tCinematic* mve, int x, int y, bool sequence)
 			y = (Cinematic_h - bm_h(bm_handle, 0)) / 2;
 		}
 
-		rend_SetAlphaType(AT_ALWAYS);
-		rend_CopyBitmapToFramebuffer(bm_handle, x, y);
+		rend_SetAlphaType(AT_CONSTANT_TEXTURE);
+		rend_SetAlphaValue(255);
+		rend_SetLighting(LS_NONE);
+		rend_SetColorModel(CM_MONO);
+		rend_SetOverlayType(OT_NONE);
+		rend_SetWrapType(WT_CLAMP);
+		rend_SetFiltering(0);
+		rend_SetZBufferState(0);
+		rend_DrawScaledBitmap(x, y, x + bm_w(bm_handle, 0), y + bm_h(bm_handle, 0), bm_handle, 0.0f, 0.0f, 1.0f, 1.0f);
+		rend_SetFiltering(1);
+		rend_SetZBufferState(1);
 	}
 
 	return (hNewMovie != (unsigned int)(-1));

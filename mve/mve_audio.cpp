@@ -67,10 +67,14 @@ static std::atomic<uint64_t> g_playhead;
 static int g_lastchunk, g_lastread;
 static int g_bytespersample, g_slackbytes, g_samplerate;
 static uint64_t g_audio_timerrate;
+extern llsSystem* mve_soundSystem;
 
 //Waits for the last sample number from the last read to have gone beyond the sample number at the start of the frame.
 void mvesnd_wait_for_frame_start(int frame_num)
 {
+    if (!mve_soundSystem)
+        return;
+
     //mprintf((0, "frame %d, playhead %llu framestart %llu\n", g_framedebug, g_playhead.load() + 10000, g_framestart.load()));
     uint64_t target = (((uint64_t)frame_num * g_audio_timerrate * g_bytespersample) * g_samplerate / 1000000) + g_slackbytes;
     while (g_playhead < target) {}
@@ -112,7 +116,6 @@ static int mvesnd_callback(void* userptr, void* sampledata, int numbytes)
     return numbytes;
 }
 
-extern llsSystem* mve_soundSystem;
 void mvesnd_end_of_frame()
 {
 }

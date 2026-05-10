@@ -448,12 +448,11 @@ static int _mvefile_open_filehandle(MVEFILE *file, int filehandle)
  */
 static void _mvefile_reset(MVEFILE *file)
 {
-#if 0
-    file->cur_chunk = NULL;
-    file->buf_size = 0;
+    if (file->stream != -1)
+        _lseek(file->stream, 0, SEEK_SET);
+
     file->cur_fill = 0;
     file->next_segment = 0;
-#endif
 }
 
 /*

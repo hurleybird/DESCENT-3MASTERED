@@ -9,6 +9,8 @@ int  MVE_rmPrepMovie(int filehandle, int x, int y, int track);
 int  MVE_rmStepMovie();
 void MVE_rmHoldMovie();
 void MVE_rmEndMovie();
+void MVE_rmSetNoAudio(int no_audio);
+void MVE_rmSetNoWait(int no_wait);
 
 void MVE_sndInit(int x);
 

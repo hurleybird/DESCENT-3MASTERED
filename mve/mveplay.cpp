@@ -42,6 +42,19 @@ int g_spdFactorNum=0;
 static int g_spdFactorDenom=10;
 static int g_frameCount = 0;
 static int g_frameUpdated = 0;
+static int g_noAudio = 0;
+static int g_noWait = 0;
+static int g_timerInitialized = 0;
+
+void MVE_rmSetNoAudio(int no_audio)
+{
+	g_noAudio = no_audio ? 1 : 0;
+}
+
+void MVE_rmSetNoWait(int no_wait)
+{
+	g_noWait = no_wait ? 1 : 0;
+}
 
 static short get_short(unsigned char *data)
 {
@@ -146,12 +159,17 @@ static void timer_start(void)
 static void do_timer_wait(void)
 {
 	uint64_t startTick = GetClockTimeUS();
-	uint64_t numTicks = nextTimerTick - startTick;
+	if (nextTimerTick > startTick)
+	{
+		uint64_t numTicks = nextTimerTick - startTick;
+		if (numTicks > 2000) //[ISB] again inspired by dpJudas, with 2000 US number from GZDoom
+			DelayUS(numTicks - 2000);
+		while (GetClockTimeUS() < nextTimerTick);
+	}
 
-	if (numTicks > 2000) //[ISB] again inspired by dpJudas, with 2000 US number from GZDoom
-		DelayUS(numTicks - 2000);
-	while (GetClockTimeUS() < nextTimerTick);
-	mvesnd_wait_for_frame_start(g_frameCount);
+	if (!g_noAudio)
+		mvesnd_wait_for_frame_start(g_frameCount);
+
 	nextTimerTick = GetClockTimeUS() + micro_frame_delay;
 	//nextTimerTick += micro_frame_delay;
 }
@@ -181,7 +199,7 @@ static int create_audiobuf_handler(unsigned char major, unsigned char minor, uns
 
 	int format;
 
-	if (!mve_audio_enabled)
+	if (!mve_audio_enabled || g_noAudio)
 		return 1;
 
 	flags = get_ushort(data + 2);
@@ -220,7 +238,8 @@ static int create_audiobuf_handler(unsigned char major, unsigned char minor, uns
 
 static int play_audio_handler(unsigned char major, unsigned char minor, unsigned char *data, int len, void *context)
 {
-	mvesnd_start_audio();
+	if (!g_noAudio)
+		mvesnd_start_audio();
 	return 1;
 }
 
@@ -231,7 +250,7 @@ static int audio_data_handler(unsigned char major, unsigned char minor, unsigned
 	int chan;
 	int nsamp;
 	short* buf = NULL;
-	if (mve_audio_canplay)
+	if (!g_noAudio && mve_audio_canplay)
 	{
 		chan = get_ushort(data + 2);
 		nsamp = get_ushort(data + 4);
@@ -471,13 +490,22 @@ int MVE_rmPrepMovie(int filehandle, int x, int y, int track)
 {
 	int i;
 
-	if (mve) 
+	g_frameCount = 0;
+	g_frameUpdated = 0;
+	timer_started = 0;
+	timer_created = 0;
+	micro_frame_delay = 0;
+	nextTimerTick = GetClockTimeUS();
+	g_timerInitialized = 0;
+	mve_audio_paused = 0;
+	//[ISB] make sure it doesn't try to play sound if the previous movie had sound but this one doesn't
+	mve_audio_canplay = 0;
+
+	if (mve)
 	{
 		mve_reset(mve);
 		return 0;
 	}
-	//[ISB] make sure it doesn't try to play sound if the previous movie had sound but this one doesn't
-	mve_audio_canplay = 0;
 
 	mve = mve_open_filehandle(filehandle);
 
@@ -493,13 +521,16 @@ int MVE_rmPrepMovie(int filehandle, int x, int y, int track)
 	mve_set_handler(mve, MVE_OPCODE_ENDOFSTREAM,          end_movie_handler);
 	mve_set_handler(mve, MVE_OPCODE_ENDOFCHUNK,           end_chunk_handler);
 	mve_set_handler(mve, MVE_OPCODE_CREATETIMER,          create_timer_handler);
-	mve_set_handler(mve, MVE_OPCODE_INITAUDIOBUFFERS,     create_audiobuf_handler);
-	mve_set_handler(mve, MVE_OPCODE_STARTSTOPAUDIO,       play_audio_handler);
+	if (!g_noAudio)
+	{
+		mve_set_handler(mve, MVE_OPCODE_INITAUDIOBUFFERS,     create_audiobuf_handler);
+		mve_set_handler(mve, MVE_OPCODE_STARTSTOPAUDIO,       play_audio_handler);
+		mve_set_handler(mve, MVE_OPCODE_AUDIOFRAMEDATA,       audio_data_handler);
+		mve_set_handler(mve, MVE_OPCODE_AUDIOFRAMESILENCE,    audio_data_handler);
+	}
 	mve_set_handler(mve, MVE_OPCODE_INITVIDEOBUFFERS,     create_videobuf_handler);
 
 	mve_set_handler(mve, MVE_OPCODE_DISPLAYVIDEO,         display_video_handler);
-	mve_set_handler(mve, MVE_OPCODE_AUDIOFRAMEDATA,       audio_data_handler);
-	mve_set_handler(mve, MVE_OPCODE_AUDIOFRAMESILENCE,    audio_data_handler);
 	mve_set_handler(mve, MVE_OPCODE_INITVIDEOMODE,        init_video_handler);
 
 	mve_set_handler(mve, MVE_OPCODE_SETPALETTE,           video_palette_handler);
@@ -509,15 +540,18 @@ int MVE_rmPrepMovie(int filehandle, int x, int y, int track)
 
 	mve_set_handler(mve, MVE_OPCODE_VIDEODATA,            video_data_handler);
 
-	g_frameCount = 0;
-
 	return 0;
 }
 
 int MVE_rmStepMovie()
 {
-	static int init_timer=0;
 	int cont=1;
+
+	if (!mve)
+		return MVE_ERR_EOF;
+
+	if (g_noWait && timer_started && micro_frame_delay > 0 && g_frameCount > 0 && GetClockTimeUS() < nextTimerTick)
+		return 0;
 
 	if (!timer_started)
 		timer_start();
@@ -525,10 +559,10 @@ int MVE_rmStepMovie()
 	while (cont && !g_frameUpdated) // make a "step" be a frame, not a chunk...
 		cont = mve_play_next_chunk(mve);
 
-	if (micro_frame_delay  && !init_timer)
+	if (micro_frame_delay  && !g_timerInitialized)
 	{
 		timer_start();
-		init_timer = 1;
+		g_timerInitialized = 1;
 	}
 
 	if (mve_audio_paused)
@@ -539,8 +573,22 @@ int MVE_rmStepMovie()
 
 	if (g_frameUpdated)
 	{
-		do_timer_wait();
-		mvesnd_end_of_frame();
+		if (g_noWait)
+		{
+			uint64_t now = GetClockTimeUS();
+			if (micro_frame_delay > 0 && nextTimerTick <= now)
+			{
+				uint64_t nextFrameTick = nextTimerTick + micro_frame_delay;
+				nextTimerTick = (nextFrameTick > now) ? nextFrameTick : now + micro_frame_delay;
+			}
+		}
+		else
+		{
+			do_timer_wait();
+		}
+
+		if (!g_noAudio)
+			mvesnd_end_of_frame();
 		g_frameCount++;
 	}
 	g_frameUpdated = 0;
@@ -555,6 +603,9 @@ void MVE_rmEndMovie()
 {
 	timer_stop();
 	timer_created = 0;
+	micro_frame_delay = 0;
+	g_frameUpdated = 0;
+	g_timerInitialized = 0;
 
 	if (g_vBuffers != NULL)
 		mem_free(g_vBuffers);
@@ -564,19 +615,28 @@ void MVE_rmEndMovie()
 	videobuf_created = 0;
 	video_initialized = 0;
 
-	mve_close_filehandle(mve);
-	mve = NULL;
+	if (mve)
+	{
+		mve_close_filehandle(mve);
+		mve = NULL;
+	}
 
 	if (mve_audio_canplay)
 		mvesnd_close();
+
+	mve_audio_canplay = 0;
+	mve_audio_paused = 0;
 }
 
 
 void MVE_rmHoldMovie()
 {
 	timer_started = 0;
-	mvesnd_pause();
-	mve_audio_paused = 1;
+	if (!g_noAudio)
+	{
+		mvesnd_pause();
+		mve_audio_paused = 1;
+	}
 }
 
 //[ISB] whoops i made assumptions again. I guess D2X really tweaked how all this crap worked

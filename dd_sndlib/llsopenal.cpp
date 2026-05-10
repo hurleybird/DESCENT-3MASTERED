@@ -774,6 +774,8 @@ void llsOpenAL::KillMovieBuffer()
 	alDeleteSources(1, &MovieSourceName);
 	ALErrorCheck("Destroying movie source");
 
+	MovieBufferName = 0;
+	MovieSourceName = 0;
 	MovieStarted = false;
 }
 

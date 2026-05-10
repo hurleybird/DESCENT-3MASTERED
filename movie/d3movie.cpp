@@ -74,6 +74,9 @@ void CallbackSetPalette( unsigned char *pBuffer, unsigned int start, unsigned in
 void CallbackShowFrame( unsigned char* buf, unsigned int bufw, unsigned int bufh,
 						unsigned int sx, unsigned int sy, unsigned int w, unsigned int h,
 						unsigned int dstx, unsigned int dsty, unsigned int hicolor );
+void CallbackSequenceFrame( unsigned char* buf, unsigned int bufw, unsigned int bufh,
+						unsigned int sx, unsigned int sy, unsigned int w, unsigned int h,
+						unsigned int dstx, unsigned int dsty, unsigned int hicolor );
 
 
 // sets the directory where movies are stored
@@ -130,6 +133,8 @@ int mve_PlayMovie( const char *pMovieName, oeApplication *pApp )
 	MVE_ioCallbacks( CallbackFileRead );
 	//MVE_sfSVGA( 640, 480, 480, 0, NULL, 0, 0, NULL, highColor ? 1 : 0 );
 	MVE_palCallbacks( CallbackSetPalette );
+	MVE_rmSetNoAudio(0);
+	MVE_rmSetNoWait(0);
 	InitializePalette();
 	Movie_bm_handle = -1;
 
@@ -184,6 +189,7 @@ int mve_PlayMovie( const char *pMovieName, oeApplication *pApp )
 	// cleanup and shutdown
 	MVE_rmEndMovie();
 	MVE_ReleaseMem();
+	mve_SetSoundSystem(NULL);
 
 	if (Movie_vid_set)
 	{
@@ -355,9 +361,16 @@ void CallbackShowFrame( unsigned char* buf, unsigned int bufw, unsigned int bufh
 
 	rend_Flip();
 }
-#endif
 
-#define NO_MOVIES
+void CallbackSequenceFrame( unsigned char* buf, unsigned int bufw, unsigned int bufh,
+					    unsigned int sx, unsigned int sy, unsigned int w, unsigned int h,
+						unsigned int dstx, unsigned int dsty, unsigned int hicolor )
+{
+	int texW, texH;
+	BlitToMovieBitmap( buf, bufw, bufh, hicolor, false, texW, texH );
+	++Movie_current_framenum;
+}
+#endif
 
 unsigned int mve_SequenceStart( const char *mvename, int *fhandle, oeApplication *app, bool looping )
 {
@@ -374,17 +387,29 @@ unsigned int mve_SequenceStart( const char *mvename, int *fhandle, oeApplication
 
 	// setup
 	//MVE_rmFastMode( MVE_RM_NORMAL );
+	MVE_sfCallbacks( CallbackSequenceFrame );
 	MVE_memCallbacks( CallbackAlloc, CallbackFree );
 	MVE_ioCallbacks( CallbackFileRead );
+	MVE_palCallbacks( CallbackSetPalette );
+	MVE_rmSetNoAudio(1);
+	MVE_rmSetNoWait(1);
 	InitializePalette();
 	Movie_bm_handle = -1;
 	Movie_looping   = looping;
+	Movie_current_framenum = 0;
 
 	// let the render know we will be copying bitmaps to framebuffer (or something)
 	rend_SetFrameBufferCopyState(true);
 
 	*fhandle = hfile;
-	return (unsigned int)MVE_frOpen( CallbackFileRead, hfile, NULL );
+	if (MVE_rmPrepMovie(hfile, -1, -1, 0) != 0)
+	{
+		close(hfile);
+		*fhandle = -1;
+		return 0;
+	}
+
+	return 1;
 #else
 	return 0;
 #endif
@@ -403,30 +428,17 @@ unsigned int mve_SequenceFrame( unsigned int handle, int fhandle, bool sequence,
 		return (unsigned int)(-1);
 	}
 
-	static unsigned sw = 0, sh = 0, hicolor = 0;
 	int err            = 0;
 
 reread_frame:
-
-	// get the next frame of data
-	unsigned char* pBuffer = NULL;
-	err = MVE_frGet( (MVE_frStream)handle, &pBuffer, &sw, &sh, &hicolor );
-
-	// refresh our palette
+	if( bm_handle )
 	{
-		unsigned int palstart  = 0;
-		unsigned int palcount  = 0;
-		unsigned char *pal = NULL;
-		MVE_frPal( (MVE_frStream)handle, &pal, &palstart, &palcount );
-		CallbackSetPalette( pal, palstart, palcount );
+		*bm_handle = -1;
 	}
-	
+
+	err = MVE_rmStepMovie();
 	if( err == 0 )
 	{
-		// blit to bitmap
-		int texW, texH;
-		BlitToMovieBitmap( pBuffer, sw, sh, hicolor, false, texW, texH );
-
 		if( bm_handle )
 		{
 			*bm_handle = Movie_bm_handle;
@@ -437,13 +449,14 @@ reread_frame:
 
 	if( Movie_looping && err == MVE_ERR_EOF )
 	{
-		MVE_frClose( (MVE_frStream)handle );
+		MVE_rmEndMovie();
 #ifdef WIN32
 		_lseek( fhandle, 0, SEEK_SET );
 #else
 		lseek( fhandle, 0, SEEK_SET );
 #endif
-		handle = (unsigned int)MVE_frOpen( CallbackFileRead, fhandle, NULL );
+		if (MVE_rmPrepMovie(fhandle, -1, -1, 0) != 0)
+			return (unsigned int)( -1 );
 		sequence = true;
 		goto reread_frame;
 	}
@@ -460,7 +473,7 @@ bool mve_SequenceClose( unsigned int hMovie, int hFile )
 	if( hMovie == -1 )
 		return false;
 
-	MVE_frClose( (MVE_frStream)hMovie );
+	MVE_rmEndMovie();
 	MVE_ReleaseMem();
 	close( hFile );
 

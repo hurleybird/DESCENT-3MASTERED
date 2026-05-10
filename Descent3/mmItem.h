@@ -21,9 +21,6 @@
 #include "newui.h"
 #include "psclass.h"
 #include "gamefont.h"
-#if ( (!defined(OEM)) && (!defined(DEMO)) )
-//#define MOVIE_MENU //[ISB]
-#endif
 #define MMITEM_ALPHA		192						// default alpha
 #define MMITEM_SAT			0						// default saturation
 #define MMITEM_FONT			MENU_FONT				// default font
@@ -134,10 +131,9 @@ class mmInterface: public UIWindow
 {
 	int m_nmenu_items;								// number of menu items available.
 	mmItem m_menuitems[N_MMENU_ITEMS];			// main menu items
-#ifdef MOVIE_MENU
 	tCinematic *m_movie;								// menu movie handle
-#endif
 	tLargeBitmap m_art;								// artwork for the bitmap
+	bool m_static_background;
 public:
 // type MM_STARTMENU_TYPE = start, type MM_ENDMENU_TYPE = end, (1+2) = start and end, type 0 = normal
 	bool AddItem(int id, int key, const char *text, int type =0);

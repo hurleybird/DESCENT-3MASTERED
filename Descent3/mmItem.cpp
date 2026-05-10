@@ -26,6 +26,7 @@
 #include "hlsoundlib.h"
 #include "soundload.h"
 #include "d3music.h"
+#include "CFILE.H"
 
 #include "ddio.h"
 //#include <malloc.h>
@@ -258,7 +259,16 @@ void mmItem::OnDraw()
 
 #include "stdlib.h"		//need this to get _MAX_PATH, which really ought to be in ddio.h
 
-bool static_menu_background = false;
+static const char* MainMenuBitmapName()
+{
+#if defined(OEM)
+	return "oemmenu.ogf";
+#elif defined(DEMO)
+	return "demomenu.ogf";
+#else
+	return "mainmenu.ogf";
+#endif
+}
 
 void mmInterface::Create()
 {
@@ -266,32 +276,32 @@ void mmInterface::Create()
 
 	UIWindow::Create(0, 0, Max_window_w, Max_window_h);
 	mmItem::AttachInterface(this);
+	m_movie = NULL;
+	m_static_background = false;
 
-#ifndef MOVIE_MENU
-#if defined(OEM)
-	if (!LoadLargeBitmap("oemmenu.ogf", &m_art)) 
-		Error("Unable to load main menu art oemmenu.ogf.");
-#elif defined(DEMO)
-	if (!LoadLargeBitmap("demomenu.ogf", &m_art))
-		Error("Unable to load main menu art demomenu.ogf.");
-#else
-	if (!LoadLargeBitmap("mainmenu.ogf", &m_art))
-		Error("Unable to load main menu art mainmenu.ogf.");
-#endif
+#if defined(OEM) || defined(DEMO)
+	m_static_background = true;
+	if (!LoadLargeBitmap((char*)MainMenuBitmapName(), &m_art))
+		Error("Unable to load main menu art %s.", MainMenuBitmapName());
 #else
 	if (cfexist("mainmenuoverride.ogf"))
 	{
 		if (!LoadLargeBitmap("mainmenuoverride.ogf", &m_art))
 			Error("Unable to load main menu art mainmenuoverride.ogf.");
 		
-		m_movie = NULL;
-		static_menu_background = true;
+		m_static_background = true;
 	}
 	else
 	{
 		char filename[_MAX_PATH];
 		ddio_MakePath(filename, Base_directory, "movies", "mainmenu", NULL);
 		m_movie = StartMovie(filename, true);
+		if (!m_movie)
+		{
+			m_static_background = true;
+			if (!LoadLargeBitmap((char*)MainMenuBitmapName(), &m_art))
+				Error("Unable to load main menu art %s.", MainMenuBitmapName());
+		}
 	}
 #endif
 
@@ -354,21 +364,17 @@ void mmInterface::OnDestroy()
 	Sound_system.StopAllSounds();
 
 
-	if (static_menu_background) 
+	if (m_static_background)
 	{
 		FreeLargeBitmap(&m_art);
 	}
 	else 
 	{
-#ifdef MOVIE_MENU
 		if (m_movie) 
 		{
 			EndMovie(m_movie);
 			m_movie = NULL;
 		}
-#else
-		FreeLargeBitmap(&m_art);
-#endif
 	}
 
 	SetUICallback(DEFAULT_UICALLBACK);
@@ -456,17 +462,21 @@ void MenuScene()
 	{
 		StartFrame();
 
-		if (static_menu_background)
+		if (MM_object->m_static_background)
 		{
 			DrawLargeBitmap(&MM_object->m_art, 0, 0, 1.0f);
 		}
 		else
 		{
-#ifdef MOVIE_MENU
-			FrameMovie(MM_object->m_movie, -1, -1, true);
-#else 
-			DrawLargeBitmap(&MM_object->m_art, 0, 0, 1.0f);
-#endif
+			if (!FrameMovie(MM_object->m_movie, 0, 0, true))
+			{
+				EndMovie(MM_object->m_movie);
+				MM_object->m_movie = NULL;
+				MM_object->m_static_background = true;
+				if (!LoadLargeBitmap((char*)MainMenuBitmapName(), &MM_object->m_art))
+					Error("Unable to load main menu art %s.", MainMenuBitmapName());
+				DrawLargeBitmap(&MM_object->m_art, 0, 0, 1.0f);
+			}
 		}
 
 		MM_object->CopyrightText();
