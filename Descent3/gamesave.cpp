@@ -1157,6 +1157,20 @@ void SGSMatcens(CFILE* fp)
 
 
 #define HUD_RENDER_ZOOM	0.56f
+
+static void MakeSnapshotOpaque(int bm_handle)
+{
+	ASSERT(bm_format(bm_handle) == BITMAP_FORMAT_1555);
+
+	ushort* data = bm_data(bm_handle, 0);
+	if (!data)
+		return;
+
+	const int pixel_count = bm_w(bm_handle, 0) * bm_h(bm_handle, 0);
+	for (int i = 0; i < pixel_count; i++)
+		data[i] |= OPAQUE_FLAG;
+}
+
 void SGSSnapshot(CFILE* fp)
 {
 	extern void ResetFacings();								// render.cpp 
@@ -1180,7 +1194,6 @@ void SGSSnapshot(CFILE* fp)
 	//Done rendering
 	g3_EndFrame();
 	EndFrame();
-	rend_Flip();
 
 	bm_handle = bm_AllocBitmap(Max_window_w, Max_window_h, 0);
 
@@ -1191,6 +1204,7 @@ void SGSSnapshot(CFILE* fp)
 		// Tell our renderer lib to take a screen shot
 		rend_Screenshot(bm_handle);
 		bm_ChangeSize(bm_handle, SGSSNAP_WIDTH, SGSSNAP_HEIGHT);
+		MakeSnapshotOpaque(bm_handle);
 
 		try
 		{
@@ -1208,4 +1222,6 @@ void SGSSnapshot(CFILE* fp)
 
 		bm_FreeBitmap(bm_handle);
 	}
+
+	rend_Flip();
 }

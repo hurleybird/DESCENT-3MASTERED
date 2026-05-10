@@ -1470,6 +1470,20 @@ int LGSMatcens(CFILE *fp)
 }
 
 
+static void MakeLoadedSnapshotOpaque(int bm_handle)
+{
+	if (bm_handle <= BAD_BITMAP_HANDLE || bm_format(bm_handle) != BITMAP_FORMAT_1555)
+		return;
+
+	ushort* data = bm_data(bm_handle, 0);
+	if (!data)
+		return;
+
+	const int pixel_count = bm_w(bm_handle, 0) * bm_h(bm_handle, 0);
+	for (int i = 0; i < pixel_count; i++)
+		data[i] |= OPAQUE_FLAG;
+}
+
 int LGSSnapshot(CFILE *fp)
 {
 	int bm_handle = -1;
@@ -1480,7 +1494,10 @@ int LGSSnapshot(CFILE *fp)
 	
 //	if valid, read it in, otherwise just return
 	if (valid_snapshot)
+	{
 		bm_handle = bm_AllocLoadBitmap(fp, 0);
+		MakeLoadedSnapshotOpaque(bm_handle);
+	}
 
 	return bm_handle;
 }
