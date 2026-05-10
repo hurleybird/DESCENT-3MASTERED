@@ -449,12 +449,6 @@ reread_frame:
 
 	if( Movie_looping && err == MVE_ERR_EOF )
 	{
-		MVE_rmEndMovie();
-#ifdef WIN32
-		_lseek( fhandle, 0, SEEK_SET );
-#else
-		lseek( fhandle, 0, SEEK_SET );
-#endif
 		if (MVE_rmPrepMovie(fhandle, -1, -1, 0) != 0)
 			return (unsigned int)( -1 );
 		sequence = true;

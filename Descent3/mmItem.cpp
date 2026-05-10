@@ -477,6 +477,10 @@ void MenuScene()
 					Error("Unable to load main menu art %s.", MainMenuBitmapName());
 				DrawLargeBitmap(&MM_object->m_art, 0, 0, 1.0f);
 			}
+			else
+			{
+				rend_FillRect(GR_BLACK, 0, 0, 1, Max_window_h);
+			}
 		}
 
 		MM_object->CopyrightText();
