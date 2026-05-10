@@ -1738,8 +1738,10 @@ void RenderFace(room* rp, int facenum)
 	face* fp = &rp->faces[facenum];
 	g3Point* pointlist[MAX_VERTS_PER_FACE];
 	g3Point  pointbuffer[MAX_VERTS_PER_FACE];
+	renderer_per_pixel_light per_pixel_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
 	float	uchange = 0, vchange = 0;
 	ubyte	do_triangle_test = 0;
+	int per_pixel_light_count = 0;
 	g3Codes face_cc;
 	static int first = 1;
 	static float lm_red[32], lm_green[32], lm_blue[32];
@@ -1976,7 +1978,17 @@ void RenderFace(room* rp, int facenum)
 	}
 
 	//Draw the damn thing
+	if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender())
+	{
+		per_pixel_light_count = GetPerPixelLightmapLights(fp->lmi_handle, per_pixel_lights,
+			RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+		if (per_pixel_light_count > 0)
+			rend_SetPerPixelDynamicLighting(&fp->normal, per_pixel_light_count, per_pixel_lights);
+	}
+
 	drawn = g3_DrawPoly(fp->num_verts, pointlist, bm_handle, MAP_TYPE_BITMAP, &face_cc);
+	if (per_pixel_light_count > 0)
+		rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 
 	// Do light saturation
 	if (!Render_mirror_for_room && Rendering_main_view && drawn && fp->portal_num == -1 && ((fp->flags & FF_CORONA) || FastCoronas) && (fp->flags & FF_LIGHTMAP) && UseHardware && (GameTextures[fp->tmap].flags & TF_LIGHT))

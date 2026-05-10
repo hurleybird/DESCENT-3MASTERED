@@ -26,6 +26,7 @@
 //Declare this here so we don't need to include 3d.h
 struct g3Point;
 struct chunked_bitmap;
+struct vector;
 
 //	for rend_Init prototype
 class oeApplication;
@@ -105,7 +106,21 @@ enum light_state
 	LS_FLAT_GOURAUD		// Take color from flat color
 };
 
+#define RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS 8
+
+struct renderer_per_pixel_light
+{
+	float position[3];
+	float color[3];
+	float radius;
+	float direction[3];
+	float dot_range;
+	bool directional;
+};
+
 void rend_SetLighting(light_state);
+void rend_SetPerPixelLightingDirection(const vector *lightdir);
+void rend_SetPerPixelDynamicLighting(const vector *face_normal, int count, const renderer_per_pixel_light *lights);
 
 enum color_model
 {
@@ -241,6 +256,7 @@ struct renderer_preferred_state
 	bool fullscreen; //Informs the window system that fullscreen should be used. 
 	ubyte supersampling_factor; //1, 2, or 4. Values above 1 render larger than the window and downscale.
 	ubyte msaa_samples; //0, 2, 4, or 8.
+	bool per_pixel_lighting;
 };
 
 struct renderer_lfb

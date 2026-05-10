@@ -35,6 +35,7 @@
 #include "dedicated_server.h"
 #include "objinfo.h"
 #include "Macros.h"
+#include "renderer.h"
 
 #define NUM_DYNAMIC_CLASSES	7
 #define MAX_DYNAMIC_FACES	2000
@@ -84,6 +85,103 @@ int Num_destroyed_lights_this_frame = 0;
 #define MAX_DESTROYED_LIGHTS_PER_FRAME	20
 int Destroyed_light_rooms_this_frame[MAX_DESTROYED_LIGHTS_PER_FRAME];
 int Destroyed_light_faces_this_frame[MAX_DESTROYED_LIGHTS_PER_FRAME];
+
+struct per_pixel_lightmap_face
+{
+	ushort lmi_handle;
+	ubyte count;
+	renderer_per_pixel_light lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
+};
+
+per_pixel_lightmap_face Per_pixel_lightmap_faces[MAX_DYNAMIC_FACES];
+int Num_per_pixel_lightmap_faces = 0;
+
+static bool UsePerPixelRoomLighting()
+{
+	return Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender();
+}
+
+static float PerPixelLightImportance(const renderer_per_pixel_light &light)
+{
+	return (fabs(light.color[0]) + fabs(light.color[1]) + fabs(light.color[2])) * light.radius;
+}
+
+static void AddPerPixelLightmapLight(ushort lmi_handle, const vector *pos, float light_dist,
+	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range)
+{
+	renderer_per_pixel_light light = {};
+	light.position[0] = pos->x;
+	light.position[1] = pos->y;
+	light.position[2] = pos->z;
+	light.color[0] = red_scale;
+	light.color[1] = green_scale;
+	light.color[2] = blue_scale;
+	light.radius = light_dist;
+	light.dot_range = dot_range;
+	light.directional = light_direction != nullptr;
+	if (light_direction)
+	{
+		light.direction[0] = light_direction->x;
+		light.direction[1] = light_direction->y;
+		light.direction[2] = light_direction->z;
+	}
+
+	for (int i = 0; i < Num_per_pixel_lightmap_faces; i++)
+	{
+		per_pixel_lightmap_face *face_lights = &Per_pixel_lightmap_faces[i];
+		if (face_lights->lmi_handle != lmi_handle)
+			continue;
+
+		if (face_lights->count < RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS)
+		{
+			face_lights->lights[face_lights->count++] = light;
+			return;
+		}
+
+		int weakest = 0;
+		float weakest_importance = PerPixelLightImportance(face_lights->lights[0]);
+		for (int j = 1; j < RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS; j++)
+		{
+			float importance = PerPixelLightImportance(face_lights->lights[j]);
+			if (importance < weakest_importance)
+			{
+				weakest = j;
+				weakest_importance = importance;
+			}
+		}
+
+		if (PerPixelLightImportance(light) > weakest_importance)
+			face_lights->lights[weakest] = light;
+		return;
+	}
+
+	if (Num_per_pixel_lightmap_faces >= MAX_DYNAMIC_FACES)
+		return;
+
+	per_pixel_lightmap_face *face_lights = &Per_pixel_lightmap_faces[Num_per_pixel_lightmap_faces++];
+	face_lights->lmi_handle = lmi_handle;
+	face_lights->count = 1;
+	face_lights->lights[0] = light;
+}
+
+int GetPerPixelLightmapLights(ushort lmi_handle, renderer_per_pixel_light *lights, int max_lights)
+{
+	if (lights == nullptr || max_lights <= 0)
+		return 0;
+
+	for (int i = 0; i < Num_per_pixel_lightmap_faces; i++)
+	{
+		per_pixel_lightmap_face *face_lights = &Per_pixel_lightmap_faces[i];
+		if (face_lights->lmi_handle != lmi_handle)
+			continue;
+
+		int count = (face_lights->count < max_lights) ? face_lights->count : max_lights;
+		memcpy(lights, face_lights->lights, sizeof(renderer_per_pixel_light) * count);
+		return count;
+	}
+
+	return 0;
+}
 
 // Frees memory used by dynamic light structures
 void FreeLighting()
@@ -1274,6 +1372,21 @@ void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_
 		ASSERT(width > 0);
 		ASSERT(height > 0);
 
+		if (UsePerPixelRoomLighting())
+		{
+			AddPerPixelLightmapLight(fp->lmi_handle, pos, light_dist, red_scale, green_scale, blue_scale,
+				light_direction, dot_range);
+
+			if (!(Lmi_spoken_for[fp->lmi_handle / 8] & (1 << (fp->lmi_handle % 8))))
+			{
+				lmilist[num_spoken_for] = fp->lmi_handle;
+				Lmi_spoken_for[fp->lmi_handle / 8] |= (1 << (fp->lmi_handle % 8));
+				num_spoken_for++;
+			}
+
+			continue;
+		}
+
 		if (lmi_ptr->dynamic != BAD_LM_INDEX)		// already lit, so just adjust, not start over
 		{
 			lm_handle = LightmapInfo[fp->lmi_handle].lm_handle;
@@ -1584,6 +1697,7 @@ void ClearDynamicLightmaps()
 
 	Num_dynamic_lightmaps = 0;
 	Cur_dynamic_mem_ptr = 0;
+	Num_per_pixel_lightmap_faces = 0;
 
 	BlendAllLightingEdges();
 	Num_edges_to_blend = 0;

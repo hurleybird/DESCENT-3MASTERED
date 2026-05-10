@@ -53,12 +53,18 @@ struct tex_array
 	float s, t, w;
 };
 
+struct normal_array
+{
+	float x, y, z, w;
+};
+
 struct gl_vertex
 {
 	vector vert;
 	color_array color;
 	tex_array tex_coord;
 	tex_array tex_coord2;
+	normal_array normal;
 };
 
 constexpr int NUM_GL3_FBOS = 2;
@@ -112,7 +118,26 @@ class GL3Renderer : public IRenderer
 	//The next committed vertex is where to start writing vertex data to the buffer
 	GLuint nextcommittedvertex = 0;
 	ShaderProgram drawshaders[8];
+	GLint drawshader_phong_enabled_uniforms[8] = {};
+	GLint drawshader_light_direction_uniforms[8] = {};
+	GLint drawshader_dynamic_count_uniforms[8] = {};
+	GLint drawshader_dynamic_face_normal_uniforms[8] = {};
+	GLint drawshader_dynamic_positions_uniforms[8] = {};
+	GLint drawshader_dynamic_colors_uniforms[8] = {};
+	GLint drawshader_dynamic_radii_uniforms[8] = {};
+	GLint drawshader_dynamic_directions_uniforms[8] = {};
+	GLint drawshader_dynamic_dot_ranges_uniforms[8] = {};
+	GLint drawshader_dynamic_directional_uniforms[8] = {};
 	int lastdrawshader = -1;
+	vector per_pixel_light_direction = { 0, 0, -1 };
+	vector per_pixel_dynamic_face_normal = { 0, 0, 1 };
+	int per_pixel_dynamic_light_count = 0;
+	GLfloat per_pixel_dynamic_positions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
+	GLfloat per_pixel_dynamic_colors[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
+	GLfloat per_pixel_dynamic_radii[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
+	GLfloat per_pixel_dynamic_directions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
+	GLfloat per_pixel_dynamic_dot_ranges[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
+	GLint per_pixel_dynamic_directional[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
 
 	GLuint drawvao = 0;
 	void* drawbuffermap = 0;
@@ -161,7 +186,7 @@ class GL3Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0 };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -313,6 +338,9 @@ public:
 	void SetColorModel(color_model) override;
 
 	void SetLighting(light_state) override;
+	void SetPerPixelLightingDirection(const vector *lightdir) override;
+	void SetPerPixelDynamicLighting(const vector *face_normal, int count,
+		const renderer_per_pixel_light *lights) override;
 
 	// Adds a bias to each coordinates z value.  This is useful for making 2d bitmaps
 	// get drawn without being clipped by the zbuffer

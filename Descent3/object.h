@@ -160,6 +160,7 @@ void ObjDeleteDead();
 
 //Process all objects for the current frame
 void ObjDoFrameAll();
+void ObjDoLightingFrameAll();
 
 //set viewer object to next object in array
 void ObjGotoNextViewer();

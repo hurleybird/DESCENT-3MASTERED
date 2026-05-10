@@ -154,7 +154,7 @@ class GLCompatibilityRenderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0 };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -299,6 +299,9 @@ public:
 	void SetColorModel(color_model) override;
 
 	void SetLighting(light_state) override;
+	void SetPerPixelLightingDirection(const vector *lightdir) override;
+	void SetPerPixelDynamicLighting(const vector *face_normal, int count,
+		const renderer_per_pixel_light *lights) override;
 
 	// Adds a bias to each coordinates z value.  This is useful for making 2d bitmaps
 	// get drawn without being clipped by the zbuffer

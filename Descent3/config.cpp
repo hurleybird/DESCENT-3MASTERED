@@ -587,6 +587,7 @@ struct video_menu
 
 	bool* filtering;									// settings
 	bool* mipmapping;
+	bool* per_pixel_lighting;
 	bool* vsync;
 
 	int* resolution;									// all resolutions
@@ -673,6 +674,11 @@ struct video_menu
 			Render_preferred_state.mipping = (*mipmapping) ? 1 : 0;
 			changed = true;
 		}
+		if (per_pixel_lighting && sheet->HasChanged(per_pixel_lighting))
+		{
+			Render_preferred_state.per_pixel_lighting = *per_pixel_lighting;
+			changed = true;
+		}
 		if (vsync && sheet->HasChanged(vsync))
 		{
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
@@ -732,6 +738,7 @@ struct video_menu
 		sheet->NewGroup(TXT_TOGGLES, 0, 120);
 		filtering = sheet->AddLongCheckBox(TXT_BILINEAR, (Render_preferred_state.filtering != 0));
 		mipmapping = sheet->AddLongCheckBox(TXT_MIPMAPPING, (Render_preferred_state.mipping != 0));
+		per_pixel_lighting = sheet->AddLongCheckBox("Per-pixel lighting", Render_preferred_state.per_pixel_lighting);
 
 		sheet->NewGroup(TXT_MONITOR, 0, 180);
 		vsync = sheet->AddLongCheckBox(TXT_CFG_VSYNCENABLED, (Render_preferred_state.vsync_on != 0));
@@ -763,6 +770,8 @@ struct video_menu
 			Render_preferred_state.filtering = (*filtering) ? 1 : 0;
 		if (mipmapping)
 			Render_preferred_state.mipping = (*mipmapping) ? 1 : 0;
+		if (per_pixel_lighting)
+			Render_preferred_state.per_pixel_lighting = *per_pixel_lighting;
 		if (vsync)
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
 		if (antialiasing)

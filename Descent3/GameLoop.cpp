@@ -1985,6 +1985,9 @@ void GameRenderFrame(void)
 	//Render the mine
 	if (!no_render)
 	{
+		if (Game_paused && !Demo_do_one_frame)
+			ObjDoLightingFrameAll();
+
 		// render preliminary hud view (for dirty rectangles)
 		if (Small_hud_flag)
 		{

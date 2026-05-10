@@ -796,6 +796,22 @@ void rend_SetLighting(light_state state)
 	renderer_inst->SetLighting(state);
 }
 
+void rend_SetPerPixelLightingDirection(const vector *lightdir)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->SetPerPixelLightingDirection(lightdir);
+}
+
+void rend_SetPerPixelDynamicLighting(const vector *face_normal, int count, const renderer_per_pixel_light *lights)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->SetPerPixelDynamicLighting(face_normal, count, lights);
+}
+
 void rend_SetColorModel(color_model model)
 {
 	if (!Renderer_initted)

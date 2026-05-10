@@ -431,6 +431,9 @@ void GL3Renderer::SetFogColor(ddgr_color color)
 
 void GL3Renderer::SetLighting(light_state state)
 {
+	if (state == LS_PHONG && !OpenGL_preferred_state.per_pixel_lighting)
+		state = LS_GOURAUD;
+
 	if (state == OpenGL_state.cur_light_state)
 		return;	// No redundant state setting
 	if (UseMultitexture && Last_texel_unit_set != 0)
@@ -450,8 +453,10 @@ void GL3Renderer::SetLighting(light_state state)
 		OpenGL_state.cur_light_state = LS_FLAT_GOURAUD;
 		break;
 	case LS_GOURAUD:
-	case LS_PHONG:
 		OpenGL_state.cur_light_state = LS_GOURAUD;
+		break;
+	case LS_PHONG:
+		OpenGL_state.cur_light_state = LS_PHONG;
 		break;
 	default:
 		Int3();
@@ -459,6 +464,44 @@ void GL3Renderer::SetLighting(light_state state)
 	}
 
 	CHECK_ERROR(13);
+}
+
+void GL3Renderer::SetPerPixelLightingDirection(const vector *lightdir)
+{
+	if (lightdir)
+		per_pixel_light_direction = *lightdir;
+}
+
+void GL3Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int count,
+	const renderer_per_pixel_light *lights)
+{
+	if (!OpenGL_preferred_state.per_pixel_lighting || count <= 0 || lights == nullptr || face_normal == nullptr)
+	{
+		per_pixel_dynamic_light_count = 0;
+		return;
+	}
+
+	per_pixel_dynamic_face_normal = *face_normal;
+	per_pixel_dynamic_light_count = std::min(count, RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+	for (int i = 0; i < per_pixel_dynamic_light_count; i++)
+	{
+		per_pixel_dynamic_positions[i][0] = lights[i].position[0];
+		per_pixel_dynamic_positions[i][1] = lights[i].position[1];
+		per_pixel_dynamic_positions[i][2] = lights[i].position[2];
+
+		per_pixel_dynamic_colors[i][0] = lights[i].color[0];
+		per_pixel_dynamic_colors[i][1] = lights[i].color[1];
+		per_pixel_dynamic_colors[i][2] = lights[i].color[2];
+
+		per_pixel_dynamic_radii[i] = lights[i].radius;
+
+		per_pixel_dynamic_directions[i][0] = lights[i].direction[0];
+		per_pixel_dynamic_directions[i][1] = lights[i].direction[1];
+		per_pixel_dynamic_directions[i][2] = lights[i].direction[2];
+
+		per_pixel_dynamic_dot_ranges[i] = lights[i].dot_range;
+		per_pixel_dynamic_directional[i] = lights[i].directional ? 1 : 0;
+	}
 }
 
 void GL3Renderer::SetColorModel(color_model state)

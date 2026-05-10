@@ -19,7 +19,7 @@
 #include "gl_local.h"
 
 //The number of vertex attributes the legacy code used.
-constexpr int NUM_LEGACY_VERTEX_ATTRIBS = 4;
+constexpr int NUM_LEGACY_VERTEX_ATTRIBS = 5;
 //The count of vertices that each buffer will store
 constexpr int NUM_VERTS_PER_BUFFER = 640000;
 
@@ -73,6 +73,10 @@ void GL3Renderer::InitPersistentDrawBuffer(size_t size)
 	//attrib 3: uv 2
 	glEnableVertexAttribArray(3);
 	glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, tex_coord2));
+
+	//attrib 4: per-pixel lighting normal
+	glEnableVertexAttribArray(4);
+	glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, normal));
 #ifdef _DEBUG
 	err = glGetError();
 	if (err != GL_NO_ERROR)
@@ -183,6 +187,20 @@ void GL3Renderer::SetDrawDefaults()
 	//Specular.
 	drawshaders[7].AttachSourcePreprocess(genericVertexBody, genericFragBody, true, false, true, true);
 
+	for (int i = 0; i < 8; i++)
+	{
+		drawshader_phong_enabled_uniforms[i] = drawshaders[i].FindUniform("phong_enabled");
+		drawshader_light_direction_uniforms[i] = drawshaders[i].FindUniform("phong_light_direction");
+		drawshader_dynamic_count_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_count");
+		drawshader_dynamic_face_normal_uniforms[i] = drawshaders[i].FindUniform("dynamic_face_normal");
+		drawshader_dynamic_positions_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_positions[0]");
+		drawshader_dynamic_colors_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_colors[0]");
+		drawshader_dynamic_radii_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_radii[0]");
+		drawshader_dynamic_directions_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_directions[0]");
+		drawshader_dynamic_dot_ranges_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_dot_ranges[0]");
+		drawshader_dynamic_directional_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_directional[0]");
+	}
+
 	lastdrawshader = -1;
 
 	delete[] genericVertexBody;
@@ -219,6 +237,10 @@ void GL3Renderer::SetDrawDefaults()
 		//attrib 3: uv 2
 		glEnableVertexAttribArray(3);
 		glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, tex_coord2));
+
+		//attrib 4: per-pixel lighting normal
+		glEnableVertexAttribArray(4);
+		glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, normal));
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -226,33 +248,71 @@ void GL3Renderer::SetDrawDefaults()
 
 void GL3Renderer::SelectDrawShader()
 {
+	int shader_index = 0;
+
 	if (OpenGL_state.cur_fog_state)
 	{
 		if (OpenGL_state.cur_alpha_type == AT_SPECULAR)
-			drawshaders[7].Use();
+			shader_index = 7;
 		else if (OpenGL_state.cur_texture_quality == 0)
-			drawshaders[4].Use();
+			shader_index = 4;
 		else if (OpenGL_state.cur_texture_quality != 0)
 		{
 			if (Overlay_type != OT_NONE)
-				drawshaders[6].Use();
+				shader_index = 6;
 			else
-				drawshaders[5].Use();
+				shader_index = 5;
 		}
 	}
 	else
 	{
 		if (OpenGL_state.cur_alpha_type == AT_SPECULAR)
-			drawshaders[3].Use();
+			shader_index = 3;
 		else if (OpenGL_state.cur_texture_quality == 0)
-			drawshaders[0].Use();
+			shader_index = 0;
 		else if (OpenGL_state.cur_texture_quality != 0)
 		{
 			if (Overlay_type != OT_NONE)
-				drawshaders[2].Use();
+				shader_index = 2;
 			else
-				drawshaders[1].Use();
+				shader_index = 1;
 		}
+	}
+
+	drawshaders[shader_index].Use();
+
+	const bool phong_enabled = OpenGL_state.cur_light_state == LS_PHONG;
+	if (drawshader_phong_enabled_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_phong_enabled_uniforms[shader_index], phong_enabled ? 1 : 0);
+	if (phong_enabled && drawshader_light_direction_uniforms[shader_index] != -1)
+		glUniform3f(drawshader_light_direction_uniforms[shader_index], per_pixel_light_direction.x,
+			per_pixel_light_direction.y, per_pixel_light_direction.z);
+
+	if (drawshader_dynamic_count_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_dynamic_count_uniforms[shader_index], per_pixel_dynamic_light_count);
+	if (per_pixel_dynamic_light_count > 0)
+	{
+		if (drawshader_dynamic_face_normal_uniforms[shader_index] != -1)
+			glUniform3f(drawshader_dynamic_face_normal_uniforms[shader_index], per_pixel_dynamic_face_normal.x,
+				per_pixel_dynamic_face_normal.y, per_pixel_dynamic_face_normal.z);
+		if (drawshader_dynamic_positions_uniforms[shader_index] != -1)
+			glUniform3fv(drawshader_dynamic_positions_uniforms[shader_index], per_pixel_dynamic_light_count,
+				&per_pixel_dynamic_positions[0][0]);
+		if (drawshader_dynamic_colors_uniforms[shader_index] != -1)
+			glUniform3fv(drawshader_dynamic_colors_uniforms[shader_index], per_pixel_dynamic_light_count,
+				&per_pixel_dynamic_colors[0][0]);
+		if (drawshader_dynamic_radii_uniforms[shader_index] != -1)
+			glUniform1fv(drawshader_dynamic_radii_uniforms[shader_index], per_pixel_dynamic_light_count,
+				per_pixel_dynamic_radii);
+		if (drawshader_dynamic_directions_uniforms[shader_index] != -1)
+			glUniform3fv(drawshader_dynamic_directions_uniforms[shader_index], per_pixel_dynamic_light_count,
+				&per_pixel_dynamic_directions[0][0]);
+		if (drawshader_dynamic_dot_ranges_uniforms[shader_index] != -1)
+			glUniform1fv(drawshader_dynamic_dot_ranges_uniforms[shader_index], per_pixel_dynamic_light_count,
+				per_pixel_dynamic_dot_ranges);
+		if (drawshader_dynamic_directional_uniforms[shader_index] != -1)
+			glUniform1iv(drawshader_dynamic_directional_uniforms[shader_index], per_pixel_dynamic_light_count,
+				per_pixel_dynamic_directional);
 	}
 }
 
@@ -378,6 +438,15 @@ void GL3Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 				vertp->tex_coord2.t = pnt->p3_v2 * yscalar * texw;
 				vertp->tex_coord2.w = texw;
 			}
+		}
+
+		if (OpenGL_state.cur_light_state == LS_PHONG || per_pixel_dynamic_light_count > 0)
+		{
+			float payloadw = 1.0f / (pnt->p3_z + Z_bias);
+			vertp->normal.x = pnt->p3_vecPreRot.x * payloadw;
+			vertp->normal.y = pnt->p3_vecPreRot.y * payloadw;
+			vertp->normal.z = pnt->p3_vecPreRot.z * payloadw;
+			vertp->normal.w = payloadw;
 		}
 
 		// Finally, specify a vertex

@@ -106,6 +106,9 @@ int Lightmap_debug_subnum=-1;
 int Lightmap_debug_facenum=-1;
 int Lightmap_debug_model=-1;
 
+static bool UsePerPixelPolymodelLighting();
+static light_state GetPolymodelGouraudLightingState();
+static void SetPolymodelGouraudPointLighting(g3Point& point, const vector& normal);
 
 
 inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
@@ -251,7 +254,11 @@ inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 
 		rend_SetTextureType (TT_LINEAR);
 		if (Polymodel_light_type==POLYMODEL_LIGHTING_GOURAUD)
-			rend_SetLighting (LS_GOURAUD);
+		{
+			if (UsePerPixelPolymodelLighting())
+				rend_SetPerPixelLightingDirection(Polymodel_light_direction);
+			rend_SetLighting(GetPolymodelGouraudLightingState());
+		}
 
 		// If this is a light texture, make the texture full bright
 		if (texp->flags & TF_LIGHT)
@@ -347,6 +354,9 @@ inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 		g3_SetTriangulationTest(1);
 		
 	g3_DrawPoly(fp->nverts,pointlist,bm_handle,MAP_TYPE_BITMAP,&face_cc);
+
+	if (Polymodel_light_type==POLYMODEL_LIGHTING_GOURAUD && UsePerPixelPolymodelLighting())
+		rend_SetLighting(LS_GOURAUD);
 
 	if (triface)
 		g3_SetTriangulationTest(0);
@@ -892,6 +902,38 @@ void BuildModelAngleMatrix( matrix *mat, angle ang,vector *axis);
 void StartLightInstance (vector *,matrix *);
 void DoneLightInstance();
 
+static bool UsePerPixelPolymodelLighting()
+{
+	return UseHardware && Render_preferred_state.per_pixel_lighting && rend_CanUseNewrender();
+}
+
+static light_state GetPolymodelGouraudLightingState()
+{
+	return UsePerPixelPolymodelLighting() ? LS_PHONG : LS_GOURAUD;
+}
+
+static void SetPolymodelGouraudPointLighting(g3Point& point, const vector& normal)
+{
+	const bool use_effect_color = Polymodel_use_effect && (Polymodel_effect.type & PEF_COLOR);
+	const float effect_r = use_effect_color ? Polymodel_effect.r : 1.0f;
+	const float effect_g = use_effect_color ? Polymodel_effect.g : 1.0f;
+	const float effect_b = use_effect_color ? Polymodel_effect.b : 1.0f;
+
+	float light = 1.0f;
+	if (UsePerPixelPolymodelLighting())
+	{
+		point.p3_vecPreRot = normal;
+	}
+	else
+	{
+		light = (-vm_DotProduct(Polymodel_light_direction, &normal) + 1.0f) / 2.0f;
+	}
+
+	point.p3_r = effect_r * light * Polylighting_static_red;
+	point.p3_g = effect_g * light * Polylighting_static_green;
+	point.p3_b = effect_b * light * Polylighting_static_blue;
+}
+
 // Rotates all of the points of a submodel, plus supplies color info 
 void RotateModelPoints (poly_model *pm,bsp_info *sm)
 {
@@ -947,94 +989,19 @@ void RotateModelPoints (poly_model *pm,bsp_info *sm)
 	}
 	else if (Polymodel_light_type==POLYMODEL_LIGHTING_GOURAUD)
 	{
-		if (Polymodel_use_effect && Polymodel_effect.type & PEF_COLOR)
-		{	
-			if ((Polymodel_use_effect && (Polymodel_effect.type & PEF_DEFORM)) || (sm->flags & SOF_JITTER))
-			{
-				for (int i=0;i<sm->nverts;i++)
-				{
-					vector vec=sm->verts[i];
-					float val=((ps_rand()%1000)-500.0)/500.0;
-					vec*=1.0+(Polymodel_effect.deform_range*val);
-
-					g3_RotatePoint(&Robot_points[i],&vec);
-
-					vector normvec=sm->vertnorms[i];
-					val=(-vm_DotProduct (Polymodel_light_direction,&normvec)+1.0)/2;
-					
-					Robot_points[i].p3_r=Polymodel_effect.r*val*Polylighting_static_red;
-					Robot_points[i].p3_g=Polymodel_effect.g*val*Polylighting_static_green;
-					Robot_points[i].p3_b=Polymodel_effect.b*val*Polylighting_static_blue;
-				}
-			}
-			else
-			{
-				if ((Polymodel_use_effect && (Polymodel_effect.type & PEF_DEFORM)) || (sm->flags & SOF_JITTER))
-				{
-					for (int i=0;i<sm->nverts;i++)
-					{
-						vector vec=sm->verts[i];
-						float val=((ps_rand()%1000)-500.0)/500.0;
-						vec*=1.0+(Polymodel_effect.deform_range*val);
-
-						g3_RotatePoint(&Robot_points[i],&vec);
-
-						vector normvec=sm->vertnorms[i];
-						val=(-vm_DotProduct (Polymodel_light_direction,&normvec)+1.0)/2;
-							
-						Robot_points[i].p3_r=Polymodel_effect.r*val*Polylighting_static_red;
-						Robot_points[i].p3_g=Polymodel_effect.g*val*Polylighting_static_green;
-						Robot_points[i].p3_b=Polymodel_effect.b*val*Polylighting_static_blue;
-					}
-				}
-				else
-				{
-					for (int i=0;i<sm->nverts;i++)
-					{
-						g3_RotatePoint(&Robot_points[i],&sm->verts[i]);
-						vector normvec=sm->vertnorms[i];
-						float val=(-vm_DotProduct (Polymodel_light_direction,&normvec)+1.0)/2;
-							
-						Robot_points[i].p3_r=Polymodel_effect.r*val*Polylighting_static_red;
-						Robot_points[i].p3_g=Polymodel_effect.g*val*Polylighting_static_green;
-						Robot_points[i].p3_b=Polymodel_effect.b*val*Polylighting_static_blue;
-					}
-				}
-			}
-		}
-		else
+		const bool deform = (Polymodel_use_effect && (Polymodel_effect.type & PEF_DEFORM)) || (sm->flags & SOF_JITTER);
+		for (int i=0;i<sm->nverts;i++)
 		{
-			if ((Polymodel_use_effect && (Polymodel_effect.type & PEF_DEFORM)) || (sm->flags & SOF_JITTER))
+			vector vec=sm->verts[i];
+			if (deform)
 			{
-				for (int i=0;i<sm->nverts;i++)
-				{
-					vector vec=sm->verts[i];
-					float val=((ps_rand()%1000)-500.0)/500.0;
-					vec*=1.0+(Polymodel_effect.deform_range*val);
+				float val=((ps_rand()%1000)-500.0)/500.0;
+				vec*=1.0+(Polymodel_effect.deform_range*val);
+			}
 
-					g3_RotatePoint(&Robot_points[i],&vec);
-					vector normvec=sm->vertnorms[i];
-					val=(-vm_DotProduct (Polymodel_light_direction,&normvec)+1.0)/2;
-							
-					Robot_points[i].p3_r=val*Polylighting_static_red;
-					Robot_points[i].p3_g=val*Polylighting_static_green;
-					Robot_points[i].p3_b=val*Polylighting_static_blue;
-				}
-			}
-			else
-			{
-				for (int i=0;i<sm->nverts;i++)
-				{
-					g3_RotatePoint(&Robot_points[i],&sm->verts[i]);
-					vector normvec=sm->vertnorms[i];
-					float val=(-vm_DotProduct (Polymodel_light_direction,&normvec)+1.0)/2;
-			
-					Robot_points[i].p3_r=val*Polylighting_static_red;
-					Robot_points[i].p3_g=val*Polylighting_static_green;
-					Robot_points[i].p3_b=val*Polylighting_static_blue;
-				}
-			}
-		
+			g3_RotatePoint(&Robot_points[i],&vec);
+			vector normvec=sm->vertnorms[i];
+			SetPolymodelGouraudPointLighting(Robot_points[i], normvec);
 		}
 	}
 

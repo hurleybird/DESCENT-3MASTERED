@@ -559,6 +559,19 @@ void GLCompatibilityRenderer::SetLighting(light_state state)
 	CHECK_ERROR(13);
 }
 
+void GLCompatibilityRenderer::SetPerPixelLightingDirection(const vector *lightdir)
+{
+	(void)lightdir;
+}
+
+void GLCompatibilityRenderer::SetPerPixelDynamicLighting(const vector *face_normal, int count,
+	const renderer_per_pixel_light *lights)
+{
+	(void)face_normal;
+	(void)count;
+	(void)lights;
+}
+
 // returns the alpha that we should use
 float GLCompatibilityRenderer::GetAlphaMultiplier(void)
 {

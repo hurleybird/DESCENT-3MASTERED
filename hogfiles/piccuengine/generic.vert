@@ -11,8 +11,12 @@ layout(location = 0) in vec3 position;
 layout(location = 1) in vec4 color;
 layout(location = 2) in vec3 uv;
 layout(location = 3) in vec3 uv2;
+layout(location = 4) in vec4 normal;
+
+uniform int phong_enabled;
 
 out vec4 outcolor;
+out vec4 outnormal;
 #if defined(USE_TEXTURING)
 out vec3 outuv;
 #if defined(USE_LIGHTMAP)
@@ -27,6 +31,7 @@ void main()
 {
 	gl_Position = commons.projection * commons.modelview * vec4(position, 1.0);
 	outcolor = color;
+	outnormal = normal;
 	#if defined(USE_TEXTURING)
 		outuv = uv;
 		#if defined(USE_LIGHTMAP)

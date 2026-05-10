@@ -364,6 +364,7 @@ void SaveGameSettings()
 	Database->write("RS_antialiased", Render_preferred_state.antialised);
 	Database->write("RS_msaa_samples", Render_preferred_state.msaa_samples);
 	Database->write("RS_supersampling", Render_preferred_state.supersampling_factor);
+	Database->write("RS_per_pixel_lighting", Render_preferred_state.per_pixel_lighting);
 
 	Database->write("Dynamic_Lighting",Detail_settings.Dynamic_lighting);
 
@@ -477,6 +478,7 @@ void LoadGameSettings()
 	Render_preferred_state.antialised = false;
 	Render_preferred_state.msaa_samples = 0;
 	Render_preferred_state.supersampling_factor = 1;
+	Render_preferred_state.per_pixel_lighting = false;
 	Hud_text_scale = 1.0f;
 	PreferredRenderer = RENDERER_NONE;
 
@@ -587,6 +589,7 @@ void LoadGameSettings()
 	tempint = Render_preferred_state.supersampling_factor;
 	Database->read_int("RS_supersampling", &tempint);
 	Render_preferred_state.supersampling_factor = (ubyte)ConfigNormalizeSupersamplingFactor(tempint);
+	Database->read("RS_per_pixel_lighting", &Render_preferred_state.per_pixel_lighting);
 	// force feedback stuff
 	Database->read("EnableJoystickFF",&D3Use_force_feedback);
 	Database->read("ForceFeedbackAutoCenter",&D3Force_auto_center);

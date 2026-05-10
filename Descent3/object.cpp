@@ -1986,6 +1986,21 @@ void ObjDoFrame(object* obj)
 	Frametime = save_frametime;
 }
 
+void ObjDoLightingFrameAll()
+{
+	for (int i = 0; i <= Highest_object_index; i++)
+	{
+		object* objp = &Objects[i];
+		if ((objp->type != OBJ_NONE) && !(objp->flags & OF_DEAD))
+		{
+			DoObjectLight(objp);
+			objp->flags &= ~OF_RENDERED;
+		}
+	}
+
+	BlendAllLightingEdges();
+}
+
 int	Max_used_objects = MAX_OBJECTS - 20;
 float Last_position_history_update[MAX_POSITION_HISTORY];//gametime of the last position history update of the object
 float Last_position_history_update_time = 0.0f;
