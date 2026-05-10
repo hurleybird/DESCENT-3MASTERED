@@ -251,23 +251,26 @@ void GLCompatibilityRenderer::Flip(void)
 	OpenGL_polys_drawn = 0;
 	OpenGL_verts_processed = 0;
 
-	//[ISB] remove the BlitToRaw call so I can hack around drivers that do things like forced antialiasing that cause an otherwise valid operation to stop working.
+	Framebuffer* present_framebuffer = &framebuffers[framebuffer_current_draw];
+	int supersampling_factor = SupersamplingFactor();
+	if (supersampling_factor >= 4)
+	{
+		framebuffers[framebuffer_current_draw].BlitToRaw(downscale_framebuffer.Handle(), 0, 0,
+			downscale_framebuffer.Width(), downscale_framebuffer.Height(), GL_LINEAR);
+		downscale_framebuffer.BlitToRaw(resolved_framebuffer.Handle(), 0, 0,
+			resolved_framebuffer.Width(), resolved_framebuffer.Height(), GL_LINEAR);
+		present_framebuffer = &resolved_framebuffer;
+	}
+	else if (supersampling_factor >= 2)
+	{
+		framebuffers[framebuffer_current_draw].BlitToRaw(resolved_framebuffer.Handle(), 0, 0,
+			resolved_framebuffer.Width(), resolved_framebuffer.Height(), GL_LINEAR);
+		present_framebuffer = &resolved_framebuffer;
+	}
+
 	blitshader.Use();
-	if (RendererUsesTwoPassSupersampling(OpenGL_preferred_state))
-	{
-		glUniform1f(blitshader_gamma, 1.f);
-		glUniform1i(blitshader_resolve_samples, 2);
-		framebuffers[framebuffer_current_draw].BlitTo(downscale_framebuffer.Handle(), 0, 0,
-			FramebufferWidth() / 2, FramebufferHeight() / 2, false);
-		glUniform1f(blitshader_gamma, 1.f / OpenGL_preferred_state.gamma);
-		downscale_framebuffer.BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
-	}
-	else
-	{
-		glUniform1i(blitshader_resolve_samples, SupersamplingFactor() > 1 ? 2 : 1);
-		framebuffers[framebuffer_current_draw].BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h,
-			false);
-	}
+	glUniform1f(blitshader_gamma, 1.f / OpenGL_preferred_state.gamma);
+	present_framebuffer->BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
 	ShaderProgram::ClearBinding();
 
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
@@ -930,9 +933,28 @@ void GLCompatibilityRenderer::Screenshot(int bm_handle)
 
 	dest_data = bm_data(bm_handle, 0);
 
-	framebuffers[framebuffer_current_draw].BindForRead();
+	int supersampling_factor = SupersamplingFactor();
+	if (supersampling_factor >= 4)
+	{
+		framebuffers[framebuffer_current_draw].BlitToRaw(downscale_framebuffer.Handle(), 0, 0,
+			downscale_framebuffer.Width(), downscale_framebuffer.Height(), GL_LINEAR);
+		downscale_framebuffer.BlitToRaw(resolved_framebuffer.Handle(), 0, 0,
+			resolved_framebuffer.Width(), resolved_framebuffer.Height(), GL_LINEAR);
+		resolved_framebuffer.BindForRead();
+	}
+	else if (supersampling_factor >= 2)
+	{
+		framebuffers[framebuffer_current_draw].BlitToRaw(resolved_framebuffer.Handle(), 0, 0,
+			resolved_framebuffer.Width(), resolved_framebuffer.Height(), GL_LINEAR);
+		resolved_framebuffer.BindForRead();
+	}
+	else
+	{
+		framebuffers[framebuffer_current_draw].BindForRead();
+	}
 	glReadPixels(0, 0, OpenGL_state.screen_width, OpenGL_state.screen_height, GL_RGBA, GL_UNSIGNED_BYTE, (GLvoid*)temp_data);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
 
 	for (i = 0; i < h; i++)
 	{
@@ -957,8 +979,14 @@ void GLCompatibilityRenderer::UpdateFramebuffer(void)
 	{
 		framebuffers[i].Update(FramebufferWidth(), FramebufferHeight(), RendererMsaaSamples(OpenGL_preferred_state));
 	}
-	if (RendererUsesTwoPassSupersampling(OpenGL_preferred_state))
-		downscale_framebuffer.Update(FramebufferWidth() / 2, FramebufferHeight() / 2, 0);
+	int supersampling_factor = SupersamplingFactor();
+	if (supersampling_factor >= 2)
+		resolved_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
+	else
+		resolved_framebuffer.Destroy();
+
+	if (supersampling_factor >= 4)
+		downscale_framebuffer.Update(OpenGL_state.screen_width * 2, OpenGL_state.screen_height * 2, 0);
 	else
 		downscale_framebuffer.Destroy();
 
@@ -980,6 +1008,7 @@ void GLCompatibilityRenderer::CloseFramebuffer(void)
 	{
 		framebuffers[i].Destroy();
 	}
+	resolved_framebuffer.Destroy();
 	downscale_framebuffer.Destroy();
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);

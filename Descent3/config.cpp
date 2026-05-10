@@ -103,7 +103,7 @@ tDetailSettings Detail_settings;
 int Default_detail_level = DETAIL_LEVEL_MED;
 
 // toggles specified in general settings.
-tGameToggles Game_toggles = 
+tGameToggles Game_toggles =
 {
 	true,
 	false,
@@ -627,7 +627,7 @@ struct video_menu
 		sheet->AddRadioButton("8x");
 		*antialiasing = iTemp;
 
-		sheet->NewGroup("Supersampling", 184, 110);
+		sheet->NewGroup("SSAA", 184, 110);
 		supersampling = sheet->AddFirstRadioButton(TXT_OFF);
 		sheet->AddRadioButton("2x");
 		sheet->AddRadioButton("4x");
@@ -660,7 +660,7 @@ struct video_menu
 
 		Render_FOV_desired = fov[0] + D3_DEFAULT_FOV;
 		if (Render_FOV != Render_FOV_desired)
-			Render_FOV = Render_FOV_desired; //this may cause discontinuities if FOV is changed while zoomed. hmm. 
+			Render_FOV = Render_FOV_desired; //this may cause discontinuities if FOV is changed while zoomed. hmm.
 
 		if (window_width != Game_window_res_width ||
 			window_height != Game_window_res_height ||
@@ -805,7 +805,7 @@ struct sound_menu
 		musicvolume = sheet->AddSlider(TXT_SNDMUSVOL, 10, (short)(D3MusicGetVolume() * 10), &slider_set);
 
 		// sound fx quality radio list.
-		if (GetFunctionMode() != GAME_MODE && GetFunctionMode() != EDITOR_GAME_MODE) 
+		if (GetFunctionMode() != GAME_MODE && GetFunctionMode() != EDITOR_GAME_MODE)
 		{
 			sheet->NewGroup(TXT_SNDQUALITY, 0, 95);
 
@@ -1301,14 +1301,14 @@ void OptionsMenu()
 
 	while (state != 2)
 	{
-		if (state == 1) 
+		if (state == 1)
 		{
 			// enter controller config menu
 			mprintf((0, "CONTROLLER CONFIG MENU HERE!\n"));
 			CtlConfig(CTLCONFIG_KEYBOARD);
 			state = 0;									// goto options menu.
 		}
-		else 
+		else
 		{
 			// open menu
 

@@ -450,9 +450,6 @@ int GLCompatibilityRenderer::Init(oeApplication* app, renderer_preferred_state* 
 	blitshader_gamma = blitshader.FindUniform("gamma");
 	if (blitshader_gamma == -1)
 		Error("rend_Init: Failed to find gamma uniform!");
-	blitshader_resolve_samples = blitshader.FindUniform("resolve_samples");
-	if (blitshader_resolve_samples == -1)
-		Error("rend_Init: Failed to find resolve_samples uniform!");
 
 
 	//[ISB] moved here.. stupid.

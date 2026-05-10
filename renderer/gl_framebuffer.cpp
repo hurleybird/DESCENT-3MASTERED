@@ -221,7 +221,7 @@ void Framebuffer::SubColorBlit()
 	}
 }
 
-void Framebuffer::BlitToRaw(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h)
+void Framebuffer::BlitToRaw(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, GLenum filter)
 {
 	SubColorBlit();
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
@@ -238,7 +238,7 @@ void Framebuffer::BlitToRaw(GLuint target, unsigned int x, unsigned int y, unsig
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	glBlitFramebuffer(0, 0, m_width, m_height,
-		x, y, x + w, y + h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		x, y, x + w, y + h, GL_COLOR_BUFFER_BIT, filter);
 }
 
 void Framebuffer::BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, bool linear_filter)

@@ -64,6 +64,7 @@ class GLCompatibilityRenderer : public IRenderer
 	bool Fast_test_render = false;
 
 	Framebuffer framebuffers[NUM_GL1_FBOS];
+	Framebuffer resolved_framebuffer;
 	Framebuffer downscale_framebuffer;
 	int framebuffer_current_draw = 0;
 
@@ -71,7 +72,6 @@ class GLCompatibilityRenderer : public IRenderer
 
 	ShaderProgram blitshader;
 	GLint blitshader_gamma = -1;
-	GLint blitshader_resolve_samples = -1;
 
 	int OpenGL_last_frame_polys_drawn = 0;
 	int OpenGL_last_frame_verts_processed = 0;

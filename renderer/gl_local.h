@@ -72,6 +72,7 @@ class GL3Renderer : public IRenderer
 	bool Fast_test_render = false;
 
 	Framebuffer framebuffers[NUM_GL3_FBOS];
+	Framebuffer resolved_framebuffer;
 	Framebuffer downscale_framebuffer;
 	int framebuffer_current_draw = 0;
 
@@ -81,7 +82,6 @@ class GL3Renderer : public IRenderer
 	//Temp shader to test the shader systems.
 	ShaderProgram testshader;
 	GLint blitshader_gamma = -1;
-	GLint blitshader_resolve_samples = -1;
 
 	int OpenGL_last_frame_polys_drawn = 0;
 	int OpenGL_last_frame_verts_processed = 0;

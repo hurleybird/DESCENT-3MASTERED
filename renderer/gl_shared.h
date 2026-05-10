@@ -111,7 +111,7 @@ public:
 	void Destroy();
 	//Blits to the target framebuffer using glBlitFramebuffer.
 	//Will set current read framebuffer to m_name.
-	void BlitToRaw(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
+	void BlitToRaw(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, GLenum filter = GL_NEAREST);
 	//Blits to the target framebuffer using a draw. Bind desired shader before calling.
 	//Will set current read framebuffer to m_name. Will not trash viewport.
 	void BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, bool linear_filter = false);
@@ -124,12 +124,17 @@ public:
 	{
 		return m_name;
 	}
-};
 
-inline bool RendererUsesTwoPassSupersampling(const renderer_preferred_state& state)
-{
-	return state.supersampling_factor >= 4;
-}
+	uint32_t Width() const
+	{
+		return m_width;
+	}
+
+	uint32_t Height() const
+	{
+		return m_height;
+	}
+};
 
 inline int RendererSupersamplingFactor(const renderer_preferred_state& state)
 {

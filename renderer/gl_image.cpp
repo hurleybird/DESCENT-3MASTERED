@@ -275,17 +275,6 @@ void GL3Renderer::MakeFilterTypeCurrent(int handle, int map_type, int tn)
 		Last_texel_unit_set = tn;
 	}
 
-	float lod_bias = 0.0f;
-	if (map_type != MAP_TYPE_LIGHTMAP && dest_mip)
-	{
-		int supersampling_factor = SupersamplingFactor();
-		if (supersampling_factor >= 4)
-			lod_bias = 2.0f;
-		else if (supersampling_factor >= 2)
-			lod_bias = 1.0f;
-	}
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, lod_bias);
-
 	if (magf == dest_filter && mmip == dest_mip)
 		return;
 

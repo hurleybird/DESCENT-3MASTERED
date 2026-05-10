@@ -626,9 +626,6 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	blitshader_gamma = blitshader.FindUniform("gamma");
 	if (blitshader_gamma == -1)
 		Error("GLRenderer::Init: Failed to find gamma uniform!");
-	blitshader_resolve_samples = blitshader.FindUniform("resolve_samples");
-	if (blitshader_resolve_samples == -1)
-		Error("GLRenderer::Init: Failed to find resolve_samples uniform!");
 
 	//Simple shader for testing, before everything is made to use shaders.
 	extern const char* testVertexSrc;
