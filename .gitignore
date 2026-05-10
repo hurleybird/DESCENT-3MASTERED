@@ -398,6 +398,14 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+.idea/
+
+# Local Codex/build helper files
+/build_piccuengine.bat
+build-codex*/
+
+# Generated CMake build trees
+/out/
 
 # Want to keep these around but don't want to keep them in repo
 libacm/libacmold.cpp
