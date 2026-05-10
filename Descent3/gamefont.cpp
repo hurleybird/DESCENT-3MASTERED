@@ -85,11 +85,16 @@ void LoadAllFonts()
 
 //If screen width greater than this, use the superhires fonts
 #define SUPERHIRES_THRESHOLD_W		1024
+#define SUPERHIRES_THRESHOLD_H		720
 
-//Set the HUD font resolution based on the render width
-void SelectHUDFont(int rend_width)
+//Set the HUD font resolution based on the render size
+void SelectHUDFont(int rend_width, int rend_height)
 {
-	int fontres = (rend_width >= SUPERHIRES_THRESHOLD_W) ? HUD_FONT_HIGHRES : HUD_FONT_LOWRES;
+	int hud_reference_width = rend_height * 4 / 3;
+	if (hud_reference_width > rend_width)
+		hud_reference_width = rend_width;
+
+	int fontres = (hud_reference_width >= SUPERHIRES_THRESHOLD_W || rend_height >= SUPERHIRES_THRESHOLD_H) ? HUD_FONT_HIGHRES : HUD_FONT_LOWRES;
 
 	if (fontres == HUD_font_resolution)
 		return;

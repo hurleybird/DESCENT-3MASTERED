@@ -477,6 +477,7 @@ void LoadGameSettings()
 	Render_preferred_state.antialised = false;
 	Render_preferred_state.msaa_samples = 0;
 	Render_preferred_state.supersampling_factor = 1;
+	Hud_text_scale = 1.0f;
 	PreferredRenderer = RENDERER_NONE;
 
 
@@ -537,6 +538,13 @@ void LoadGameSettings()
 		Detail_settings.Terrain_render_distance = strtod(tempbuffer,&stoptemp) * TERRAIN_SIZE;
 	}
 	templen = TEMPBUFFERSIZE;
+	int hud_text_scale_arg = FindArg("-hudtextscale");
+	if (!hud_text_scale_arg)
+		hud_text_scale_arg = FindArg("-hud-text-scale");
+	if (hud_text_scale_arg && GameArgs[hud_text_scale_arg + 1][0])
+	{
+		Hud_text_scale = ConfigNormalizeHudTextScale(strtod(GameArgs[hud_text_scale_arg + 1], &stoptemp));
+	}
 	Database->read_int("Dynamic_Lighting",&Detail_settings.Dynamic_lighting);
 	
 #ifdef _DEBUG

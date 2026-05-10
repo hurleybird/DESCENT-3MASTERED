@@ -200,6 +200,9 @@ float UIFrameTime = 0.0f;
 bool ui_MousePoll(bool buttons);
 bool ui_KeyPoll();
 void ui_UpdateWindows();
+void ToggleFullscreenMode();
+bool IsAltEnterFullscreenEnabled();
+bool IsAltEnterFullscreenKey(int key);
 //////////////////////////////////////////////////////////////////////////////
 //	FUNCTIONS
 //	call this function to initialize the UI system. pass a surface where all UI will occur
@@ -337,6 +340,12 @@ bool ui_KeyPoll()
 {
 	int key;
 	key = ddio_KeyInKey();
+	if (IsAltEnterFullscreenEnabled() && IsAltEnterFullscreenKey(key))
+	{
+		ToggleFullscreenMode();
+		ui_KeyFlush();
+		return false;
+	}
 	if (key == KEY_PRINT_SCREEN) 
 		UI_input.printscreen = true;
 	UI_input.last_key = UI_input.key;

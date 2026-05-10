@@ -56,7 +56,7 @@ extern int Game_fonts[];				// D3 font handles
 //	loads all game fonts.
 void LoadAllFonts();
 
-//Set the HUD font resolution based on the render width
-void SelectHUDFont(int rend_with);
+//Set the HUD font resolution based on the render size
+void SelectHUDFont(int rend_width, int rend_height);
 
 #endif

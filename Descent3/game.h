@@ -53,6 +53,10 @@ const int	SM_NULL			= 0,
 
 void SetScreenMode(int sm, bool force_res_change=false);
 int GetScreenMode();
+void ToggleFullscreenMode();
+bool IsAltEnterFullscreenEnabled();
+bool IsAltEnterFullscreenKey(int key);
+void ForceFullGameWindowOnNextGameMode();
 
 //	ALWAYS CALL THESE TO START AND END RENDERING
 void StartFrame(bool clear = false); //[ISB] Don't default to clear because the expectation was that the clear parameter did literally nothing heh

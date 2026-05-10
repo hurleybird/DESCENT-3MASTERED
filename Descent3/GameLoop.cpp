@@ -470,6 +470,12 @@ void ProcessGuidebotKeys(int key)
 
 void ProcessNormalKey(int key)
 {
+	if (IsAltEnterFullscreenEnabled() && IsAltEnterFullscreenKey(key))
+	{
+		ToggleFullscreenMode();
+		return;
+	}
+
 	//First do keys that work normally even when dead
 	switch (key) {
 
@@ -2689,4 +2695,3 @@ void EndGameMenu()
 	SetUICallback(NULL);
 	Clear_screen = 4;
 }
-

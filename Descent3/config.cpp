@@ -97,6 +97,7 @@ struct newVideoResolution
 int Game_video_resolution = 1;
 int Game_window_res_width = 640, Game_window_res_height = 480;
 bool Game_fullscreen = false;
+float Hud_text_scale = 1.0f;
 float Render_FOV_desired = 72;
 
 tDetailSettings Detail_settings;
@@ -119,6 +120,15 @@ int ConfigNormalizeSupersamplingFactor(int factor)
 	if (factor >= 2)
 		return 2;
 	return 1;
+}
+
+float ConfigNormalizeHudTextScale(float scale)
+{
+	if (scale < 0.75f)
+		return 0.75f;
+	if (scale > 1.5f)
+		return 1.5f;
+	return scale;
 }
 
 static int SupersamplingFactorToIndex(int factor)
@@ -705,8 +715,10 @@ struct video_menu
 			Game_window_res_width = window_width;
 			Game_window_res_height = window_height;
 
+			ForceFullGameWindowOnNextGameMode();
 			SetScreenMode(GetScreenMode(), true);
-			Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
+			if (GetScreenMode() == SM_GAME)
+				Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
 		}
 		else
 		{

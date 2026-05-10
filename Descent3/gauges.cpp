@@ -20,6 +20,7 @@
 #include "gamefont.h"
 #include "hud.h"
 #include "game.h"
+#include "config.h"
 #include "renderer.h"
 #include "render.h"
 #include "player.h"
@@ -237,11 +238,11 @@ void RenderGauges(vector* cockpit_pos, matrix* cockpit_mat, float* normalized_ti
 	font_aspect_y = (float)Game_window_h / Max_window_h;
 
 	if (font_aspect_x <= 0.60)
-		grtext_SetFontScale(0.60f);
+		grtext_SetFontScale(0.60f * ConfigNormalizeHudTextScale(Hud_text_scale));
 	else if (font_aspect_x <= 0.80)
-		grtext_SetFontScale(0.80f);
+		grtext_SetFontScale(0.80f * ConfigNormalizeHudTextScale(Hud_text_scale));
 	else
-		grtext_SetFontScale(1.0f);
+		grtext_SetFontScale(ConfigNormalizeHudTextScale(Hud_text_scale));
 
 	if (Gauge_mask & STAT_PRIMARYLOAD)
 	{

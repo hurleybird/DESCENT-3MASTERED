@@ -346,7 +346,7 @@ int oeWin32Application::defer_block()
 	if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
 		if (msg.message == WM_QUIT) {
 		//	QUIT APP.
-			exit(1);
+			exit(0);
 		}
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
@@ -672,8 +672,10 @@ LRESULT WINAPI MyWndProc( HWND hWnd,UINT msg,UINT wParam,LPARAM lParam)
 			lpCreateStruct = (LPCREATESTRUCT)lParam;
 			for (i = 0; i < MAX_WIN32APPS; i++) 
 				if (Win32_AppObjects[i].hWnd == NULL) break;
-			if (i == MAX_WIN32APPS) 
+			if (i == MAX_WIN32APPS) {
 				debug_break();
+				return DefWindowProc(hWnd, msg, wParam, lParam);
+			}
 			Win32_AppObjects[i].hWnd = hWnd;
 			Win32_AppObjects[i].app = (oeWin32Application *)lpCreateStruct->lpCreateParams;
 
@@ -682,14 +684,19 @@ LRESULT WINAPI MyWndProc( HWND hWnd,UINT msg,UINT wParam,LPARAM lParam)
 			force_default = true;
 			break;
 
+		case WM_CLOSE:
+			DestroyWindow(hWnd);
+			return 0;
+
 		case WM_DESTROY:
 		//	get window handle and clear it.
-			if (i == MAX_WIN32APPS) 
-				debug_break();
-			Win32_AppObjects[i].hWnd = NULL;
-			Win32_AppObjects[i].app = NULL;
+			if (i != -1) {
+				Win32_AppObjects[i].hWnd = NULL;
+				Win32_AppObjects[i].app = NULL;
+			}
 			i = -1;
-			break;
+			PostQuitMessage(0);
+			return 0;
 
 		case WM_SYSCOMMAND:
 		// bypass screen saver and system menu.
@@ -701,7 +708,7 @@ LRESULT WINAPI MyWndProc( HWND hWnd,UINT msg,UINT wParam,LPARAM lParam)
 
 		case WM_SYSKEYDOWN:
 		case WM_SYSKEYUP:
-			if (lParam & 0x20000000) 
+			if ((lParam & 0x20000000) && wParam != VK_F4 && wParam != VK_RETURN)
 				return 0;
 			break;
 

@@ -111,11 +111,17 @@ void RenderZoomReticle();
 
 //	functions in HudDisplay.cpp 
 extern void HudDisplayRouter(tHUDItem* item);
+extern void RenderHUDBeginTextPass();
+extern void RenderHUDEndTextPass();
+extern void RenderHUDSetTextPassItemType(int item_type);
+extern bool RenderHUDGetTopLeftTextAnchor(int* x, int* y);
 
 bool Hud_show_controls = false;
-
+static bool HUD_score_pending_aux = false;
 
 //////////////////////////////////////////////////////////////////////////////
+
+static void RenderHUDItemList(tStatMask stat_mask, int small_filter);
 
 //	initializes hud.
 void InitHUD()
@@ -1041,7 +1047,6 @@ void RenderAuxHUDFrame()
 		int cur_game_win_h = Game_window_h;
 		int cur_game_win_x = Game_window_x;
 		int cur_game_win_y = Game_window_y;
-		int i;
 		ushort stat_mask = Hud_stat_mask;
 
 		// emulating hud that takes up entire screen
@@ -1054,16 +1059,7 @@ void RenderAuxHUDFrame()
 		Hud_aspect_x = (float)Game_window_w / DEFAULT_HUD_WIDTH;
 		Hud_aspect_y = (float)Game_window_h / DEFAULT_HUD_HEIGHT;
 
-		for (i = 0; i < MAX_HUD_ITEMS; i++)
-		{
-			if ((stat_mask & HUD_array[i].stat) && (HUD_array[i].flags & HUD_FLAG_SMALL))
-			{
-				if (!HUD_array[i].render_fn)
-					HudDisplayRouter(&HUD_array[i]);
-				else
-					(*HUD_array[i].render_fn)(&HUD_array[i]);
-			}
-		}
+		RenderHUDItemList(stat_mask, 1);
 
 		// messages.
 		if ((stat_mask & STAT_MESSAGES))
@@ -1154,6 +1150,65 @@ void DoEnabledControlsLine(char* controlp, char* keyp, char* label, int y, char*
 
 }
 
+static void RenderHUDItem(tHUDItem* item)
+{
+	RenderHUDSetTextPassItemType(item->type);
+
+	if (!item->render_fn)
+		HudDisplayRouter(item);
+	else
+		(*item->render_fn)(item);
+
+	RenderHUDSetTextPassItemType(0);
+}
+
+static void RenderHUDItemList(tStatMask stat_mask, int small_filter)
+{
+	tHUDItem* score_item = NULL;
+	bool score_item_matches_filter = false;
+
+	RenderHUDBeginTextPass();
+
+	for (int i = 0; i < MAX_HUD_ITEMS; i++)
+	{
+		bool is_small_item = (HUD_array[i].flags & HUD_FLAG_SMALL) != 0;
+		if (!(stat_mask & HUD_array[i].stat))
+			continue;
+		if (HUD_array[i].type == HUD_ITEM_SCORE)
+		{
+			score_item = &HUD_array[i];
+			score_item_matches_filter = small_filter < 0 ||
+				(small_filter == 0 && !is_small_item) ||
+				(small_filter == 1 && is_small_item);
+			continue;
+		}
+		if (small_filter == 0 && is_small_item)
+			continue;
+		if (small_filter == 1 && !is_small_item)
+			continue;
+
+		RenderHUDItem(&HUD_array[i]);
+	}
+
+	if (score_item)
+	{
+		bool defer_score_to_aux = Small_hud_flag && small_filter == 0 && !RenderHUDGetTopLeftTextAnchor(NULL, NULL);
+		bool render_deferred_score = small_filter == 1 && HUD_score_pending_aux;
+
+		if ((score_item_matches_filter && !defer_score_to_aux) || render_deferred_score)
+		{
+			RenderHUDItem(score_item);
+			HUD_score_pending_aux = false;
+		}
+		else if (score_item_matches_filter && defer_score_to_aux)
+		{
+			HUD_score_pending_aux = true;
+		}
+	}
+
+	RenderHUDEndTextPass();
+}
+
 extern bool Demo_make_movie;
 
 #define HUD_KEYS_NEXT_LINE	hudconty+=14
@@ -1167,7 +1222,8 @@ void RenderHUDItems(tStatMask stat_mask)
 	static float framerate_timer = 0;
 	static double last_fps;
 	float font_aspect_x, font_aspect_y;
-	int i;
+
+	HUD_score_pending_aux = false;
 
 	grtext_Reset();
 	grtext_SetFont(HUD_FONT);
@@ -1185,11 +1241,11 @@ void RenderHUDItems(tStatMask stat_mask)
 	}
 
 	if (font_aspect_y <= 0.60f)
-		grtext_SetFontScale(0.60f * extra_scale);
+		grtext_SetFontScale(0.60f * extra_scale * ConfigNormalizeHudTextScale(Hud_text_scale));
 	else if (font_aspect_y <= 0.80f)
-		grtext_SetFontScale(0.80f * extra_scale);
+		grtext_SetFontScale(0.80f * extra_scale * ConfigNormalizeHudTextScale(Hud_text_scale));
 	else
-		grtext_SetFontScale(extra_scale);
+		grtext_SetFontScale(extra_scale * ConfigNormalizeHudTextScale(Hud_text_scale));
 
 	//	do framerate calculations
 	framerate_timer -= Frametime;
@@ -1243,19 +1299,7 @@ void RenderHUDItems(tStatMask stat_mask)
 #endif
 
 	//	render hud array list.
-	for (i = 0; i < MAX_HUD_ITEMS; i++)
-	{
-		if ((HUD_array[i].flags & HUD_FLAG_SMALL) && Small_hud_flag) {
-			continue;		// skip items renderered differently on a small hud if we are in a small hud (see RenderAUXHUDFrame)
-		}
-		if ((stat_mask & HUD_array[i].stat))
-		{
-			if (!HUD_array[i].render_fn)
-				HudDisplayRouter(&HUD_array[i]);
-			else
-				(*HUD_array[i].render_fn)(&HUD_array[i]);
-		}
-	}
+	RenderHUDItemList(stat_mask, Small_hud_flag ? 0 : -1);
 	if (Demo_flags == DF_RECORDING)
 	{
 		RenderHUDTextFlags(HUDTEXT_CENTERED, GR_BLUE, HUD_ALPHA, 0, 10, 300, TXT_RECORDINGDEMO);

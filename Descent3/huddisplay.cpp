@@ -84,6 +84,53 @@ inline int get_weapon_icon(int player, int type)
 
 void RenderHUDTextFlagsNoFormat(int flags, ddgr_color col, ubyte alpha, int sat_count, int x, int y, char* str);
 
+enum tHUDTextAlign
+{
+	HUD_TEXT_LEFT,
+	HUD_TEXT_CENTER,
+	HUD_TEXT_RIGHT
+};
+
+static bool HUD_text_pass_active = false;
+static int HUD_text_pass_item_type = 0;
+static int HUD_top_left_text_anchor_priority = 0;
+static bool HUD_top_left_text_anchor_valid = false;
+static int HUD_top_left_text_anchor_x = 0;
+static int HUD_top_left_text_anchor_y = 0;
+
+void RenderHUDBeginTextPass()
+{
+	HUD_text_pass_active = true;
+	HUD_text_pass_item_type = 0;
+	HUD_top_left_text_anchor_priority = 0;
+	HUD_top_left_text_anchor_valid = false;
+}
+
+void RenderHUDEndTextPass()
+{
+	HUD_text_pass_active = false;
+	HUD_text_pass_item_type = 0;
+	HUD_top_left_text_anchor_priority = 0;
+}
+
+void RenderHUDSetTextPassItemType(int item_type)
+{
+	HUD_text_pass_item_type = item_type;
+}
+
+bool RenderHUDGetTopLeftTextAnchor(int* x, int* y)
+{
+	if (!HUD_top_left_text_anchor_valid)
+		return false;
+
+	if (x)
+		*x = HUD_top_left_text_anchor_x;
+	if (y)
+		*y = HUD_top_left_text_anchor_y;
+
+	return true;
+}
+
 //////////////////////////////////////////////////////////////////////////////
 //	Hud item display routines.
 
@@ -710,47 +757,119 @@ void RenderHUDCountermeasures(tHUDItem* item)
 //////////////////////////////////////////////////////////////////////////////
 //	Hud rendering functions
 
-extern tFontTemplate Hud_font_template;					// retain hud font template
+static int HUDTextToScreenX(int x)
+{
+	return HUD_X(x);
+}
+
+static int HUDTextToScreenY(int y)
+{
+	return HUD_Y(y);
+}
+
+static int HUDTextScreenWidth(const char* string)
+{
+	return grtext_GetTextLineWidth(string);
+}
+
+static int HUDTextScreenHeight(const char* string)
+{
+	return grtext_GetHeight(string);
+}
+
+static int HUDTextVirtualWidth(const char* string)
+{
+	if (Hud_aspect_x <= 0.0f)
+		return HUDTextScreenWidth(string);
+
+	return (int)((HUDTextScreenWidth(string) / Hud_aspect_x) + 0.5f);
+}
+
+static int HUDTextVirtualHeight(const char* string)
+{
+	if (Hud_aspect_y <= 0.0f)
+		return HUDTextScreenHeight(string);
+
+	return (int)((HUDTextScreenHeight(string) / Hud_aspect_y) + 0.5f);
+}
+
+static void HUDTextApplyStyle(ddgr_color col, ubyte alpha, int sat_count)
+{
+	grtext_SetAlpha(alpha);
+	grtext_SetFlags(sat_count ? GRTEXTFLAG_SATURATE : 0);
+	grtext_SetColor(col);
+}
+
+static int HUDTextAnchorPriority()
+{
+	switch (HUD_text_pass_item_type)
+	{
+	case HUD_ITEM_PRIMARY:
+		return 4;
+	case HUD_ITEM_INVENTORY:
+		return 3;
+	case HUD_ITEM_SECONDARY:
+		return 2;
+	case HUD_ITEM_CNTRMEASURE:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static void HUDTextRecordTopLeftAnchor(tHUDTextAlign align, int x, int y)
+{
+	if (!HUD_text_pass_active || align != HUD_TEXT_LEFT)
+		return;
+
+	if (x > (int)(DEFAULT_HUD_WIDTH / 2) || y > (int)(DEFAULT_HUD_HEIGHT / 2))
+		return;
+
+	int priority = HUDTextAnchorPriority();
+	if (!priority)
+		return;
+
+	if (!HUD_top_left_text_anchor_valid || priority > HUD_top_left_text_anchor_priority ||
+		(priority == HUD_top_left_text_anchor_priority &&
+			(y < HUD_top_left_text_anchor_y || (y == HUD_top_left_text_anchor_y && x < HUD_top_left_text_anchor_x))))
+	{
+		HUD_top_left_text_anchor_valid = true;
+		HUD_top_left_text_anchor_priority = priority;
+		HUD_top_left_text_anchor_x = x;
+		HUD_top_left_text_anchor_y = y;
+	}
+}
+
+static void RenderHUDTextNoFormatAligned(ddgr_color col, ubyte alpha, int sat_count, int x, int y, tHUDTextAlign align, const char* str)
+{
+	HUDTextApplyStyle(col, alpha, sat_count);
+
+	HUDTextRecordTopLeftAnchor(align, x, y);
+
+	int draw_x = HUDTextToScreenX(x);
+	int draw_y = HUDTextToScreenY(y);
+
+	if (align == HUD_TEXT_CENTER)
+		draw_x -= HUDTextScreenWidth(str) / 2;
+	else if (align == HUD_TEXT_RIGHT)
+		draw_x -= HUDTextScreenWidth(str);
+
+	draw_x = std::max(0, draw_x);
+
+	for (int i = 0; i < sat_count + 1; i++)
+		grtext_Puts(draw_x, draw_y, str);
+}
 
 // returns scaled line width
 int RenderHUDGetTextLineWidth(char* string)
 {
-	float aspect_x;
-	int str_width_curfont = grtext_GetLineWidth(string);
-
-	if (grtext_GetFont() == HUD_FONT)
-	{
-		aspect_x = ((float)grtext_GetLineWidthTemplate(&Hud_font_template, string)) / ((float)str_width_curfont);
-	}
-	else
-	{
-		aspect_x = 1.0f;
-	}
-
-	if (aspect_x == 1.0f)
-	{
-		aspect_x = aspect_x * DEFAULT_HUD_WIDTH / Max_window_w;
-	}
-
-	return (int)((str_width_curfont * aspect_x));
+	return HUDTextVirtualWidth(string);
 }
 
 // returns scaled text height
 int RenderHUDGetTextHeight(char* string)
 {
-	float aspect_y;
-	int str_height_curfont = grtext_GetHeight(string);
-
-	if (grtext_GetFont() == HUD_FONT)
-	{
-		aspect_y = ((float)grtext_GetHeightTemplate(&Hud_font_template, string)) / ((float)str_height_curfont);
-	}
-	else
-	{
-		aspect_y = 1.0f;
-	}
-
-	return (int)((str_height_curfont * aspect_y));
+	return HUDTextVirtualHeight(string);
 }
 
 void RenderHUDQuad(int x, int y, int w, int h, float u0, float v0, float u1, float v1, int bm, ubyte alpha, int sat_count)
@@ -796,29 +915,15 @@ void RenderHUDText(ddgr_color col, ubyte alpha, int sat_count, int x, int y, cha
 //	renders text, scaled, alphaed, saturated, 
 void RenderHUDTextFlagsNoFormat(int flags, ddgr_color col, ubyte alpha, int sat_count, int x, int y, char* str)
 {
-	grtext_SetAlpha(alpha);
+	tHUDTextAlign align = (flags & HUDTEXT_CENTERED) ? HUD_TEXT_CENTER : HUD_TEXT_LEFT;
+	if (align == HUD_TEXT_CENTER)
+		x = (int)(DEFAULT_HUD_WIDTH / 2);
 
-	if (sat_count)
-		grtext_SetFlags(GRTEXTFLAG_SATURATE);
-	else
-		grtext_SetFlags(0);
-
-	grtext_SetColor(col);
-
-	x = HUD_X(x);
-	y = HUD_Y(y);
-
-	for (int i = 0; i < sat_count + 1; i++)
-	{
-		if (flags & HUDTEXT_CENTERED)
-			grtext_CenteredPrintf(0, y, str);
-		else
-			grtext_Puts(x, y, str);
-	}
+	RenderHUDTextNoFormatAligned(col, alpha, sat_count, x, y, align, str);
 }
 
 
-//	renders text, scaled, alphaed, saturated, 
+//	renders screen-space text, alphaed, saturated.  Some reticle and training overlays pass screen coordinates here.
 void RenderHUDTextFlags(int flags, ddgr_color col, ubyte alpha, int sat_count, int x, int y, char* fmt, ...)
 {
 	va_list arglist;
@@ -828,18 +933,7 @@ void RenderHUDTextFlags(int flags, ddgr_color col, ubyte alpha, int sat_count, i
 	Pvsprintf(buf, 128, fmt, arglist);
 	va_end(arglist);
 
-	grtext_SetAlpha(alpha);
-
-	if (sat_count)
-		grtext_SetFlags(GRTEXTFLAG_SATURATE);
-	else
-		grtext_SetFlags(0);
-
-	grtext_SetColor(col);
-
-	// [ISB] Why is this adjustment here? We have a virtual coordinate system for grtext?
-	//x = HUD_X(x);
-	//y = HUD_Y(y);
+	HUDTextApplyStyle(col, alpha, sat_count);
 
 	for (int i = 0; i < sat_count + 1; i++)
 	{
@@ -848,6 +942,11 @@ void RenderHUDTextFlags(int flags, ddgr_color col, ubyte alpha, int sat_count, i
 		else
 			grtext_Puts(x, y, buf);
 	}
+}
+
+static void RenderHUDRightAlignedText(ddgr_color col, ubyte alpha, int sat_count, int right_x, int y, char* str)
+{
+	RenderHUDTextNoFormatAligned(col, alpha, sat_count, right_x, y, HUD_TEXT_RIGHT, str);
 }
 
 //Show the score
@@ -861,20 +960,23 @@ void RenderHUDScore(tHUDItem* item)
 			return;
 	}
 
-	sprintf(buf, "%s: %d ", TXT_SCORE, Players[Player_num].score);
-
-	//int win_w = Game_window_w;
-
-	int w = RenderHUDGetTextLineWidth(buf);// * win_w)/(Game_window_w);
-	RenderHUDText(item->color, HUD_ALPHA, 0, item->x - w, item->y, buf);
+	sprintf(buf, "%s: %d", TXT_SCORE, Players[Player_num].score);
+	int right_x = item->x;
+	int y = item->y;
+	int anchor_x, anchor_y;
+	if (RenderHUDGetTopLeftTextAnchor(&anchor_x, &anchor_y))
+	{
+		right_x = (int)DEFAULT_HUD_WIDTH - anchor_x;
+		y = anchor_y;
+	}
+	RenderHUDRightAlignedText(item->color, HUD_ALPHA, 0, right_x, y, buf);
 
 	if (Score_added_timer > 0.0)
 	{
-		int text_height = grfont_GetHeight(HUD_FONT);
-		sprintf(buf, "%d   ", Score_added);
-		w = RenderHUDGetTextLineWidth(buf);// * win_w/Game_window_w;
+		int text_height = RenderHUDGetTextHeight(buf);
+		sprintf(buf, "%d", Score_added);
 		ubyte alpha = std::min((double)HUD_ALPHA, HUD_ALPHA * 4 * Score_added_timer / SCORE_ADDED_TIME);
-		RenderHUDText(item->color, alpha, 0, item->x - w, item->y + text_height, buf);
+		RenderHUDRightAlignedText(item->color, alpha, 0, right_x, y + text_height, buf);
 		Score_added_timer -= Frametime;
 	}
 }
@@ -943,5 +1045,3 @@ void tDirtyRect::reset()
 		r[i].l = -1; r[i].t = -1; r[i].b = -1; r[i].r = -1;
 	}
 }
-
-

@@ -295,6 +295,43 @@ int GetScreenMode()
 	return Screen_mode;
 }
 
+static bool Force_full_game_window_on_next_game_mode = false;
+
+void ForceFullGameWindowOnNextGameMode()
+{
+	Force_full_game_window_on_next_game_mode = true;
+}
+
+bool IsAltEnterFullscreenEnabled()
+{
+	static int enabled = -1;
+
+	if (enabled == -1)
+		enabled = FindArg("-noaltenter") ? 0 : 1;
+
+	return enabled != 0;
+}
+
+bool IsAltEnterFullscreenKey(int key)
+{
+	int base_key = key & 0xff;
+	return (key & KEY_ALTED) && (base_key == KEY_ENTER || base_key == KEY_PADENTER);
+}
+
+void ToggleFullscreenMode()
+{
+	int screen_mode = GetScreenMode();
+	void (*old_callback)() = GetUICallback();
+
+	Game_fullscreen = !Game_fullscreen;
+	ForceFullGameWindowOnNextGameMode();
+	SetScreenMode(screen_mode, true);
+	if (screen_mode == SM_MENU && old_callback)
+		SetUICallback(old_callback);
+	if (GetScreenMode() == SM_GAME)
+		Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
+}
+
 static void NormalizeRenderScaleSettings()
 {
 	int factor = ConfigNormalizeSupersamplingFactor(Render_preferred_state.supersampling_factor);
@@ -458,7 +495,7 @@ void SetScreenMode(int sm, bool force_res_change)
 		rend_height = rs.screen_height;
 
 		//	chose font.
-		SelectHUDFont(rend_width);
+		SelectHUDFont(rend_width, rend_height);
 
 		//Setup the screen
 		Max_window_w = rend_width;
@@ -486,10 +523,11 @@ void SetScreenMode(int sm, bool force_res_change)
 		SetUICallback(NULL);
 		int gw, gh;
 		Current_pilot.get_hud_data(NULL, NULL, NULL, &gw, &gh);
-		if (force_res_change)
+		if (force_res_change || Force_full_game_window_on_next_game_mode)
 		{
 			gw = Max_window_w;
 			gh = Max_window_h;
+			Force_full_game_window_on_next_game_mode = false;
 		}
 		InitGameScreen(gw, gh);
 		// need to do this since the pilot w,h could change.
@@ -809,4 +847,3 @@ bool ShouldCaptureMouse()
 
 	return true;
 }
-

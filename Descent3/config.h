@@ -67,9 +67,11 @@ struct tVideoResolution
 extern int Game_video_resolution;
 extern int Game_window_res_width, Game_window_res_height;
 extern bool Game_fullscreen;
+extern float Hud_text_scale;
 //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
 extern int DesiredOpenGLProfile;
 int ConfigNormalizeSupersamplingFactor(int factor);
+float ConfigNormalizeHudTextScale(float scale);
 
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 //KEEP THESE MEMBERS IN THE SAME ORDER, IF YOU ADD,REMOVE, OR CHANGE ANYTHING IN THIS STRUCT, MAKE SURE YOU
