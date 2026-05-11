@@ -285,7 +285,6 @@ struct renderer_preferred_state
 	float hbao_radius;       //World-space sample radius in map units (1..16-ish)
 	float hbao_intensity;    //AO strength multiplier (0..4)
 	float hbao_bias;         //Angle bias (0..0.5)
-	bool debug_motion_vectors; //Fullscreen motion-vector debug visualization.
 };
 
 struct renderer_lfb
@@ -318,6 +317,7 @@ void rend_DrawPolygon2D(int handle,g3Point **p,int nv);
 void rend_BeginMotionObject(int object_handle, float screen_x, float screen_y);
 void rend_EndMotionObject();
 bool rend_ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y);
+void rend_SetHBAOSuppression(float value);
 
 // Tells the software renderer whether or not to use mipping
 void rend_SetMipState (sbyte state);

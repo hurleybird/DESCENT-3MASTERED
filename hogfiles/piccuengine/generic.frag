@@ -25,6 +25,7 @@ uniform float dynamic_light_radii[8];
 uniform vec3 dynamic_light_directions[8];
 uniform float dynamic_light_dot_ranges[8];
 uniform int dynamic_light_directional[8];
+uniform float hbao_suppression;
 
 in vec4 outcolor;
 in vec4 outnormal;
@@ -38,7 +39,8 @@ in vec3 outuv2;
 in vec3 outpt;
 #endif
 
-out vec4 color;
+layout(location = 0) out vec4 color;
+layout(location = 2) out vec4 hbao_mask;
 
 vec4 ApplyPhongLighting(vec4 source_color)
 {
@@ -93,6 +95,7 @@ vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 void main()
 {
 	vec4 vertex_color = ApplyPhongLighting(outcolor);
+	float suppression = 0.0;
 
 	#if defined(USE_SPECULAR)
 		color = vec4(vertex_color.rgb, texture(colortexture, outuv.xy / outuv.z).a * vertex_color.a);
@@ -105,9 +108,12 @@ void main()
 	#else
 		color = vertex_color;
 	#endif
+	suppression = clamp(hbao_suppression * color.a, 0.0, 1.0);
 	
 	#if defined(USE_FOG)
 		float mag = clamp((-outpt.z - fog.start_dist) / (fog.end_dist - fog.start_dist), 0, 1);
 		color = vec4(mix(color.rgb, fog.color.rgb, mag), color.a);
+		suppression = max(suppression, mag);
 	#endif
+	hbao_mask = vec4(suppression, 0.0, 0.0, 1.0);
 }

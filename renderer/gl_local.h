@@ -90,6 +90,7 @@ class GL3Renderer : public IRenderer
 	Framebuffer bloom_source_resolved_framebuffer;
 	Framebuffer bloom_source_downscale_framebuffer;
 	MotionVectorResources motion_vectors;
+	HBAOMaskResources hbao_mask;
 	int framebuffer_current_draw = 0;
 	bool bloom_source_valid = false;
 
@@ -98,7 +99,6 @@ class GL3Renderer : public IRenderer
 	ShaderProgram blitshader;
 	ShaderProgram downsampleshader;
 	ShaderProgram motionvectorshader;
-	ShaderProgram motiondebugshader;
 	BloomResources bloom;
 	HBAOResources hbao;
 	//Cached projection matrix and near/far for HBAO. Updated on every
@@ -155,7 +155,9 @@ class GL3Renderer : public IRenderer
 	GLint drawshader_dynamic_directions_uniforms[8] = {};
 	GLint drawshader_dynamic_dot_ranges_uniforms[8] = {};
 	GLint drawshader_dynamic_directional_uniforms[8] = {};
+	GLint drawshader_hbao_suppression_uniforms[8] = {};
 	int lastdrawshader = -1;
+	float hbao_suppression_draw_value = 0.0f;
 	vector per_pixel_light_direction = { 0, 0, -1 };
 	vector per_pixel_dynamic_face_normal = { 0, 0, 1 };
 	int per_pixel_dynamic_light_count = 0;
@@ -171,6 +173,7 @@ class GL3Renderer : public IRenderer
 	GLuint motionvector_vao = 0;
 	GLuint motionvector_vbo = 0;
 	bool motion_object_active = false;
+	bool motion_vectors_dirty = false;
 
 	//IMAGE
 	ubyte opengl_Framebuffer_ready = 0;
@@ -216,7 +219,7 @@ class GL3Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, HBAO_QUALITY_MEDIUM, HBAO_BLUR_MEDIUM, 4.0f, 1.0f, 0.1f, false };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, HBAO_QUALITY_MEDIUM, HBAO_BLUR_MEDIUM, 4.0f, 1.0f, 0.1f };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -447,6 +450,7 @@ public:
 	void BeginMotionObject(int object_handle, float screen_x, float screen_y) override;
 	void EndMotionObject() override;
 	bool ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y) override;
+	void SetHBAOSuppression(float value) override;
 
 	// Draws a scaled 2d bitmap to our buffer
 	// NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color

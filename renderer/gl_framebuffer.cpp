@@ -210,7 +210,16 @@ static int GetSupportedMsaaSamples(int requested_samples)
 		return 0;
 
 	GLint max_samples = 0;
+	GLint max_color_samples = 0;
+	GLint max_depth_samples = 0;
 	glGetIntegerv(GL_MAX_SAMPLES, &max_samples);
+	glGetIntegerv(GL_MAX_COLOR_TEXTURE_SAMPLES, &max_color_samples);
+	glGetIntegerv(GL_MAX_DEPTH_TEXTURE_SAMPLES, &max_depth_samples);
+
+	if (max_color_samples > 0 && max_color_samples < max_samples)
+		max_samples = max_color_samples;
+	if (max_depth_samples > 0 && max_depth_samples < max_samples)
+		max_samples = max_depth_samples;
 
 	for (int samples : { 8, 4, 2 })
 	{
@@ -219,6 +228,13 @@ static int GetSupportedMsaaSamples(int requested_samples)
 	}
 
 	return 0;
+}
+
+static void ClearFramebufferAllocationErrors()
+{
+	while (glGetError() != GL_NO_ERROR)
+	{
+	}
 }
 
 void Framebuffer::Update(int width, int height, int msaa_samples)
@@ -230,47 +246,68 @@ void Framebuffer::Update(int width, int height, int msaa_samples)
 	}
 
 	msaa_samples = GetSupportedMsaaSamples(msaa_samples);
-	bool msaa = msaa_samples > 1;
 
 	if (width == m_width && height == m_height && (uint32_t)msaa_samples == m_samples)
 		return;
 
-	//The solution to all problems with changing framebuffer status is to delete everything and start over.
-	if (!msaa && m_subname != 0)
+	int attempts[4] = { 0, 0, 0, 0 };
+	int attempt_count = 0;
+	for (int samples : { msaa_samples, 4, 2, 0 })
 	{
+		if (samples > msaa_samples)
+			continue;
+		bool duplicate = false;
+		for (int i = 0; i < attempt_count; i++)
+		{
+			if (attempts[i] == samples)
+				duplicate = true;
+		}
+		if (!duplicate)
+			attempts[attempt_count++] = samples;
+	}
+
+	for (int i = 0; i < attempt_count; i++)
+	{
+		int samples = attempts[i];
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		Destroy();
+		if (Allocate(width, height, samples))
+		{
+			if (samples != msaa_samples)
+				mprintf((0, "Framebuffer::Update: falling back from %dx MSAA to %dx MSAA for %dx%d framebuffer.\n",
+					msaa_samples, samples, width, height));
+			return;
+		}
+
+		mprintf((0, "Framebuffer::Update: %dx MSAA framebuffer incomplete for %dx%d, trying lower sample count.\n",
+			samples, width, height));
+		ClearFramebufferAllocationErrors();
 	}
-	else if (msaa && m_name != 0 && m_subname == 0)
-	{
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		Destroy();
-	}
+
+	Destroy();
+	Error("Framebuffer::Update: Framebuffer object is incomplete!");
+}
+
+bool Framebuffer::Allocate(int width, int height, int msaa_samples)
+{
+	bool msaa = msaa_samples > 1;
 
 	m_width = width;
 	m_height = height;
 	m_samples = msaa_samples;
 
 	glActiveTexture(GL_TEXTURE0);
-	if (m_name == 0)
-	{
-		glGenTextures(1, &m_colorname);
-		glGenTextures(1, &m_depthname);
-		glGenFramebuffers(1, &m_name);
-	}
+	glGenTextures(1, &m_colorname);
+	glGenTextures(1, &m_depthname);
+	glGenFramebuffers(1, &m_name);
 
 	GLenum textureType = msaa ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D;
 
 	if (msaa)
 	{
-		//Create the sub framebuffer now if it hasn't already been.
-		//When multisampling is used, the sub framebuffer is a non-multisampled framebuffer for the main framebuffer to resolve to.
-		if (m_subname == 0)
-		{
-			glGenTextures(1, &m_subcolorname);
-			glGenTextures(1, &m_subdepthname);
-			glGenFramebuffers(1, &m_subname);
-		}
+		glGenTextures(1, &m_subcolorname);
+		glGenTextures(1, &m_subdepthname);
+		glGenFramebuffers(1, &m_subname);
 
 		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, m_colorname);
 		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, msaa_samples, GL_RGBA8, width, height, GL_FALSE);
@@ -292,18 +329,16 @@ void Framebuffer::Update(int width, int height, int msaa_samples)
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-		//Do attachment for the sub framebuffer
 		glBindFramebuffer(GL_FRAMEBUFFER, m_subname);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_subcolorname, 0);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_subdepthname, 0);
 
-#ifndef _NDEBUG
 		GLenum fbstatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 		if (fbstatus != GL_FRAMEBUFFER_COMPLETE)
 		{
-			Error("Framebuffer::Update: Sub framebuffer object is incomplete!");
+			mprintf((0, "Framebuffer::Update: sub framebuffer status 0x%x.\n", fbstatus));
+			return false;
 		}
-#endif
 	}
 	else
 	{
@@ -325,13 +360,13 @@ void Framebuffer::Update(int width, int height, int msaa_samples)
 	glBindFramebuffer(GL_FRAMEBUFFER, m_name);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, textureType, m_colorname, 0);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, textureType, m_depthname, 0);
-#ifndef _NDEBUG
 	GLenum fbstatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 	if (fbstatus != GL_FRAMEBUFFER_COMPLETE)
 	{
-		Error("Framebuffer::Update: Framebuffer object is incomplete!");
+		mprintf((0, "Framebuffer::Update: framebuffer status 0x%x.\n", fbstatus));
+		return false;
 	}
-#endif
+	return true;
 }
 
 void Framebuffer::Destroy()
@@ -349,7 +384,7 @@ void Framebuffer::Destroy()
 	m_samples = 0;
 }
 
-void Framebuffer::SubColorBlit()
+void Framebuffer::SubFramebufferBlit(GLbitfield mask)
 {
 	if (m_samples < 2)
 	{
@@ -360,7 +395,7 @@ void Framebuffer::SubColorBlit()
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, m_name);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_subname);
 		glBlitFramebuffer(0, 0, m_width, m_height, 0, 0,
-			m_width, m_height, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+			m_width, m_height, mask, GL_NEAREST);
 
 #ifdef _DEBUG
 		GLenum err = glGetError();
@@ -377,7 +412,7 @@ void Framebuffer::SubColorBlit()
 
 void Framebuffer::BlitToRaw(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, GLenum filter)
 {
-	SubColorBlit();
+	SubFramebufferBlit(GL_COLOR_BUFFER_BIT);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
 
 #ifdef _DEBUG
@@ -397,7 +432,7 @@ void Framebuffer::BlitToRaw(GLuint target, unsigned int x, unsigned int y, unsig
 
 void Framebuffer::BlitDepthTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h)
 {
-	SubColorBlit();
+	SubFramebufferBlit(GL_DEPTH_BUFFER_BIT);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
 	glBlitFramebuffer(0, 0, m_width, m_height,
 		x, y, x + w, y + h, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
@@ -413,7 +448,7 @@ void Framebuffer::BlitDepthTo(GLuint target, unsigned int x, unsigned int y, uns
 
 void Framebuffer::BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, bool linear_filter)
 {
-	SubColorBlit();
+	SubFramebufferBlit(GL_COLOR_BUFFER_BIT);
 
 #ifdef _DEBUG
 	GLenum err = glGetError();
@@ -476,7 +511,7 @@ void Framebuffer::BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned
 void Framebuffer::DownsampleTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h,
 	GLint gamma_uniform, float gamma, GLint dest_origin_uniform)
 {
-	SubColorBlit();
+	SubFramebufferBlit(GL_COLOR_BUFFER_BIT);
 
 #ifdef _DEBUG
 	GLenum err = glGetError();
@@ -609,13 +644,15 @@ void MotionVectorResources::AttachToFramebuffer(GLuint framebuffer)
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, texture_type, velocity_texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	glReadBuffer(GL_COLOR_ATTACHMENT0);
-#ifndef _NDEBUG
+
 	GLenum fbstatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 	if (fbstatus != GL_FRAMEBUFFER_COMPLETE)
 	{
-		Error("MotionVectorResources::AttachToFramebuffer: Framebuffer object is incomplete!");
+		mprintf((0, "MotionVectorResources::AttachToFramebuffer: disabling motion vectors, framebuffer status 0x%x.\n",
+			fbstatus));
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, texture_type, 0, 0);
+		Destroy();
 	}
-#endif
 }
 
 void MotionVectorResources::ClearAttached(GLuint framebuffer)
@@ -662,11 +699,157 @@ GLuint MotionVectorResources::TextureForRead(GLuint source_framebuffer)
 	return resolved_texture;
 }
 
+void HBAOMaskResources::Update(uint32_t new_width, uint32_t new_height, uint32_t msaa_samples)
+{
+	if (new_width == 0 || new_height == 0)
+	{
+		Destroy();
+		return;
+	}
+
+	msaa_samples = GetSupportedMsaaSamples(msaa_samples);
+	if (width == new_width && height == new_height && samples == msaa_samples && mask_texture != 0)
+		return;
+
+	Destroy();
+
+	width = new_width;
+	height = new_height;
+	samples = msaa_samples;
+
+	glGenTextures(1, &mask_texture);
+	if (samples >= 2)
+	{
+		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, mask_texture);
+		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, samples, GL_R8, width, height, GL_FALSE);
+	}
+	else
+	{
+		glBindTexture(GL_TEXTURE_2D, mask_texture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	}
+
+	glGenTextures(1, &resolved_texture);
+	glBindTexture(GL_TEXTURE_2D, resolved_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+	glGenFramebuffers(1, &resolve_framebuffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, resolve_framebuffer);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, resolved_texture, 0);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+	rend_ClearBoundTextures();
+}
+
+void HBAOMaskResources::Destroy()
+{
+	glDeleteTextures(1, &mask_texture);
+	glDeleteTextures(1, &resolved_texture);
+	glDeleteFramebuffers(1, &resolve_framebuffer);
+	mask_texture = 0;
+	resolved_texture = 0;
+	resolve_framebuffer = 0;
+	width = height = samples = 0;
+}
+
+void HBAOMaskResources::AttachToFramebuffer(GLuint framebuffer)
+{
+	if (mask_texture == 0)
+		return;
+
+	GLenum texture_type = samples >= 2 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D;
+	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, texture_type, mask_texture, 0);
+	UseSceneDrawBuffers(framebuffer);
+
+	GLenum fbstatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	if (fbstatus != GL_FRAMEBUFFER_COMPLETE)
+	{
+		mprintf((0, "HBAOMaskResources::AttachToFramebuffer: disabling HBAO suppression mask, framebuffer status 0x%x.\n",
+			fbstatus));
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, texture_type, 0, 0);
+		Destroy();
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glReadBuffer(GL_COLOR_ATTACHMENT0);
+	}
+}
+
+void HBAOMaskResources::ClearAttached(GLuint framebuffer)
+{
+	if (mask_texture == 0)
+		return;
+
+	GLint old_draw = 0;
+	GLint old_draw_buffer = 0;
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+	glGetIntegerv(GL_DRAW_BUFFER, &old_draw_buffer);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+	GLenum draw_buffer = GL_COLOR_ATTACHMENT2;
+	glDrawBuffers(1, &draw_buffer);
+	const float zero[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	glClearBufferfv(GL_COLOR, 0, zero);
+	UseSceneDrawBuffers(framebuffer);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	if ((GLuint)old_draw != framebuffer)
+		glDrawBuffer(old_draw_buffer);
+}
+
+void HBAOMaskResources::UseSceneDrawBuffers(GLuint framebuffer)
+{
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+	if (mask_texture != 0)
+	{
+		const GLenum draw_buffers[3] =
+		{
+			GL_COLOR_ATTACHMENT0,
+			GL_NONE,
+			GL_COLOR_ATTACHMENT2
+		};
+		glDrawBuffers(3, draw_buffers);
+	}
+	else
+	{
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	}
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+}
+
+GLuint HBAOMaskResources::TextureForRead(GLuint source_framebuffer)
+{
+	if (mask_texture == 0)
+		return 0;
+
+	GLint old_read = 0, old_draw = 0;
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, source_framebuffer);
+	glReadBuffer(GL_COLOR_ATTACHMENT2);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolve_framebuffer);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	return resolved_texture;
+}
+
 void Framebuffer::BindForRead()
 {
 	if (m_samples >= 2)
 	{
-		SubColorBlit();
+		SubFramebufferBlit(GL_COLOR_BUFFER_BIT);
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, m_subname);
 	}
 	else
@@ -677,13 +860,13 @@ void Framebuffer::BindForRead()
 
 GLuint Framebuffer::ColorTextureForRead()
 {
-	SubColorBlit();
+	SubFramebufferBlit(GL_COLOR_BUFFER_BIT);
 	return (m_samples >= 2) ? m_subcolorname : m_colorname;
 }
 
 GLuint Framebuffer::DepthTextureForRead()
 {
-	SubColorBlit();
+	SubFramebufferBlit(GL_DEPTH_BUFFER_BIT);
 	return (m_samples >= 2) ? m_subdepthname : m_depthname;
 }
 

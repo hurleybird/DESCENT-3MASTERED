@@ -64,6 +64,15 @@ namespace
 		default: return 0;
 		}
 	}
+
+	float Clamp01(float value)
+	{
+		if (value < 0.0f)
+			return 0.0f;
+		if (value > 1.0f)
+			return 1.0f;
+		return value;
+	}
 }
 
 void HBAOResources::InitShaders()
@@ -72,6 +81,7 @@ void HBAOResources::InitShaders()
 	extern const char* hbaoAOFragmentSrc;
 	extern const char* hbaoBlurFragmentSrc;
 	extern const char* hbaoTemporalFragmentSrc;
+	extern const char* hbaoSuppressionFragmentSrc;
 	extern const char* hbaoApplyFragmentSrc;
 
 	ao_shader.AttachSource(blitVertexSrc, hbaoAOFragmentSrc);
@@ -128,11 +138,27 @@ void HBAOResources::InitShaders()
 	temporal_has_motion = temporal_shader.FindUniform("has_motion");
 	temporal_history_weight = temporal_shader.FindUniform("history_weight");
 
+	suppression_shader.AttachSource(blitVertexSrc, hbaoSuppressionFragmentSrc);
+	suppression_shader.Use();
+	suppression_existing_mask = suppression_shader.FindUniform("existing_mask");
+	suppression_color = suppression_shader.FindUniform("color_tex");
+	if (suppression_existing_mask != -1) glUniform1i(suppression_existing_mask, 0);
+	if (suppression_color != -1) glUniform1i(suppression_color, 1);
+	suppression_has_mask = suppression_shader.FindUniform("has_mask");
+	suppression_use_bloom_mask = suppression_shader.FindUniform("use_bloom_mask");
+	suppression_gamma = suppression_shader.FindUniform("gamma");
+	suppression_bloom_threshold = suppression_shader.FindUniform("bloom_threshold");
+	suppression_bloom_radius_pixels = suppression_shader.FindUniform("bloom_radius_pixels");
+	suppression_inv_screen_size = suppression_shader.FindUniform("inv_screen_size");
+
 	apply_shader.AttachSource(blitVertexSrc, hbaoApplyFragmentSrc);
 	apply_shader.Use();
 	GLint apply_heh = apply_shader.FindUniform("heh");
+	GLint apply_mask = apply_shader.FindUniform("suppression_mask");
 	if (apply_heh != -1) glUniform1i(apply_heh, 0);
+	if (apply_mask != -1) glUniform1i(apply_mask, 1);
 	apply_intensity = apply_shader.FindUniform("intensity");
+	apply_has_mask = apply_shader.FindUniform("has_suppression_mask");
 
 	ShaderProgram::ClearBinding();
 
@@ -165,6 +191,7 @@ void HBAOResources::DestroyShaders()
 	blur_x_shader.Destroy();
 	blur_y_shader.Destroy();
 	temporal_shader.Destroy();
+	suppression_shader.Destroy();
 	apply_shader.Destroy();
 	if (noise_texture)
 	{
@@ -179,6 +206,7 @@ void HBAOResources::DestroyFramebuffers()
 	ao_blur_framebuffer.Destroy();
 	temporal_framebuffers[0].Destroy();
 	temporal_framebuffers[1].Destroy();
+	suppression_framebuffer.Destroy();
 	InvalidateHistory();
 }
 
@@ -196,7 +224,7 @@ void HBAOResources::InvalidateHistory()
 
 void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
 	const rendering_state& render_state, const float* projection,
-	float nearz, float farz, GLuint motion_texture,
+	float nearz, float farz, GLuint motion_texture, GLuint suppression_mask_texture,
 	const float* current_inv_view_projection,
 	const float* previous_view_projection,
 	bool has_previous_view_projection)
@@ -246,6 +274,7 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	//on this triggers a blit into the sub framebuffer; that's fine because the
 	//main framebuffer is still drawn on for HUD work afterwards.
 	GLuint depth_texture = source->DepthTextureForRead();
+	GLuint scene_color_texture = source->ColorTextureForRead();
 
 	//Compute uniform values.
 	float m00 = projection[0];
@@ -420,7 +449,7 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 		if (temporal_has_motion != -1)
 			glUniform1i(temporal_has_motion, motion_texture != 0 ? 1 : 0);
 		if (temporal_history_weight != -1)
-			glUniform1f(temporal_history_weight, 0.82f);
+			glUniform1f(temporal_history_weight, 0.90f);
 
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(blurred->ColorTextureForRead(), 0, GL_NEAREST);
@@ -453,7 +482,49 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	}
 
 	//-------------------------------------------------------------------------
-	// Pass 4: Modulate scene color in-place.
+	// Pass 4: Build the final HBAO suppression mask.
+	//-------------------------------------------------------------------------
+	GLuint final_suppression_mask = suppression_mask_texture;
+	bool bloom_mask_enabled = pref_state.bloom_enabled && scene_color_texture != 0;
+	if (suppression_shader.Handle() != 0 && (suppression_mask_texture != 0 || bloom_mask_enabled))
+	{
+		suppression_framebuffer.Update(width, height, GL_R8, GL_RED, GL_UNSIGNED_BYTE);
+		suppression_shader.Use();
+		if (suppression_has_mask != -1)
+			glUniform1i(suppression_has_mask, suppression_mask_texture != 0 ? 1 : 0);
+		if (suppression_use_bloom_mask != -1)
+			glUniform1i(suppression_use_bloom_mask, bloom_mask_enabled ? 1 : 0);
+		float display_gamma = pref_state.gamma != 0.0f ? 1.0f / pref_state.gamma : 1.0f;
+		if (suppression_gamma != -1)
+			glUniform1f(suppression_gamma, display_gamma);
+		if (suppression_bloom_threshold != -1)
+			glUniform1f(suppression_bloom_threshold, Clamp01(pref_state.bloom_threshold));
+		if (suppression_bloom_radius_pixels != -1)
+		{
+			float render_scale = sqrtf(((float)width * (float)height) / (1920.0f * 1080.0f));
+			if (render_scale < 0.5f)
+				render_scale = 0.5f;
+			float bloom_radius_pixels = (8.0f + 40.0f * Clamp01(pref_state.bloom_spread)) * render_scale;
+			if (bloom_radius_pixels < 6.0f)
+				bloom_radius_pixels = 6.0f;
+			if (bloom_radius_pixels > 96.0f)
+				bloom_radius_pixels = 96.0f;
+			glUniform1f(suppression_bloom_radius_pixels, bloom_radius_pixels);
+		}
+		if (suppression_inv_screen_size != -1)
+			glUniform2f(suppression_inv_screen_size, 1.0f / (float)width, 1.0f / (float)height);
+
+		rend_ClearBoundTextures();
+		if (suppression_mask_texture != 0)
+			GL_BindFramebufferTexture(suppression_mask_texture, 0, GL_NEAREST);
+		if (scene_color_texture != 0)
+			GL_BindFramebufferTexture(scene_color_texture, 1, GL_LINEAR);
+		GL_DrawFramebufferQuad(suppression_framebuffer.Handle(), 0, 0, width, height);
+		final_suppression_mask = suppression_framebuffer.ColorTextureForRead();
+	}
+
+	//-------------------------------------------------------------------------
+	// Pass 5: Modulate scene color in-place.
 	//
 	// Draw a fullscreen quad to the source framebuffer with blend mode
 	// (DST_COLOR, ZERO) so the destination is multiplied by our AO factor.
@@ -461,8 +532,12 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	//-------------------------------------------------------------------------
 	apply_shader.Use();
 	glUniform1f(apply_intensity, intensity);
+	if (apply_has_mask != -1)
+		glUniform1i(apply_has_mask, final_suppression_mask != 0 ? 1 : 0);
 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, source->Handle());
+	GLenum draw_buffer = GL_COLOR_ATTACHMENT0;
+	glDrawBuffers(1, &draw_buffer);
 	glViewport(0, 0, width, height);
 
 	glEnable(GL_BLEND);
@@ -476,6 +551,8 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 
 	rend_ClearBoundTextures();
 	GL_BindFramebufferTexture(apply_source->ColorTextureForRead(), 0, GL_LINEAR);
+	if (final_suppression_mask != 0)
+		GL_BindFramebufferTexture(final_suppression_mask, 1, GL_LINEAR);
 
 	//Drawing the fullscreen triangle straight (we can't use GL_DrawFramebufferQuad
 	//since it clears, and we want to multiply against the existing destination).

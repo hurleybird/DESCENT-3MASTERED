@@ -208,7 +208,7 @@ void GLCompatibilityRenderer::StartFrame(int x1, int y1, int x2, int y2, int cle
 	{
 		glClear(GL_DEPTH_BUFFER_BIT);
 	}
-	if (RendererMsaaSamples(OpenGL_preferred_state) >= 2)
+	if (framebuffer_ok && framebuffers[framebuffer_current_draw].Samples() >= 2)
 		glEnable(GL_MULTISAMPLE);
 	else
 		glDisable(GL_MULTISAMPLE);
@@ -1100,7 +1100,7 @@ void GLCompatibilityRenderer::UpdateFramebuffer(void)
 
 	framebuffer_current_draw = 0;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[0].Handle());
-	if (RendererMsaaSamples(OpenGL_preferred_state) >= 2)
+	if (framebuffers[0].Samples() >= 2)
 		glEnable(GL_MULTISAMPLE);
 	else
 		glDisable(GL_MULTISAMPLE);

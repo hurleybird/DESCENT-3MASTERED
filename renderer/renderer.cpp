@@ -156,6 +156,14 @@ bool rend_ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, fl
 	return renderer_inst->ProjectPreviousFramePoint(world_pos, screen_x, screen_y);
 }
 
+void rend_SetHBAOSuppression(float value)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->SetHBAOSuppression(value);
+}
+
 void rend_SetMipState(sbyte state)
 {
 	if (!Renderer_initted)

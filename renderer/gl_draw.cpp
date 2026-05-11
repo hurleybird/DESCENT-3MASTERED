@@ -177,9 +177,12 @@ void GL3Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 	glBindBuffer(GL_ARRAY_BUFFER, motionvector_vbo);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(gl_motion_vertex) * nv, motion_vertices, GL_STREAM_DRAW);
 	glDrawArrays(GL_TRIANGLE_FAN, 0, nv);
+	motion_vectors_dirty = true;
 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 	glDrawBuffer(old_draw_buffer);
+	if ((GLuint)old_draw == framebuffers[framebuffer_current_draw].Handle())
+		hbao_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
 	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
 	glDepthMask(depth_mask);
 	UseDrawVAO();
@@ -282,6 +285,7 @@ void GL3Renderer::SetDrawDefaults()
 		drawshader_dynamic_directions_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_directions[0]");
 		drawshader_dynamic_dot_ranges_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_dot_ranges[0]");
 		drawshader_dynamic_directional_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_directional[0]");
+		drawshader_hbao_suppression_uniforms[i] = drawshaders[i].FindUniform("hbao_suppression");
 	}
 
 	lastdrawshader = -1;
@@ -365,6 +369,8 @@ void GL3Renderer::SelectDrawShader()
 	}
 
 	drawshaders[shader_index].Use();
+	if (drawshader_hbao_suppression_uniforms[shader_index] != -1)
+		glUniform1f(drawshader_hbao_suppression_uniforms[shader_index], hbao_suppression_draw_value);
 
 	const bool phong_enabled = OpenGL_state.cur_light_state == LS_PHONG;
 	if (drawshader_phong_enabled_uniforms[shader_index] != -1)

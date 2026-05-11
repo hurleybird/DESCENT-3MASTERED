@@ -18,7 +18,8 @@ in float outlight;
 in float outalpha;
 flat in vec4 outplane;
 
-out vec4 color;
+layout(location = 0) out vec4 color;
+layout(location = 2) out vec4 hbao_mask;
 
 void main()
 {
@@ -38,6 +39,8 @@ void main()
 		mag = -outpt.z;
 	}
 	
-	color = mix(vec4(basecolor.rgb, 1.0), vec4(room.fog_color.rgb, 1.0f), clamp(mag / room.fog_distance, 0, 1)) * vec4(outlight, outlight, outlight, 1.0);
+	float fog_amount = clamp(mag / room.fog_distance, 0, 1);
+	color = mix(vec4(basecolor.rgb, 1.0), vec4(room.fog_color.rgb, 1.0f), fog_amount) * vec4(outlight, outlight, outlight, 1.0);
 	color.a *= outalpha;
+	hbao_mask = vec4(fog_amount, 0.0, 0.0, 1.0);
 }

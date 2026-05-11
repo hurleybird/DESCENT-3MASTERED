@@ -102,9 +102,10 @@ class Framebuffer
 	uint32_t	m_width, m_height;
 	uint32_t	m_samples;
 
-	//Used when multisampling is enabled. Blits the multisample framebuffer to the non-multisample sub framebuffer
+	bool Allocate(int width, int height, int msaa_samples);
+	//Used when multisampling is enabled. Blits the requested buffers to the non-multisample sub framebuffer.
 	//Leaves the sub framebuffer bound for reading to finish the blit.
-	void SubColorBlit();
+	void SubFramebufferBlit(GLbitfield mask);
 public:
 	Framebuffer();
 	void Update(int width, int height, int msaa_samples);
@@ -140,6 +141,11 @@ public:
 	uint32_t Height() const
 	{
 		return m_height;
+	}
+
+	uint32_t Samples() const
+	{
+		return m_samples;
 	}
 };
 
@@ -187,6 +193,23 @@ struct MotionVectorResources
 	GLuint TextureForRead(GLuint source_framebuffer);
 };
 
+struct HBAOMaskResources
+{
+	GLuint mask_texture = 0;
+	GLuint resolved_texture = 0;
+	GLuint resolve_framebuffer = 0;
+	uint32_t width = 0;
+	uint32_t height = 0;
+	uint32_t samples = 0;
+
+	void Update(uint32_t width, uint32_t height, uint32_t msaa_samples);
+	void Destroy();
+	void AttachToFramebuffer(GLuint framebuffer);
+	void ClearAttached(GLuint framebuffer);
+	void UseSceneDrawBuffers(GLuint framebuffer);
+	GLuint TextureForRead(GLuint source_framebuffer);
+};
+
 void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter);
 void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
 //Lazy accessor for the framebuffer fullscreen-triangle VAO. Initialises it if
@@ -226,6 +249,7 @@ struct HBAOResources
 	//Scratch used as ping-pong for the separable bilateral blur.
 	ColorFramebuffer ao_blur_framebuffer;
 	ColorFramebuffer temporal_framebuffers[2];
+	ColorFramebuffer suppression_framebuffer;
 	uint32_t frame_counter = 0;
 	uint32_t temporal_index = 0;
 	bool temporal_valid = false;
@@ -242,6 +266,7 @@ struct HBAOResources
 	ShaderProgram blur_x_shader;
 	ShaderProgram blur_y_shader;
 	ShaderProgram temporal_shader;
+	ShaderProgram suppression_shader;
 	ShaderProgram apply_shader;
 
 	//AO shader uniforms.
@@ -280,8 +305,19 @@ struct HBAOResources
 	GLint temporal_has_motion = -1;
 	GLint temporal_history_weight = -1;
 
+	//Suppression mask shader uniforms.
+	GLint suppression_existing_mask = -1;
+	GLint suppression_color = -1;
+	GLint suppression_has_mask = -1;
+	GLint suppression_use_bloom_mask = -1;
+	GLint suppression_gamma = -1;
+	GLint suppression_bloom_threshold = -1;
+	GLint suppression_bloom_radius_pixels = -1;
+	GLint suppression_inv_screen_size = -1;
+
 	//Apply (composite) shader uniforms.
 	GLint apply_intensity = -1;
+	GLint apply_has_mask = -1;
 
 	void InitShaders();
 	void DestroyShaders();
@@ -294,7 +330,7 @@ struct HBAOResources
 	//bound for drawing (the framebuffer is rebound inside the function).
 	void Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
 		const rendering_state& render_state, const float* projection,
-		float nearz, float farz, GLuint motion_texture,
+		float nearz, float farz, GLuint motion_texture, GLuint suppression_mask_texture,
 		const float* current_inv_view_projection,
 		const float* previous_view_projection,
 		bool has_previous_view_projection);

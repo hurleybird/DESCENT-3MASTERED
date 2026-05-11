@@ -1006,7 +1006,7 @@ void RenderList::AddRoom(RenderListEntry& entry, Frustum& frustum)
 
 void RenderList::PreDraw()
 {
-	RoomBlock roomblocks[100];
+	RoomBlock roomblocks[100] = {};
 	int renderrooms = std::min(100, (int)VisibleRooms.size());
 
 	for (int nn = 0; nn < renderrooms; nn++)

@@ -250,8 +250,14 @@ void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 	if (glclearflags != 0)
 		glClear(glclearflags);
 	if (framebuffer_ok)
+	{
 		motion_vectors.ClearAttached(framebuffers[framebuffer_current_draw].Handle());
-	if (RendererMsaaSamples(OpenGL_preferred_state) >= 2)
+		hbao_mask.ClearAttached(framebuffers[framebuffer_current_draw].Handle());
+		hbao_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+	}
+	motion_vectors_dirty = false;
+	hbao_suppression_draw_value = 0.0f;
+	if (framebuffer_ok && framebuffers[framebuffer_current_draw].Samples() >= 2)
 		glEnable(GL_MULTISAMPLE);
 	else
 		glDisable(GL_MULTISAMPLE);
@@ -329,35 +335,24 @@ void GL3Renderer::Flip()
 		present_framebuffer = &resolved_framebuffer;
 	}
 
-	if (OpenGL_preferred_state.debug_motion_vectors && framebuffer_ok)
+	GLuint bloom_depth = bloom_source_valid ? bloom_source_framebuffer.DepthTextureForRead() : 0;
+	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_effect_source, OpenGL_preferred_state, OpenGL_state, display_gamma, bloom_depth);
+	if (bloom_framebuffer)
 	{
-		GLuint motion_texture = motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
-		motiondebugshader.Use();
+		bloom.compositeshader.Use();
+		glUniform1f(bloom.composite_gamma, display_gamma);
+		glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
 		rend_ClearBoundTextures();
-		GL_BindFramebufferTexture(motion_texture, 0, GL_NEAREST);
+		GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
+		GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);
+		GL_BindFramebufferTexture(bloom_scene_source->ColorTextureForRead(), 2, GL_NEAREST);
 		GL_DrawFramebufferQuad(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h);
 	}
 	else
 	{
-		GLuint bloom_depth = bloom_source_valid ? bloom_source_framebuffer.DepthTextureForRead() : 0;
-		Framebuffer* bloom_framebuffer = bloom.Apply(bloom_effect_source, OpenGL_preferred_state, OpenGL_state, display_gamma, bloom_depth);
-		if (bloom_framebuffer)
-		{
-			bloom.compositeshader.Use();
-			glUniform1f(bloom.composite_gamma, display_gamma);
-			glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
-			rend_ClearBoundTextures();
-			GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
-			GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);
-			GL_BindFramebufferTexture(bloom_scene_source->ColorTextureForRead(), 2, GL_NEAREST);
-			GL_DrawFramebufferQuad(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h);
-		}
-		else
-		{
-			blitshader.Use();
-			glUniform1f(blitshader_gamma, display_gamma);
-			present_framebuffer->BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
-		}
+		blitshader.Use();
+		glUniform1f(blitshader_gamma, display_gamma);
+		present_framebuffer->BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
 	}
 	ShaderProgram::ClearBinding();
 
@@ -430,12 +425,15 @@ void GL3Renderer::CaptureBloomSource()
 			if (near_z <= 0.0f) near_z = 1.0f;
 			if (far_z <= near_z) far_z = near_z * 1000.0f;
 		}
-		GLuint motion_texture = motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
+		GLuint motion_texture = motion_vectors_dirty ?
+			motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
+		GLuint hbao_mask_texture = hbao_mask.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
 		hbao.Apply(&framebuffers[framebuffer_current_draw], OpenGL_preferred_state,
-			OpenGL_state, last_projection, near_z, far_z, motion_texture,
+			OpenGL_state, last_projection, near_z, far_z, motion_texture, hbao_mask_texture,
 			have_current_inverse_view_projection ? current_inverse_view_projection : nullptr,
 			previous_view_projection,
 			have_current_inverse_view_projection && have_previous_view_projection);
+		hbao_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
 	}
 	if (framebuffer_ok && have_current_view_projection)
 	{
@@ -893,6 +891,11 @@ void GL3Renderer::SetAlphaValue(ubyte val)
 	Alpha_multiplier = GetAlphaMultiplier();
 }
 
+void GL3Renderer::SetHBAOSuppression(float value)
+{
+	hbao_suppression_draw_value = std::max(0.0f, std::min(value, 1.0f));
+}
+
 // Sets the overall alpha scale factor (all alpha values are scaled by this value)
 // usefull for motion blur effect
 void GL3Renderer::SetAlphaFactor(float val)
@@ -1124,8 +1127,11 @@ void GL3Renderer::UpdateFramebuffer(void)
 	for (int i = 0; i < NUM_GL3_FBOS; i++)
 	{
 		framebuffers[i].Update(FramebufferWidth(), FramebufferHeight(), RendererMsaaSamples(OpenGL_preferred_state));
-		motion_vectors.Update(FramebufferWidth(), FramebufferHeight(), RendererMsaaSamples(OpenGL_preferred_state));
+		motion_vectors.Update(FramebufferWidth(), FramebufferHeight(), framebuffers[i].Samples());
 		motion_vectors.AttachToFramebuffer(framebuffers[i].Handle());
+		hbao_mask.Update(FramebufferWidth(), FramebufferHeight(), framebuffers[i].Samples());
+		hbao_mask.AttachToFramebuffer(framebuffers[i].Handle());
+		hbao_mask.UseSceneDrawBuffers(framebuffers[i].Handle());
 	}
 	int supersampling_factor = SupersamplingFactor();
 	if (supersampling_factor >= 2)
@@ -1142,7 +1148,8 @@ void GL3Renderer::UpdateFramebuffer(void)
 
 	framebuffer_current_draw = 0;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[0].Handle());
-	if (RendererMsaaSamples(OpenGL_preferred_state) >= 2)
+	hbao_mask.UseSceneDrawBuffers(framebuffers[0].Handle());
+	if (framebuffers[0].Samples() >= 2)
 		glEnable(GL_MULTISAMPLE);
 	else
 		glDisable(GL_MULTISAMPLE);
@@ -1166,6 +1173,7 @@ void GL3Renderer::CloseFramebuffer(void)
 	bloom_source_downscale_framebuffer.Destroy();
 	bloom_source_valid = false;
 	motion_vectors.Destroy();
+	hbao_mask.Destroy();
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 

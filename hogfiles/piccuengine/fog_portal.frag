@@ -15,7 +15,8 @@ layout(std140) uniform RoomBlock
 in vec3 outpt;
 flat in vec4 outplane;
 
-out vec4 color;
+layout(location = 0) out vec4 color;
+layout(location = 2) out vec4 hbao_mask;
 
 void main()
 {
@@ -33,5 +34,7 @@ void main()
 		mag = -outpt.z;
 	}
 	
-	color = vec4(room.fog_color.rgb, clamp(mag / room.fog_distance, 0, 1));
+	float fog_amount = clamp(mag / room.fog_distance, 0, 1);
+	color = vec4(room.fog_color.rgb, fog_amount);
+	hbao_mask = vec4(fog_amount, 0.0, 0.0, 1.0);
 }

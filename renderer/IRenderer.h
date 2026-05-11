@@ -175,6 +175,7 @@ public:
 	virtual void BeginMotionObject(int object_handle, float screen_x, float screen_y) {}
 	virtual void EndMotionObject() {}
 	virtual bool ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y) { return false; }
+	virtual void SetHBAOSuppression(float value) {}
 
 	// Draws a scaled 2d bitmap to our buffer
 	// NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color
