@@ -170,6 +170,9 @@ bool ui_IsCursorVisible();						// is the cursor visible?
 //	frees ui input cache
 void ui_Flush();
 
+// Ignores the current left mouse hold until it is released.
+void ui_SuppressLeftMouseUntilRelease();
+
 // does screen shot
 void ui_DoScreenshot();
 

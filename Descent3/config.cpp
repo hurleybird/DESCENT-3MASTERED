@@ -1677,6 +1677,7 @@ void OptionsMenu()
 			menu.SetCurrentOption(IDV_VCONFIG);
 
 			DoWaitMessage(false);
+			ui_SuppressLeftMouseUntilRelease();
 
 			// run menu
 			do

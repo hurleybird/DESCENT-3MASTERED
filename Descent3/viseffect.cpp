@@ -1722,6 +1722,7 @@ void DrawVisEffect(vis_effect* vis)
 	rend_SetZBufferWriteMask(0);
 	rend_SetWrapType(WT_CLAMP);
 	rend_SetLighting(LS_NONE);
+	rend_SetHBAOSuppression(1.0f);
 
 	// Draw!!
 	if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX || vis->id == GRAY_SPARK_INDEX)
@@ -1737,6 +1738,7 @@ void DrawVisEffect(vis_effect* vis)
 			g3_DrawRotatedBitmap(&vis->pos, rot_angle, size, (size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle);
 	}
 
+	rend_SetHBAOSuppression(0.0f);
 	rend_SetZBias(0.0f);
 	rend_SetZBufferWriteMask(1);
 

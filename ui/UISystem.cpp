@@ -196,6 +196,7 @@ static tUIWindowNode *UIWindowList = NULL;
 static tUIWindowNode *UIWindowTail = NULL;
 static UIWindow *UIWindowFocus = NULL;
 static int UI_cursor_show = 0;
+static bool UI_suppress_left_mouse_until_release = false;
 float UIFrameTime = 0.0f;
 bool ui_MousePoll(bool buttons);
 bool ui_KeyPoll();
@@ -239,6 +240,16 @@ void ui_Flush()
 	UI_input.cur_time = timer_GetTime();
 	ui_KeyFlush();
 }
+
+void ui_SuppressLeftMouseUntilRelease()
+{
+	UI_suppress_left_mouse_until_release = true;
+	UI_input.b1_status = 0;
+	UI_input.b1_last_status = 0;
+	UI_input.b1_count = 1;
+	ddio_MouseQueueFlush();
+}
+
 //	flushes out key input info currently in ui.
 void ui_KeyFlush()
 {
@@ -301,12 +312,32 @@ bool ui_MousePoll(bool buttons)
 		UI_input.last_my = UI_input.my;
 		UI_input.mx = mx;
 		UI_input.my = my;
+		if (UI_suppress_left_mouse_until_release) {
+			if (CHECK_FLAG(btn_mask, MOUSE_LB)) {
+				btn_mask &= ~MOUSE_LB;
+			}
+			else {
+				UI_suppress_left_mouse_until_release = false;
+				UI_input.b1_status = 0;
+				UI_input.b1_last_status = 0;
+				UI_input.b1_count = 1;
+				ddio_MouseQueueFlush();
+			}
+		}
 	}
 	else if (UI_cursor_show) {
 	// if bX_count is 0, then repeat processing can occur, otherwise only real mouse events are processed.
 		if (ddio_MouseGetEvent(&msebtn, &state)) {
 //			mprintf((2, "mouse #%d state %d at %04d %04d\n", msebtn, UI_input.b1_status, UI_input.mx, UI_input.my));
 			if (msebtn == 0) {
+				if (UI_suppress_left_mouse_until_release) {
+					if (!state)
+						UI_suppress_left_mouse_until_release = false;
+					UI_input.b1_status = 0;
+					UI_input.b1_last_status = 0;
+					UI_input.b1_count = 1;
+					return false;
+				}
 				UI_input.b1_last_status = UI_input.b1_status;
 				UI_input.b1_status = state ? UIMSEBTN_PRESSED : UIMSEBTN_RELEASED;
 				UI_input.b1_count = 1;
