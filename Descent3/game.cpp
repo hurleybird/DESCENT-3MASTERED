@@ -393,6 +393,11 @@ void ToggleFullscreenMode()
 		Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
 	if (Display_mode_changed_callback)
 		Display_mode_changed_callback();
+	// Alt-Enter can resize/restyle the window without changing the current
+	// mouse mode. Force a release/reapply so exclusive-mode clipping uses the
+	// new client rectangle.
+	ddio_MouseMode(MOUSE_STANDARD_MODE);
+	ddio_MouseMode(ShouldCaptureMouse() ? MOUSE_EXCLUSIVE_MODE : MOUSE_STANDARD_MODE);
 	ddio_KeyFlush();
 }
 
