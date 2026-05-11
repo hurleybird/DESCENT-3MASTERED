@@ -127,6 +127,8 @@ public:
 	void BindForRead();
 	GLuint ColorTextureForRead();
 	GLuint DepthTextureForRead();
+	GLuint ColorTextureRaw() const;
+	GLuint DepthTextureRaw() const;
 
 	GLuint Handle() const
 	{
@@ -244,6 +246,8 @@ struct BloomResources
 //Reconstructs view-space normals from the depth buffer (we have no normals G-buffer).
 struct HBAOResources
 {
+	//Raw source depth resolved/downsampled to the AO working resolution.
+	ColorFramebuffer ao_depth_framebuffer;
 	//Framebuffer holding the AO result (RG16F: x=AO, y=depth).
 	ColorFramebuffer ao_framebuffer;
 	//Scratch used as ping-pong for the separable bilateral blur.
@@ -256,6 +260,7 @@ struct HBAOResources
 	bool temporal_settings_valid = false;
 	bool temporal_enabled = true;
 	int temporal_quality = -1;
+	int temporal_resolution = -1;
 	int temporal_blur = -1;
 	float temporal_radius = -1.0f;
 	float temporal_intensity = -1.0f;
@@ -263,12 +268,20 @@ struct HBAOResources
 
 	GLuint noise_texture = 0;
 
+	ShaderProgram depth_shader;
 	ShaderProgram ao_shader;
 	ShaderProgram blur_x_shader;
 	ShaderProgram blur_y_shader;
 	ShaderProgram temporal_shader;
 	ShaderProgram suppression_shader;
 	ShaderProgram apply_shader;
+
+	//Depth downsample/resolve shader uniforms.
+	GLint depth_source = -1;
+	GLint depth_source_ms = -1;
+	GLint depth_samples = -1;
+	GLint depth_input_screen_size = -1;
+	GLint depth_ao_screen_size = -1;
 
 	//AO shader uniforms.
 	GLint ao_proj_info = -1;        //(2/proj[0], 2/proj[5], -1/proj[0], -1/proj[5])
@@ -281,6 +294,7 @@ struct HBAOResources
 	GLint ao_multiplier = -1;       //2 / (steps*directions) * (1/(1-bias))
 	GLint ao_intensity = -1;
 	GLint ao_inv_screen_size = -1;  //1/width, 1/height
+	GLint ao_ao_inv_screen_size = -1;
 	GLint ao_screen_size = -1;      //width, height
 	GLint ao_temporal = -1;         //(rotation, jitter offset)
 	GLint ao_noise_scale = -1;      //(width/4, height/4)
@@ -300,6 +314,10 @@ struct HBAOResources
 	GLint temporal_history = -1;
 	GLint temporal_depth = -1;
 	GLint temporal_motion = -1;
+	GLint temporal_motion_ms = -1;
+	GLint temporal_motion_samples = -1;
+	GLint temporal_input_screen_size = -1;
+	GLint temporal_ao_screen_size = -1;
 	GLint temporal_current_inv_view_projection = -1;
 	GLint temporal_previous_view_projection = -1;
 	GLint temporal_has_history = -1;
@@ -308,9 +326,14 @@ struct HBAOResources
 
 	//Suppression mask shader uniforms.
 	GLint suppression_existing_mask = -1;
+	GLint suppression_existing_mask_ms = -1;
 	GLint suppression_color = -1;
+	GLint suppression_color_ms = -1;
 	GLint suppression_has_mask = -1;
 	GLint suppression_use_bloom_mask = -1;
+	GLint suppression_source_samples = -1;
+	GLint suppression_input_screen_size = -1;
+	GLint suppression_ao_screen_size = -1;
 	GLint suppression_gamma = -1;
 	GLint suppression_bloom_threshold = -1;
 

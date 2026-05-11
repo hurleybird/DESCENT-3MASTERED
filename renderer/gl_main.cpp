@@ -422,9 +422,8 @@ void GL3Renderer::CaptureBloomSource()
 			if (near_z <= 0.0f) near_z = 1.0f;
 			if (far_z <= near_z) far_z = near_z * 1000.0f;
 		}
-		GLuint motion_texture = motion_vectors_dirty ?
-			motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
-		GLuint hbao_mask_texture = hbao_mask.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
+		GLuint motion_texture = motion_vectors_dirty ? motion_vectors.velocity_texture : 0;
+		GLuint hbao_mask_texture = hbao_mask.mask_texture;
 		hbao.Apply(&framebuffers[framebuffer_current_draw], OpenGL_preferred_state,
 			OpenGL_state, last_projection, near_z, far_z, motion_texture, hbao_mask_texture,
 			have_current_inverse_view_projection ? current_inverse_view_projection : nullptr,

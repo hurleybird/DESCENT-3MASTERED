@@ -173,6 +173,15 @@ static int ConfigNormalizeHBAOBlur(int blur)
 	return blur;
 }
 
+static int ConfigNormalizeHBAOResolution(int resolution)
+{
+	if (resolution < HBAO_RESOLUTION_AUTO)
+		return HBAO_RESOLUTION_AUTO;
+	if (resolution > HBAO_RESOLUTION_QUARTER)
+		return HBAO_RESOLUTION_QUARTER;
+	return resolution;
+}
+
 static float ConfigNormalizeHBAORadius(float radius)
 {
 	if (radius < 0.5f)
@@ -650,7 +659,7 @@ void config_gamma()
 #define HBAO_INTENSITY_SLIDER_UNITS 80
 #define HBAO_BIAS_SLIDER_UNITS 50
 
-static void ApplyHBAOSettingsFromUI(bool* enabled, bool* temporal, int* quality, int* blur,
+static void ApplyHBAOSettingsFromUI(bool* enabled, bool* temporal, int* quality, int* resolution, int* blur,
 	short* radius, short* intensity, short* bias,
 	const tSliderSettings& radius_settings,
 	const tSliderSettings& intensity_settings,
@@ -662,6 +671,8 @@ static void ApplyHBAOSettingsFromUI(bool* enabled, bool* temporal, int* quality,
 		Render_preferred_state.hbao_temporal = *temporal;
 	if (quality)
 		Render_preferred_state.hbao_quality = (ubyte)ConfigNormalizeHBAOQuality(*quality);
+	if (resolution)
+		Render_preferred_state.hbao_resolution = (ubyte)ConfigNormalizeHBAOResolution(*resolution);
 	if (blur)
 		Render_preferred_state.hbao_blur = (ubyte)ConfigNormalizeHBAOBlur(*blur);
 	if (radius)
@@ -688,6 +699,7 @@ static void config_hbao()
 	bool* enabled;
 	bool* temporal;
 	int* quality;
+	int* resolution;
 	int* blur;
 	short* radius;
 	short* intensity;
@@ -697,7 +709,7 @@ static void config_hbao()
 	tSliderSettings bias_settings = {};
 	int res;
 
-	hbao_wnd.Create("HBAO Settings", 0, 0, 360, 368);
+	hbao_wnd.Create("HBAO Settings", 0, 0, 390, 416);
 	sheet = hbao_wnd.GetSheet();
 
 	sheet->NewGroup("HBAO", 0, 0);
@@ -710,7 +722,14 @@ static void config_hbao()
 	sheet->AddRadioButton("High");
 	*quality = ConfigNormalizeHBAOQuality(Render_preferred_state.hbao_quality);
 
-	sheet->NewGroup("Blur", 0, 118, NEWUI_ALIGN_HORIZ);
+	sheet->NewGroup("Resolution", 0, 118, NEWUI_ALIGN_HORIZ);
+	resolution = sheet->AddFirstRadioButton("Auto");
+	sheet->AddRadioButton("Full");
+	sheet->AddRadioButton("Half");
+	sheet->AddRadioButton("Quarter");
+	*resolution = ConfigNormalizeHBAOResolution(Render_preferred_state.hbao_resolution);
+
+	sheet->NewGroup("Blur", 0, 168, NEWUI_ALIGN_HORIZ);
 	blur = sheet->AddFirstRadioButton("None");
 	sheet->AddRadioButton("Narrow");
 	sheet->AddRadioButton("Medium");
@@ -720,7 +739,7 @@ static void config_hbao()
 	radius_settings.min_val.f = 0.5f;
 	radius_settings.max_val.f = 32.0f;
 	radius_settings.type = SLIDER_UNITS_FLOAT;
-	sheet->NewGroup(NULL, 0, 168);
+	sheet->NewGroup(NULL, 0, 218);
 	radius = sheet->AddSlider("Radius", HBAO_RADIUS_SLIDER_UNITS,
 		CALC_SLIDER_POS_FLOAT(ConfigNormalizeHBAORadius(Render_preferred_state.hbao_radius),
 			&radius_settings, HBAO_RADIUS_SLIDER_UNITS),
@@ -729,7 +748,7 @@ static void config_hbao()
 	intensity_settings.min_val.f = 0.0f;
 	intensity_settings.max_val.f = 4.0f;
 	intensity_settings.type = SLIDER_UNITS_FLOAT;
-	sheet->NewGroup(NULL, 0, 213);
+	sheet->NewGroup(NULL, 0, 263);
 	intensity = sheet->AddSlider("Intensity", HBAO_INTENSITY_SLIDER_UNITS,
 		CALC_SLIDER_POS_FLOAT(ConfigNormalizeHBAOIntensity(Render_preferred_state.hbao_intensity),
 			&intensity_settings, HBAO_INTENSITY_SLIDER_UNITS),
@@ -738,13 +757,13 @@ static void config_hbao()
 	bias_settings.min_val.f = 0.0f;
 	bias_settings.max_val.f = 0.5f;
 	bias_settings.type = SLIDER_UNITS_FLOAT;
-	sheet->NewGroup(NULL, 0, 258);
+	sheet->NewGroup(NULL, 0, 308);
 	bias = sheet->AddSlider("Bias", HBAO_BIAS_SLIDER_UNITS,
 		CALC_SLIDER_POS_FLOAT(ConfigNormalizeHBAOBias(Render_preferred_state.hbao_bias),
 			&bias_settings, HBAO_BIAS_SLIDER_UNITS),
 		&bias_settings);
 
-	sheet->NewGroup(NULL, 78, 314, NEWUI_ALIGN_HORIZ);
+	sheet->NewGroup(NULL, 92, 364, NEWUI_ALIGN_HORIZ);
 	sheet->AddButton(TXT_OK, UID_OK);
 
 	hbao_wnd.Open();
@@ -752,7 +771,7 @@ static void config_hbao()
 	do
 	{
 		res = hbao_wnd.DoUI();
-		ApplyHBAOSettingsFromUI(enabled, temporal, quality, blur, radius, intensity, bias,
+		ApplyHBAOSettingsFromUI(enabled, temporal, quality, resolution, blur, radius, intensity, bias,
 			radius_settings, intensity_settings, bias_settings);
 		rend_SetPreferredState(&Render_preferred_state);
 	} while (res != UID_OK && res != NEWUIRES_FORCEQUIT);

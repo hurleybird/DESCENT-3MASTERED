@@ -876,6 +876,16 @@ GLuint Framebuffer::DepthTextureForRead()
 	return (m_samples >= 2) ? m_subdepthname : m_depthname;
 }
 
+GLuint Framebuffer::ColorTextureRaw() const
+{
+	return m_colorname;
+}
+
+GLuint Framebuffer::DepthTextureRaw() const
+{
+	return m_depthname;
+}
+
 static float ClampBloomSetting(float value)
 {
 	if (value < 0.0f)

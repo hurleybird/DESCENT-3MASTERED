@@ -375,6 +375,7 @@ void SaveGameSettings()
 	Database->write("RS_hbao_enabled", Render_preferred_state.hbao_enabled);
 	Database->write("RS_hbao_temporal", Render_preferred_state.hbao_temporal);
 	Database->write("RS_hbao_quality", Render_preferred_state.hbao_quality);
+	Database->write("RS_hbao_resolution", Render_preferred_state.hbao_resolution);
 	Database->write("RS_hbao_blur", Render_preferred_state.hbao_blur);
 	sprintf(tempbuffer, "%f", Render_preferred_state.hbao_radius);
 	Database->write("RS_hbao_radius", tempbuffer, strlen(tempbuffer) + 1);
@@ -504,6 +505,7 @@ void LoadGameSettings()
 	Render_preferred_state.hbao_enabled = false;
 	Render_preferred_state.hbao_temporal = true;
 	Render_preferred_state.hbao_quality = HBAO_QUALITY_MEDIUM;
+	Render_preferred_state.hbao_resolution = HBAO_RESOLUTION_AUTO;
 	Render_preferred_state.hbao_blur = HBAO_BLUR_MEDIUM;
 	Render_preferred_state.hbao_radius = 4.0f;
 	Render_preferred_state.hbao_intensity = 1.0f;
@@ -653,6 +655,11 @@ void LoadGameSettings()
 	if (tempint < 0) tempint = 0;
 	if (tempint > HBAO_QUALITY_HIGH) tempint = HBAO_QUALITY_HIGH;
 	Render_preferred_state.hbao_quality = (ubyte)tempint;
+	tempint = Render_preferred_state.hbao_resolution;
+	Database->read_int("RS_hbao_resolution", &tempint);
+	if (tempint < HBAO_RESOLUTION_AUTO) tempint = HBAO_RESOLUTION_AUTO;
+	if (tempint > HBAO_RESOLUTION_QUARTER) tempint = HBAO_RESOLUTION_QUARTER;
+	Render_preferred_state.hbao_resolution = (ubyte)tempint;
 	tempint = Render_preferred_state.hbao_blur;
 	Database->read_int("RS_hbao_blur", &tempint);
 	if (tempint < 0) tempint = 0;

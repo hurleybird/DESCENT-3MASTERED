@@ -258,6 +258,17 @@ enum hbao_blur
 	HBAO_BLUR_WIDE = 3,
 };
 
+//HBAO internal render resolution. Auto keeps AO near display-space or lower
+//when SSAA/high resolutions would otherwise make the pass scale with the
+//supersampled framebuffer.
+enum hbao_resolution
+{
+	HBAO_RESOLUTION_AUTO = 0,
+	HBAO_RESOLUTION_FULL = 1,
+	HBAO_RESOLUTION_HALF = 2,
+	HBAO_RESOLUTION_QUARTER = 3,
+};
+
 struct renderer_preferred_state
 {
 	ubyte mipping;
@@ -282,6 +293,7 @@ struct renderer_preferred_state
 	bool hbao_enabled;       //Master HBAO on/off
 	bool hbao_temporal;      //Use per-frame jitter plus temporal accumulation
 	ubyte hbao_quality;      //hbao_quality enum
+	ubyte hbao_resolution;   //hbao_resolution enum
 	ubyte hbao_blur;         //hbao_blur enum
 	float hbao_radius;       //World-space sample radius in map units (1..16-ish)
 	float hbao_intensity;    //AO strength multiplier (0..4)
