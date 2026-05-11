@@ -73,6 +73,75 @@ extern int Times_game_restored;
 // available for all.
 int Quicksave_game_slot = -1;
 
+struct tSaveGamePreviewData
+{
+	int cur_slot;
+	chunked_bitmap chunk;
+};
+
+#if defined(LINUX)
+void SaveGamePreviewDialogCB(newuiTiledWindow* wnd, void* data)
+#else
+void __cdecl SaveGamePreviewDialogCB(newuiTiledWindow* wnd, void* data)
+#endif
+{
+	tSaveGamePreviewData* cb_data = (tSaveGamePreviewData*)data;
+	UIGadget* cur_gadget;
+	int id;
+
+	cur_gadget = wnd->GetFocus();
+	if (!cur_gadget)
+		return;
+
+	for (id = SAVE_HOTSPOT_ID; id < (SAVE_HOTSPOT_ID + N_SAVE_SLOTS); id++)
+	{
+		if (cur_gadget->GetID() == id)
+		{
+			break;
+		}
+	}
+
+	if (id < (SAVE_HOTSPOT_ID + N_SAVE_SLOTS) && id != cb_data->cur_slot)
+	{
+		// new bitmap to be displayed!
+		char filename[PSFILENAME_LEN + 1];
+		char pathname[_MAX_PATH];
+		char savegame_dir[_MAX_PATH];
+		char desc[GAMESAVE_DESCLEN + 1];
+		int bm_handle;
+
+		if (cb_data->chunk.bm_array)
+			bm_DestroyChunkedBitmap(&cb_data->chunk);
+
+		mprintf((0, "savegame slot=%d\n", id - SAVE_HOTSPOT_ID));
+
+		ddio_MakePath(savegame_dir, User_directory, "savegame", NULL);
+		sprintf(filename, "saveg00%d", (id - SAVE_HOTSPOT_ID));
+		ddio_MakePath(pathname, savegame_dir, filename, NULL);
+
+		if (GetGameStateInfo(pathname, desc, &bm_handle))
+		{
+			if (bm_handle > 0)
+			{
+				bm_CreateChunkedBitmap(bm_handle, &cb_data->chunk);
+				bm_FreeBitmap(bm_handle);
+			}
+		}
+		cb_data->cur_slot = id;
+	}
+
+	// draw bitmap if there is one
+	if (cb_data->chunk.bm_array)
+	{
+		UIBitmapItem bm_item;
+		int x, y;
+		bm_item.set_chunked_bitmap(&cb_data->chunk);
+		x = (wnd->W() - bm_item.width()) / 2;
+		y = (wnd->H() - bm_item.height()) / 4;
+		bm_item.draw(x, y);
+	}
+}
+
 void QuickSaveGame()
 {
 	if (Game_mode & GM_MULTI)
@@ -130,6 +199,7 @@ void QuickSaveGame()
 
 void SaveGameDialog()
 {
+	tSaveGamePreviewData preview_data;
 	newuiTiledWindow wnd;
 	newuiSheet* sheet;
 	int i, res;
@@ -177,6 +247,10 @@ void SaveGameDialog()
 	sheet->AddText(TXT_SAVEGAMEHELP);
 
 	sheet->NewGroup(NULL, GAMESAVE_SLOT_X, GAMESAVE_SLOT_Y2);
+
+	preview_data.cur_slot = SAVE_HOTSPOT_ID;
+	preview_data.chunk.bm_array = NULL;
+
 	// generate save slots.
 	for (i = 0; i < N_SAVE_SLOTS; i++)
 	{
@@ -191,12 +265,30 @@ void SaveGameDialog()
 		fp = fopen(pathname, "rb");
 		if (fp)
 		{
+			int bm_handle;
+			int* pbm_handle;
 			fclose(fp);
 
-			if (GetGameStateInfo(pathname, desc))
+			if (preview_data.cur_slot == (SAVE_HOTSPOT_ID + i))
+				pbm_handle = &bm_handle;
+			else
+				pbm_handle = NULL;
+
+			if (GetGameStateInfo(pathname, desc, pbm_handle))
 			{
 				sheet->AddHotspot(desc, GAMESAVE_SLOT_W, GAMESAVE_SLOT_H2, SAVE_HOTSPOT_ID + i, ingroup);
 				occupied_slot[i] = true;
+
+				// create chunk
+				if (pbm_handle && bm_handle > 0)
+				{
+					if (preview_data.chunk.bm_array)
+					{
+						bm_DestroyChunkedBitmap(&preview_data.chunk);
+					}
+					bm_CreateChunkedBitmap(bm_handle, &preview_data.chunk);
+					bm_FreeBitmap(bm_handle);
+				}
 			}
 			else
 			{
@@ -211,6 +303,9 @@ void SaveGameDialog()
 
 	sheet->NewGroup(NULL, GAMESAVE_WND_W - 148, GAMESAVE_WND_H - 100);
 	sheet->AddButton(TXT_CANCEL, UID_CANCEL);
+
+	wnd.SetData(&preview_data);
+	wnd.SetOnDrawCB(SaveGamePreviewDialogCB);
 
 	//Mouse clicks from gameplay will be read by the dialog without this flush
 	ddio_MouseQueueFlush();
@@ -283,84 +378,20 @@ void SaveGameDialog()
 		}
 	} while (res != UID_CANCEL);
 
+	if (preview_data.chunk.bm_array)
+	{
+		bm_DestroyChunkedBitmap(&preview_data.chunk);
+	}
+
 	wnd.Close();
 	wnd.Destroy();
 }
 
 
 ////////////////////////////////////////////////////////////////////////////////////////
-struct tLoadGameDialogData
-{
-	int cur_slot;
-	chunked_bitmap chunk;
-};
-
-#if defined(LINUX)
-void LoadGameDialogCB(newuiTiledWindow* wnd, void* data)
-#else
-void __cdecl LoadGameDialogCB(newuiTiledWindow* wnd, void* data)
-#endif
-{
-	tLoadGameDialogData* cb_data = (tLoadGameDialogData*)data;
-	UIGadget* cur_gadget;
-	int id;
-
-	cur_gadget = wnd->GetFocus();
-
-	for (id = SAVE_HOTSPOT_ID; id < (SAVE_HOTSPOT_ID + N_SAVE_SLOTS); id++)
-	{
-		if (cur_gadget->GetID() == id)
-		{
-			break;
-		}
-	}
-
-	if (id < (SAVE_HOTSPOT_ID + N_SAVE_SLOTS) && id != cb_data->cur_slot)
-	{
-		// new bitmap to be displayed!
-		char filename[PSFILENAME_LEN + 1];
-		char pathname[_MAX_PATH];
-		char savegame_dir[_MAX_PATH];
-		char desc[GAMESAVE_DESCLEN + 1];
-		int bm_handle;
-
-		if (cb_data->chunk.bm_array)
-			bm_DestroyChunkedBitmap(&cb_data->chunk);
-
-		mprintf((0, "savegame slot=%d\n", id - SAVE_HOTSPOT_ID));
-
-		ddio_MakePath(savegame_dir, User_directory, "savegame", NULL);
-		sprintf(filename, "saveg00%d", (id - SAVE_HOTSPOT_ID));
-		ddio_MakePath(pathname, savegame_dir, filename, NULL);
-
-		if (GetGameStateInfo(pathname, desc, &bm_handle))
-		{
-			if (bm_handle > 0)
-			{
-				bm_CreateChunkedBitmap(bm_handle, &cb_data->chunk);
-				bm_FreeBitmap(bm_handle);
-			}
-		}
-		cb_data->cur_slot = id;
-	}
-
-	// draw bitmap if there is one
-	if (cb_data->chunk.bm_array)
-	{
-		UIBitmapItem bm_item;
-		int x, y;
-		bm_item.set_chunked_bitmap(&cb_data->chunk);
-		x = (wnd->W() - bm_item.width()) / 2;
-		y = (wnd->H() - bm_item.height()) / 4;
-		bm_item.draw(x, y);
-	}
-}
-
-
-
 bool LoadGameDialog()
 {
-	tLoadGameDialogData lgd_data;
+	tSaveGamePreviewData lgd_data;
 	newuiTiledWindow wnd;
 	newuiSheet* sheet;
 	int i, res;
@@ -461,7 +492,7 @@ bool LoadGameDialog()
 	sheet->AddButton(TXT_CANCEL, UID_CANCEL);
 
 	wnd.SetData(&lgd_data);
-	wnd.SetOnDrawCB(LoadGameDialogCB);
+	wnd.SetOnDrawCB(SaveGamePreviewDialogCB);
 
 	//Mouse clicks from gameplay will be read by the dialog without this flush
 	ddio_MouseQueueFlush();
