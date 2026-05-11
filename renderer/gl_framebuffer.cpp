@@ -202,6 +202,8 @@ Framebuffer::Framebuffer()
 	m_width = m_height = 0;
 	m_name = m_subname = m_colorname = m_subcolorname = m_depthname = m_subdepthname = 0;
 	m_samples = 0;
+	m_subcolor_dirty = true;
+	m_subdepth_dirty = true;
 }
 
 static int GetSupportedMsaaSamples(int requested_samples)
@@ -382,6 +384,8 @@ void Framebuffer::Destroy()
 	m_subname = m_subcolorname = m_subdepthname = 0;
 	m_width = m_height = 0;
 	m_samples = 0;
+	m_subcolor_dirty = true;
+	m_subdepth_dirty = true;
 }
 
 void Framebuffer::SubFramebufferBlit(GLbitfield mask)
@@ -389,13 +393,22 @@ void Framebuffer::SubFramebufferBlit(GLbitfield mask)
 	if (m_samples < 2)
 	{
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, m_name);
+		return;
 	}
-	else
+
+	//Skip resolve bits whose sub texture already mirrors the MSAA contents.
+	GLbitfield to_resolve = 0;
+	if ((mask & GL_COLOR_BUFFER_BIT) && m_subcolor_dirty)
+		to_resolve |= GL_COLOR_BUFFER_BIT;
+	if ((mask & GL_DEPTH_BUFFER_BIT) && m_subdepth_dirty)
+		to_resolve |= GL_DEPTH_BUFFER_BIT;
+
+	if (to_resolve != 0)
 	{
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, m_name);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_subname);
 		glBlitFramebuffer(0, 0, m_width, m_height, 0, 0,
-			m_width, m_height, mask, GL_NEAREST);
+			m_width, m_height, to_resolve, GL_NEAREST);
 
 #ifdef _DEBUG
 		GLenum err = glGetError();
@@ -405,9 +418,14 @@ void Framebuffer::SubFramebufferBlit(GLbitfield mask)
 		}
 #endif
 
-		//Leave the sub color buffer bound for reading by BlitToRaw.
-		glBindFramebuffer(GL_READ_FRAMEBUFFER, m_subname);
+		if (to_resolve & GL_COLOR_BUFFER_BIT)
+			m_subcolor_dirty = false;
+		if (to_resolve & GL_DEPTH_BUFFER_BIT)
+			m_subdepth_dirty = false;
 	}
+
+	//Leave the sub color buffer bound for reading by BlitToRaw.
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, m_subname);
 }
 
 void Framebuffer::BlitToRaw(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, GLenum filter)

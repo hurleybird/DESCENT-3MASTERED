@@ -283,6 +283,9 @@ int GLCompatibilityRenderer::SetPreferredState(renderer_preferred_state* pref_st
 
 void GLCompatibilityRenderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 {
+	if (framebuffer_ok)
+		framebuffers[framebuffer_current_draw].MarkAllDirty();
+
 	if (clear_flags & RF_CLEAR_ZBUFFER)
 	{
 		glClear(GL_DEPTH_BUFFER_BIT);
@@ -402,6 +405,7 @@ void GLCompatibilityRenderer::Flip(void)
 
 	framebuffer_current_draw = (framebuffer_current_draw + 1) % NUM_GL1_FBOS;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
+	framebuffers[framebuffer_current_draw].MarkAllDirty();
 	bloom_source_valid = false;
 
 #ifndef NDEBUG

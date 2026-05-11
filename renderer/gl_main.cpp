@@ -327,6 +327,9 @@ int GL3Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 
 void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 {
+	if (framebuffer_ok)
+		framebuffers[framebuffer_current_draw].MarkAllDirty();
+
 	GLenum glclearflags = 0;
 	if (clear_flags & RF_CLEAR_ZBUFFER)
 		glclearflags |= GL_DEPTH_BUFFER_BIT;
@@ -471,6 +474,9 @@ void GL3Renderer::Flip()
 
 	framebuffer_current_draw = (framebuffer_current_draw + 1) % NUM_GL3_FBOS;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
+	//Scene rendering is about to write to this framebuffer's MSAA attachments,
+	//so any cached resolve from the previous time we used this slot is stale.
+	framebuffers[framebuffer_current_draw].MarkAllDirty();
 	bloom_source_valid = false;
 
 #ifdef _DEBUG

@@ -101,6 +101,12 @@ class Framebuffer
 	GLuint		m_colorname, m_subcolorname, m_depthname, m_subdepthname;
 	uint32_t	m_width, m_height;
 	uint32_t	m_samples;
+	//Track whether the MSAA->sub resolve is up to date. Each MSAA resolve blit
+	//costs W*H*samples of bandwidth, and multiple post-process stages can ask
+	//for the resolved depth/color in a single frame. We skip the blit when the
+	//cached sub framebuffer already matches the MSAA contents.
+	bool		m_subcolor_dirty;
+	bool		m_subdepth_dirty;
 
 	bool Allocate(int width, int height, int msaa_samples);
 	//Used when multisampling is enabled. Blits the requested buffers to the non-multisample sub framebuffer.
@@ -110,6 +116,11 @@ public:
 	Framebuffer();
 	void Update(int width, int height, int msaa_samples);
 	void Destroy();
+	//Mark the resolved sub framebuffer as stale. Call after writing to the MSAA
+	//attachments so the next read triggers a fresh resolve.
+	void MarkColorDirty() { m_subcolor_dirty = true; }
+	void MarkDepthDirty() { m_subdepth_dirty = true; }
+	void MarkAllDirty() { m_subcolor_dirty = true; m_subdepth_dirty = true; }
 	//Blits to the target framebuffer using glBlitFramebuffer.
 	//Will set current read framebuffer to m_name.
 	void BlitToRaw(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, GLenum filter = GL_NEAREST);

@@ -89,13 +89,20 @@ namespace
 			break;
 		}
 
-		int scale = RendererSupersamplingFactor(pref_state);
-		if (scale < 1)
-			scale = 1;
-		if (scale > 4)
-			scale = 4;
-
-		const int target_pixels = 1920 * 1080;
+		//Start at scale 1 and double until the AO buffer fits the budget.
+		//Seeding with SupersamplingFactor was redundant - the loop below
+		//catches SSAA-inflated sources too - and worse, it forced unnecessary
+		//downsampling on small back buffers when SSAA was high.
+		int scale = 1;
+		int target_pixels = 1920 * 1080;
+		//MSAA-resolved depth still costs sample-count bandwidth per AO pixel
+		//in upstream resolves; shrink the budget so we trade a bit of AO
+		//resolution for fewer per-sample reads.
+		int samples = (int)RendererMsaaSamples(pref_state);
+		if (samples >= 8)
+			target_pixels /= 4;
+		else if (samples >= 4)
+			target_pixels /= 2;
 		while (scale < 4)
 		{
 			int ao_width = (width + scale - 1) / scale;
@@ -693,6 +700,10 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	glBindVertexArray(GL_GetFramebufferVAO());
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 	glBindVertexArray(0);
+
+	//Pass 6 multiplied AO into the MSAA color attachment; any cached single-
+	//sample resolve from earlier in this frame no longer matches.
+	source->MarkColorDirty();
 
 	//Restore prior GL state.
 	glBlendFuncSeparate(blend_src_rgb, blend_dst_rgb, blend_src_alpha, blend_dst_alpha);
