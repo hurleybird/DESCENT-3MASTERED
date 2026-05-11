@@ -359,10 +359,9 @@ struct HBAOResources
 	void Destroy();
 	void InvalidateHistory();
 	//Computes AO for the supplied source framebuffer (which must have valid
-	//color + depth). Modulates source->color in place by sampling
-	//pref_state and projection info. Caller must ensure source is currently
-	//bound for drawing (the framebuffer is rebound inside the function).
-	void Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
+	//color + depth). Modulates target->color, or source->color when target is
+	//null, by sampling pref_state and projection info.
+	void Apply(Framebuffer* source, Framebuffer* target, const renderer_preferred_state& pref_state,
 		const rendering_state& render_state, const float* projection,
 		float nearz, float farz, GLuint motion_texture, GLuint suppression_mask_texture,
 		const float* current_inv_view_projection,

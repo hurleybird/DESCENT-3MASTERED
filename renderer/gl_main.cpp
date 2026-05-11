@@ -405,9 +405,6 @@ void GL3Renderer::Flip()
 	UpdatePresentRect();
 
 	Framebuffer* present_framebuffer = &framebuffers[framebuffer_current_draw];
-	Framebuffer* bloom_source = bloom_source_valid ? &bloom_source_framebuffer : nullptr;
-	Framebuffer* bloom_effect_source = bloom_source;
-	Framebuffer* bloom_scene_source = bloom_source;
 	int supersampling_factor = SupersamplingFactor();
 	float display_gamma = OpenGL_preferred_state.gamma != 0.0f ? 1.f / OpenGL_preferred_state.gamma : 1.f;
 	if (supersampling_factor >= 4)
@@ -431,6 +428,22 @@ void GL3Renderer::Flip()
 		present_framebuffer = &resolved_framebuffer;
 	}
 
+	if (hbao_scene_valid)
+	{
+		hbao_composite_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
+		hbao_compositeshader.Use();
+		rend_ClearBoundTextures();
+		GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
+		GL_BindFramebufferTexture(hbao_scene_framebuffer.ColorTextureForRead(), 1, GL_NEAREST);
+		GL_BindFramebufferTexture(bloom_source_framebuffer.ColorTextureForRead(), 2, GL_NEAREST);
+		GL_DrawFramebufferQuad(hbao_composite_framebuffer.Handle(), 0, 0,
+			hbao_composite_framebuffer.Width(), hbao_composite_framebuffer.Height());
+		present_framebuffer = &hbao_composite_framebuffer;
+	}
+
+	Framebuffer* bloom_source = bloom_source_valid ? &bloom_source_framebuffer : nullptr;
+	Framebuffer* bloom_effect_source = bloom_source;
+	Framebuffer* bloom_scene_source = bloom_source;
 	GLuint bloom_depth = bloom_source_valid ? bloom_source_framebuffer.DepthTextureForRead() : 0;
 	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_effect_source, OpenGL_preferred_state, OpenGL_state, display_gamma, bloom_depth);
 	if (bloom_framebuffer)
@@ -478,6 +491,7 @@ void GL3Renderer::Flip()
 	//so any cached resolve from the previous time we used this slot is stale.
 	framebuffers[framebuffer_current_draw].MarkAllDirty();
 	bloom_source_valid = false;
+	hbao_scene_valid = false;
 
 #ifdef _DEBUG
 	err = glGetError();
@@ -502,44 +516,23 @@ void GL3Renderer::EndFrame(void)
 void GL3Renderer::CaptureBloomSource()
 {
 	bloom_source_valid = false;
+	hbao_scene_valid = false;
 
-	// HBAO is a no-op if disabled.
-	if (!OpenGL_preferred_state.hbao_enabled)
+	const bool hbao_enabled = OpenGL_preferred_state.hbao_enabled && framebuffer_ok;
+	const bool bloom_enabled = OpenGL_preferred_state.bloom_enabled;
+
+	if (!hbao_enabled)
 		hbao.InvalidateHistory();
-	if (OpenGL_preferred_state.hbao_enabled && framebuffer_ok)
-	{
-		float near_z = last_nearz;
-		float far_z = last_farz;
-		//Pull near/far back out of the projection matrix that was used for
-		//the world pass; setup.cpp hardcodes near=1/far=10000 but extracting
-		//keeps HBAO honest if that ever changes.
-		if (fabsf(last_projection[10] - 1.0f) > 1e-6f &&
-			fabsf(last_projection[10] + 1.0f) > 1e-6f)
-		{
-			near_z = last_projection[14] / (last_projection[10] - 1.0f);
-			far_z = last_projection[14] / (last_projection[10] + 1.0f);
-			if (near_z <= 0.0f) near_z = 1.0f;
-			if (far_z <= near_z) far_z = near_z * 1000.0f;
-		}
-		GLuint motion_texture = motion_vectors_dirty ?
-			motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
-		GLuint hbao_mask_texture = hbao_mask_dirty ?
-			hbao_mask.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
-		hbao.Apply(&framebuffers[framebuffer_current_draw], OpenGL_preferred_state,
-			OpenGL_state, last_projection, near_z, far_z, motion_texture, hbao_mask_texture,
-			have_current_inverse_view_projection ? current_inverse_view_projection : nullptr,
-			previous_view_projection,
-			have_current_inverse_view_projection && have_previous_view_projection);
-		hbao_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
-	}
-	if (framebuffer_ok && have_current_view_projection)
-	{
-		memcpy(previous_view_projection, current_view_projection, sizeof(previous_view_projection));
-		have_previous_view_projection = true;
-	}
 
-	if (!OpenGL_preferred_state.bloom_enabled)
+	if (!hbao_enabled && !bloom_enabled)
+	{
+		if (framebuffer_ok && have_current_view_projection)
+		{
+			memcpy(previous_view_projection, current_view_projection, sizeof(previous_view_projection));
+			have_previous_view_projection = true;
+		}
 		return;
+	}
 
 	int width = OpenGL_state.screen_width;
 	int height = OpenGL_state.screen_height;
@@ -579,14 +572,55 @@ void GL3Renderer::CaptureBloomSource()
 			bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(), GL_NEAREST);
 	}
 
-	framebuffers[framebuffer_current_draw].BlitDepthTo(bloom_source_framebuffer.Handle(), 0, 0,
-		bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height());
+	if (bloom_enabled)
+	{
+		framebuffers[framebuffer_current_draw].BlitDepthTo(bloom_source_framebuffer.Handle(), 0, 0,
+			bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height());
+	}
+
+	if (hbao_enabled)
+	{
+		hbao_scene_framebuffer.Update(width, height, 0);
+		bloom_source_framebuffer.BlitToRaw(hbao_scene_framebuffer.Handle(), 0, 0,
+			hbao_scene_framebuffer.Width(), hbao_scene_framebuffer.Height(), GL_NEAREST);
+
+		float near_z = last_nearz;
+		float far_z = last_farz;
+		//Pull near/far back out of the projection matrix that was used for
+		//the world pass; setup.cpp hardcodes near=1/far=10000 but extracting
+		//keeps HBAO honest if that ever changes.
+		if (fabsf(last_projection[10] - 1.0f) > 1e-6f &&
+			fabsf(last_projection[10] + 1.0f) > 1e-6f)
+		{
+			near_z = last_projection[14] / (last_projection[10] - 1.0f);
+			far_z = last_projection[14] / (last_projection[10] + 1.0f);
+			if (near_z <= 0.0f) near_z = 1.0f;
+			if (far_z <= near_z) far_z = near_z * 1000.0f;
+		}
+		GLuint motion_texture = motion_vectors_dirty ?
+			motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
+		GLuint hbao_mask_texture = hbao_mask_dirty ?
+			hbao_mask.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
+		hbao.Apply(&framebuffers[framebuffer_current_draw], &bloom_source_framebuffer, OpenGL_preferred_state,
+			OpenGL_state, last_projection, near_z, far_z, motion_texture, hbao_mask_texture,
+			have_current_inverse_view_projection ? current_inverse_view_projection : nullptr,
+			previous_view_projection,
+			have_current_inverse_view_projection && have_previous_view_projection);
+		hbao_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+		hbao_scene_valid = true;
+	}
 
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 	ShaderProgram::ClearBinding();
 
-	bloom_source_valid = true;
+	if (framebuffer_ok && have_current_view_projection)
+	{
+		memcpy(previous_view_projection, current_view_projection, sizeof(previous_view_projection));
+		have_previous_view_projection = true;
+	}
+
+	bloom_source_valid = bloom_enabled;
 	rend_RestoreLegacy();
 }
 
@@ -1258,6 +1292,7 @@ void GL3Renderer::UpdateFramebuffer(void)
 		downscale_framebuffer.Destroy();
 
 	bloom_source_valid = false;
+	hbao_scene_valid = false;
 
 	framebuffer_current_draw = 0;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[0].Handle());
@@ -1285,7 +1320,10 @@ void GL3Renderer::CloseFramebuffer(void)
 	bloom_source_framebuffer.Destroy();
 	bloom_source_resolved_framebuffer.Destroy();
 	bloom_source_downscale_framebuffer.Destroy();
+	hbao_scene_framebuffer.Destroy();
+	hbao_composite_framebuffer.Destroy();
 	bloom_source_valid = false;
+	hbao_scene_valid = false;
 	motion_vectors.Destroy();
 	hbao_mask.Destroy();
 

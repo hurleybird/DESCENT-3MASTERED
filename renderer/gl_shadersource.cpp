@@ -280,6 +280,28 @@ const char* bloomCompositeFragmentSrc =
 "}\n"
 "";
 
+const char* hbaoDeferredCompositeFragmentSrc =
+"#version 330 core\n"
+"\n"
+"in vec2 outuv;\n"
+"out vec4 color;\n"
+"\n"
+"uniform sampler2D final_source;\n"
+"uniform sampler2D scene_source;\n"
+"uniform sampler2D ao_scene_source;\n"
+"\n"
+"void main()\n"
+"{\n"
+"	vec4 final_color = texture(final_source, outuv);\n"
+"	vec3 scene_color = texture(scene_source, outuv).rgb;\n"
+"	vec3 ao_scene_color = texture(ao_scene_source, outuv).rgb;\n"
+"	vec3 changed = abs(final_color.rgb - scene_color);\n"
+"	float changed_amount = max(max(changed.r, changed.g), changed.b);\n"
+"	float scene_mask = 1.0 - smoothstep(0.002, 0.03, changed_amount);\n"
+"	color = vec4(mix(final_color.rgb, ao_scene_color, scene_mask), final_color.a);\n"
+"}\n"
+"";
+
 const char* testVertexSrc =
 "#version 330 core\n"
 "\n"

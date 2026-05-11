@@ -303,7 +303,7 @@ void HBAOResources::InvalidateHistory()
 	temporal_settings_valid = false;
 }
 
-void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
+void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const renderer_preferred_state& pref_state,
 	const rendering_state& render_state, const float* projection,
 	float nearz, float farz, GLuint motion_texture, GLuint suppression_mask_texture,
 	const float* current_inv_view_projection,
@@ -324,6 +324,8 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 		}
 		return;
 	}
+	if (!target)
+		target = source;
 
 	int source_width = (int)source->Width();
 	int source_height = (int)source->Height();
@@ -355,6 +357,11 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	//depth-edge ghosts from 8-bit quantization in blur and temporal rejection.
 	ao_framebuffer.Update(ao_width, ao_height, GL_RG16F, GL_RG, GL_FLOAT);
 	ao_blur_framebuffer.Update(ao_width, ao_height, GL_RG16F, GL_RG, GL_FLOAT);
+
+	int target_width = (int)target->Width();
+	int target_height = (int)target->Height();
+	if (target_width <= 0 || target_height <= 0)
+		return;
 
 	//Save GL state we are about to trample so we leave the caller in
 	//the same state we found it in (matters for follow-up draw calls).
@@ -665,21 +672,20 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	}
 
 	//-------------------------------------------------------------------------
-	// Pass 6: Modulate scene color in-place.
+	// Pass 6: Modulate target scene color in-place.
 	//
-	// Draw a fullscreen quad to the source framebuffer with blend mode
+	// Draw a fullscreen quad to the target framebuffer with blend mode
 	// (DST_COLOR, ZERO) so the destination is multiplied by our AO factor.
-	// MSAA is re-enabled while writing so the rasterizer covers every sample.
 	//-------------------------------------------------------------------------
 	apply_shader.Use();
 	glUniform1f(apply_intensity, intensity);
 	if (apply_has_mask != -1)
 		glUniform1i(apply_has_mask, final_suppression_mask != 0 ? 1 : 0);
 
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, source->Handle());
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target->Handle());
 	GLenum draw_buffer = GL_COLOR_ATTACHMENT0;
 	glDrawBuffers(1, &draw_buffer);
-	glViewport(0, 0, source_width, source_height);
+	glViewport(0, 0, target_width, target_height);
 
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_DST_COLOR, GL_ZERO);
@@ -687,8 +693,6 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	glDisable(GL_CULL_FACE);
 	glDepthMask(GL_FALSE);
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	if (multisample_enabled)
-		glEnable(GL_MULTISAMPLE);
 
 	rend_ClearBoundTextures();
 	GL_BindFramebufferTexture(apply_source->ColorTextureForRead(), 0, GL_LINEAR);
@@ -701,9 +705,9 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 	glBindVertexArray(0);
 
-	//Pass 6 multiplied AO into the MSAA color attachment; any cached single-
-	//sample resolve from earlier in this frame no longer matches.
-	source->MarkColorDirty();
+	//Pass 6 multiplied AO into the target color attachment; any cached
+	//single-sample resolve from earlier in this frame no longer matches.
+	target->MarkColorDirty();
 
 	//Restore prior GL state.
 	glBlendFuncSeparate(blend_src_rgb, blend_dst_rgb, blend_src_alpha, blend_dst_alpha);

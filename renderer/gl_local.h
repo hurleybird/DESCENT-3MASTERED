@@ -89,16 +89,20 @@ class GL3Renderer : public IRenderer
 	Framebuffer bloom_source_framebuffer;
 	Framebuffer bloom_source_resolved_framebuffer;
 	Framebuffer bloom_source_downscale_framebuffer;
+	Framebuffer hbao_scene_framebuffer;
+	Framebuffer hbao_composite_framebuffer;
 	MotionVectorResources motion_vectors;
 	HBAOMaskResources hbao_mask;
 	int framebuffer_current_draw = 0;
 	bool bloom_source_valid = false;
+	bool hbao_scene_valid = false;
 
 	unsigned int framebuffer_blit_x = 0, framebuffer_blit_y = 0, framebuffer_blit_w = 0, framebuffer_blit_h = 0;
 
 	ShaderProgram blitshader;
 	ShaderProgram downsampleshader;
 	ShaderProgram motionvectorshader;
+	ShaderProgram hbao_compositeshader;
 	BloomResources bloom;
 	HBAOResources hbao;
 	//Cached projection matrix and near/far for HBAO. Updated on every
@@ -118,6 +122,9 @@ class GL3Renderer : public IRenderer
 	GLint downsampleshader_gamma = -1;
 	GLint downsampleshader_dest_origin = -1;
 	GLint motionvector_screen_size = -1;
+	GLint hbao_composite_final_source = -1;
+	GLint hbao_composite_scene_source = -1;
+	GLint hbao_composite_ao_scene_source = -1;
 	GLfloat max_line_width = 1.0f;
 	GLfloat max_point_size = 1.0f;
 
