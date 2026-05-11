@@ -733,19 +733,22 @@ void HBAOMaskResources::Update(uint32_t new_width, uint32_t new_height, uint32_t
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	}
 
-	glGenTextures(1, &resolved_texture);
-	glBindTexture(GL_TEXTURE_2D, resolved_texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	if (samples >= 2)
+	{
+		glGenTextures(1, &resolved_texture);
+		glBindTexture(GL_TEXTURE_2D, resolved_texture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-	glGenFramebuffers(1, &resolve_framebuffer);
-	glBindFramebuffer(GL_FRAMEBUFFER, resolve_framebuffer);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, resolved_texture, 0);
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	glReadBuffer(GL_COLOR_ATTACHMENT0);
+		glGenFramebuffers(1, &resolve_framebuffer);
+		glBindFramebuffer(GL_FRAMEBUFFER, resolve_framebuffer);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, resolved_texture, 0);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glReadBuffer(GL_COLOR_ATTACHMENT0);
+	}
 
 	rend_ClearBoundTextures();
 }
@@ -829,6 +832,9 @@ GLuint HBAOMaskResources::TextureForRead(GLuint source_framebuffer)
 {
 	if (mask_texture == 0)
 		return 0;
+
+	if (samples < 2)
+		return mask_texture;
 
 	GLint old_read = 0, old_draw = 0;
 	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);

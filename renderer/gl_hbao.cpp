@@ -148,8 +148,6 @@ void HBAOResources::InitShaders()
 	suppression_use_bloom_mask = suppression_shader.FindUniform("use_bloom_mask");
 	suppression_gamma = suppression_shader.FindUniform("gamma");
 	suppression_bloom_threshold = suppression_shader.FindUniform("bloom_threshold");
-	suppression_bloom_radius_pixels = suppression_shader.FindUniform("bloom_radius_pixels");
-	suppression_inv_screen_size = suppression_shader.FindUniform("inv_screen_size");
 
 	apply_shader.AttachSource(blitVertexSrc, hbaoApplyFragmentSrc);
 	apply_shader.Use();
@@ -449,7 +447,7 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 		if (temporal_has_motion != -1)
 			glUniform1i(temporal_has_motion, motion_texture != 0 ? 1 : 0);
 		if (temporal_history_weight != -1)
-			glUniform1f(temporal_history_weight, 0.90f);
+			glUniform1f(temporal_history_weight, 0.96f);
 
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(blurred->ColorTextureForRead(), 0, GL_NEAREST);
@@ -499,21 +497,6 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 			glUniform1f(suppression_gamma, display_gamma);
 		if (suppression_bloom_threshold != -1)
 			glUniform1f(suppression_bloom_threshold, Clamp01(pref_state.bloom_threshold));
-		if (suppression_bloom_radius_pixels != -1)
-		{
-			float render_scale = sqrtf(((float)width * (float)height) / (1920.0f * 1080.0f));
-			if (render_scale < 0.5f)
-				render_scale = 0.5f;
-			float bloom_radius_pixels = (8.0f + 40.0f * Clamp01(pref_state.bloom_spread)) * render_scale;
-			if (bloom_radius_pixels < 6.0f)
-				bloom_radius_pixels = 6.0f;
-			if (bloom_radius_pixels > 96.0f)
-				bloom_radius_pixels = 96.0f;
-			glUniform1f(suppression_bloom_radius_pixels, bloom_radius_pixels);
-		}
-		if (suppression_inv_screen_size != -1)
-			glUniform2f(suppression_inv_screen_size, 1.0f / (float)width, 1.0f / (float)height);
-
 		rend_ClearBoundTextures();
 		if (suppression_mask_texture != 0)
 			GL_BindFramebufferTexture(suppression_mask_texture, 0, GL_NEAREST);

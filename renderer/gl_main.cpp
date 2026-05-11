@@ -404,10 +404,59 @@ void GL3Renderer::CaptureBloomSource()
 {
 	bloom_source_valid = false;
 
-	//Run HBAO against the main framebuffer first, so the bloom source we
-	//capture below already contains AO-darkened scene color. This keeps
-	//the bloom composite "scene mask" (which detects HUD overlays by diff)
-	//consistent regardless of AO. HBAO is a no-op if disabled.
+	if (OpenGL_preferred_state.bloom_enabled)
+	{
+		int width = OpenGL_state.screen_width;
+		int height = OpenGL_state.screen_height;
+		if (width > 0 && height > 0)
+		{
+			bloom_source_framebuffer.Update(width, height, 0);
+
+			GLint old_read = 0, old_draw = 0;
+			glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
+			glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+
+			int supersampling_factor = SupersamplingFactor();
+			float display_gamma = OpenGL_preferred_state.gamma != 0.0f ? 1.f / OpenGL_preferred_state.gamma : 1.f;
+			if (supersampling_factor >= 4)
+			{
+				bloom_source_downscale_framebuffer.Update(width * 2, height * 2, 0);
+				downsampleshader.Use();
+				framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_downscale_framebuffer.Handle(), 0, 0,
+					bloom_source_downscale_framebuffer.Width(), bloom_source_downscale_framebuffer.Height(),
+					downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+				downsampleshader.Use();
+				bloom_source_downscale_framebuffer.DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
+					bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
+					downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+			}
+			else if (supersampling_factor >= 2)
+			{
+				downsampleshader.Use();
+				framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
+					bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
+					downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+			}
+			else
+			{
+				framebuffers[framebuffer_current_draw].BlitToRaw(bloom_source_framebuffer.Handle(), 0, 0,
+					bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(), GL_NEAREST);
+			}
+
+			framebuffers[framebuffer_current_draw].BlitDepthTo(bloom_source_framebuffer.Handle(), 0, 0,
+				bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height());
+
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+			ShaderProgram::ClearBinding();
+
+			bloom_source_valid = true;
+			rend_RestoreLegacy();
+		}
+	}
+
+	// Run HBAO after bloom capture so bright sources feed bloom before AO can
+	// dim them. The composite pass ignores AO-only darkening when masking HUD.
 	if (!OpenGL_preferred_state.hbao_enabled)
 		hbao.InvalidateHistory();
 	if (OpenGL_preferred_state.hbao_enabled && framebuffer_ok)
@@ -440,57 +489,6 @@ void GL3Renderer::CaptureBloomSource()
 		memcpy(previous_view_projection, current_view_projection, sizeof(previous_view_projection));
 		have_previous_view_projection = true;
 	}
-
-	if (!OpenGL_preferred_state.bloom_enabled)
-		return;
-
-	int width = OpenGL_state.screen_width;
-	int height = OpenGL_state.screen_height;
-	if (width <= 0 || height <= 0)
-		return;
-
-	bloom_source_framebuffer.Update(width, height, 0);
-
-	GLint old_read = 0, old_draw = 0;
-	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
-	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
-
-	int supersampling_factor = SupersamplingFactor();
-	float display_gamma = OpenGL_preferred_state.gamma != 0.0f ? 1.f / OpenGL_preferred_state.gamma : 1.f;
-	if (supersampling_factor >= 4)
-	{
-		bloom_source_downscale_framebuffer.Update(width * 2, height * 2, 0);
-		downsampleshader.Use();
-		framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_downscale_framebuffer.Handle(), 0, 0,
-			bloom_source_downscale_framebuffer.Width(), bloom_source_downscale_framebuffer.Height(),
-			downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
-		downsampleshader.Use();
-		bloom_source_downscale_framebuffer.DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
-			bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
-			downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
-	}
-	else if (supersampling_factor >= 2)
-	{
-		downsampleshader.Use();
-		framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
-			bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
-			downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
-	}
-	else
-	{
-		framebuffers[framebuffer_current_draw].BlitToRaw(bloom_source_framebuffer.Handle(), 0, 0,
-			bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(), GL_NEAREST);
-	}
-
-	framebuffers[framebuffer_current_draw].BlitDepthTo(bloom_source_framebuffer.Handle(), 0, 0,
-		bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height());
-
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
-	ShaderProgram::ClearBinding();
-
-	bloom_source_valid = true;
-	rend_RestoreLegacy();
 }
 
 

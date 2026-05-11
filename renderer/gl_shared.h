@@ -312,8 +312,6 @@ struct HBAOResources
 	GLint suppression_use_bloom_mask = -1;
 	GLint suppression_gamma = -1;
 	GLint suppression_bloom_threshold = -1;
-	GLint suppression_bloom_radius_pixels = -1;
-	GLint suppression_inv_screen_size = -1;
 
 	//Apply (composite) shader uniforms.
 	GLint apply_intensity = -1;

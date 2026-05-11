@@ -35,6 +35,7 @@ void main()
 	}
 	
 	float fog_amount = clamp(mag / room.fog_distance, 0, 1);
+	float hbao_fog = 1.0 - pow(1.0 - fog_amount, 3.0);
 	color = vec4(room.fog_color.rgb, fog_amount);
-	hbao_mask = vec4(fog_amount, 0.0, 0.0, 1.0);
+	hbao_mask = vec4(hbao_fog, 0.0, 0.0, 1.0);
 }

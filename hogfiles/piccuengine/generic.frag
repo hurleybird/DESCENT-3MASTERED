@@ -108,12 +108,13 @@ void main()
 	#else
 		color = vertex_color;
 	#endif
-	suppression = clamp(hbao_suppression * color.a, 0.0, 1.0);
+	float suppression_alpha = clamp(color.a, 0.0, 1.0);
+	suppression = clamp(hbao_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
 	
 	#if defined(USE_FOG)
 		float mag = clamp((-outpt.z - fog.start_dist) / (fog.end_dist - fog.start_dist), 0, 1);
 		color = vec4(mix(color.rgb, fog.color.rgb, mag), color.a);
-		suppression = max(suppression, mag);
+		suppression = max(suppression, 1.0 - pow(1.0 - mag, 3.0));
 	#endif
 	hbao_mask = vec4(suppression, 0.0, 0.0, 1.0);
 }
