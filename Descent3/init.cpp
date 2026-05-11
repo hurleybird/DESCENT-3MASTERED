@@ -722,7 +722,10 @@ void LoadGameSettings()
 	if (FindArg("-glcore") || FindArg("-gl3") || FindArg("-openglcore"))
 		DesiredOpenGLProfile = GLPROFILE_CORE;
 	if (DesiredOpenGLProfile != GLPROFILE_CORE)
+	{
 		Render_preferred_state.per_pixel_lighting = false;
+		Render_preferred_state.hbao_enabled = false;
+	}
 
 	if (FindArg ("-vsync"))
 		Render_preferred_state.vsync_on=true;

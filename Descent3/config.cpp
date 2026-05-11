@@ -119,6 +119,11 @@ static bool ConfigCanUsePerPixelLighting()
 	return OpenGLProfile == GLPROFILE_CORE;
 }
 
+static bool ConfigCanUseHBAO()
+{
+	return OpenGLProfile == GLPROFILE_CORE;
+}
+
 int ConfigNormalizeSupersamplingFactor(int factor)
 {
 	if (factor >= 4)
@@ -784,7 +789,19 @@ struct video_menu
 		}
 		if (hbao && sheet->HasChanged(hbao))
 		{
-			ApplyHBAOPresetFromIndex(*hbao);
+			if (ConfigCanUseHBAO())
+			{
+				ApplyHBAOPresetFromIndex(*hbao);
+			}
+			else
+			{
+				ApplyHBAOPresetFromIndex(0);
+				if (*hbao != 0)
+				{
+					*hbao = 0;
+					sheet->UpdateChanges();
+				}
+			}
 			changed = true;
 		}
 		if (vsync && sheet->HasChanged(vsync))
@@ -877,7 +894,8 @@ struct video_menu
 		sheet->AddRadioButton(TXT_LOW);
 		sheet->AddRadioButton(TXT_CFG_MEDIUM);
 		sheet->AddRadioButton(TXT_CFG_HIGH);
-		*hbao = HBAOPresetToIndex(Render_preferred_state.hbao_enabled, Render_preferred_state.hbao_resolution);
+		*hbao = ConfigCanUseHBAO() ?
+			HBAOPresetToIndex(Render_preferred_state.hbao_enabled, Render_preferred_state.hbao_resolution) : 0;
 
 		return sheet;
 	};
@@ -894,7 +912,12 @@ struct video_menu
 		if (bloom_enabled)
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
 		if (hbao)
-			ApplyHBAOPresetFromIndex(*hbao);
+		{
+			if (ConfigCanUseHBAO())
+				ApplyHBAOPresetFromIndex(*hbao);
+			else
+				ApplyHBAOPresetFromIndex(0);
+		}
 		if (vsync)
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
 		if (antialiasing)
@@ -927,6 +950,8 @@ struct video_menu
 			}
 			if (DesiredOpenGLProfile != GLPROFILE_CORE)
 				Render_preferred_state.per_pixel_lighting = false;
+			if (DesiredOpenGLProfile != GLPROFILE_CORE)
+				ApplyHBAOPresetFromIndex(0);
 		}
 
 		if (Active_video_menu == this)
