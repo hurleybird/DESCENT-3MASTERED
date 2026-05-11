@@ -257,6 +257,7 @@ void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 	}
 	motion_vectors_dirty = false;
 	hbao_suppression_draw_value = 0.0f;
+	hbao_mask_dirty = false;
 	if (framebuffer_ok && framebuffers[framebuffer_current_draw].Samples() >= 2)
 		glEnable(GL_MULTISAMPLE);
 	else
@@ -422,8 +423,10 @@ void GL3Renderer::CaptureBloomSource()
 			if (near_z <= 0.0f) near_z = 1.0f;
 			if (far_z <= near_z) far_z = near_z * 1000.0f;
 		}
-		GLuint motion_texture = motion_vectors_dirty ? motion_vectors.velocity_texture : 0;
-		GLuint hbao_mask_texture = hbao_mask.mask_texture;
+		GLuint motion_texture = motion_vectors_dirty ?
+			motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
+		GLuint hbao_mask_texture = hbao_mask_dirty ?
+			hbao_mask.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
 		hbao.Apply(&framebuffers[framebuffer_current_draw], OpenGL_preferred_state,
 			OpenGL_state, last_projection, near_z, far_z, motion_texture, hbao_mask_texture,
 			have_current_inverse_view_projection ? current_inverse_view_projection : nullptr,
@@ -890,6 +893,8 @@ void GL3Renderer::SetAlphaValue(ubyte val)
 void GL3Renderer::SetHBAOSuppression(float value)
 {
 	hbao_suppression_draw_value = std::max(0.0f, std::min(value, 1.0f));
+	if (hbao_suppression_draw_value > 0.0f)
+		hbao_mask_dirty = true;
 }
 
 // Sets the overall alpha scale factor (all alpha values are scaled by this value)
@@ -1120,12 +1125,25 @@ void GL3Renderer::Screenshot(int bm_handle)
 
 void GL3Renderer::UpdateFramebuffer(void)
 {
+	int target_samples = RendererMsaaSamples(OpenGL_preferred_state);
+	int target_width = FramebufferWidth();
+	int target_height = FramebufferHeight();
+	if (framebuffers[0].Handle() != 0 &&
+		(framebuffers[0].Samples() > (uint32_t)target_samples ||
+		 framebuffers[0].Width() > (uint32_t)target_width ||
+		 framebuffers[0].Height() > (uint32_t)target_height))
+	{
+		//When dropping from large MSAA/SSAA buffers, finish once before
+		//deleting them so the driver can release the old storage promptly.
+		glFinish();
+	}
+
 	for (int i = 0; i < NUM_GL3_FBOS; i++)
 	{
-		framebuffers[i].Update(FramebufferWidth(), FramebufferHeight(), RendererMsaaSamples(OpenGL_preferred_state));
-		motion_vectors.Update(FramebufferWidth(), FramebufferHeight(), framebuffers[i].Samples());
+		framebuffers[i].Update(target_width, target_height, target_samples);
+		motion_vectors.Update(target_width, target_height, framebuffers[i].Samples());
 		motion_vectors.AttachToFramebuffer(framebuffers[i].Handle());
-		hbao_mask.Update(FramebufferWidth(), FramebufferHeight(), framebuffers[i].Samples());
+		hbao_mask.Update(target_width, target_height, framebuffers[i].Samples());
 		hbao_mask.AttachToFramebuffer(framebuffers[i].Handle());
 		hbao_mask.UseSceneDrawBuffers(framebuffers[i].Handle());
 	}

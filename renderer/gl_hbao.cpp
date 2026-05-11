@@ -107,16 +107,6 @@ namespace
 		return scale;
 	}
 
-	void BindTexture2DMS(GLuint texture, int unit)
-	{
-		if (OpenGLProfile == GLPROFILE_COMPAT)
-			glClientActiveTextureARB(GL_TEXTURE0 + unit);
-		glActiveTexture(GL_TEXTURE0 + unit);
-		glBindTexture(GL_TEXTURE_2D, 0);
-		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, texture);
-		if (OpenGLProfile == GLPROFILE_COMPAT)
-			glDisable(GL_TEXTURE_2D);
-	}
 }
 
 void HBAOResources::InitShaders()
@@ -347,9 +337,15 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	GLboolean color_mask[4];
 	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
 
-	GLuint depth_texture = source->DepthTextureRaw();
-	GLuint scene_color_texture = source->ColorTextureRaw();
 	int source_samples = (int)source->Samples();
+	bool msaa_source = source_samples >= 2;
+	GLuint depth_texture = msaa_source ? source->DepthTextureForRead() : source->DepthTextureRaw();
+	GLuint scene_color_texture = 0;
+	if (pref_state.bloom_enabled)
+		scene_color_texture = msaa_source ? source->ColorTextureForRead() : source->ColorTextureRaw();
+	//HBAO reads resolved 2D inputs. Hardware resolves are much cheaper than
+	//doing source-block * sample-count loops in the AO/suppression shaders.
+	int input_samples = 0;
 
 	//Compute uniform values.
 	float m00 = projection[0];
@@ -444,17 +440,14 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	//-------------------------------------------------------------------------
 	depth_shader.Use();
 	if (depth_samples != -1)
-		glUniform1i(depth_samples, source_samples);
+		glUniform1i(depth_samples, input_samples);
 	if (depth_input_screen_size != -1)
 		glUniform2f(depth_input_screen_size, (float)source_width, (float)source_height);
 	if (depth_ao_screen_size != -1)
 		glUniform2f(depth_ao_screen_size, (float)ao_width, (float)ao_height);
 
 	rend_ClearBoundTextures();
-	if (source_samples >= 2)
-		BindTexture2DMS(depth_texture, 1);
-	else
-		GL_BindFramebufferTexture(depth_texture, 0, GL_NEAREST);
+	GL_BindFramebufferTexture(depth_texture, 0, GL_NEAREST);
 	GL_DrawFramebufferQuad(ao_depth_framebuffer.Handle(), 0, 0, ao_width, ao_height);
 
 	//-------------------------------------------------------------------------
@@ -560,7 +553,7 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 		if (temporal_history_weight != -1)
 			glUniform1f(temporal_history_weight, 0.96f);
 		if (temporal_motion_samples != -1)
-			glUniform1i(temporal_motion_samples, source_samples);
+			glUniform1i(temporal_motion_samples, input_samples);
 		if (temporal_input_screen_size != -1)
 			glUniform2f(temporal_input_screen_size, (float)source_width, (float)source_height);
 		if (temporal_ao_screen_size != -1)
@@ -571,12 +564,7 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 		GL_BindFramebufferTexture(temporal_framebuffers[read_index].ColorTextureForRead(), 1, GL_NEAREST);
 		GL_BindFramebufferTexture(ao_depth_framebuffer.ColorTextureForRead(), 2, GL_NEAREST);
 		if (motion_texture != 0)
-		{
-			if (source_samples >= 2)
-				BindTexture2DMS(motion_texture, 4);
-			else
-				GL_BindFramebufferTexture(motion_texture, 3, GL_NEAREST);
-		}
+			GL_BindFramebufferTexture(motion_texture, 3, GL_NEAREST);
 
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, temporal_framebuffers[write_index].Handle());
 		glViewport(0, 0, ao_width, ao_height);
@@ -615,7 +603,7 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 		if (suppression_use_bloom_mask != -1)
 			glUniform1i(suppression_use_bloom_mask, bloom_mask_enabled ? 1 : 0);
 		if (suppression_source_samples != -1)
-			glUniform1i(suppression_source_samples, source_samples);
+			glUniform1i(suppression_source_samples, input_samples);
 		if (suppression_input_screen_size != -1)
 			glUniform2f(suppression_input_screen_size, (float)source_width, (float)source_height);
 		if (suppression_ao_screen_size != -1)
@@ -627,19 +615,9 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 			glUniform1f(suppression_bloom_threshold, Clamp01(pref_state.bloom_threshold));
 		rend_ClearBoundTextures();
 		if (suppression_mask_texture != 0)
-		{
-			if (source_samples >= 2)
-				BindTexture2DMS(suppression_mask_texture, 2);
-			else
-				GL_BindFramebufferTexture(suppression_mask_texture, 0, GL_NEAREST);
-		}
+			GL_BindFramebufferTexture(suppression_mask_texture, 0, GL_NEAREST);
 		if (scene_color_texture != 0)
-		{
-			if (source_samples >= 2)
-				BindTexture2DMS(scene_color_texture, 3);
-			else
-				GL_BindFramebufferTexture(scene_color_texture, 1, GL_LINEAR);
-		}
+			GL_BindFramebufferTexture(scene_color_texture, 1, GL_LINEAR);
 		GL_DrawFramebufferQuad(suppression_framebuffer.Handle(), 0, 0, ao_width, ao_height);
 		final_suppression_mask = suppression_framebuffer.ColorTextureForRead();
 	}

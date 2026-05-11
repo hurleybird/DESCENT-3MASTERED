@@ -158,6 +158,7 @@ class GL3Renderer : public IRenderer
 	GLint drawshader_hbao_suppression_uniforms[8] = {};
 	int lastdrawshader = -1;
 	float hbao_suppression_draw_value = 0.0f;
+	bool hbao_mask_dirty = false;
 	vector per_pixel_light_direction = { 0, 0, -1 };
 	vector per_pixel_dynamic_face_normal = { 0, 0, 1 };
 	int per_pixel_dynamic_light_count = 0;
