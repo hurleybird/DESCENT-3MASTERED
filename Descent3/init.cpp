@@ -151,6 +151,16 @@ float Mouselook_sensitivity = kAnglesPerDegree * kDefaultMouselookSensitivity;
 float Mouse_sensitivity     = 1.0f;
 bool Mouse_limitpolling = false;
 
+static void ApplyFixedHBAOSettings()
+{
+	Render_preferred_state.hbao_temporal = true;
+	Render_preferred_state.hbao_quality = HBAO_QUALITY_HIGH;
+	Render_preferred_state.hbao_blur = HBAO_BLUR_WIDE;
+	Render_preferred_state.hbao_radius = 3.0f;
+	Render_preferred_state.hbao_intensity = 1.25f;
+	Render_preferred_state.hbao_bias = 0.2f;
+}
+
 int IsLocalOk(void)
 {
 #ifdef WIN32	
@@ -372,6 +382,7 @@ void SaveGameSettings()
 	Database->write("RS_bloom_intensity", tempbuffer, strlen(tempbuffer) + 1);
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_spread);
 	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
+	ApplyFixedHBAOSettings();
 	Database->write("RS_hbao_enabled", Render_preferred_state.hbao_enabled);
 	Database->write("RS_hbao_temporal", Render_preferred_state.hbao_temporal);
 	Database->write("RS_hbao_quality", Render_preferred_state.hbao_quality);
@@ -503,13 +514,8 @@ void LoadGameSettings()
 	Render_preferred_state.bloom_intensity = 0.75f;
 	Render_preferred_state.bloom_spread = 0.75f;
 	Render_preferred_state.hbao_enabled = false;
-	Render_preferred_state.hbao_temporal = true;
-	Render_preferred_state.hbao_quality = HBAO_QUALITY_MEDIUM;
-	Render_preferred_state.hbao_resolution = HBAO_RESOLUTION_AUTO;
-	Render_preferred_state.hbao_blur = HBAO_BLUR_MEDIUM;
-	Render_preferred_state.hbao_radius = 4.0f;
-	Render_preferred_state.hbao_intensity = 1.0f;
-	Render_preferred_state.hbao_bias = 0.1f;
+	Render_preferred_state.hbao_resolution = HBAO_RESOLUTION_HALF;
+	ApplyFixedHBAOSettings();
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
 	Hud_text_scale = 1.0f;
@@ -689,6 +695,9 @@ void LoadGameSettings()
 		if (v > 0.5f) v = 0.5f;
 		Render_preferred_state.hbao_bias = v;
 	}
+	if (Render_preferred_state.hbao_resolution == HBAO_RESOLUTION_AUTO)
+		Render_preferred_state.hbao_resolution = HBAO_RESOLUTION_HALF;
+	ApplyFixedHBAOSettings();
 	// force feedback stuff
 	Database->read("EnableJoystickFF",&D3Use_force_feedback);
 	Database->read("ForceFeedbackAutoCenter",&D3Force_auto_center);

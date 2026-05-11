@@ -107,6 +107,12 @@ namespace
 		return scale;
 	}
 
+	bool FramebufferLargerThan(const ColorFramebuffer& framebuffer, int width, int height)
+	{
+		return framebuffer.Handle() != 0 &&
+			(framebuffer.Width() > (uint32_t)width || framebuffer.Height() > (uint32_t)height);
+	}
+
 }
 
 void HBAOResources::InitShaders()
@@ -257,6 +263,16 @@ void HBAOResources::DestroyShaders()
 	}
 }
 
+bool HBAOResources::HasFramebuffers() const
+{
+	return ao_depth_framebuffer.Handle() != 0 ||
+		ao_framebuffer.Handle() != 0 ||
+		ao_blur_framebuffer.Handle() != 0 ||
+		temporal_framebuffers[0].Handle() != 0 ||
+		temporal_framebuffers[1].Handle() != 0 ||
+		suppression_framebuffer.Handle() != 0;
+}
+
 void HBAOResources::DestroyFramebuffers()
 {
 	ao_depth_framebuffer.Destroy();
@@ -290,7 +306,15 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	(void)render_state;
 	if (!source || !pref_state.hbao_enabled)
 	{
-		InvalidateHistory();
+		if (HasFramebuffers())
+		{
+			glFinish();
+			DestroyFramebuffers();
+		}
+		else
+		{
+			InvalidateHistory();
+		}
 		return;
 	}
 
@@ -304,6 +328,17 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	int ao_height = (source_height + ao_scale - 1) / ao_scale;
 	if (ao_width <= 0) ao_width = 1;
 	if (ao_height <= 0) ao_height = 1;
+
+	if (FramebufferLargerThan(ao_depth_framebuffer, ao_width, ao_height) ||
+		FramebufferLargerThan(ao_framebuffer, ao_width, ao_height) ||
+		FramebufferLargerThan(ao_blur_framebuffer, ao_width, ao_height) ||
+		FramebufferLargerThan(temporal_framebuffers[0], ao_width, ao_height) ||
+		FramebufferLargerThan(temporal_framebuffers[1], ao_width, ao_height) ||
+		FramebufferLargerThan(suppression_framebuffer, ao_width, ao_height))
+	{
+		glFinish();
+		DestroyFramebuffers();
+	}
 
 	//Run AO at an internal resolution decoupled from SSAA/MSAA source size.
 	//Depth is first reduced to this resolution so MSAA resolves are paid once

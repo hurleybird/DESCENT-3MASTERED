@@ -18,6 +18,7 @@
 */
 #include "gl1_local.h"
 #include "rtperformance.h"
+#include <math.h>
 
 int GLCompatibilityRenderer::SupersamplingFactor() const
 {
@@ -52,6 +53,96 @@ int GLCompatibilityRenderer::ScaledW(int w) const
 int GLCompatibilityRenderer::ScaledH(int h) const
 {
 	return h * SupersamplingFactor();
+}
+
+void GLCompatibilityRenderer::RefreshViewSize()
+{
+	int view_width = 0;
+	int view_height = 0;
+
+#if defined(SDL3)
+	SDL_GetWindowSizeInPixels(GLWindow, &view_width, &view_height);
+#elif defined(WIN32)
+	RECT rect = {};
+	if (hOpenGLWnd && GetClientRect((HWND)hOpenGLWnd, &rect))
+	{
+		view_width = rect.right - rect.left;
+		view_height = rect.bottom - rect.top;
+	}
+#endif
+
+	if (view_width <= 0)
+		view_width = OpenGL_preferred_state.fullscreen ? OpenGL_preferred_state.width : OpenGL_preferred_state.window_width;
+	if (view_height <= 0)
+		view_height = OpenGL_preferred_state.fullscreen ? OpenGL_preferred_state.height : OpenGL_preferred_state.window_height;
+	if (view_width <= 0)
+		view_width = OpenGL_state.view_width > 0 ? OpenGL_state.view_width : 640;
+	if (view_height <= 0)
+		view_height = OpenGL_state.view_height > 0 ? OpenGL_state.view_height : 480;
+
+	OpenGL_state.view_width = view_width;
+	OpenGL_state.view_height = view_height;
+}
+
+void GLCompatibilityRenderer::UpdatePresentRect()
+{
+	int width = OpenGL_preferred_state.width;
+	int height = OpenGL_preferred_state.height;
+	if (width <= 0)
+		width = OpenGL_state.screen_width > 0 ? OpenGL_state.screen_width : OpenGL_state.view_width;
+	if (height <= 0)
+		height = OpenGL_state.screen_height > 0 ? OpenGL_state.screen_height : OpenGL_state.view_height;
+	if (width <= 0)
+		width = 640;
+	if (height <= 0)
+		height = 480;
+
+	int view_width = OpenGL_state.view_width;
+	int view_height = OpenGL_state.view_height;
+	if (view_width <= 0)
+		view_width = width;
+	if (view_height <= 0)
+		view_height = height;
+
+	OpenGL_state.screen_width = width;
+	OpenGL_state.screen_height = height;
+	OpenGL_state.view_width = view_width;
+	OpenGL_state.view_height = view_height;
+
+	framebuffer_blit_x = 0;
+	framebuffer_blit_y = 0;
+	framebuffer_blit_w = view_width;
+	framebuffer_blit_h = view_height;
+
+	float baseAspect = width / (float)height;
+	float trueAspect = view_width / (float)view_height;
+	if (baseAspect <= 0.0f || trueAspect <= 0.0f || fabsf(baseAspect - trueAspect) < 0.001f)
+		return;
+
+	if (baseAspect < trueAspect) //base screen is less wide, so pillarbox it
+	{
+		int blit_w = (int)(view_height * baseAspect + 0.5f);
+		if (blit_w < 1)
+			blit_w = 1;
+		if (blit_w > view_width)
+			blit_w = view_width;
+		framebuffer_blit_h = view_height;
+		framebuffer_blit_y = 0;
+		framebuffer_blit_w = blit_w;
+		framebuffer_blit_x = (view_width - blit_w) / 2;
+	}
+	else //base screen is more wide, so letterbox it
+	{
+		int blit_h = (int)(view_width / baseAspect + 0.5f);
+		if (blit_h < 1)
+			blit_h = 1;
+		if (blit_h > view_height)
+			blit_h = view_height;
+		framebuffer_blit_w = view_width;
+		framebuffer_blit_x = 0;
+		framebuffer_blit_h = blit_h;
+		framebuffer_blit_y = (view_height - blit_h) / 2;
+	}
 }
 
 void GLCompatibilityRenderer::UpdateWindow()
@@ -97,22 +188,10 @@ void GLCompatibilityRenderer::UpdateWindow()
 		height = OpenGL_preferred_state.height;
 	}
 
-	float baseAspect = width / (float)height;
-	float trueAspect = OpenGL_state.view_width / (float)OpenGL_state.view_height;
-
-	if (baseAspect < trueAspect) //base screen is less wide, so pillarbox it
-	{
-		framebuffer_blit_h = OpenGL_state.view_height; framebuffer_blit_y = 0;
-		framebuffer_blit_w = OpenGL_state.view_height * baseAspect; framebuffer_blit_x = (OpenGL_state.view_width - framebuffer_blit_w) / 2;
-	}
-	else //base screen is more wide, so letterbox it
-	{
-		framebuffer_blit_w = OpenGL_state.view_width; framebuffer_blit_x = 0;
-		framebuffer_blit_h = OpenGL_state.view_width / baseAspect; framebuffer_blit_y = (OpenGL_state.view_height - framebuffer_blit_h) / 2;
-	}
-
 	OpenGL_state.screen_width = width;
 	OpenGL_state.screen_height = height;
+	RefreshViewSize();
+	UpdatePresentRect();
 }
 
 void GLCompatibilityRenderer::SetViewport()
@@ -159,8 +238,8 @@ int GLCompatibilityRenderer::SetPreferredState(renderer_preferred_state* pref_st
 		else
 		{*/
 
-		if (pref_state->width != OpenGL_state.screen_width || pref_state->height != OpenGL_state.screen_height
-			|| pref_state->window_width != OpenGL_state.view_width || pref_state->window_height != OpenGL_state.view_height
+		if (pref_state->width != old_state.width || pref_state->height != old_state.height
+			|| pref_state->window_width != old_state.window_width || pref_state->window_height != old_state.window_height
 			|| pref_state->fullscreen != old_state.fullscreen || pref_state->antialised != old_state.antialised
 			|| pref_state->supersampling_factor != old_state.supersampling_factor
 			|| pref_state->msaa_samples != old_state.msaa_samples)
@@ -252,6 +331,8 @@ void GLCompatibilityRenderer::Flip(void)
 	OpenGL_uploads = 0;
 	OpenGL_polys_drawn = 0;
 	OpenGL_verts_processed = 0;
+	RefreshViewSize();
+	UpdatePresentRect();
 
 	Framebuffer* present_framebuffer = &framebuffers[framebuffer_current_draw];
 	Framebuffer* bloom_source = bloom_source_valid ? &bloom_source_framebuffer : nullptr;

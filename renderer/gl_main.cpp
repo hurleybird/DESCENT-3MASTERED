@@ -74,6 +74,96 @@ void GL_Ortho(float* mat, float left, float right, float bottom, float top, floa
 	mat[15] = 1;
 }
 
+void GL3Renderer::RefreshViewSize()
+{
+	int view_width = 0;
+	int view_height = 0;
+
+#if defined(SDL3)
+	SDL_GetWindowSizeInPixels(GLWindow, &view_width, &view_height);
+#elif defined(WIN32)
+	RECT rect = {};
+	if (hOpenGLWnd && GetClientRect((HWND)hOpenGLWnd, &rect))
+	{
+		view_width = rect.right - rect.left;
+		view_height = rect.bottom - rect.top;
+	}
+#endif
+
+	if (view_width <= 0)
+		view_width = OpenGL_preferred_state.fullscreen ? OpenGL_preferred_state.width : OpenGL_preferred_state.window_width;
+	if (view_height <= 0)
+		view_height = OpenGL_preferred_state.fullscreen ? OpenGL_preferred_state.height : OpenGL_preferred_state.window_height;
+	if (view_width <= 0)
+		view_width = OpenGL_state.view_width > 0 ? OpenGL_state.view_width : 640;
+	if (view_height <= 0)
+		view_height = OpenGL_state.view_height > 0 ? OpenGL_state.view_height : 480;
+
+	OpenGL_state.view_width = view_width;
+	OpenGL_state.view_height = view_height;
+}
+
+void GL3Renderer::UpdatePresentRect()
+{
+	int width = OpenGL_preferred_state.width;
+	int height = OpenGL_preferred_state.height;
+	if (width <= 0)
+		width = OpenGL_state.screen_width > 0 ? OpenGL_state.screen_width : OpenGL_state.view_width;
+	if (height <= 0)
+		height = OpenGL_state.screen_height > 0 ? OpenGL_state.screen_height : OpenGL_state.view_height;
+	if (width <= 0)
+		width = 640;
+	if (height <= 0)
+		height = 480;
+
+	int view_width = OpenGL_state.view_width;
+	int view_height = OpenGL_state.view_height;
+	if (view_width <= 0)
+		view_width = width;
+	if (view_height <= 0)
+		view_height = height;
+
+	OpenGL_state.screen_width = width;
+	OpenGL_state.screen_height = height;
+	OpenGL_state.view_width = view_width;
+	OpenGL_state.view_height = view_height;
+
+	framebuffer_blit_x = 0;
+	framebuffer_blit_y = 0;
+	framebuffer_blit_w = view_width;
+	framebuffer_blit_h = view_height;
+
+	float baseAspect = width / (float)height;
+	float trueAspect = view_width / (float)view_height;
+	if (baseAspect <= 0.0f || trueAspect <= 0.0f || fabsf(baseAspect - trueAspect) < 0.001f)
+		return;
+
+	if (baseAspect < trueAspect) //base screen is less wide, so pillarbox it
+	{
+		int blit_w = (int)(view_height * baseAspect + 0.5f);
+		if (blit_w < 1)
+			blit_w = 1;
+		if (blit_w > view_width)
+			blit_w = view_width;
+		framebuffer_blit_h = view_height;
+		framebuffer_blit_y = 0;
+		framebuffer_blit_w = blit_w;
+		framebuffer_blit_x = (view_width - blit_w) / 2;
+	}
+	else //base screen is more wide, so letterbox it
+	{
+		int blit_h = (int)(view_width / baseAspect + 0.5f);
+		if (blit_h < 1)
+			blit_h = 1;
+		if (blit_h > view_height)
+			blit_h = view_height;
+		framebuffer_blit_w = view_width;
+		framebuffer_blit_x = 0;
+		framebuffer_blit_h = blit_h;
+		framebuffer_blit_y = (view_height - blit_h) / 2;
+	}
+}
+
 void GL3Renderer::UpdateWindow()
 {
 	int width, height;
@@ -117,22 +207,10 @@ void GL3Renderer::UpdateWindow()
 		height = OpenGL_preferred_state.height;
 	}
 
-	float baseAspect = width / (float)height;
-	float trueAspect = OpenGL_state.view_width / (float)OpenGL_state.view_height;
-
-	if (baseAspect < trueAspect) //base screen is less wide, so pillarbox it
-	{
-		framebuffer_blit_h = OpenGL_state.view_height; framebuffer_blit_y = 0;
-		framebuffer_blit_w = OpenGL_state.view_height * baseAspect; framebuffer_blit_x = (OpenGL_state.view_width - framebuffer_blit_w) / 2;
-	}
-	else //base screen is more wide, so letterbox it
-	{
-		framebuffer_blit_w = OpenGL_state.view_width; framebuffer_blit_x = 0;
-		framebuffer_blit_h = OpenGL_state.view_width / baseAspect; framebuffer_blit_y = (OpenGL_state.view_height - framebuffer_blit_h) / 2;
-	}
-
 	OpenGL_state.screen_width = width;
 	OpenGL_state.screen_height = height;
+	RefreshViewSize();
+	UpdatePresentRect();
 }
 
 void GL3Renderer::SetViewport()
@@ -189,15 +267,27 @@ int GL3Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 		else
 		{*/
 
-		if (pref_state->width != OpenGL_state.screen_width || pref_state->height != OpenGL_state.screen_height
-			|| pref_state->window_width != OpenGL_state.view_width || pref_state->window_height != OpenGL_state.view_height
+		bool framebuffer_state_changed =
+			pref_state->width != old_state.width || pref_state->height != old_state.height
+			|| pref_state->window_width != old_state.window_width || pref_state->window_height != old_state.window_height
 			|| pref_state->fullscreen != old_state.fullscreen || pref_state->antialised != old_state.antialised
 			|| pref_state->supersampling_factor != old_state.supersampling_factor
-			|| pref_state->msaa_samples != old_state.msaa_samples)
+			|| pref_state->msaa_samples != old_state.msaa_samples;
+		bool hbao_buffers_changed =
+			pref_state->hbao_enabled != old_state.hbao_enabled ||
+			pref_state->hbao_resolution != old_state.hbao_resolution;
+
+		if (framebuffer_state_changed)
 		{
 			UpdateWindow();
 			SetViewport();
 			UpdateFramebuffer();
+		}
+		else if (hbao_buffers_changed)
+		{
+			if (hbao.HasFramebuffers())
+				glFinish();
+			hbao.DestroyFramebuffers();
 		}
 
 		if (old_state.per_pixel_lighting != pref_state->per_pixel_lighting)
@@ -308,6 +398,8 @@ void GL3Renderer::Flip()
 	OpenGL_uploads = 0;
 	OpenGL_polys_drawn = 0;
 	OpenGL_verts_processed = 0;
+	RefreshViewSize();
+	UpdatePresentRect();
 
 	Framebuffer* present_framebuffer = &framebuffers[framebuffer_current_draw];
 	Framebuffer* bloom_source = bloom_source_valid ? &bloom_source_framebuffer : nullptr;
@@ -1137,6 +1229,7 @@ void GL3Renderer::UpdateFramebuffer(void)
 		//deleting them so the driver can release the old storage promptly.
 		glFinish();
 	}
+	hbao.DestroyFramebuffers();
 
 	for (int i = 0; i < NUM_GL3_FBOS; i++)
 	{
@@ -1182,6 +1275,7 @@ void GL3Renderer::CloseFramebuffer(void)
 	resolved_framebuffer.Destroy();
 	downscale_framebuffer.Destroy();
 	bloom.DestroyFramebuffers();
+	hbao.DestroyFramebuffers();
 	bloom_source_framebuffer.Destroy();
 	bloom_source_resolved_framebuffer.Destroy();
 	bloom_source_downscale_framebuffer.Destroy();

@@ -396,10 +396,7 @@ void mmInterface::CopyrightText()
 	else if (Program_version.version_type == RELEASE_VERSION)
 		typestr += "Ver ";
 
-	//Build engine name str
-	std::string engstr = ENGINE_NAME;
-	engstr.push_back(' ');
-	engstr += GIT_DESCRIPTION;
+	std::string engstr = "Piccu Experiment M2";
 
 	//Get 7 character hash
 	char hashbuf[8];

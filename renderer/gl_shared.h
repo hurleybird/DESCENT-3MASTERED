@@ -343,6 +343,7 @@ struct HBAOResources
 
 	void InitShaders();
 	void DestroyShaders();
+	bool HasFramebuffers() const;
 	void DestroyFramebuffers();
 	void Destroy();
 	void InvalidateHistory();

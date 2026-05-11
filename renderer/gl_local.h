@@ -220,7 +220,7 @@ class GL3Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, true, HBAO_QUALITY_MEDIUM, HBAO_RESOLUTION_AUTO, HBAO_BLUR_MEDIUM, 4.0f, 1.0f, 0.1f };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, true, HBAO_QUALITY_HIGH, HBAO_RESOLUTION_HALF, HBAO_BLUR_WIDE, 3.0f, 1.25f, 0.2f };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -286,6 +286,8 @@ private:
 	void CloseFramebuffer();
 	void SetViewport();
 	void UpdateWindow();
+	void RefreshViewSize();
+	void UpdatePresentRect();
 	int SupersamplingFactor() const;
 	int FramebufferWidth() const;
 	int FramebufferHeight() const;
