@@ -1953,15 +1953,8 @@ void RenderFace(room* rp, int facenum)
 	//Select texture type
 	rend_SetTextureType(TT_PERSPECTIVE);
 
-	if (face_cc.cc_or) // Possible triangulate this face cuz its off screen somewhat
-	{
-		if (Room_light_val < 1.0)
-			do_triangle_test = 1;
-		if (Detail_settings.Fog_enabled && (rp->flags & RF_FOG))
-			do_triangle_test = 1;
-		if (spec_face)
-			do_triangle_test = 1;
-	}
+	if (face_cc.cc_or) // Clip/project partly offscreen faces as triangles to avoid edge-of-screen UV warping.
+		do_triangle_test = 1;
 
 	if (do_triangle_test)
 	{
