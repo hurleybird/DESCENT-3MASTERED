@@ -18,6 +18,7 @@
 */
 #include "gl_local.h"
 #include "rtperformance.h"
+#include <math.h>
 
 static float mat4_identity[16] =
 { 1, 0, 0, 0,
@@ -394,6 +395,30 @@ void GL3Renderer::EndFrame(void)
 void GL3Renderer::CaptureBloomSource()
 {
 	bloom_source_valid = false;
+
+	//Run HBAO against the main framebuffer first, so the bloom source we
+	//capture below already contains AO-darkened scene color. This keeps
+	//the bloom composite "scene mask" (which detects HUD overlays by diff)
+	//consistent regardless of AO. HBAO is a no-op if disabled.
+	if (OpenGL_preferred_state.hbao_enabled && framebuffer_ok)
+	{
+		float near_z = last_nearz;
+		float far_z = last_farz;
+		//Pull near/far back out of the projection matrix that was used for
+		//the world pass; setup.cpp hardcodes near=1/far=10000 but extracting
+		//keeps HBAO honest if that ever changes.
+		if (fabsf(last_projection[10] - 1.0f) > 1e-6f &&
+			fabsf(last_projection[10] + 1.0f) > 1e-6f)
+		{
+			near_z = last_projection[14] / (last_projection[10] - 1.0f);
+			far_z = last_projection[14] / (last_projection[10] + 1.0f);
+			if (near_z <= 0.0f) near_z = 1.0f;
+			if (far_z <= near_z) far_z = near_z * 1000.0f;
+		}
+		hbao.Apply(&framebuffers[framebuffer_current_draw], OpenGL_preferred_state,
+			OpenGL_state, last_projection, near_z, far_z);
+	}
+
 	if (!OpenGL_preferred_state.bloom_enabled)
 		return;
 

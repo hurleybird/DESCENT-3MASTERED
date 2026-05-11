@@ -613,6 +613,9 @@ struct video_menu
 	bool* mipmapping;
 	bool* per_pixel_lighting;
 	bool* bloom_enabled;
+	bool* hbao_enabled;
+	int* hbao_quality;
+	int* hbao_blur;
 	bool* vsync;
 
 	int* resolution;									// all resolutions
@@ -715,6 +718,27 @@ struct video_menu
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
 			changed = true;
 		}
+		if (hbao_enabled && sheet->HasChanged(hbao_enabled))
+		{
+			Render_preferred_state.hbao_enabled = *hbao_enabled;
+			changed = true;
+		}
+		if (hbao_quality && sheet->HasChanged(hbao_quality))
+		{
+			int q = *hbao_quality;
+			if (q < 0) q = 0;
+			if (q > HBAO_QUALITY_HIGH) q = HBAO_QUALITY_HIGH;
+			Render_preferred_state.hbao_quality = (ubyte)q;
+			changed = true;
+		}
+		if (hbao_blur && sheet->HasChanged(hbao_blur))
+		{
+			int b = *hbao_blur;
+			if (b < 0) b = 0;
+			if (b > HBAO_BLUR_WIDE) b = HBAO_BLUR_WIDE;
+			Render_preferred_state.hbao_blur = (ubyte)b;
+			changed = true;
+		}
 		if (vsync && sheet->HasChanged(vsync))
 		{
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
@@ -750,7 +774,7 @@ struct video_menu
 	newuiSheet* setup(newuiMenu* menu)
 	{
 		parent_menu = menu;
-		sheet = menu->AddOption(IDV_VCONFIG, TXT_OPTVIDEO, NEWUIMENU_MEDIUM);
+		sheet = menu->AddOption(IDV_VCONFIG, TXT_OPTVIDEO, NEWUIMENU_LARGE);
 
 		sheet->NewGroup(TXT_RESOLUTION, 0, 0);
 		buffer = sheet->AddChangeableText(RESBUFFER_SIZE);
@@ -800,6 +824,31 @@ struct video_menu
 		sheet->AddRadioButton("4x");
 		*supersampling = SupersamplingFactorToIndex(Render_preferred_state.supersampling_factor);
 
+		// HBAO (Horizon-Based Ambient Occlusion)
+		sheet->NewGroup("HBAO", 184, 188);
+		hbao_enabled = sheet->AddLongCheckBox("Enable HBAO", Render_preferred_state.hbao_enabled);
+		sheet->NewGroup("Quality", 184, 224, NEWUI_ALIGN_HORIZ);
+		hbao_quality = sheet->AddFirstRadioButton("Low");
+		sheet->AddRadioButton("Medium");
+		sheet->AddRadioButton("High");
+		{
+			int q = Render_preferred_state.hbao_quality;
+			if (q < 0) q = 0;
+			if (q > HBAO_QUALITY_HIGH) q = HBAO_QUALITY_HIGH;
+			*hbao_quality = q;
+		}
+		sheet->NewGroup("Blur", 184, 254, NEWUI_ALIGN_HORIZ);
+		hbao_blur = sheet->AddFirstRadioButton("None");
+		sheet->AddRadioButton("Narrow");
+		sheet->AddRadioButton("Medium");
+		sheet->AddRadioButton("Wide");
+		{
+			int b = Render_preferred_state.hbao_blur;
+			if (b < 0) b = 0;
+			if (b > HBAO_BLUR_WIDE) b = HBAO_BLUR_WIDE;
+			*hbao_blur = b;
+		}
+
 		return sheet;
 	};
 
@@ -814,6 +863,22 @@ struct video_menu
 			Render_preferred_state.per_pixel_lighting = ConfigCanUsePerPixelLighting() && *per_pixel_lighting;
 		if (bloom_enabled)
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
+		if (hbao_enabled)
+			Render_preferred_state.hbao_enabled = *hbao_enabled;
+		if (hbao_quality)
+		{
+			int q = *hbao_quality;
+			if (q < 0) q = 0;
+			if (q > HBAO_QUALITY_HIGH) q = HBAO_QUALITY_HIGH;
+			Render_preferred_state.hbao_quality = (ubyte)q;
+		}
+		if (hbao_blur)
+		{
+			int b = *hbao_blur;
+			if (b < 0) b = 0;
+			if (b > HBAO_BLUR_WIDE) b = HBAO_BLUR_WIDE;
+			Render_preferred_state.hbao_blur = (ubyte)b;
+		}
 		if (vsync)
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
 		if (antialiasing)

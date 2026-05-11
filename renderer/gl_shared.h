@@ -145,6 +145,10 @@ public:
 
 void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter);
 void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
+//Lazy accessor for the framebuffer fullscreen-triangle VAO. Initialises it if
+//needed. Use this when you need to draw a fullscreen triangle to a target you
+//have already bound yourself (and do not want GL_DrawFramebufferQuad's clear).
+GLuint GL_GetFramebufferVAO();
 
 constexpr int NUM_BLOOM_FBOS = 16;
 struct BloomResources
@@ -166,6 +170,65 @@ struct BloomResources
 	void DestroyFramebuffers();
 	Framebuffer* Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
 		const rendering_state& render_state, float display_gamma, GLuint depth_texture);
+};
+
+//Horizon-Based Ambient Occlusion. Renders depth-driven AO based on the NVIDIA
+//HBAO formulation, then modulates the scene color in place.
+//Reconstructs view-space normals from the depth buffer (we have no normals G-buffer).
+struct HBAOResources
+{
+	//Framebuffer holding the AO result (RG8: x=AO, y=depth).
+	Framebuffer ao_framebuffer;
+	//Scratch used as ping-pong for the separable bilateral blur.
+	Framebuffer ao_blur_framebuffer;
+	uint32_t frame_counter = 0;
+
+	GLuint noise_texture = 0;
+
+	ShaderProgram ao_shader;
+	ShaderProgram blur_x_shader;
+	ShaderProgram blur_y_shader;
+	ShaderProgram apply_shader;
+
+	//AO shader uniforms.
+	GLint ao_proj_info = -1;        //(2/proj[0], 2/proj[5], -1/proj[0], -1/proj[5])
+	GLint ao_near_far = -1;         //(nearZ, farZ)
+	GLint ao_radius = -1;           //world-space radius
+	GLint ao_radius_pixels = -1;    //radius converted to half-screen-height pixels at depth 1
+	GLint ao_max_radius_pixels = -1;
+	GLint ao_neg_inv_radius2 = -1;  //-1/(r*r)
+	GLint ao_angle_bias = -1;
+	GLint ao_multiplier = -1;       //2 / (steps*directions) * (1/(1-bias))
+	GLint ao_intensity = -1;
+	GLint ao_inv_screen_size = -1;  //1/width, 1/height
+	GLint ao_screen_size = -1;      //width, height
+	GLint ao_temporal = -1;         //(rotation, jitter offset)
+	GLint ao_noise_scale = -1;      //(width/4, height/4)
+	GLint ao_directions = -1;
+	GLint ao_steps = -1;
+
+	//Blur shader uniforms (same for both x and y).
+	GLint blur_x_delta = -1;
+	GLint blur_x_sharpness = -1;
+	GLint blur_x_radius = -1;
+	GLint blur_y_delta = -1;
+	GLint blur_y_sharpness = -1;
+	GLint blur_y_radius = -1;
+
+	//Apply (composite) shader uniforms.
+	GLint apply_intensity = -1;
+
+	void InitShaders();
+	void DestroyShaders();
+	void DestroyFramebuffers();
+	void Destroy();
+	//Computes AO for the supplied source framebuffer (which must have valid
+	//color + depth). Modulates source->color in place by sampling
+	//pref_state and projection info. Caller must ensure source is currently
+	//bound for drawing (the framebuffer is rebound inside the function).
+	void Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
+		const rendering_state& render_state, const float* projection,
+		float nearz, float farz);
 };
 
 inline int RendererSupersamplingFactor(const renderer_preferred_state& state)

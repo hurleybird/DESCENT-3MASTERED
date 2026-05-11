@@ -241,6 +241,23 @@ struct DLLrendering_state
 
 };
 
+//HBAO quality presets - controls number of directions and steps per direction.
+enum hbao_quality
+{
+	HBAO_QUALITY_LOW = 0,    //4 directions, 3 steps
+	HBAO_QUALITY_MEDIUM = 1, //6 directions, 4 steps
+	HBAO_QUALITY_HIGH = 2,   //8 directions, 4 steps
+};
+
+//HBAO blur kernel width.
+enum hbao_blur
+{
+	HBAO_BLUR_NONE = 0,
+	HBAO_BLUR_NARROW = 1,
+	HBAO_BLUR_MEDIUM = 2,
+	HBAO_BLUR_WIDE = 3,
+};
+
 struct renderer_preferred_state
 {
 	ubyte mipping;
@@ -250,10 +267,10 @@ struct renderer_preferred_state
 
 	float gamma;
 	int width, height;
-	int window_width, window_height; //Size of the game window, may != width/height. 
+	int window_width, window_height; //Size of the game window, may != width/height.
 
 	ubyte vsync_on;
-	bool fullscreen; //Informs the window system that fullscreen should be used. 
+	bool fullscreen; //Informs the window system that fullscreen should be used.
 	ubyte supersampling_factor; //1, 2, or 4. Values above 1 render larger than the window and downscale.
 	ubyte msaa_samples; //0, 2, 4, or 8.
 	bool per_pixel_lighting;
@@ -261,6 +278,13 @@ struct renderer_preferred_state
 	float bloom_threshold;
 	float bloom_intensity;
 	float bloom_spread;
+
+	bool hbao_enabled;       //Master HBAO on/off
+	ubyte hbao_quality;      //hbao_quality enum
+	ubyte hbao_blur;         //hbao_blur enum
+	float hbao_radius;       //World-space sample radius in map units (1..16-ish)
+	float hbao_intensity;    //AO strength multiplier (0..4)
+	float hbao_bias;         //Angle bias (0..0.5)
 };
 
 struct renderer_lfb

@@ -372,6 +372,15 @@ void SaveGameSettings()
 	Database->write("RS_bloom_intensity", tempbuffer, strlen(tempbuffer) + 1);
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_spread);
 	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
+	Database->write("RS_hbao_enabled", Render_preferred_state.hbao_enabled);
+	Database->write("RS_hbao_quality", Render_preferred_state.hbao_quality);
+	Database->write("RS_hbao_blur", Render_preferred_state.hbao_blur);
+	sprintf(tempbuffer, "%f", Render_preferred_state.hbao_radius);
+	Database->write("RS_hbao_radius", tempbuffer, strlen(tempbuffer) + 1);
+	sprintf(tempbuffer, "%f", Render_preferred_state.hbao_intensity);
+	Database->write("RS_hbao_intensity", tempbuffer, strlen(tempbuffer) + 1);
+	sprintf(tempbuffer, "%f", Render_preferred_state.hbao_bias);
+	Database->write("RS_hbao_bias", tempbuffer, strlen(tempbuffer) + 1);
 
 	Database->write("Dynamic_Lighting",Detail_settings.Dynamic_lighting);
 
@@ -491,6 +500,12 @@ void LoadGameSettings()
 	Render_preferred_state.bloom_threshold = 0.75f;
 	Render_preferred_state.bloom_intensity = 0.75f;
 	Render_preferred_state.bloom_spread = 0.75f;
+	Render_preferred_state.hbao_enabled = false;
+	Render_preferred_state.hbao_quality = HBAO_QUALITY_MEDIUM;
+	Render_preferred_state.hbao_blur = HBAO_BLUR_MEDIUM;
+	Render_preferred_state.hbao_radius = 4.0f;
+	Render_preferred_state.hbao_intensity = 1.0f;
+	Render_preferred_state.hbao_bias = 0.1f;
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
 	Hud_text_scale = 1.0f;
@@ -628,6 +643,42 @@ void LoadGameSettings()
 	const char* bloom_intensity_value = bloom_intensity_arg ? GetArg(bloom_intensity_arg + 1) : nullptr;
 	if (bloom_intensity_value && bloom_intensity_value[0])
 		Render_preferred_state.bloom_intensity = ConfigNormalizeBloomIntensity((float)strtod(bloom_intensity_value, &stoptemp));
+
+	Database->read("RS_hbao_enabled", &Render_preferred_state.hbao_enabled);
+	tempint = Render_preferred_state.hbao_quality;
+	Database->read_int("RS_hbao_quality", &tempint);
+	if (tempint < 0) tempint = 0;
+	if (tempint > HBAO_QUALITY_HIGH) tempint = HBAO_QUALITY_HIGH;
+	Render_preferred_state.hbao_quality = (ubyte)tempint;
+	tempint = Render_preferred_state.hbao_blur;
+	Database->read_int("RS_hbao_blur", &tempint);
+	if (tempint < 0) tempint = 0;
+	if (tempint > HBAO_BLUR_WIDE) tempint = HBAO_BLUR_WIDE;
+	Render_preferred_state.hbao_blur = (ubyte)tempint;
+	templen = TEMPBUFFERSIZE;
+	if (Database->read("RS_hbao_radius", tempbuffer, &templen))
+	{
+		float v = (float)strtod(tempbuffer, &stoptemp);
+		if (v < 0.5f) v = 0.5f;
+		if (v > 32.0f) v = 32.0f;
+		Render_preferred_state.hbao_radius = v;
+	}
+	templen = TEMPBUFFERSIZE;
+	if (Database->read("RS_hbao_intensity", tempbuffer, &templen))
+	{
+		float v = (float)strtod(tempbuffer, &stoptemp);
+		if (v < 0.0f) v = 0.0f;
+		if (v > 4.0f) v = 4.0f;
+		Render_preferred_state.hbao_intensity = v;
+	}
+	templen = TEMPBUFFERSIZE;
+	if (Database->read("RS_hbao_bias", tempbuffer, &templen))
+	{
+		float v = (float)strtod(tempbuffer, &stoptemp);
+		if (v < 0.0f) v = 0.0f;
+		if (v > 0.5f) v = 0.5f;
+		Render_preferred_state.hbao_bias = v;
+	}
 	// force feedback stuff
 	Database->read("EnableJoystickFF",&D3Use_force_feedback);
 	Database->read("ForceFeedbackAutoCenter",&D3Force_auto_center);

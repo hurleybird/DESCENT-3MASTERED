@@ -147,6 +147,12 @@ void GL3Renderer::UpdateCommon(float* projection, float* modelview, int depth)
 	memcpy(newblock.projection, projection, sizeof(newblock.projection));
 	memcpy(newblock.modelview, modelview, sizeof(newblock.modelview));
 
+	//Cache the main-scene projection for HBAO. depth==0 is the regular world
+	//pass; instance/portal draws use deeper slots which we don't care about
+	//for ambient occlusion (it runs against the main framebuffer only).
+	if (depth == 0)
+		memcpy(last_projection, projection, sizeof(last_projection));
+
 	glBindBuffer(GL_COPY_WRITE_BUFFER, commonbuffername);
 	glBufferSubData(GL_COPY_WRITE_BUFFER, sizeof(CommonBlock) * depth, sizeof(CommonBlock), &newblock);
 

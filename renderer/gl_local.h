@@ -91,6 +91,12 @@ class GL3Renderer : public IRenderer
 	ShaderProgram blitshader;
 	ShaderProgram downsampleshader;
 	BloomResources bloom;
+	HBAOResources hbao;
+	//Cached projection matrix and near/far for HBAO. Updated on every
+	//UpdateCommon(depth=0) call so the AO pass uses the main world projection.
+	float last_projection[16] = {};
+	float last_nearz = 1.0f;
+	float last_farz = 10000.f;
 	//Temp shader to test the shader systems.
 	ShaderProgram testshader;
 	GLint blitshader_gamma = -1;

@@ -53,6 +53,16 @@ void GL_DestroyFramebufferVAO()
 	fbVBOName = fbVAOName = 0;
 }
 
+//Returns the framebuffer fullscreen-triangle VAO, initialising it lazily.
+//Exposed so post-processing passes that draw a fullscreen triangle without
+//also clearing the destination (HBAO's "apply" pass) can reuse it.
+GLuint GL_GetFramebufferVAO()
+{
+	if (!fbVAOName)
+		GL_InitFramebufferVAO();
+	return fbVAOName;
+}
+
 void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter)
 {
 	if (OpenGLProfile == GLPROFILE_COMPAT)
