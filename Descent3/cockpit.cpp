@@ -34,6 +34,7 @@
 #include "soundload.h"
 #include "sounds.h"
 #include "config.h"
+#include "gametexture.h"
 #include <string.h>
 #include <math.h>
 #include <algorithm>
@@ -89,6 +90,7 @@ float KeyframeAnimateCockpit();
 void LoadCockpitInfo(const char* ckt_file, tCockpitCfgInfo* info);
 static void BuildCockpitDisplayAdjustments();
 static void ApplyCockpitDisplayAdjustments(float display_spread);
+static float GetCockpitDisplaySpread();
 static vector CockpitRootVectorToSubmodelParent(poly_model* pm, int submodel, vector root_vec);
 
 static float CockpitSubmodelCenterX(poly_model* pm, int submodel)
@@ -106,6 +108,36 @@ static int CockpitSideFromCenter(float x, float threshold)
 	if (x < -threshold)
 		return -1;
 	return 0;
+}
+
+static bool CockpitSubmodelUsesTransparentMaterial(poly_model* pm, int submodel)
+{
+	bsp_info* sm = &pm->submodel[submodel];
+
+	if (sm->alpha)
+	{
+		for (int i = 0; i < sm->nverts; i++)
+		{
+			if (sm->alpha[i] < 0.99f)
+				return true;
+		}
+	}
+
+	for (int i = 0; i < sm->num_faces; i++)
+	{
+		int texnum = sm->faces[i].texnum;
+		if (texnum < 0 || texnum >= pm->n_textures)
+			continue;
+
+		int texture_index = pm->textures[texnum];
+		if (texture_index < 0 || texture_index >= MAX_TEXTURES)
+			continue;
+
+		if ((GameTextures[texture_index].flags & (TF_ALPHA | TF_BREAKABLE)) || GameTextures[texture_index].alpha < 0.99f)
+			return true;
+	}
+
+	return false;
 }
 
 static void BuildCockpitDisplayAdjustments()
@@ -135,7 +167,9 @@ static void BuildCockpitDisplayAdjustments()
 
 	for (int i = 0; i < count; i++)
 	{
-		if (pm->submodel[i].parent < 0 || (pm->submodel[i].flags & SOF_VIEWER))
+		if (pm->submodel[i].parent < 0 || (pm->submodel[i].flags & (SOF_VIEWER | SOF_LAYER)))
+			continue;
+		if (!(pm->submodel[i].flags & SOF_MONITOR_MASK) && CockpitSubmodelUsesTransparentMaterial(pm, i))
 			continue;
 
 		display_sign[i] = CockpitSideFromCenter(center_x[i], side_threshold);
@@ -186,6 +220,25 @@ static void ApplyCockpitDisplayAdjustments(float display_spread)
 	}
 	PolymodelSetSubmodelOffsetAdjustments(Cockpit_info.model_num, Cockpit_info.display_adjust_scaled,
 		Cockpit_info.display_adjust_count);
+}
+
+static float GetCockpitDisplaySpread()
+{
+	const float aspect_5_4 = 5.0f / 4.0f;
+	const float aspect_16_9 = 16.0f / 9.0f;
+	const float max_spread = 0.25f;
+
+	if (Cockpit_info.ship_index != SHIP_PHOENIX_ID || Game_window_res_width <= 0 || Game_window_res_height <= 0)
+		return 0.0f;
+
+	float aspect = (float)Game_window_res_width / (float)Game_window_res_height;
+	float t = (aspect - aspect_5_4) / (aspect_16_9 - aspect_5_4);
+	if (t < 0.0f)
+		t = 0.0f;
+	else if (t > 1.0f)
+		t = 1.0f;
+
+	return max_spread * t;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -507,7 +560,7 @@ void RenderCockpit()
 	SetNormalizedTimeAnim(keyframe, normalized_time, Cockpit_info.model);
 
 	bool display_adjust_active = false;
-	float display_spread = ConfigNormalizeCockpitDisplaySpread(Cockpit_display_spread);
+	float display_spread = GetCockpitDisplaySpread();
 	if (display_spread > 0.0001f && Cockpit_info.display_adjust_available)
 	{
 		SetModelAnglesAndPos(Cockpit_info.model, normalized_time);

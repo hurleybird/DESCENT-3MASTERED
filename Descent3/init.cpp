@@ -432,7 +432,6 @@ void SaveGameSettings()
 	Database->write("RS_windowaspect", Game_window_aspect);
 	Database->write("RS_fullscreen", Game_fullscreen);
 	Database->write("RS_fovdesired", Render_FOV_desired);
-	Database->write("RS_cockpit_display_spread", Cockpit_display_spread);
 
 	Database->write("RS_bitdepth",Render_preferred_bitdepth);
 	Database->write("RS_bilear",Render_preferred_state.filtering);
@@ -524,7 +523,6 @@ void LoadGameSettings()
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
 	Hud_text_scale = 1.0f;
-	Cockpit_display_spread = 0.0f;
 	PreferredRenderer = RENDERER_NONE;
 
 
@@ -615,9 +613,6 @@ void LoadGameSettings()
 	if (temp < D3_DEFAULT_FOV)
 		temp = D3_DEFAULT_FOV;
 	Render_FOV_desired = Render_FOV = temp;
-	templen = TEMPBUFFERSIZE;
-	if (Database->read("RS_cockpit_display_spread", tempbuffer, &templen))
-		Cockpit_display_spread = ConfigNormalizeCockpitDisplaySpread((float)strtod(tempbuffer, &stoptemp));
 	Database->read_int("RS_bilear",&Render_preferred_state.filtering);
 	Database->read_int("RS_mipping",&Render_preferred_state.mipping);
 	Database->read_int("RS_color_model",&Render_state.cur_color_model);
