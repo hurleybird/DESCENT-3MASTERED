@@ -97,6 +97,7 @@ static int HUD_top_left_text_anchor_priority = 0;
 static bool HUD_top_left_text_anchor_valid = false;
 static int HUD_top_left_text_anchor_x = 0;
 static int HUD_top_left_text_anchor_y = 0;
+static int HUD_top_left_text_anchor_bottom = 0;
 
 void RenderHUDBeginTextPass()
 {
@@ -104,6 +105,7 @@ void RenderHUDBeginTextPass()
 	HUD_text_pass_item_type = 0;
 	HUD_top_left_text_anchor_priority = 0;
 	HUD_top_left_text_anchor_valid = false;
+	HUD_top_left_text_anchor_bottom = 0;
 }
 
 void RenderHUDEndTextPass()
@@ -127,6 +129,17 @@ bool RenderHUDGetTopLeftTextAnchor(int* x, int* y)
 		*x = HUD_top_left_text_anchor_x;
 	if (y)
 		*y = HUD_top_left_text_anchor_y;
+
+	return true;
+}
+
+bool RenderHUDGetTopLeftTextBottom(int* bottom)
+{
+	if (!HUD_top_left_text_anchor_valid)
+		return false;
+
+	if (bottom)
+		*bottom = HUD_top_left_text_anchor_bottom;
 
 	return true;
 }
@@ -210,6 +223,7 @@ void RenderHUDInventory(tHUDItem* item)
 	int y;
 	//[ISB] uninitialized aaaaa
 	float img_w = 0;
+	int line_gap = (Hud_aspect_y >= 3.0f) ? 1 : 0;
 
 	if (cur_sel != -1)
 	{
@@ -231,9 +245,9 @@ void RenderHUDInventory(tHUDItem* item)
 
 	// render non usable list.
 	if (cur_sel != -1 && ilist[cur_sel].hud_name)
-		y = item->y + RenderHUDGetTextHeight(ilist[cur_sel].hud_name) + 6;
+		y = item->y + RenderHUDGetTextHeight(ilist[cur_sel].hud_name) + 6 + line_gap;
 	else
-		y = item->y + 16;
+		y = item->y + 16 + line_gap;
 
 	for (int i = 0; i < count; i++)
 	{
@@ -249,7 +263,7 @@ void RenderHUDInventory(tHUDItem* item)
 		else
 			RenderHUDText(item->color, item->alpha, item->saturation_count, item->x + img_w, y, "%s", ilist[i].hud_name);
 
-		y += RenderHUDGetTextHeight(ilist[i].hud_name);
+		y += RenderHUDGetTextHeight(ilist[i].hud_name) + line_gap;
 	}
 
 	/*
@@ -817,7 +831,7 @@ static int HUDTextAnchorPriority()
 	}
 }
 
-static void HUDTextRecordTopLeftAnchor(tHUDTextAlign align, int x, int y)
+static void HUDTextRecordTopLeftAnchor(tHUDTextAlign align, int x, int y, int screen_bottom)
 {
 	if (!HUD_text_pass_active || align != HUD_TEXT_LEFT)
 		return;
@@ -837,6 +851,11 @@ static void HUDTextRecordTopLeftAnchor(tHUDTextAlign align, int x, int y)
 		HUD_top_left_text_anchor_priority = priority;
 		HUD_top_left_text_anchor_x = x;
 		HUD_top_left_text_anchor_y = y;
+		HUD_top_left_text_anchor_bottom = screen_bottom;
+	}
+	else if (priority == HUD_top_left_text_anchor_priority)
+	{
+		HUD_top_left_text_anchor_bottom = std::max(HUD_top_left_text_anchor_bottom, screen_bottom);
 	}
 }
 
@@ -844,10 +863,10 @@ static void RenderHUDTextNoFormatAligned(ddgr_color col, ubyte alpha, int sat_co
 {
 	HUDTextApplyStyle(col, alpha, sat_count);
 
-	HUDTextRecordTopLeftAnchor(align, x, y);
-
 	int draw_x = HUDTextToScreenX(x);
 	int draw_y = HUDTextToScreenY(y);
+
+	HUDTextRecordTopLeftAnchor(align, x, y, draw_y + HUDTextScreenHeight(str));
 
 	if (align == HUD_TEXT_CENTER)
 		draw_x -= HUDTextScreenWidth(str) / 2;
