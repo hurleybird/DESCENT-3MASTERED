@@ -278,6 +278,7 @@ extern int CheckToRenderSky (int);
 
 //Called after loading terrain. Will delete all cell meshes and then build new meshes. 
 void MeshTerrain();
+void TerrainMeshMarkDirty();
 
 
 //left,top,right,bot are optional parameters.  Omiting them (or setting them to -1) will

@@ -127,6 +127,14 @@ struct TerrainDrawCell
 //Terrain meshes
 //Terrain is meshed at the same size as the occlusion cells, for easier rendering. 
 TerrainDrawCell TerrainMeshes[OCCLUSION_SIZE * OCCLUSION_SIZE];
+static bool Terrain_mesh_ready = false;
+static bool Terrain_mesh_dirty = true;
+static int Terrain_mesh_checksum = -1;
+static uint32_t Terrain_lightmap_handle = 0xFFFFFFFFu;
+static uint32_t Terrain_lightmap_fog_handle = 0xFFFFFFFFu;
+
+static const float TERRAIN_CHUNK_CULL_MARGIN = TERRAIN_SIZE;
+static const int TERRAIN_CHUNK_HEIGHT_LEVEL = 4;
 
 struct SortableCell
 {
@@ -156,7 +164,7 @@ void GenerateVertex(RendVertex& vert, int x, float y, int z, int basex, int base
 		vert.normal = TerrainNormals[MAX_TERRAIN_LOD - 1][x * TERRAIN_WIDTH + z].normal1;
 	vert.r = vert.g = vert.b = vert.a = 255;
 
-	//Figure out the rotation of the UVs
+	// Figure out the rotation of the UVs.
 	int rotation = Terrain_tex_seg[basecell.texseg_index].rotation;
 	int texmode = rotation & 3;
 	int tile = rotation >> 4;
@@ -181,7 +189,7 @@ void GenerateVertex(RendVertex& vert, int x, float y, int z, int basex, int base
 	}
 
 	//further adjustment for -Z depth
-	vert.u1 = 1.f -vert.u1;
+	vert.u1 = 1.f - vert.u1;
 
 	//TODO: Probably should just use a single 256x256 lightmap page. 
 	
@@ -333,6 +341,14 @@ void MeshTerrain()
 
 	builder.BuildVertices(Terrain_vertexbuffer);
 	builder.BuildIndicies(Terrain_indexbuffer);
+	Terrain_mesh_ready = true;
+	Terrain_mesh_dirty = false;
+	Terrain_mesh_checksum = Terrain_checksum;
+}
+
+void TerrainMeshMarkDirty()
+{
+	Terrain_mesh_dirty = true;
 }
 
 void InitTerrainRenderSpeedups()
@@ -367,6 +383,179 @@ ubyte CodeTerrainPoint(g3Point* p)
 	if (p->p3_sy < Clip_scale_top)
 		cc |= CC_OFF_TOP;
 	return cc;
+}
+
+static bool TerrainMeshCanRender()
+{
+#if (defined(EDITOR) || defined(NEWEDITOR))
+	if (View_mode == EDITOR_MODE)
+		return false;
+#endif
+
+	if (!UseHardware || OpenGLProfile != GLPROFILE_CORE)
+		return false;
+
+	if (Show_invisible_terrain)
+		return false;
+
+	// The legacy renderer jitters terrain vertices for this camera effect.
+	if (Viewer_object && Viewer_object->effect_info && (Viewer_object->effect_info->type_flags & EF_DEFORM))
+		return false;
+
+	return true;
+}
+
+static void EnsureTerrainMeshReady()
+{
+	if (Terrain_lightmap_handle == 0xFFFFFFFFu)
+		Terrain_lightmap_handle = rend_GetPipelineByName("terrain_lightmap");
+	if (Terrain_lightmap_fog_handle == 0xFFFFFFFFu)
+		Terrain_lightmap_fog_handle = rend_GetPipelineByName("terrain_lightmap_fog");
+
+	if (!Terrain_mesh_ready || Terrain_mesh_dirty || Terrain_mesh_checksum != Terrain_checksum)
+		MeshTerrain();
+}
+
+static bool GetTerrainMeshOcclusionSource(int* src_occlusion_index)
+{
+	if ((Terrain_checksum + 1) != Terrain_occlusion_checksum || Terrain_from_mine)
+		return false;
+
+	int oz = (Viewer_object->pos.z / TERRAIN_SIZE) / OCCLUSION_SIZE;
+	int ox = (Viewer_object->pos.x / TERRAIN_SIZE) / OCCLUSION_SIZE;
+	if (oz < 0 || oz >= OCCLUSION_SIZE || ox < 0 || ox >= OCCLUSION_SIZE)
+		return false;
+
+	*src_occlusion_index = oz * OCCLUSION_SIZE + ox;
+	return true;
+}
+
+static bool TerrainMeshOcclusionCellVisible(int src_occlusion_index, int chunk_x, int chunk_z)
+{
+	int dest_occlusion_index = chunk_z * OCCLUSION_SIZE + chunk_x;
+	int occ_byte = dest_occlusion_index / 8;
+	int occ_bit = dest_occlusion_index % 8;
+
+	return (Terrain_occlusion_map[src_occlusion_index][occ_byte] & (1 << occ_bit)) != 0;
+}
+
+static bool TerrainMeshChunkVisibleByOcclusion(int chunk_x, int chunk_z, bool use_occlusion, int src_occlusion_index)
+{
+	if (!use_occlusion)
+		return true;
+
+	int min_x = max(0, chunk_x - 1);
+	int max_x = min(OCCLUSION_SIZE - 1, chunk_x + 1);
+	int min_z = max(0, chunk_z - 1);
+	int max_z = min(OCCLUSION_SIZE - 1, chunk_z + 1);
+
+	for (int z = min_z; z <= max_z; z++)
+	{
+		for (int x = min_x; x <= max_x; x++)
+		{
+			if (TerrainMeshOcclusionCellVisible(src_occlusion_index, x, z))
+				return true;
+		}
+	}
+
+	return false;
+}
+
+static bool TerrainMeshChunkInFrustum(int chunk_x, int chunk_z)
+{
+	int height_cell = chunk_z * OCCLUSION_SIZE + chunk_x;
+	float min_x = chunk_x * OCCLUSION_SIZE * TERRAIN_SIZE - TERRAIN_CHUNK_CULL_MARGIN;
+	float max_x = (chunk_x + 1) * OCCLUSION_SIZE * TERRAIN_SIZE + TERRAIN_CHUNK_CULL_MARGIN;
+	float min_z = chunk_z * OCCLUSION_SIZE * TERRAIN_SIZE - TERRAIN_CHUNK_CULL_MARGIN;
+	float max_z = (chunk_z + 1) * OCCLUSION_SIZE * TERRAIN_SIZE + TERRAIN_CHUNK_CULL_MARGIN;
+	float min_y = Terrain_min_height_int[TERRAIN_CHUNK_HEIGHT_LEVEL][height_cell] * TERRAIN_HEIGHT_INCREMENT - TERRAIN_CHUNK_CULL_MARGIN;
+	float max_y = Terrain_max_height_int[TERRAIN_CHUNK_HEIGHT_LEVEL][height_cell] * TERRAIN_HEIGHT_INCREMENT + TERRAIN_CHUNK_CULL_MARGIN;
+
+	vector corners[8] = {
+		{ min_x, min_y, min_z },
+		{ max_x, min_y, min_z },
+		{ min_x, max_y, min_z },
+		{ max_x, max_y, min_z },
+		{ min_x, min_y, max_z },
+		{ max_x, min_y, max_z },
+		{ min_x, max_y, max_z },
+		{ max_x, max_y, max_z },
+	};
+
+	ubyte and_codes = 0xff;
+	ubyte portal_and_codes = 0xff;
+	bool has_behind_point = false;
+
+	for (int i = 0; i < 8; i++)
+	{
+		g3Point point;
+		g3_RotatePoint(&point, &corners[i]);
+
+		ubyte code = point.p3_codes & ~CC_OFF_FAR;
+		and_codes &= code;
+
+		if (point.p3_codes & CC_BEHIND)
+		{
+			has_behind_point = true;
+			continue;
+		}
+
+		if (Check_terrain_portal)
+		{
+			g3_ProjectPoint(&point);
+			portal_and_codes &= CodeTerrainPoint(&point);
+		}
+	}
+
+	if (and_codes & (CC_OFF_LEFT | CC_OFF_RIGHT | CC_OFF_TOP | CC_OFF_BOT | CC_BEHIND))
+		return false;
+
+	if (Check_terrain_portal && !has_behind_point && portal_and_codes)
+		return false;
+
+	return true;
+}
+
+static int DisplayTerrainMesh(bool fog_enabled)
+{
+	EnsureTerrainMeshReady();
+
+	if (fog_enabled)
+		rend_BindPipeline(Terrain_lightmap_fog_handle);
+	else
+		rend_BindPipeline(Terrain_lightmap_handle);
+
+	rend_SetColorModel(CM_RGB);
+	rend_SetTextureType(TT_LINEAR);
+	rend_SetAlphaType(ATF_CONSTANT + ATF_TEXTURE);
+	rend_SetLighting(LS_NONE);
+	rend_SetWrapType(WT_WRAP);
+	rend_ClearBoundTextures();
+
+	Terrain_vertexbuffer.Bind();
+	Terrain_indexbuffer.Bind();
+
+	int src_occlusion_index = -1;
+	bool use_occlusion = GetTerrainMeshOcclusionSource(&src_occlusion_index);
+	int chunks_drawn = 0;
+
+	for (int z = 0; z < OCCLUSION_SIZE; z++)
+	{
+		for (int x = 0; x < OCCLUSION_SIZE; x++)
+		{
+			if (!TerrainMeshChunkVisibleByOcclusion(x, z, use_occlusion, src_occlusion_index))
+				continue;
+
+			if (!TerrainMeshChunkInFrustum(x, z))
+				continue;
+
+			TerrainMeshes[z * OCCLUSION_SIZE + x].DrawAll();
+			chunks_drawn++;
+		}
+	}
+
+	rendTEMP_UnbindVertexBuffer();
+	return chunks_drawn;
 }
 
 // Returns true if light can hit this segment/heighth bit
@@ -882,6 +1071,7 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 
 	// Set this so we don't do reentrant rendering between terrain/mine
 	Terrain_from_mine = from_mine;
+	bool use_mesh_terrain = TerrainMeshCanRender();
 
 #ifndef NEWEDITOR
 	const float kTerrainRenderDistance = Detail_settings.Terrain_render_distance;
@@ -901,7 +1091,9 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 	g3_GetViewMatrix(&viewer_orient);
 
 	// Get all of the cells visible to us
-	int nt = GetVisibleTerrain(&viewer_eye, &viewer_orient);
+	int nt = 0;
+	if (!use_mesh_terrain)
+		nt = GetVisibleTerrain(&viewer_eye, &viewer_orient);
 
 	// Set this to really far away so our sky can render
 	g3_SetFarClipZ(60000);
@@ -913,12 +1105,15 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 	//// Set up our z wall
 	rend_SetZBufferState(1);
 	rend_SetZBufferWriteMask(1);
-   	g3_SetFarClipZ(VisibleTerrainZ);
+	if (use_mesh_terrain)
+		g3_SetFarClipZ(60000);
+	else
+		g3_SetFarClipZ(VisibleTerrainZ);
 
 #ifndef NEWEDITOR
 	if ((Terrain_sky.flags & TF_FOG))
 	{
-		rend_SetZValues(0, VisibleTerrainZ);
+		rend_SetZValues(0, use_mesh_terrain ? 60000.0f : VisibleTerrainZ);
 		rend_SetFogState(1);
 		rend_SetFogBorders(VisibleTerrainZ * Terrain_sky.fog_scalar, Far_fog_border);
 		rend_SetFogColor(Terrain_sky.fog_color);
@@ -929,7 +1124,11 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 		rend_SetZValues(0, 5000);
 	}
 
-	if (Render_use_newrender)
+	if (use_mesh_terrain)
+	{
+		DisplayTerrainMesh((Terrain_sky.flags & TF_FOG) != 0);
+	}
+	else if (Render_use_newrender)
 	{
 		//mesh test
 		rend_UseShaderTest();

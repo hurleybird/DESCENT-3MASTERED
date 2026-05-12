@@ -26,6 +26,9 @@ static float mat4_identity[16] =
 	0, 0, 1, 0,
 	0, 0, 0, 1 };
 
+static float OpenGL_terrain_fog_start = 0.0f;
+static float OpenGL_terrain_fog_end = 1.0f;
+
 int GL3Renderer::SupersamplingFactor() const
 {
 	return RendererSupersamplingFactor(OpenGL_preferred_state);
@@ -673,6 +676,9 @@ void GL3Renderer::SetFogBorders(float nearz, float farz)
 
 	OpenGL_state.cur_fog_start = fog_start;
 	OpenGL_state.cur_fog_end = fog_end;
+
+	OpenGL_terrain_fog_start = nearz;
+	OpenGL_terrain_fog_end = farz;
 }
 
 // Sets the color of fog
@@ -688,7 +694,7 @@ void GL3Renderer::SetFogColor(ddgr_color color)
 	fc[1] /= 255.0f;
 	fc[2] /= 255.0f;
 
-	UpdateTerrainFog(fc, OpenGL_state.cur_fog_start, OpenGL_state.cur_fog_end);
+	UpdateTerrainFog(fc, OpenGL_terrain_fog_start, OpenGL_terrain_fog_end);
 }
 
 void GL3Renderer::SetLighting(light_state state)

@@ -175,6 +175,8 @@ ShaderDefinition gl_shaderdefs[] =
 	{"lightmapped_specular", SF_HASCOMMON | SF_HASSPECULAR, "lightmap_specular.vert", "lightmap_specular.frag"},
 	{"lightmap_room_fog", SF_HASCOMMON | SF_HASROOM, "lightmap_room_fog.vert", "lightmap_room_fog.frag"},
 	{"lightmap_room_specular_fog", SF_HASCOMMON | SF_HASROOM | SF_HASSPECULAR, "lightmap_room_specular_fog.vert", "lightmap_room_specular_fog.frag"},
+	{"terrain_lightmap", SF_HASCOMMON, "terrain_lightmap.vert", "terrain_lightmap.frag"},
+	{"terrain_lightmap_fog", SF_HASCOMMON, "terrain_lightmap_fog.vert", "terrain_lightmap_fog.frag"},
 	{"unlit_room", SF_HASCOMMON, "unlit_room.vert", "unlit_room.frag"},
 	{"unlit_room_fog", SF_HASCOMMON | SF_HASROOM, "unlit_room_fog.vert", "unlit_room_fog.frag"},
 	{"fog_portal", SF_HASCOMMON | SF_HASROOM, "fog_portal.vert", "fog_portal.frag"},
