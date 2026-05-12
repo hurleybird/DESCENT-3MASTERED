@@ -432,7 +432,6 @@ void ConfigSetDetailLevel(int level)
 #define GAMMA_SLICE_Y		64
 #define GAMMA_SLIDER_UNITS	145 //[ISB] Allow gamma all the way down to 0.1
 
-#define IDV_GAMMAAPPLY	5
 #define IDV_AUTOGAMMA	6
 
 void gamma_callback(newuiTiledWindow* wnd, void* data)
@@ -553,8 +552,6 @@ void config_gamma()
 
 	// ok, cancel buttons.
 	sheet->NewGroup(NULL, 130, 224, NEWUI_ALIGN_HORIZ);
-	sheet->AddButton(TXT_APPLY, IDV_GAMMAAPPLY);
-	sheet->AddText(" ");
 	sheet->AddButton(TXT_OK, UID_OK);
 	sheet->AddButton(TXT_CANCEL, UID_CANCEL);
 
@@ -582,8 +579,7 @@ void config_gamma()
 		if (res == NEWUIRES_FORCEQUIT) {
 			break;
 		}
-		if (res == IDV_GAMMAAPPLY) {
-			//get & set the gamma
+		if (sheet->HasChanged(gamma_slider)) {
 			Render_preferred_state.gamma = CALC_SLIDER_FLOAT_VALUE(*gamma_slider, slider_set.min_val.f, slider_set.max_val.f, GAMMA_SLIDER_UNITS);
 			rend_SetPreferredState(&Render_preferred_state);
 		}
