@@ -371,6 +371,7 @@ void GLCompatibilityRenderer::Flip(void)
 		bloom.compositeshader.Use();
 		glUniform1f(bloom.composite_gamma, display_gamma);
 		glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
+		glUniform1i(bloom.composite_use_alpha_mask, 0);
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
 		GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);
@@ -475,13 +476,33 @@ void GLCompatibilityRenderer::CaptureBloomSource()
 	framebuffers[framebuffer_current_draw].BlitDepthTo(bloom_source_framebuffer.Handle(), 0, 0,
 		bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height());
 
-	framebuffers[framebuffer_current_draw].ClearAlphaToZero();
+	GLuint bloom_depth = bloom_source_framebuffer.DepthTextureForRead();
+	Framebuffer* bloom_framebuffer = bloom.Apply(&bloom_source_framebuffer, OpenGL_preferred_state,
+		OpenGL_state, display_gamma, bloom_depth);
+	if (bloom_framebuffer)
+	{
+		bloom_source_resolved_framebuffer.Update(framebuffers[framebuffer_current_draw].Width(),
+			framebuffers[framebuffer_current_draw].Height(), 0);
+		framebuffers[framebuffer_current_draw].BlitToRaw(bloom_source_resolved_framebuffer.Handle(), 0, 0,
+			bloom_source_resolved_framebuffer.Width(), bloom_source_resolved_framebuffer.Height(), GL_NEAREST);
+
+		bloom.compositeshader.Use();
+		glUniform1f(bloom.composite_gamma, display_gamma);
+		glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
+		glUniform1i(bloom.composite_use_alpha_mask, 0);
+		rend_ClearBoundTextures();
+		GL_BindFramebufferTexture(bloom_source_resolved_framebuffer.ColorTextureForRead(), 0, GL_NEAREST);
+		GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);
+		GL_BindFramebufferTexture(bloom_source_framebuffer.ColorTextureForRead(), 2, GL_NEAREST);
+		GL_DrawFramebufferQuad(framebuffers[framebuffer_current_draw].Handle(), 0, 0,
+			framebuffers[framebuffer_current_draw].Width(), framebuffers[framebuffer_current_draw].Height());
+	}
 
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 	ShaderProgram::ClearBinding();
 
-	bloom_source_valid = true;
+	bloom_source_valid = false;
 	rend_RestoreLegacy();
 }
 

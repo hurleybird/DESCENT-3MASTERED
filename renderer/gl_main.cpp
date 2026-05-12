@@ -454,6 +454,7 @@ void GL3Renderer::Flip()
 		bloom.compositeshader.Use();
 		glUniform1f(bloom.composite_gamma, display_gamma);
 		glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
+		glUniform1i(bloom.composite_use_alpha_mask, 1);
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
 		GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);
@@ -740,12 +741,64 @@ void GL3Renderer::SetPerPixelLightingDirection(const vector *lightdir)
 		per_pixel_light_direction = *lightdir;
 }
 
+static void UpdateCurrentDynamicLightingUniforms(int count, const vector &face_normal,
+	GLfloat positions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3],
+	GLfloat colors[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3],
+	GLfloat radii[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS],
+	GLfloat directions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3],
+	GLfloat dot_ranges[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS],
+	GLint directional[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS])
+{
+	GLint program = 0;
+	glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+	if (program == 0)
+		return;
+
+	GLint uniform = glGetUniformLocation(program, "dynamic_light_count");
+	if (uniform != -1)
+		glUniform1i(uniform, count);
+
+	if (count <= 0)
+		return;
+
+	uniform = glGetUniformLocation(program, "dynamic_face_normal");
+	if (uniform != -1)
+		glUniform3f(uniform, face_normal.x, face_normal.y, face_normal.z);
+
+	uniform = glGetUniformLocation(program, "dynamic_light_positions[0]");
+	if (uniform != -1)
+		glUniform3fv(uniform, count, &positions[0][0]);
+
+	uniform = glGetUniformLocation(program, "dynamic_light_colors[0]");
+	if (uniform != -1)
+		glUniform3fv(uniform, count, &colors[0][0]);
+
+	uniform = glGetUniformLocation(program, "dynamic_light_radii[0]");
+	if (uniform != -1)
+		glUniform1fv(uniform, count, radii);
+
+	uniform = glGetUniformLocation(program, "dynamic_light_directions[0]");
+	if (uniform != -1)
+		glUniform3fv(uniform, count, &directions[0][0]);
+
+	uniform = glGetUniformLocation(program, "dynamic_light_dot_ranges[0]");
+	if (uniform != -1)
+		glUniform1fv(uniform, count, dot_ranges);
+
+	uniform = glGetUniformLocation(program, "dynamic_light_directional[0]");
+	if (uniform != -1)
+		glUniform1iv(uniform, count, directional);
+}
+
 void GL3Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int count,
 	const renderer_per_pixel_light *lights)
 {
 	if (!OpenGL_preferred_state.per_pixel_lighting || count <= 0 || lights == nullptr || face_normal == nullptr)
 	{
 		per_pixel_dynamic_light_count = 0;
+		UpdateCurrentDynamicLightingUniforms(per_pixel_dynamic_light_count, per_pixel_dynamic_face_normal,
+			per_pixel_dynamic_positions, per_pixel_dynamic_colors, per_pixel_dynamic_radii,
+			per_pixel_dynamic_directions, per_pixel_dynamic_dot_ranges, per_pixel_dynamic_directional);
 		return;
 	}
 
@@ -770,6 +823,10 @@ void GL3Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int coun
 		per_pixel_dynamic_dot_ranges[i] = lights[i].dot_range;
 		per_pixel_dynamic_directional[i] = lights[i].directional ? 1 : 0;
 	}
+
+	UpdateCurrentDynamicLightingUniforms(per_pixel_dynamic_light_count, per_pixel_dynamic_face_normal,
+		per_pixel_dynamic_positions, per_pixel_dynamic_colors, per_pixel_dynamic_radii,
+		per_pixel_dynamic_directions, per_pixel_dynamic_dot_ranges, per_pixel_dynamic_directional);
 }
 
 void GL3Renderer::SetColorModel(color_model state)

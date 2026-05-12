@@ -105,6 +105,19 @@ struct TerrainDrawElement
 	ElementRange range;
 };
 
+static int SetTerrainPerPixelLights(int lmhandle)
+{
+	static vector light_normal = { 0, 1, 0 };
+	renderer_per_pixel_light lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
+	int light_count = GetPerPixelLightmapTextureLights(lmhandle, lights, RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+	if (light_count > 0)
+		rend_SetPerPixelDynamicLighting(&light_normal, light_count, lights);
+	else
+		rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
+
+	return light_count;
+}
+
 struct TerrainDrawCell
 {
 	std::vector<TerrainDrawElement> elements;
@@ -117,9 +130,11 @@ struct TerrainDrawCell
 			//Bind bitmaps. Temp API, should the bitmap system also handle binding? Or does that go elsewhere?
 			Terrain_vertexbuffer.BindBitmap(GetTextureBitmap(element.texturenum, 0));
 			Terrain_vertexbuffer.BindLightmap(element.lmhandle);
+			SetTerrainPerPixelLights(element.lmhandle);
 
 			//And draw
 			Terrain_vertexbuffer.DrawIndexed(PrimitiveType::Triangles, element.range);
+			rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 		}
 	}
 };

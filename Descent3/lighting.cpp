@@ -88,13 +88,15 @@ int Destroyed_light_faces_this_frame[MAX_DESTROYED_LIGHTS_PER_FRAME];
 
 struct per_pixel_lightmap_face
 {
-	ushort lmi_handle;
+	int lightmap_key;
 	ubyte count;
 	renderer_per_pixel_light lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
 };
 
 per_pixel_lightmap_face Per_pixel_lightmap_faces[MAX_DYNAMIC_FACES];
 int Num_per_pixel_lightmap_faces = 0;
+per_pixel_lightmap_face Per_pixel_lightmap_textures[MAX_DYNAMIC_FACES];
+int Num_per_pixel_lightmap_textures = 0;
 
 static bool UsePerPixelRoomLighting()
 {
@@ -106,8 +108,41 @@ static float PerPixelLightImportance(const renderer_per_pixel_light &light)
 	return (fabs(light.color[0]) + fabs(light.color[1]) + fabs(light.color[2])) * light.radius;
 }
 
+static bool PerPixelLightMatches(const renderer_per_pixel_light &a, const renderer_per_pixel_light &b)
+{
+	return a.position[0] == b.position[0] && a.position[1] == b.position[1] && a.position[2] == b.position[2] &&
+		a.color[0] == b.color[0] && a.color[1] == b.color[1] && a.color[2] == b.color[2] &&
+		a.radius == b.radius && a.dot_range == b.dot_range && a.directional == b.directional &&
+		a.direction[0] == b.direction[0] && a.direction[1] == b.direction[1] && a.direction[2] == b.direction[2];
+}
+
+static void AddPerPixelLightmapTextureLight(int lm_handle, const vector *pos, float light_dist,
+	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range);
+static void AddPerPixelLightmapFaceLight(per_pixel_lightmap_face *light_list, int &light_list_count, int lightmap_key,
+	const vector *pos, float light_dist, float red_scale, float green_scale, float blue_scale,
+	const vector *light_direction, float dot_range);
+static int GetPerPixelLightmapFaceLights(per_pixel_lightmap_face *light_list, int light_list_count, int lightmap_key,
+	renderer_per_pixel_light *lights, int max_lights);
+
 static void AddPerPixelLightmapLight(ushort lmi_handle, const vector *pos, float light_dist,
 	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range)
+{
+	AddPerPixelLightmapTextureLight(LightmapInfo[lmi_handle].lm_handle, pos, light_dist, red_scale, green_scale,
+		blue_scale, light_direction, dot_range);
+	AddPerPixelLightmapFaceLight(Per_pixel_lightmap_faces, Num_per_pixel_lightmap_faces, lmi_handle, pos, light_dist,
+		red_scale, green_scale, blue_scale, light_direction, dot_range);
+}
+
+static void AddPerPixelLightmapTextureLight(int lm_handle, const vector *pos, float light_dist,
+	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range)
+{
+	AddPerPixelLightmapFaceLight(Per_pixel_lightmap_textures, Num_per_pixel_lightmap_textures, lm_handle, pos,
+		light_dist, red_scale, green_scale, blue_scale, light_direction, dot_range);
+}
+
+static void AddPerPixelLightmapFaceLight(per_pixel_lightmap_face *light_list, int &light_list_count, int lightmap_key,
+	const vector *pos, float light_dist, float red_scale, float green_scale, float blue_scale,
+	const vector *light_direction, float dot_range)
 {
 	renderer_per_pixel_light light = {};
 	light.position[0] = pos->x;
@@ -126,11 +161,17 @@ static void AddPerPixelLightmapLight(ushort lmi_handle, const vector *pos, float
 		light.direction[2] = light_direction->z;
 	}
 
-	for (int i = 0; i < Num_per_pixel_lightmap_faces; i++)
+	for (int i = 0; i < light_list_count; i++)
 	{
-		per_pixel_lightmap_face *face_lights = &Per_pixel_lightmap_faces[i];
-		if (face_lights->lmi_handle != lmi_handle)
+		per_pixel_lightmap_face *face_lights = &light_list[i];
+		if (face_lights->lightmap_key != lightmap_key)
 			continue;
+
+		for (int j = 0; j < face_lights->count; j++)
+		{
+			if (PerPixelLightMatches(face_lights->lights[j], light))
+				return;
+		}
 
 		if (face_lights->count < RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS)
 		{
@@ -155,24 +196,37 @@ static void AddPerPixelLightmapLight(ushort lmi_handle, const vector *pos, float
 		return;
 	}
 
-	if (Num_per_pixel_lightmap_faces >= MAX_DYNAMIC_FACES)
+	if (light_list_count >= MAX_DYNAMIC_FACES)
 		return;
 
-	per_pixel_lightmap_face *face_lights = &Per_pixel_lightmap_faces[Num_per_pixel_lightmap_faces++];
-	face_lights->lmi_handle = lmi_handle;
+	per_pixel_lightmap_face *face_lights = &light_list[light_list_count++];
+	face_lights->lightmap_key = lightmap_key;
 	face_lights->count = 1;
 	face_lights->lights[0] = light;
 }
 
 int GetPerPixelLightmapLights(ushort lmi_handle, renderer_per_pixel_light *lights, int max_lights)
 {
+	return GetPerPixelLightmapFaceLights(Per_pixel_lightmap_faces, Num_per_pixel_lightmap_faces, lmi_handle, lights,
+		max_lights);
+}
+
+int GetPerPixelLightmapTextureLights(int lm_handle, renderer_per_pixel_light *lights, int max_lights)
+{
+	return GetPerPixelLightmapFaceLights(Per_pixel_lightmap_textures, Num_per_pixel_lightmap_textures, lm_handle,
+		lights, max_lights);
+}
+
+static int GetPerPixelLightmapFaceLights(per_pixel_lightmap_face *light_list, int light_list_count, int lightmap_key,
+	renderer_per_pixel_light *lights, int max_lights)
+{
 	if (lights == nullptr || max_lights <= 0)
 		return 0;
 
-	for (int i = 0; i < Num_per_pixel_lightmap_faces; i++)
+	for (int i = 0; i < light_list_count; i++)
 	{
-		per_pixel_lightmap_face *face_lights = &Per_pixel_lightmap_faces[i];
-		if (face_lights->lmi_handle != lmi_handle)
+		per_pixel_lightmap_face *face_lights = &light_list[i];
+		if (face_lights->lightmap_key != lightmap_key)
 			continue;
 
 		int count = (face_lights->count < max_lights) ? face_lights->count : max_lights;
@@ -365,6 +419,7 @@ void ApplyLightingToExternalRoom(vector* pos, int roomnum, float light_dist, flo
 	vector Light_max_xyz;
 	ushort lmilist[MAX_DYNAMIC_FACES];
 	int num_spoken_for = 0;
+	const bool per_pixel_room_lighting = UsePerPixelRoomLighting();
 
 	int red_limit = 31;
 	int green_limit = 31;
@@ -390,11 +445,12 @@ void ApplyLightingToExternalRoom(vector* pos, int roomnum, float light_dist, flo
 			Light_max_xyz.z < fp->min_xyz.z ||
 			fp->max_xyz.z < Light_min_xyz.z) continue;
 
-		// Make sure face was rendered
-		if (fp->renderframe != ((FrameCount - 1) % 256))
+		// CPU dynamic lightmaps are only built for faces seen last frame.  Per-pixel lighting
+		// is resolved at draw time, so include every candidate face to avoid one-frame light pops.
+		if (!per_pixel_room_lighting && fp->renderframe != ((FrameCount - 1) % 256))
 			continue;
 
-		if (Num_dynamic_faces >= MAX_DYNAMIC_FACES)
+		if (!per_pixel_room_lighting && Num_dynamic_faces >= MAX_DYNAMIC_FACES)
 		{
 			mprintf((0, "Too many dynamic faces!\n"));
 			return;
@@ -442,6 +498,21 @@ void ApplyLightingToExternalRoom(vector* pos, int roomnum, float light_dist, flo
 
 			if (!in_front)	// This face is completely behind, so bail!
 				continue;
+		}
+
+		if (per_pixel_room_lighting)
+		{
+			AddPerPixelLightmapLight(fp->lmi_handle, pos, light_dist, red_scale, green_scale, blue_scale,
+				light_direction, dot_range);
+
+			if (!(Lmi_spoken_for[fp->lmi_handle / 8] & (1 << (fp->lmi_handle % 8))))
+			{
+				lmilist[num_spoken_for] = fp->lmi_handle;
+				Lmi_spoken_for[fp->lmi_handle / 8] |= (1 << (fp->lmi_handle % 8));
+				num_spoken_for++;
+			}
+
+			continue;
 		}
 
 		// Compute face matrix
@@ -1720,6 +1791,7 @@ void ClearDynamicLightmaps()
 	Num_dynamic_lightmaps = 0;
 	Cur_dynamic_mem_ptr = 0;
 	Num_per_pixel_lightmap_faces = 0;
+	Num_per_pixel_lightmap_textures = 0;
 
 	BlendAllLightingEdges();
 	Num_edges_to_blend = 0;
@@ -1749,6 +1821,8 @@ void ApplyLightingToTerrain(vector* pos, int cellnum, float light_dist, float re
 	int red_limit = 255;
 	int green_limit = 255;
 	int blue_limit = 255;
+	const bool per_pixel_terrain_lighting = UsePerPixelRoomLighting();
+	int per_pixel_lightmaps_spoken_for[4] = { -1, -1, -1, -1 };
 
 
 	for (i = 0; i < num_cells; i++)
@@ -1805,6 +1879,36 @@ void ApplyLightingToTerrain(vector* pos, int cellnum, float light_dist, float re
 
 		if (scalar <= 0)
 			continue;
+
+		if (per_pixel_terrain_lighting)
+		{
+			bool already_spoken_for = false;
+			for (int lightmap_index = 0; lightmap_index < 4; lightmap_index++)
+			{
+				if (per_pixel_lightmaps_spoken_for[lightmap_index] == whichmap)
+				{
+					already_spoken_for = true;
+					break;
+				}
+			}
+
+			if (!already_spoken_for)
+			{
+				for (int lightmap_index = 0; lightmap_index < 4; lightmap_index++)
+				{
+					if (per_pixel_lightmaps_spoken_for[lightmap_index] == -1)
+					{
+						per_pixel_lightmaps_spoken_for[lightmap_index] = whichmap;
+						break;
+					}
+				}
+
+				AddPerPixelLightmapTextureLight(whichmap, pos, light_dist, red_scale, green_scale, blue_scale,
+					light_direction, dot_range);
+			}
+
+			continue;
+		}
 
 		// Add a new face to our list
 		if (!(tseg->flags & TF_DYNAMIC))

@@ -1004,7 +1004,8 @@ void BloomResources::InitShaders()
 		glUniform1i(composite_scene_source, 2);
 	composite_gamma = compositeshader.FindUniform("gamma");
 	composite_intensity = compositeshader.FindUniform("bloom_intensity");
-	if (composite_gamma == -1 || composite_intensity == -1)
+	composite_use_alpha_mask = compositeshader.FindUniform("use_alpha_mask");
+	if (composite_gamma == -1 || composite_intensity == -1 || composite_use_alpha_mask == -1)
 		Error("BloomResources::InitShaders: Failed to find composite uniforms!");
 
 	ShaderProgram::ClearBinding();

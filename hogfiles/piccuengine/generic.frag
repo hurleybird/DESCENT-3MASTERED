@@ -112,7 +112,10 @@ void main()
 	suppression = clamp(hbao_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
 	
 	#if defined(USE_FOG)
-		float mag = clamp((-outpt.z - fog.start_dist) / (fog.end_dist - fog.start_dist), 0, 1);
+		float fog_start = clamp(1.0 - (1.0 / max(fog.start_dist, 0.0001)), 0.0, 1.0);
+		float fog_end = clamp(1.0 - (1.0 / max(fog.end_dist, 0.0001)), 0.0, 1.0);
+		float fog_depth = clamp(-outpt.z, 0.0, 1.0);
+		float mag = clamp((fog_depth - fog_start) / max(fog_end - fog_start, 0.0001), 0.0, 1.0);
 		color = vec4(mix(color.rgb, fog.color.rgb, mag), color.a);
 		suppression = max(suppression, 1.0 - pow(1.0 - mag, 3.0));
 	#endif

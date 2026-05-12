@@ -247,6 +247,7 @@ struct BloomResources
 	GLint merge_spread = -1;
 	GLint composite_gamma = -1;
 	GLint composite_intensity = -1;
+	GLint composite_use_alpha_mask = -1;
 
 	void InitShaders();
 	void DestroyShaders();
