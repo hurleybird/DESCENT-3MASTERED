@@ -184,6 +184,14 @@ char* GetStringFromTable(int index)
 	return String_table[index];
 }
 
+char* GetStringFromTableWithFallback(int index, const char* fallback)
+{
+	if ((index < 0) || (index >= String_table_size) || !String_table[index])
+		return const_cast<char*>(fallback);
+
+	return String_table[index];
+}
+
 void FixFilenameCase(char* filename, char* newfile)
 {
 	char path[_MAX_PATH], file[_MAX_FNAME], ext[256];

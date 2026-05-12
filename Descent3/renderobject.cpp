@@ -1280,33 +1280,40 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 	{
 		if (obj->type == OBJ_POWERUP || obj->type == OBJ_ROBOT || obj->type == OBJ_CLUTTER)
 		{
-			g3Point pnt;
-			float detail_scalar = 1.0;
-			g3_RotatePoint(&pnt, &obj->pos);
-			if (Detail_settings.Object_complexity == 0)
-				detail_scalar = .6f;
-			else if (Detail_settings.Object_complexity == 2)
-				detail_scalar = 1.2f;
-			if (pnt.p3_z < (Object_info[obj->id].med_lod_distance * detail_scalar))
-				model_num = obj->rtype.pobj_info.model_num;
-			else if (pnt.p3_z < (Object_info[obj->id].lo_lod_distance * detail_scalar))
+			if (Detail_settings.Object_complexity == OBJECT_COMPLEXITY_MAX)
 			{
-				if (Object_info[obj->id].med_render_handle != -1)
-					model_num = Object_info[obj->id].med_render_handle;
-				else
-					model_num = obj->rtype.pobj_info.model_num;
+				model_num = obj->rtype.pobj_info.model_num;
 			}
 			else
 			{
-				if (Object_info[obj->id].lo_render_handle != -1)
-					model_num = Object_info[obj->id].lo_render_handle;
-				else
-				{
+				g3Point pnt;
+				float detail_scalar = 1.0;
+				g3_RotatePoint(&pnt, &obj->pos);
+				if (Detail_settings.Object_complexity == OBJECT_COMPLEXITY_LOW)
+					detail_scalar = .6f;
+				else if (Detail_settings.Object_complexity == OBJECT_COMPLEXITY_HIGH)
+					detail_scalar = 1.2f;
+				if (pnt.p3_z < (Object_info[obj->id].med_lod_distance * detail_scalar))
 					model_num = obj->rtype.pobj_info.model_num;
+				else if (pnt.p3_z < (Object_info[obj->id].lo_lod_distance * detail_scalar))
+				{
 					if (Object_info[obj->id].med_render_handle != -1)
 						model_num = Object_info[obj->id].med_render_handle;
 					else
 						model_num = obj->rtype.pobj_info.model_num;
+				}
+				else
+				{
+					if (Object_info[obj->id].lo_render_handle != -1)
+						model_num = Object_info[obj->id].lo_render_handle;
+					else
+					{
+						model_num = obj->rtype.pobj_info.model_num;
+						if (Object_info[obj->id].med_render_handle != -1)
+							model_num = Object_info[obj->id].med_render_handle;
+						else
+							model_num = obj->rtype.pobj_info.model_num;
+					}
 				}
 			}
 		}
@@ -1316,34 +1323,41 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 		}
 		else if (obj->type == OBJ_PLAYER && !(Players[obj->id].flags & (PLAYER_FLAGS_DYING | PLAYER_FLAGS_DEAD)))
 		{
-			g3Point pnt;
-			g3_RotatePoint(&pnt, &obj->pos);
-			int ship_num = Players[obj->id].ship_index;
-			float detail_scalar = 1.0;
-			if (Detail_settings.Object_complexity == 0)
-				detail_scalar = .6f;
-			else if (Detail_settings.Object_complexity == 2)
-				detail_scalar = 1.2f;
-			if (pnt.p3_z < (Ships[ship_num].med_lod_distance * detail_scalar))
-				model_num = obj->rtype.pobj_info.model_num;
-			else if (pnt.p3_z < (Ships[ship_num].lo_lod_distance * detail_scalar))
+			if (Detail_settings.Object_complexity == OBJECT_COMPLEXITY_MAX)
 			{
-				if (Ships[ship_num].med_render_handle != -1)
-					model_num = Ships[ship_num].med_render_handle;
-				else
-					model_num = obj->rtype.pobj_info.model_num;
+				model_num = obj->rtype.pobj_info.model_num;
 			}
 			else
 			{
-				if (Ships[ship_num].lo_render_handle != -1)
-					model_num = Ships[ship_num].lo_render_handle;
-				else
-				{
+				g3Point pnt;
+				g3_RotatePoint(&pnt, &obj->pos);
+				int ship_num = Players[obj->id].ship_index;
+				float detail_scalar = 1.0;
+				if (Detail_settings.Object_complexity == OBJECT_COMPLEXITY_LOW)
+					detail_scalar = .6f;
+				else if (Detail_settings.Object_complexity == OBJECT_COMPLEXITY_HIGH)
+					detail_scalar = 1.2f;
+				if (pnt.p3_z < (Ships[ship_num].med_lod_distance * detail_scalar))
 					model_num = obj->rtype.pobj_info.model_num;
+				else if (pnt.p3_z < (Ships[ship_num].lo_lod_distance * detail_scalar))
+				{
 					if (Ships[ship_num].med_render_handle != -1)
 						model_num = Ships[ship_num].med_render_handle;
 					else
 						model_num = obj->rtype.pobj_info.model_num;
+				}
+				else
+				{
+					if (Ships[ship_num].lo_render_handle != -1)
+						model_num = Ships[ship_num].lo_render_handle;
+					else
+					{
+						model_num = obj->rtype.pobj_info.model_num;
+						if (Ships[ship_num].med_render_handle != -1)
+							model_num = Ships[ship_num].med_render_handle;
+						else
+							model_num = obj->rtype.pobj_info.model_num;
+					}
 				}
 			}
 		}

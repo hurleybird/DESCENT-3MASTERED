@@ -480,7 +480,7 @@ void DeleteAmbientObjects()
 	int i, count;
 	object* objp;
 
-	if (!(Game_mode & GM_MULTI) && Detail_settings.Object_complexity == 2)		//high
+	if (!(Game_mode & GM_MULTI) && Detail_settings.Object_complexity >= 2)		// high or max
 		return;
 
 	for (i = 0, objp = Objects, count = 0; i <= Highest_object_index; i++, objp++)

@@ -1253,7 +1253,9 @@ static int HUDEnabledControlsStartY()
 void RenderHUDItems(tStatMask stat_mask)
 {
 	static float framerate_timer = 0;
-	static double last_fps;
+	static double last_avg_fps = 0.0;
+	static float accumulated_frametime = 0.0f;
+	static int accumulated_frames = 0;
 	float font_aspect_x, font_aspect_y;
 
 	HUD_score_pending_aux = false;
@@ -1281,16 +1283,26 @@ void RenderHUDItems(tStatMask stat_mask)
 		grtext_SetFontScale(extra_scale * ConfigNormalizeHudTextScale(Hud_text_scale));
 
 	//	do framerate calculations
-	framerate_timer -= Frametime;
-	while (framerate_timer < 0)
+	if (Frametime > 0.0f)
 	{
-		framerate_timer += FRAMERATE_TIME_DELAY;
-		last_fps = GetFPS();
+		accumulated_frametime += Frametime;
+		accumulated_frames++;
+	}
+
+	framerate_timer -= Frametime;
+	if (framerate_timer <= 0.0f)
+	{
+		if (accumulated_frames > 0 && accumulated_frametime > 0.0f)
+			last_avg_fps = (double)accumulated_frames / accumulated_frametime;
+
+		framerate_timer = FRAMERATE_TIME_DELAY;
+		accumulated_frametime = 0.0f;
+		accumulated_frames = 0;
 	}
 
 	//	show framerate text gauge
 	if (stat_mask & STAT_FPS)
-		RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, 10, "FPS: %.8f", last_fps);
+		RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, 10, "FPS: %.1f", last_avg_fps);
 
 	// show music spew
 

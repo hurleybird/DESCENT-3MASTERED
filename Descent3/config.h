@@ -96,8 +96,13 @@ struct tDetailSettings
 	bool Weapon_coronas_enabled;
 	bool Bumpmapping_enabled;
 	ubyte Specular_mapping_type;
-	ubyte Object_complexity;		//0 = low, 1 = medium, 2=high
+	ubyte Object_complexity;		// OBJECT_COMPLEXITY_*
 };
+
+#define OBJECT_COMPLEXITY_LOW		0
+#define OBJECT_COMPLEXITY_MEDIUM	1
+#define OBJECT_COMPLEXITY_HIGH		2
+#define OBJECT_COMPLEXITY_MAX		3
 
 // Call this with one of the above defines to set the detail level to a predefined set (custom level is ignored)
 void ConfigSetDetailLevel(int level);

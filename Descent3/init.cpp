@@ -465,6 +465,8 @@ void SaveGameSettings()
 		Database->write("Default_pilot",Default_pilot,strlen(Default_pilot)+1);
 	else
 		Database->write("Default_pilot"," ",2);
+
+	Current_pilot.flush(false);
 }
 
 extern bool Game_gauge_do_time_test;
@@ -740,9 +742,9 @@ void LoadGameSettings()
 	Database->read("DetailCoronas",&Detail_settings.Coronas_enabled);
 	Database->read("DetailProcedurals",&Detail_settings.Procedurals_enabled);
 	Database->read_int("DetailObjectComp",&tempint);
-	Detail_settings.Object_complexity = tempint; 
-	if(Detail_settings.Object_complexity<0 || Detail_settings.Object_complexity>2) 
-		Detail_settings.Object_complexity = 1;
+	if(tempint<OBJECT_COMPLEXITY_LOW || tempint>OBJECT_COMPLEXITY_MAX)
+		tempint = OBJECT_COMPLEXITY_MEDIUM;
+	Detail_settings.Object_complexity = (ubyte)tempint;
 
 	Database->read("DetailPowerupHalos",&Detail_settings.Powerup_halos);
 

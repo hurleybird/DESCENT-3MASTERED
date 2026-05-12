@@ -127,8 +127,7 @@ void CloseGameScript();
 
 double GetFPS()
 {
-	if (Frametime == 0.0f) { Frametime = 0.1f; }
-	return 1.0 / Frametime;
+	return Frametime > 0.0f ? 1.0 / Frametime : 0.0;
 }
 
 
@@ -148,6 +147,20 @@ void InitGameScreen(int w, int h)
 
 	Game_window_x = (Max_window_w - Game_window_w) / 2;
 	Game_window_y = (Max_window_h - Game_window_h) / 2;
+}
+
+void PersistCurrentPilotGameWindowSize(bool flush_now)
+{
+	if (Dedicated_server)
+		return;
+
+	int pilot_window_w, pilot_window_h;
+	Current_pilot.get_hud_data(NULL, NULL, NULL, &pilot_window_w, &pilot_window_h);
+	if (pilot_window_w != Game_window_w || pilot_window_h != Game_window_h)
+		Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
+
+	if (flush_now)
+		Current_pilot.flush(false);
 }
 
 //Setup whatever needs to be setup for game mode
@@ -393,7 +406,7 @@ void ToggleFullscreenMode()
 	if (old_cursor_visible)
 		ui_ShowCursor();
 	if (GetScreenMode() == SM_GAME)
-		Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
+		PersistCurrentPilotGameWindowSize(true);
 	if (Display_mode_changed_callback)
 		Display_mode_changed_callback();
 	// Alt-Enter can resize/restyle the window without changing the current
@@ -595,7 +608,8 @@ void SetScreenMode(int sm, bool force_res_change)
 		SetUICallback(NULL);
 		int gw, gh;
 		Current_pilot.get_hud_data(NULL, NULL, NULL, &gw, &gh);
-		if (force_res_change || Force_full_game_window_on_next_game_mode)
+		bool force_full_game_window = force_res_change || Force_full_game_window_on_next_game_mode;
+		if (force_full_game_window)
 		{
 			gw = Max_window_w;
 			gh = Max_window_h;
@@ -603,7 +617,7 @@ void SetScreenMode(int sm, bool force_res_change)
 		}
 		InitGameScreen(gw, gh);
 		// need to do this since the pilot w,h could change.
-		Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
+		PersistCurrentPilotGameWindowSize(force_full_game_window);
 		break;
 	}
 

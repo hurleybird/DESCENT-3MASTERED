@@ -54,6 +54,7 @@ const int	SM_NULL			= 0,
 void SetScreenMode(int sm, bool force_res_change=false);
 int GetScreenMode();
 void ToggleFullscreenMode();
+void PersistCurrentPilotGameWindowSize(bool flush_now = false);
 bool IsAltEnterFullscreenEnabled();
 bool IsAltEnterFullscreenKey(int key);
 bool IsAltF4QuitKey(int key);

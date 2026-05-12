@@ -280,7 +280,7 @@ static int MsaaIndexToSamples(int index)
 #define DL_LOW_SCORCH_MARKS			false
 #define DL_LOW_WEAPON_CORONAS		false
 #define DL_LOW_SPEC_MAPPING_TYPE	1
-#define DL_LOW_OBJECT_COMPLEXITY	0
+#define DL_LOW_OBJECT_COMPLEXITY	OBJECT_COMPLEXITY_LOW
 
 #define DL_MED_TERRAIN_DISTANCE		(90*TERRAIN_SIZE)
 #define DL_MED_PIXEL_ERROR			18.0
@@ -295,7 +295,7 @@ static int MsaaIndexToSamples(int index)
 #define DL_MED_SCORCH_MARKS			true
 #define DL_MED_WEAPON_CORONAS		false
 #define DL_MED_SPEC_MAPPING_TYPE	1
-#define DL_MED_OBJECT_COMPLEXITY	1
+#define DL_MED_OBJECT_COMPLEXITY	OBJECT_COMPLEXITY_MEDIUM
 
 #define DL_HIGH_TERRAIN_DISTANCE	(100*TERRAIN_SIZE)
 #define DL_HIGH_PIXEL_ERROR			12.0
@@ -310,7 +310,7 @@ static int MsaaIndexToSamples(int index)
 #define DL_HIGH_SCORCH_MARKS		true
 #define DL_HIGH_WEAPON_CORONAS		true
 #define DL_HIGH_SPEC_MAPPING_TYPE	1
-#define DL_HIGH_OBJECT_COMPLEXITY	2
+#define DL_HIGH_OBJECT_COMPLEXITY	OBJECT_COMPLEXITY_HIGH
 
 #define DL_VHI_TERRAIN_DISTANCE		(120.0*TERRAIN_SIZE)
 #define DL_VHI_PIXEL_ERROR			10.0
@@ -325,7 +325,7 @@ static int MsaaIndexToSamples(int index)
 #define DL_VHI_SCORCH_MARKS			true
 #define DL_VHI_WEAPON_CORONAS		true
 #define DL_VHI_SPEC_MAPPING_TYPE	1
-#define DL_VHI_OBJECT_COMPLEXITY	2
+#define DL_VHI_OBJECT_COMPLEXITY	OBJECT_COMPLEXITY_HIGH
 
 #define MINIMUM_TERRAIN_DETAIL		4
 #define MAXIMUM_TERRAIN_DETAIL		28
@@ -740,7 +740,7 @@ struct video_menu
 		if (old_cursor_visible)
 			ui_ShowCursor();
 		if (GetScreenMode() == SM_GAME)
-			Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
+			PersistCurrentPilotGameWindowSize(true);
 		recenter_parent_menu();
 		SyncActiveVideoMenuDisplayMode();
 
@@ -1464,6 +1464,7 @@ struct details_menu
 		objcomp = sheet->AddFirstRadioButton(TXT_LOW);
 		sheet->AddRadioButton(TXT_CFG_MEDIUM);
 		sheet->AddRadioButton(TXT_CFG_HIGH);
+		sheet->AddRadioButton(TXT_CFG_MAX);
 		*objcomp = Detail_settings.Object_complexity;
 
 		return sheet;

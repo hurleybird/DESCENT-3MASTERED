@@ -158,6 +158,13 @@ int mve_PlayMovie( const char *pMovieName, oeApplication *pApp )
 	
 		// check for bail
 		int key = ddio_KeyInKey();
+		if (IsAltEnterFullscreenEnabled() && IsAltEnterFullscreenKey(key))
+		{
+			ToggleFullscreenMode();
+			oldstate = Render_preferred_state;
+			Movie_vid_set = false;
+			continue;
+		}
 		if (key == KEY_ESC)
 		{
 			aborted = true;
