@@ -232,3 +232,16 @@ void rendTEMP_UnbindVertexBuffer()
 {
 	rend_RestoreLegacy();
 }
+
+bool rendTEMP_DepthClampEnabled()
+{
+	return glIsEnabled(GL_DEPTH_CLAMP) == GL_TRUE;
+}
+
+void rendTEMP_SetDepthClamp(bool state)
+{
+	if (state)
+		glEnable(GL_DEPTH_CLAMP);
+	else
+		glDisable(GL_DEPTH_CLAMP);
+}

@@ -476,6 +476,20 @@ static bool TerrainMeshChunkVisibleByOcclusion(int chunk_x, int chunk_z, bool us
 	return false;
 }
 
+static bool TerrainMeshChunkNearViewer(int chunk_x, int chunk_z)
+{
+	if (Viewer_object == nullptr)
+		return false;
+
+	int viewer_chunk_z = (Viewer_object->pos.z / TERRAIN_SIZE) / OCCLUSION_SIZE;
+	int viewer_chunk_x = (Viewer_object->pos.x / TERRAIN_SIZE) / OCCLUSION_SIZE;
+	if (viewer_chunk_z < 0 || viewer_chunk_z >= OCCLUSION_SIZE ||
+		viewer_chunk_x < 0 || viewer_chunk_x >= OCCLUSION_SIZE)
+		return false;
+
+	return abs(chunk_x - viewer_chunk_x) <= 1 && abs(chunk_z - viewer_chunk_z) <= 1;
+}
+
 static bool TerrainMeshChunkInFrustum(int chunk_x, int chunk_z)
 {
 	int height_cell = chunk_z * OCCLUSION_SIZE + chunk_x;
@@ -549,6 +563,8 @@ static int DisplayTerrainMesh(bool fog_enabled)
 
 	Terrain_vertexbuffer.Bind();
 	Terrain_indexbuffer.Bind();
+	bool depth_clamp_enabled = rendTEMP_DepthClampEnabled();
+	rendTEMP_SetDepthClamp(true);
 
 	int src_occlusion_index = -1;
 	bool use_occlusion = GetTerrainMeshOcclusionSource(&src_occlusion_index);
@@ -558,11 +574,15 @@ static int DisplayTerrainMesh(bool fog_enabled)
 	{
 		for (int x = 0; x < OCCLUSION_SIZE; x++)
 		{
-			if (!TerrainMeshChunkVisibleByOcclusion(x, z, use_occlusion, src_occlusion_index))
-				continue;
+			bool near_viewer = !Check_terrain_portal && TerrainMeshChunkNearViewer(x, z);
+			if (!near_viewer)
+			{
+				if (!TerrainMeshChunkVisibleByOcclusion(x, z, use_occlusion, src_occlusion_index))
+					continue;
 
-			if (!TerrainMeshChunkInFrustum(x, z))
-				continue;
+				if (!TerrainMeshChunkInFrustum(x, z))
+					continue;
+			}
 
 			TerrainMeshes[z * OCCLUSION_SIZE + x].DrawAll();
 			chunks_drawn++;
@@ -570,6 +590,7 @@ static int DisplayTerrainMesh(bool fog_enabled)
 	}
 
 	rendTEMP_UnbindVertexBuffer();
+	rendTEMP_SetDepthClamp(depth_clamp_enabled);
 	return chunks_drawn;
 }
 

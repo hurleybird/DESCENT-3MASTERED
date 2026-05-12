@@ -1189,9 +1189,29 @@ void GLCompatibilityRenderer::Screenshot(int bm_handle)
 
 void GLCompatibilityRenderer::UpdateFramebuffer(void)
 {
+	int target_samples = RendererMsaaSamples(OpenGL_preferred_state);
+	int target_width = FramebufferWidth();
+	int target_height = FramebufferHeight();
+	bool framebuffer_state_changed = framebuffers[0].Handle() != 0 &&
+		(framebuffers[0].Samples() != (uint32_t)target_samples ||
+		 framebuffers[0].Width() != (uint32_t)target_width ||
+		 framebuffers[0].Height() != (uint32_t)target_height);
+	if (framebuffer_state_changed)
+	{
+		// Finish once on MSAA/SSAA transitions so the driver can release old
+		// render-target storage before the replacement buffers are allocated.
+		glFinish();
+		resolved_framebuffer.Destroy();
+		downscale_framebuffer.Destroy();
+		bloom.DestroyFramebuffers();
+		bloom_source_framebuffer.Destroy();
+		bloom_source_resolved_framebuffer.Destroy();
+		bloom_source_downscale_framebuffer.Destroy();
+	}
+
 	for (int i = 0; i < NUM_GL1_FBOS; i++)
 	{
-		framebuffers[i].Update(FramebufferWidth(), FramebufferHeight(), RendererMsaaSamples(OpenGL_preferred_state));
+		framebuffers[i].Update(target_width, target_height, target_samples);
 	}
 	int supersampling_factor = SupersamplingFactor();
 	if (supersampling_factor >= 2)
