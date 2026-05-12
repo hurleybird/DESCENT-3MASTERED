@@ -33,7 +33,9 @@
 #include "hlsoundlib.h"
 #include "soundload.h"
 #include "sounds.h"
+#include "config.h"
 #include <string.h>
+#include <math.h>
 #include <algorithm>
 
 #define COCKPIT_ANIM_TIME				2.0f
@@ -45,6 +47,8 @@
 #define MAX_BUFFET_STRENGTH 0.75f
 #define BUFFET_PERIOD 0.25f
 #define COCKPIT_SHIFT_DELTA 0.02f
+#define COCKPIT_DISPLAY_CENTER_THRESHOLD 0.25f
+#define COCKPIT_DISPLAY_WIDTH_THRESHOLD 0.20f
 struct tCockpitCfgInfo
 {
 	char modelname[PSFILENAME_LEN];
@@ -71,6 +75,10 @@ struct tCockpitInfo
 	float buffet_amp;							// used to calculate real magnitude
 	float buffet_wave;						// current sin angle of buffet 
 	float buffet_time;						// current position in buffet wave along time axis.
+	vector display_adjust_unit[MAX_SUBOBJECTS];	// cockpit-space offset per 1.0 display spread unit.
+	vector display_adjust_scaled[MAX_SUBOBJECTS];
+	int display_adjust_count;
+	bool display_adjust_available;
 
 	matrix orient;								// orientation of cockpit
 };
@@ -79,6 +87,107 @@ static tCockpitInfo Cockpit_info;
 float KeyframeAnimateCockpit();
 //	loads cockpit. model_name = NULL, then will not load in model name.
 void LoadCockpitInfo(const char* ckt_file, tCockpitCfgInfo* info);
+static void BuildCockpitDisplayAdjustments();
+static void ApplyCockpitDisplayAdjustments(float display_spread);
+static vector CockpitRootVectorToSubmodelParent(poly_model* pm, int submodel, vector root_vec);
+
+static float CockpitSubmodelCenterX(poly_model* pm, int submodel)
+{
+	float x = pm->submodel[submodel].geometric_center.x;
+	for (int mn = submodel; mn >= 0; mn = pm->submodel[mn].parent)
+		x += pm->submodel[mn].offset.x;
+	return x;
+}
+
+static int CockpitSideFromCenter(float x, float threshold)
+{
+	if (x > threshold)
+		return 1;
+	if (x < -threshold)
+		return -1;
+	return 0;
+}
+
+static void BuildCockpitDisplayAdjustments()
+{
+	poly_model* pm = Cockpit_info.model;
+	Cockpit_info.display_adjust_count = 0;
+	Cockpit_info.display_adjust_available = false;
+
+	for (int i = 0; i < MAX_SUBOBJECTS; i++)
+	{
+		vm_MakeZero(&Cockpit_info.display_adjust_unit[i]);
+		vm_MakeZero(&Cockpit_info.display_adjust_scaled[i]);
+	}
+
+	if (!pm || pm->n_models <= 0)
+		return;
+
+	int count = std::min(pm->n_models, MAX_SUBOBJECTS);
+	int display_sign[MAX_SUBOBJECTS] = {};
+	float center_x[MAX_SUBOBJECTS] = {};
+
+	float half_width = std::max(fabsf(pm->mins.x), fabsf(pm->maxs.x));
+	float side_threshold = std::max(COCKPIT_DISPLAY_CENTER_THRESHOLD, half_width * COCKPIT_DISPLAY_WIDTH_THRESHOLD);
+
+	for (int i = 0; i < count; i++)
+		center_x[i] = CockpitSubmodelCenterX(pm, i);
+
+	for (int i = 0; i < count; i++)
+	{
+		if (pm->submodel[i].parent < 0 || (pm->submodel[i].flags & SOF_VIEWER))
+			continue;
+
+		display_sign[i] = CockpitSideFromCenter(center_x[i], side_threshold);
+	}
+
+	for (int i = 0; i < count; i++)
+	{
+		float desired = (float)display_sign[i];
+		float parent_desired = 0.0f;
+		if (pm->submodel[i].parent >= 0 && pm->submodel[i].parent < count)
+			parent_desired = (float)display_sign[pm->submodel[i].parent];
+
+		Cockpit_info.display_adjust_unit[i].x = desired - parent_desired;
+		if (display_sign[i])
+			Cockpit_info.display_adjust_available = true;
+	}
+
+	Cockpit_info.display_adjust_count = count;
+}
+
+static vector CockpitRootVectorToSubmodelParent(poly_model* pm, int submodel, vector root_vec)
+{
+	int ancestry[MAX_SUBOBJECTS];
+	int ancestry_count = 0;
+	int parent = pm->submodel[submodel].parent;
+
+	for (int mn = parent; mn >= 0 && ancestry_count < MAX_SUBOBJECTS; mn = pm->submodel[mn].parent)
+		ancestry[ancestry_count++] = mn;
+
+	for (int i = ancestry_count - 1; i >= 0; i--)
+	{
+		matrix m;
+		angvec* angs = &pm->submodel[ancestry[i]].angs;
+		vm_AnglesToMatrix(&m, angs->p, angs->h, angs->b);
+		root_vec = root_vec * m;
+	}
+
+	return root_vec;
+}
+
+static void ApplyCockpitDisplayAdjustments(float display_spread)
+{
+	for (int i = 0; i < Cockpit_info.display_adjust_count; i++)
+	{
+		vector cockpit_delta = Cockpit_info.display_adjust_unit[i] * display_spread;
+		Cockpit_info.display_adjust_scaled[i] =
+			CockpitRootVectorToSubmodelParent(Cockpit_info.model, i, cockpit_delta);
+	}
+	PolymodelSetSubmodelOffsetAdjustments(Cockpit_info.model_num, Cockpit_info.display_adjust_scaled,
+		Cockpit_info.display_adjust_count);
+}
+
 //////////////////////////////////////////////////////////////////////////////
 //	Initializes the cockpit by loading it in and initializing all it's gauges.
 //	initialization of cockpit.
@@ -129,6 +238,7 @@ void InitCockpit(int ship_index)
 		else
 			Cockpit_info.nonlayered_mask |= (1 << i);
 	}
+	BuildCockpitDisplayAdjustments();
 	InitGauges(STAT_SHIELDS | STAT_SHIP | STAT_ENERGY | STAT_PRIMARYLOAD | STAT_SECONDARYLOAD | STAT_AFTERBURN);
 	//	initialize reticle
 	FreeReticle();
@@ -149,6 +259,8 @@ void FreeCockpit()
 	Cockpit_info.ship_index = -1;
 	Cockpit_info.frame_time = 0.0f;
 	Cockpit_info.state = COCKPIT_STATE_DORMANT;
+	Cockpit_info.display_adjust_count = 0;
+	Cockpit_info.display_adjust_available = false;
 	//	free ship specific stuff for hud-cockpit shared.
 	bm_FreeBitmap(HUD_resources.invpulse_bmp);
 	bm_FreeBitmap(HUD_resources.afterburn_bmp);
@@ -393,6 +505,16 @@ void RenderCockpit()
 	// animate and draw
 	keyframe = KeyframeAnimateCockpit();
 	SetNormalizedTimeAnim(keyframe, normalized_time, Cockpit_info.model);
+
+	bool display_adjust_active = false;
+	float display_spread = ConfigNormalizeCockpitDisplaySpread(Cockpit_display_spread);
+	if (display_spread > 0.0001f && Cockpit_info.display_adjust_available)
+	{
+		SetModelAnglesAndPos(Cockpit_info.model, normalized_time);
+		ApplyCockpitDisplayAdjustments(display_spread);
+		display_adjust_active = true;
+	}
+
 	//	must put after animation.
 	if (Cockpit_info.buffet_amp > 0.04f) 
 	{
@@ -424,6 +546,9 @@ void RenderCockpit()
 	RenderGauges(&view_pos, &view_tmat, normalized_time, (Cockpit_info.animating || Cockpit_info.resized), gauge_reset);
 	rend_SetZBufferState(0);
 	DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r, light_scalar_g, light_scalar_b, Cockpit_info.layered_mask, 0, 1);
+
+	if (display_adjust_active)
+		PolymodelClearSubmodelOffsetAdjustments();
 
 	Cockpit_info.resized = false;
 }

@@ -252,6 +252,10 @@ static int GetAllLoadedShipPermissions()
 			permissions |= (1 << i);
 	}
 
+	int black_pyro = FindShipName("Black Pyro");
+	if (black_pyro != -1)
+		permissions |= (1 << black_pyro);
+
 	return permissions ? permissions : Default_ship_permission;
 }
 

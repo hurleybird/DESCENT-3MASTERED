@@ -101,6 +101,7 @@ int Game_window_res_width = 1920, Game_window_res_height = 1080;
 int Game_window_aspect = CONFIG_ASPECT_16_9;
 bool Game_fullscreen = false;
 float Hud_text_scale = 1.0f;
+float Cockpit_display_spread = 0.0f;
 float Render_FOV_desired = 72;
 
 tDetailSettings Detail_settings;
@@ -166,6 +167,15 @@ float ConfigNormalizeBloomIntensity(float intensity)
 	if (intensity > 1.0f)
 		return 1.0f;
 	return intensity;
+}
+
+float ConfigNormalizeCockpitDisplaySpread(float spread)
+{
+	if (spread < 0.0f)
+		return 0.0f;
+	if (spread > 2.0f)
+		return 2.0f;
+	return spread;
 }
 
 static int ConfigNormalizeHBAOResolution(int resolution)
@@ -1629,6 +1639,9 @@ struct toggles_menu
 //////////////////////////////////////////////////////////////////
 //  HUD CONFIG MENU
 //
+#define COCKPIT_DISPLAY_SPREAD_SLIDER_UNITS 200
+#define COCKPIT_DISPLAY_SPREAD_MAX 2.0f
+
 struct hud_menu
 {
 	newuiSheet* sheet;
@@ -1641,7 +1654,16 @@ struct hud_menu
 	int* inventory;
 	int* warnings;
 	int* countermeasures;
+	short* cockpit_display_spread;
 	//	int *goals;
+
+	float slider_cockpit_display_spread() const
+	{
+		if (!cockpit_display_spread)
+			return Cockpit_display_spread;
+		return ConfigNormalizeCockpitDisplaySpread(CALC_SLIDER_FLOAT_VALUE(*cockpit_display_spread,
+			0.0f, COCKPIT_DISPLAY_SPREAD_MAX, COCKPIT_DISPLAY_SPREAD_SLIDER_UNITS));
+	}
 
 	int add_hud_option(const char* title, int** ptr, int y, int sel, bool graphical)
 	{
@@ -1670,6 +1692,7 @@ struct hud_menu
 
 		sheet = menu->AddOption(IDV_HCONFIG, TXT_OPTHUD, NEWUIMENU_MEDIUM);
 		parent_menu = menu;
+		cockpit_display_spread = NULL;
 
 		Current_pilot.get_hud_data(NULL, &stat, &grstat);
 
@@ -1693,6 +1716,16 @@ struct hud_menu
 
 		sel = (stat & STAT_INVENTORY) ? 1 : 0;
 		y = add_hud_option(TXT_HUDINVENTORY, &inventory, y, sel, false);
+
+		tSliderSettings slider_set = {};
+		slider_set.min_val.f = 0.0f;
+		slider_set.max_val.f = COCKPIT_DISPLAY_SPREAD_MAX;
+		slider_set.type = SLIDER_UNITS_FLOAT;
+		short spread_pos = CALC_SLIDER_POS_FLOAT(ConfigNormalizeCockpitDisplaySpread(Cockpit_display_spread),
+			&slider_set, COCKPIT_DISPLAY_SPREAD_SLIDER_UNITS);
+		sheet->NewGroup("Cockpit", 120, 0);
+		cockpit_display_spread = sheet->AddSlider("Display spread", COCKPIT_DISPLAY_SPREAD_SLIDER_UNITS,
+			spread_pos, &slider_set);
 
 		return sheet;
 	};
@@ -1728,11 +1761,21 @@ struct hud_menu
 		if (sel == 1) hud_new_stat |= STAT_INVENTORY;
 
 		Current_pilot.set_hud_data(NULL, &hud_new_stat, &hud_new_grstat);
+		Cockpit_display_spread = slider_cockpit_display_spread();
 
 		// modify current hud stats if in game.
 		if ((GetFunctionMode() == EDITOR_GAME_MODE || GetFunctionMode() == GAME_MODE) && GetHUDMode() == HUD_FULLSCREEN)
 		{
 			SetHUDState(hud_new_stat | STAT_SCORE | (Hud_stat_mask & STAT_FPS), hud_new_grstat);
+		}
+	};
+
+	void process(int res)
+	{
+		if (cockpit_display_spread && sheet->HasChanged(cockpit_display_spread))
+		{
+			Cockpit_display_spread = slider_cockpit_display_spread();
+			sheet->UpdateChanges();
 		}
 	};
 };
@@ -2020,6 +2063,9 @@ void OptionsMenu()
 					break;
 				case IDV_GCONFIG:
 					toggles.process(res);
+					break;
+				case IDV_HCONFIG:
+					hud.process(res);
 					break;
 				}
 			} while (1);

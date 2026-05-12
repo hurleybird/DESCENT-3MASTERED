@@ -72,6 +72,9 @@ static std::unordered_map<int, PolymodelMotionHistory> Polymodel_motion_history;
 static PolymodelMotionHistory *Polymodel_motion_active_history = nullptr;
 static bool Polymodel_motion_active = false;
 static uint32_t Polymodel_motion_frame = 0;
+static int Polymodel_submodel_adjust_model = -1;
+static int Polymodel_submodel_adjust_count = 0;
+static vector Polymodel_submodel_adjustments[MAX_SUBOBJECTS];
 
 void PolymodelMotionStartFrame()
 {
@@ -174,6 +177,30 @@ void PolymodelMotionSetPoint(g3Point *point, poly_model *pm, int submodel_num, c
 		point->p3_prev_sy = sy;
 		point->p3_motion_valid = 1;
 	}
+}
+
+void PolymodelSetSubmodelOffsetAdjustments(int model_num, const vector *offsets, int count)
+{
+	Polymodel_submodel_adjust_model = model_num;
+	Polymodel_submodel_adjust_count = std::min(count, MAX_SUBOBJECTS);
+	for (int i = 0; i < Polymodel_submodel_adjust_count; i++)
+		Polymodel_submodel_adjustments[i] = offsets[i];
+}
+
+void PolymodelClearSubmodelOffsetAdjustments()
+{
+	Polymodel_submodel_adjust_model = -1;
+	Polymodel_submodel_adjust_count = 0;
+}
+
+static void ApplyPolymodelSubmodelOffsetAdjustments(poly_model *pm)
+{
+	if (!pm || pm->id != Polymodel_submodel_adjust_model)
+		return;
+
+	int count = std::min(pm->n_models, Polymodel_submodel_adjust_count);
+	for (int i = 0; i < count; i++)
+		pm->submodel[i].mod_pos += Polymodel_submodel_adjustments[i];
 }
 
 #ifdef _DEBUG
@@ -2761,6 +2788,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	StartLightInstance(pos,orient);
 	
 	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
+	ApplyPolymodelSubmodelOffsetAdjustments(po);
 	PolymodelMotionCaptureCurrent(po, pos, orient);
 
 	if (f_render_sub==0xFFFFFFFF || overlay)		//draw entire object
@@ -2853,6 +2881,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 
 	po=&Poly_models[model_num];
 	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
+	ApplyPolymodelSubmodelOffsetAdjustments(po);
 	PolymodelMotionCaptureCurrent(po, pos, orient);
 
 	if (f_render_sub==0xFFFFFFFF || overlay)		//draw entire object
@@ -2933,6 +2962,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	
 	po=&Poly_models[model_num];
 	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
+	ApplyPolymodelSubmodelOffsetAdjustments(po);
 	PolymodelMotionCaptureCurrent(po, pos, orient);
 
 	if (f_render_sub==0xFFFFFFFF || overlay)		//draw entire object
@@ -3089,6 +3119,7 @@ void GetPolyModelPointInWorld (vector *dest,poly_model *pm, vector *wpos, matrix
 		normalized_time[i]=0.0;
 
 	SetModelAnglesAndPos (pm,normalized_time);
+	ApplyPolymodelSubmodelOffsetAdjustments(pm);
 	
 	vector pnt    = *pos;
 	int mn     = subnum;
@@ -3138,6 +3169,7 @@ void GetPolyModelPointInWorld (vector *dest,poly_model *pm, vector *wpos, matrix
 		return;
 
 	SetModelAnglesAndPos (pm,normalized_time);
+	ApplyPolymodelSubmodelOffsetAdjustments(pm);
 	
 	vector pnt    = *pos;
 	int mn     = subnum;

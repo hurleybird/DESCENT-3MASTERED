@@ -20,6 +20,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <assert.h>
+#include <stdio.h>
 
 #include "mono.h"
 #include "pserror.h"
@@ -116,6 +117,7 @@ bool oeWin32AppDatabase::read(const char *label, char *entry, int *entrylen)
 {
 	LONG lres;
 	DWORD type;
+	DWORD len;
 
 	assert(hBaseKey);
 	assert(label != NULL);
@@ -127,14 +129,37 @@ bool oeWin32AppDatabase::read(const char *label, char *entry, int *entrylen)
 	return 0;
 #endif
 
-	lres = RegQueryValueEx((HKEY)hCurKey, label, NULL, &type, (LPBYTE)entry, (LPDWORD)entrylen);
-
-	assert(type != REG_DWORD);
-
+	len = *entrylen;
+	lres = RegQueryValueEx((HKEY)hCurKey, label, NULL, &type, (LPBYTE)entry, &len);
 	if (lres != ERROR_SUCCESS) {
 		mprintf((1, "Unable to query str key %s (%x)\n", label, lres));
 		return 0;
 	}
+
+	if (type == REG_DWORD) {
+		DWORD value;
+		char buffer[32];
+		int needed;
+
+		len = sizeof(value);
+		lres = RegQueryValueEx((HKEY)hCurKey, label, NULL, &type, (LPBYTE)&value, &len);
+		if (lres != ERROR_SUCCESS || len != sizeof(value)) {
+			mprintf((1, "Unable to query dword key %s as str (%x)\n", label, lres));
+			return 0;
+		}
+
+		needed = _snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)value) + 1;
+		if (needed <= 0 || needed > *entrylen) {
+			*entrylen = needed;
+			return 0;
+		}
+
+		lstrcpy(entry, buffer);
+		*entrylen = needed;
+		return 1;
+	}
+
+	*entrylen = len;
 	return 1;
 }
 
@@ -156,15 +181,15 @@ bool oeWin32AppDatabase::read(const char *label, void *entry, int wordsize)
 #endif
 
 	lres = RegQueryValueEx((HKEY)hCurKey, label, NULL, &type, (LPBYTE) &t, &len);
-
-	assert(len == 4);
-
 	if (lres != ERROR_SUCCESS) {
 		mprintf((1, "Unable to query int key %s (%x)\n", label, lres));
 		return 0;
 	}
 
-	assert(type == REG_DWORD);
+	if (type != REG_DWORD || len != 4) {
+		mprintf((1, "Registry key %s is not a dword\n", label));
+		return 0;
+	}
 
 	switch (wordsize) {
 		case 1: *((char *) entry) = (char) t; break;
