@@ -31,6 +31,8 @@
 #include "gamesequence.h"
 #include "multi.h"
 #include "stringtable.h"
+#include "pilot.h"
+#include "Mission.h"
 #include "ship.h"
 #include "render.h"
 #include "renderer.h"
@@ -115,6 +117,8 @@ TELETUBBIES = TeletubbiesCheat
 TREESQUID = Fullmap
 RENDERSTAT = Rendering stats
 OUTLINEM = Cycle outline modes
+OPENWIDE = unlock all levels for the current pilot/mission
+SHIPZILLA = unlock all ships for the current pilot/mission
 */
 
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -137,6 +141,8 @@ char *TeletubbiesCheat = "I@\\LQOKM"":):/;)>:(";
 char *FullmapCheat		="4V\\9EI:'""\"#$NNW@";
 char *OutlineModeCheat	="*HAFW1ZI"" (-'\"#";
 char *PolygonCountCheat	="MMQ6TXHU""hj@(x`";
+char *UnlockLevelsCheat	="GJE,M)LB""/*";
+char *UnlockShipsCheat	="J.MI58,Y""/*";
 
 #ifdef USE_RTP
 char *StartLogCheat		=";IT.*+E3""%^VXKS;JKS";	//startrtlog
@@ -208,6 +214,88 @@ void SendCheaterAttemptText ()
 		MultiSendMessageFromServer (GR_RGB(255,0,0),str);
 	else
 		MultiSendMessageToServer (0,str);	
+}
+
+static bool GetCurrentPilotMissionData(int *index, tMissionData *data)
+{
+	if (!Current_mission.name[0])
+		return false;
+
+	*index = Current_pilot.find_mission_data(Current_mission.name);
+	if (*index == -1)
+	{
+		tMissionData new_data;
+		new_data.highest_level = 0;
+		new_data.finished = false;
+		new_data.num_restores = 0;
+		new_data.num_saves = 0;
+		new_data.ship_permissions = Default_ship_permission;
+		strcpy(new_data.mission_name, Current_mission.name);
+
+		Current_pilot.add_mission_data(&new_data);
+		*index = Current_pilot.find_mission_data(Current_mission.name);
+		if (*index == -1)
+			return false;
+	}
+
+	Current_pilot.get_mission_data(*index, data);
+	return true;
+}
+
+static int GetAllLoadedShipPermissions()
+{
+	int permissions = 0;
+
+	for (int i = 0; i < MAX_SHIPS; i++)
+	{
+		if (Ships[i].used)
+			permissions |= (1 << i);
+	}
+
+	return permissions ? permissions : Default_ship_permission;
+}
+
+static bool UnlockAllLevelsForCurrentPilot()
+{
+	int index;
+	tMissionData data;
+	if (!GetCurrentPilotMissionData(&index, &data))
+	{
+		AddHUDMessage("Unable to update pilot mission data");
+		return false;
+	}
+
+	int highest_level = Current_mission.num_levels;
+	if (highest_level > 255)
+		highest_level = 255;
+
+	data.highest_level = (ubyte)highest_level;
+	data.finished = true;
+	Current_pilot.edit_mission_data(index, &data);
+	PltWriteFile(&Current_pilot, false);
+
+	AddHUDMessage("All levels unlocked for this pilot");
+	return true;
+}
+
+static bool UnlockAllShipsForCurrentPilot()
+{
+	int index;
+	tMissionData data;
+	if (!GetCurrentPilotMissionData(&index, &data))
+	{
+		AddHUDMessage("Unable to update pilot mission data");
+		return false;
+	}
+
+	const int permissions = GetAllLoadedShipPermissions();
+	data.ship_permissions = permissions;
+	Current_pilot.edit_mission_data(index, &data);
+	PltWriteFile(&Current_pilot, false);
+
+	Players[Player_num].ship_permissions = permissions;
+	AddHUDMessage("All ships unlocked for this pilot");
+	return true;
 }
 
 void DemoCheats(int key)
@@ -374,6 +462,28 @@ void DemoCheats(int key)
 		Game_interface_mode = GAME_LEVEL_WARP;
 		IsCheater = true;
 		Players[Player_num].score = 0;
+	}
+
+	if (!(memcmp (cryptstring,UnlockLevelsCheat,8)))
+	{
+		if (UnlockAllLevelsForCurrentPilot())
+		{
+			if(snd_cheat!=-1)
+				Sound_system.Play2dSound(snd_cheat);
+			IsCheater = true;
+			Players[Player_num].score = 0;
+		}
+	}
+
+	if (!(memcmp (cryptstring,UnlockShipsCheat,8)))
+	{
+		if (UnlockAllShipsForCurrentPilot())
+		{
+			if(snd_cheat!=-1)
+				Sound_system.Play2dSound(snd_cheat);
+			IsCheater = true;
+			Players[Player_num].score = 0;
+		}
 	}
 
 	if (!(memcmp (cryptstring,InvulnCheat,8))){
