@@ -43,6 +43,8 @@ void CalcFrameTime(double current_time);
 
 //	Initialize frame timer
 void InitFrameTime(void);
+void EnableDisplayRefreshFramecap();
+void UpdateDisplayRefreshFramecap();
 
 
 //Sets screen mode

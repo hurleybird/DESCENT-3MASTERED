@@ -131,6 +131,8 @@ bool Game_paused = false;
 
 // Used for limiting the framerate
 double Min_allowed_frametime = 0;
+static bool Display_refresh_framecap = false;
+static double Display_refresh_framecap_hz = 0.0;
 
 // determines if we're rendering the main view
 bool Rendering_main_view = false;
@@ -170,6 +172,44 @@ void ApplyShadowsToRooms();
 void StartGameMenu();
 void EndGameMenu();
 void ProcessGuidebotKeys(int key);
+
+static double NormalizeFramecapRefreshRate(double hz)
+{
+	if (hz < 24.0 || hz > 1000.0)
+		return 60.0;
+	return hz;
+}
+
+static void SetFramecapFromRefreshRate(double hz)
+{
+	hz = NormalizeFramecapRefreshRate(hz);
+	Min_allowed_frametime = 1.0 / hz;
+	Display_refresh_framecap_hz = hz;
+	mprintf((0, "Using display refresh framecap of %.3f Hz\n", hz));
+}
+
+void EnableDisplayRefreshFramecap()
+{
+	Display_refresh_framecap = true;
+	SetFramecapFromRefreshRate(60.0);
+}
+
+void UpdateDisplayRefreshFramecap()
+{
+	if (!Display_refresh_framecap)
+		return;
+
+	double hz = rend_GetDisplayRefreshRate();
+	hz = NormalizeFramecapRefreshRate(hz);
+
+	double delta = hz - Display_refresh_framecap_hz;
+	if (delta < 0.0)
+		delta = -delta;
+	if (delta < 0.01)
+		return;
+
+	SetFramecapFromRefreshRate(hz);
+}
 
 //Make the 3D window larger
 void GrowWindow()

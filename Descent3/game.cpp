@@ -578,6 +578,7 @@ void SetScreenMode(int sm, bool force_res_change)
 		rend_GetRenderState(&rs);
 		rend_width = rs.screen_width;
 		rend_height = rs.screen_height;
+		UpdateDisplayRefreshFramecap();
 
 		//	chose font.
 		SelectHUDFont(rend_width, rend_height);

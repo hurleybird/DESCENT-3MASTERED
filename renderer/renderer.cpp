@@ -828,6 +828,14 @@ void rend_GetScreenSize(int& screen_width, int& screen_height)
 	renderer_inst->GetScreenSize(screen_width, screen_height);
 }
 
+double rend_GetDisplayRefreshRate()
+{
+	if (!Renderer_initted)
+		return 0.0;
+
+	return renderer_inst->GetDisplayRefreshRate();
+}
+
 void rend_SetLighting(light_state state)
 {
 	if (!Renderer_initted)

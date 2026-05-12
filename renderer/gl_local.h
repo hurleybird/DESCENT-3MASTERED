@@ -551,6 +551,7 @@ public:
 	void RestoreLegacy() override;
 
 	void GetScreenSize(int& screen_width, int& screen_height) override;
+	double GetDisplayRefreshRate() override;
 
 	void ClearBoundTextures() override;
 };

@@ -1243,6 +1243,38 @@ void GLCompatibilityRenderer::GetScreenSize(int& screen_width, int& screen_heigh
 	screen_height = OpenGL_state.screen_height;
 }
 
+double GLCompatibilityRenderer::GetDisplayRefreshRate()
+{
+#if defined(SDL3)
+	if (GLWindow)
+	{
+		SDL_DisplayID display = SDL_GetDisplayForWindow(GLWindow);
+		const SDL_DisplayMode* mode = display ? SDL_GetCurrentDisplayMode(display) : nullptr;
+		if (mode && mode->refresh_rate > 1.0f)
+			return mode->refresh_rate;
+	}
+#elif defined(WIN32)
+	if (hOpenGLWnd)
+	{
+		HMONITOR monitor = MonitorFromWindow(hOpenGLWnd, MONITOR_DEFAULTTONEAREST);
+		MONITORINFOEX monitor_info = {};
+		monitor_info.cbSize = sizeof(monitor_info);
+		if (monitor && GetMonitorInfo(monitor, &monitor_info))
+		{
+			DEVMODE device_mode = {};
+			device_mode.dmSize = sizeof(device_mode);
+			if (EnumDisplaySettings(monitor_info.szDevice, ENUM_CURRENT_SETTINGS, &device_mode) &&
+				device_mode.dmDisplayFrequency > 1)
+			{
+				return (double)device_mode.dmDisplayFrequency;
+			}
+		}
+	}
+#endif
+
+	return 0.0;
+}
+
 GLCompatibilityRenderer::GLCompatibilityRenderer()
 {
 }

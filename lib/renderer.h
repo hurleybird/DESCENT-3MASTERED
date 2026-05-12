@@ -615,6 +615,7 @@ void rend_RestoreLegacy();
 bool rend_CanUseNewrender();
 
 void rend_GetScreenSize(int& screen_width, int& screen_height);
+double rend_GetDisplayRefreshRate();
 
 //[ISB] This should hopefully be a temporary interface, but this resets all the texture binding state.
 //Needed so that the generic framebuffer class can clear both backend's state

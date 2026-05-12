@@ -266,6 +266,7 @@ public:
 	virtual void RestoreLegacy() = 0;
 
 	virtual void GetScreenSize(int& screen_width, int& screen_height) = 0;
+	virtual double GetDisplayRefreshRate() = 0;
 
 	virtual void ClearBoundTextures() = 0;
 };

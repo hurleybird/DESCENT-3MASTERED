@@ -297,10 +297,12 @@ void PreInitD3Systems()
 		Use_file_xfer = 0;
 	
 	int iframelmtarg = FindArg("-limitframe");
+	bool explicit_framecap = false;
 	if(iframelmtarg)
 	{
 		Min_allowed_frametime = atoi(GameArgs[iframelmtarg+1]) / 1000.0;
-		mprintf((0,"Using %d as a minimum frametime\n",Min_allowed_frametime));
+		explicit_framecap = true;
+		mprintf((0,"Using %f as a minimum frametime\n",Min_allowed_frametime));
 	}
 	else
 	{
@@ -314,15 +316,14 @@ void PreInitD3Systems()
 	{
 		float cap = atof(GameArgs[iframelmtarg + 1]);
 		if (cap == 0 || cap > 1000) //[ISB] high enough framerates cause the game to eat itself
-			cap = 1000; 
+			cap = 1000;
 		Min_allowed_frametime = (1.0/cap);
+		explicit_framecap = true;
 		mprintf((0,"Using %f as a minimum frametime\n",Min_allowed_frametime));
 	}
-	else
+	else if(!explicit_framecap && !FindArg("-dedicated"))
 	{
-		// Default to a framecap of 60
-		Min_allowed_frametime = (1.0/60.0);
-		mprintf ((0,"Using default framecap of 60\n"));
+		EnableDisplayRefreshFramecap();
 	}
 
 	//Mouselook sensitivity!
