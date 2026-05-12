@@ -115,6 +115,7 @@ extern void RenderHUDBeginTextPass();
 extern void RenderHUDEndTextPass();
 extern void RenderHUDSetTextPassItemType(int item_type);
 extern bool RenderHUDGetTopLeftTextAnchor(int* x, int* y);
+extern bool RenderHUDGetTopLeftTextBottom(int* bottom);
 
 bool Hud_show_controls = false;
 static bool HUD_score_pending_aux = false;
@@ -1211,10 +1212,42 @@ static void RenderHUDItemList(tStatMask stat_mask, int small_filter)
 
 extern bool Demo_make_movie;
 
-#define HUD_KEYS_NEXT_LINE	hudconty+=14
-
 // [ISB] When the vertical resolution exceeds this threshold, start scaling the font up.
 constexpr int PICCU_FONT_SCALE_THRESHOLD = 1080;
+
+static int HUDEnabledControlsLineAdvance()
+{
+	float extra_scale = 1.0f;
+	if (Max_window_h > PICCU_FONT_SCALE_THRESHOLD)
+		extra_scale = (float)Max_window_h / PICCU_FONT_SCALE_THRESHOLD;
+
+	int line_advance = grtext_GetHeight("X") + (int)(extra_scale * 2.0f + 0.5f);
+	return (line_advance < 14) ? 14 : line_advance;
+}
+
+static int HUDEnabledControlsSectionGap()
+{
+	if (Max_window_h <= PICCU_FONT_SCALE_THRESHOLD)
+		return 0;
+
+	return (int)(((float)Max_window_h / PICCU_FONT_SCALE_THRESHOLD - 1.0f) * 8.0f + 0.5f);
+}
+
+static int HUDEnabledControlsStartY()
+{
+	int y = 130;
+	int top_left_bottom = 0;
+	if (RenderHUDGetTopLeftTextBottom(&top_left_bottom))
+	{
+		int below_existing_hud = top_left_bottom + HUDEnabledControlsLineAdvance() + HUDEnabledControlsSectionGap();
+		if (y < below_existing_hud)
+			y = below_existing_hud;
+	}
+
+	return y;
+}
+
+#define HUD_KEYS_NEXT_LINE	hudconty += HUDEnabledControlsLineAdvance()
 
 //	iterate through entire hud item list to draw.
 void RenderHUDItems(tStatMask stat_mask)
@@ -1323,10 +1356,11 @@ void RenderHUDItems(tStatMask stat_mask)
 		char* axis = NULL;
 		player* pp = &Players[Player_num];
 		int fidkey = -1, fidcont = -1;
-		int hudconty = 130;
+		int hudconty = HUDEnabledControlsStartY();
 
 		RenderHUDTextFlags(0, GR_GREEN, HUD_ALPHA, 0, 15, hudconty, TXT_ENABLED_CONTROLS);
 		HUD_KEYS_NEXT_LINE;
+		hudconty += HUDEnabledControlsSectionGap();
 
 		if (pp->controller_bitflags & PCBF_FORWARD)
 		{
