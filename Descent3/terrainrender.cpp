@@ -545,8 +545,7 @@ static bool TerrainMeshChunkInFrustum(int chunk_x, int chunk_z)
 	return true;
 }
 
-static int DisplayTerrainMesh(bool fog_enabled, bool scissor_to_window,
-	int left, int top, int right, int bot, int render_width, int render_height)
+static int DisplayTerrainMesh(bool fog_enabled)
 {
 	EnsureTerrainMeshReady();
 
@@ -565,13 +564,7 @@ static int DisplayTerrainMesh(bool fog_enabled, bool scissor_to_window,
 	Terrain_vertexbuffer.Bind();
 	Terrain_indexbuffer.Bind();
 	bool depth_clamp_enabled = rendTEMP_DepthClampEnabled();
-	rendTEMP_SetDepthClamp(false);
-	rendTEMP_ScissorState scissor_state = {};
-	if (scissor_to_window)
-	{
-		rendTEMP_SaveScissorState(&scissor_state);
-		rendTEMP_SetScissorRect(left, top, right, bot, render_width, render_height);
-	}
+	rendTEMP_SetDepthClamp(true);
 
 	int src_occlusion_index = -1;
 	bool use_occlusion = GetTerrainMeshOcclusionSource(&src_occlusion_index);
@@ -597,8 +590,6 @@ static int DisplayTerrainMesh(bool fog_enabled, bool scissor_to_window,
 	}
 
 	rendTEMP_UnbindVertexBuffer();
-	if (scissor_to_window)
-		rendTEMP_RestoreScissorState(&scissor_state);
 	rendTEMP_SetDepthClamp(depth_clamp_enabled);
 	return chunks_drawn;
 }
@@ -1078,7 +1069,6 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 	float h2 = ((float)render_height - 1) / 2.0f;
 
 	//Set up vars for (psuedo-)clipping window
-	bool valid_render_window = left >= 0;
 	if (left < 0)
 	{
 		Check_terrain_portal = 0;
@@ -1172,8 +1162,7 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 
 	if (use_mesh_terrain)
 	{
-		DisplayTerrainMesh((Terrain_sky.flags & TF_FOG) != 0, from_mine && valid_render_window,
-			left, top, right, bot, render_width, render_height);
+		DisplayTerrainMesh((Terrain_sky.flags & TF_FOG) != 0);
 	}
 	else if (Render_use_newrender)
 	{

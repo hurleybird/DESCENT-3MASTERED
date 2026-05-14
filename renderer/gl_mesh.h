@@ -95,13 +95,3 @@ public:
 void rendTEMP_UnbindVertexBuffer();
 bool rendTEMP_DepthClampEnabled();
 void rendTEMP_SetDepthClamp(bool state);
-
-struct rendTEMP_ScissorState
-{
-	bool enabled;
-	int box[4];
-};
-
-void rendTEMP_SaveScissorState(rendTEMP_ScissorState* state);
-void rendTEMP_SetScissorRect(int left, int top, int right, int bottom, int screen_width, int screen_height);
-void rendTEMP_RestoreScissorState(const rendTEMP_ScissorState* state);
