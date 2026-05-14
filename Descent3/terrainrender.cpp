@@ -72,6 +72,7 @@ float Far_fog_border;
 vector Terrain_viewer_eye;
 ubyte Terrain_from_mine = 0;
 ubyte Show_invisible_terrain = 0;
+bool Use_terrain_mesh_renderer = true;
 int Terrain_objects_drawn = 0;
 vector Last_frame_stars[MAX_STARS];
 float Terrain_texture_distance = DEFAULT_TEXTURE_DISTANCE;
@@ -408,6 +409,9 @@ static bool TerrainMeshCanRender()
 #endif
 
 	if (!UseHardware || OpenGLProfile != GLPROFILE_CORE)
+		return false;
+
+	if (!Use_terrain_mesh_renderer)
 		return false;
 
 	if (Show_invisible_terrain)

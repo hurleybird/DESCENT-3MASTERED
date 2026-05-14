@@ -427,6 +427,7 @@ void SaveGameSettings()
 #endif
 	Database->write("OpenGLProfile", DesiredOpenGLProfile);
 	Database->write("OpenGLProfileExplicit", DesiredOpenGLProfileExplicit);
+	Database->write("RS_use_terrain_mesh_renderer", Use_terrain_mesh_renderer);
 	Database->write("DetailScorchMarks",Detail_settings.Scorches_enabled);
 	Database->write("DetailWeaponCoronas",Detail_settings.Weapon_coronas_enabled);
 	Database->write("DetailFog",Detail_settings.Fog_enabled);
@@ -568,6 +569,7 @@ void LoadGameSettings()
 	ApplyFixedHBAOSettings();
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
+	Use_terrain_mesh_renderer = true;
 	Hud_text_scale = 1.0f;
 	PreferredRenderer = RENDERER_NONE;
 
@@ -793,6 +795,7 @@ void LoadGameSettings()
 	Database->read_int("RS_vsync",&Render_preferred_state.vsync_on);
 	Database->read("OpenGLProfileExplicit", &DesiredOpenGLProfileExplicit);
 	Database->read_int("OpenGLProfile", &DesiredOpenGLProfile);
+	Database->read("RS_use_terrain_mesh_renderer", &Use_terrain_mesh_renderer);
 	if (DesiredOpenGLProfile != GLPROFILE_CORE && DesiredOpenGLProfile != GLPROFILE_COMPAT)
 		DesiredOpenGLProfile = GLPROFILE_COMPAT;
 	if (!DesiredOpenGLProfileExplicit)
