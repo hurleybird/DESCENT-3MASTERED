@@ -44,6 +44,39 @@ extern bool Game_paused;							//	determines if game is paused.
 extern bool Rendering_main_view;					// determines if we're rendering the main view
 extern bool Skip_render_game_frame;				// skips rendering the game frame if set.
 
+extern bool Perf_markers_enabled;
+void PerfMarkersSetEnabled(bool enabled);
+void PerfMarkersBeginFrame();
+void PerfMarkersEndFrame();
+void PerfMarkersBegin(const char* marker_name);
+void PerfMarkersEnd(const char* marker_name);
+double PerfMarkersNow();
+void PerfMarkersRecordDuration(const char* marker_name, double start_time, double duration);
+
+class PerfMarkerScope
+{
+public:
+	explicit PerfMarkerScope(const char* marker_name) : m_marker_name(marker_name), m_active(Perf_markers_enabled)
+	{
+		if (m_active)
+			PerfMarkersBegin(m_marker_name);
+	}
+
+	~PerfMarkerScope()
+	{
+		if (m_active)
+			PerfMarkersEnd(m_marker_name);
+	}
+
+private:
+	const char* m_marker_name;
+	bool m_active;
+};
+
+#define PERF_MARKER_JOIN_INNER(a, b) a##b
+#define PERF_MARKER_JOIN(a, b) PERF_MARKER_JOIN_INNER(a, b)
+#define PERF_MARKER_SCOPE(name) PerfMarkerScope PERF_MARKER_JOIN(perf_marker_scope_, __LINE__)(name)
+
 
 //Turn off all camera views
 //If total reset is true, set all views to none, otherwise kill object view but keep rear views.

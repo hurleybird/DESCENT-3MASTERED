@@ -34,8 +34,10 @@
 #include "lightmap.h"
 #include "lighting.h"
 #include "findintersection.h"
+#include "gameloop.h"
 
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <search.h>
 #include <string.h>
@@ -52,6 +54,182 @@ static vector Fog_plane;
 static float Fog_distance,Fog_eye_distance;
 static vector Fog_view_pos,Specular_view_pos,Bump_view_pos;
 static matrix Unscaled_bumpmap_matrix;
+
+static double Polymodel_perf_first_time = 0.0;
+static double Polymodel_perf_draw_model_time = 0.0;
+static double Polymodel_perf_draw_model_setup_time = 0.0;
+static double Polymodel_perf_render_polygon_time = 0.0;
+static double Polymodel_perf_root_pass_time = 0.0;
+static double Polymodel_perf_facing_pass_time = 0.0;
+static double Polymodel_perf_submodel_instance_time = 0.0;
+static double Polymodel_perf_submodel_rotate_time = 0.0;
+static double Polymodel_perf_submodel_faces_time = 0.0;
+static double Polymodel_perf_faces_unsorted_time = 0.0;
+static double Polymodel_perf_faces_unsorted_scan_time = 0.0;
+static double Polymodel_perf_faces_unsorted_sort_time = 0.0;
+static double Polymodel_perf_faces_sorted_time = 0.0;
+static double Polymodel_perf_face_base_time = 0.0;
+static double Polymodel_perf_face_base_point_time = 0.0;
+static double Polymodel_perf_face_base_state_time = 0.0;
+static double Polymodel_perf_face_base_per_pixel_time = 0.0;
+static double Polymodel_perf_face_base_draw_time = 0.0;
+static double Polymodel_perf_lightmap_face_time = 0.0;
+static double Polymodel_perf_lightmap_face_draw_time = 0.0;
+static double Polymodel_perf_specular_face_time = 0.0;
+static double Polymodel_perf_specular_pass_time = 0.0;
+static double Polymodel_perf_fog_face_time = 0.0;
+static double Polymodel_perf_fog_pass_time = 0.0;
+static double Polymodel_perf_facing_effect_time = 0.0;
+static int Polymodel_perf_draw_model_count = 0;
+static int Polymodel_perf_render_polygon_count = 0;
+static int Polymodel_perf_submodel_visit_count = 0;
+static int Polymodel_perf_submodel_draw_count = 0;
+static int Polymodel_perf_faces_considered_count = 0;
+static int Polymodel_perf_base_face_count = 0;
+static int Polymodel_perf_alpha_face_count = 0;
+static int Polymodel_perf_lightmap_face_count = 0;
+static int Polymodel_perf_specular_face_count = 0;
+static int Polymodel_perf_fog_face_count = 0;
+static int Polymodel_perf_draw_poly_count = 0;
+static int Polymodel_perf_facing_effect_count = 0;
+
+static double PolymodelPerfNow()
+{
+	return Perf_markers_enabled ? PerfMarkersNow() : 0.0;
+}
+
+static void PolymodelPerfTouch(double start_time)
+{
+	if (Perf_markers_enabled && Polymodel_perf_first_time == 0.0)
+		Polymodel_perf_first_time = start_time;
+}
+
+static void PolymodelPerfAdd(double& bucket, double start_time)
+{
+	if (Perf_markers_enabled)
+		bucket += PerfMarkersNow() - start_time;
+}
+
+static void PolymodelPerfRecordDuration(double marker_time, const char* marker_name, double duration)
+{
+	if (duration > 0.0)
+		PerfMarkersRecordDuration(marker_name, marker_time, duration);
+}
+
+static void PolymodelPerfRecordCounter(double marker_time, const char* marker_name, int count)
+{
+	if (count <= 0)
+		return;
+
+	char marker[96];
+	snprintf(marker, sizeof(marker), "%s=%d", marker_name, count);
+	PerfMarkersRecordDuration(marker, marker_time, 0.0);
+}
+
+void PolymodelPerfReset()
+{
+	Polymodel_perf_first_time = 0.0;
+	Polymodel_perf_draw_model_time = 0.0;
+	Polymodel_perf_draw_model_setup_time = 0.0;
+	Polymodel_perf_render_polygon_time = 0.0;
+	Polymodel_perf_root_pass_time = 0.0;
+	Polymodel_perf_facing_pass_time = 0.0;
+	Polymodel_perf_submodel_instance_time = 0.0;
+	Polymodel_perf_submodel_rotate_time = 0.0;
+	Polymodel_perf_submodel_faces_time = 0.0;
+	Polymodel_perf_faces_unsorted_time = 0.0;
+	Polymodel_perf_faces_unsorted_scan_time = 0.0;
+	Polymodel_perf_faces_unsorted_sort_time = 0.0;
+	Polymodel_perf_faces_sorted_time = 0.0;
+	Polymodel_perf_face_base_time = 0.0;
+	Polymodel_perf_face_base_point_time = 0.0;
+	Polymodel_perf_face_base_state_time = 0.0;
+	Polymodel_perf_face_base_per_pixel_time = 0.0;
+	Polymodel_perf_face_base_draw_time = 0.0;
+	Polymodel_perf_lightmap_face_time = 0.0;
+	Polymodel_perf_lightmap_face_draw_time = 0.0;
+	Polymodel_perf_specular_face_time = 0.0;
+	Polymodel_perf_specular_pass_time = 0.0;
+	Polymodel_perf_fog_face_time = 0.0;
+	Polymodel_perf_fog_pass_time = 0.0;
+	Polymodel_perf_facing_effect_time = 0.0;
+	Polymodel_perf_draw_model_count = 0;
+	Polymodel_perf_render_polygon_count = 0;
+	Polymodel_perf_submodel_visit_count = 0;
+	Polymodel_perf_submodel_draw_count = 0;
+	Polymodel_perf_faces_considered_count = 0;
+	Polymodel_perf_base_face_count = 0;
+	Polymodel_perf_alpha_face_count = 0;
+	Polymodel_perf_lightmap_face_count = 0;
+	Polymodel_perf_specular_face_count = 0;
+	Polymodel_perf_fog_face_count = 0;
+	Polymodel_perf_draw_poly_count = 0;
+	Polymodel_perf_facing_effect_count = 0;
+}
+
+void PolymodelPerfFlush()
+{
+	if (!Perf_markers_enabled || Polymodel_perf_first_time == 0.0)
+		return;
+
+	double marker_time = Polymodel_perf_first_time;
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.DrawPolygonModel.Aggregate", Polymodel_perf_draw_model_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.DrawPolygonModel.Setup.Aggregate", Polymodel_perf_draw_model_setup_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.RenderPolygonModel.Aggregate", Polymodel_perf_render_polygon_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.RootPass.Aggregate", Polymodel_perf_root_pass_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.FacingPass.Aggregate", Polymodel_perf_facing_pass_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Submodel.InstanceSetup.Aggregate", Polymodel_perf_submodel_instance_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Submodel.RotatePoints.Aggregate", Polymodel_perf_submodel_rotate_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Submodel.RenderFaces.Aggregate", Polymodel_perf_submodel_faces_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.FacesUnsorted.Aggregate", Polymodel_perf_faces_unsorted_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.FacesUnsorted.ScanCull.Aggregate", Polymodel_perf_faces_unsorted_scan_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.FacesUnsorted.StateSort.Aggregate", Polymodel_perf_faces_unsorted_sort_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.FacesSorted.Aggregate", Polymodel_perf_faces_sorted_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.Total.Aggregate", Polymodel_perf_face_base_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.PointSetup.Aggregate", Polymodel_perf_face_base_point_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.StateSetup.Aggregate", Polymodel_perf_face_base_state_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.PerPixelSetup.Aggregate", Polymodel_perf_face_base_per_pixel_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.DrawPoly.Aggregate", Polymodel_perf_face_base_draw_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Lightmap.Total.Aggregate", Polymodel_perf_lightmap_face_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Lightmap.DrawPoly.Aggregate", Polymodel_perf_lightmap_face_draw_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Specular.Total.Aggregate", Polymodel_perf_specular_face_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Specular.Pass.Aggregate", Polymodel_perf_specular_pass_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Fog.Total.Aggregate", Polymodel_perf_fog_face_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Fog.Pass.Aggregate", Polymodel_perf_fog_pass_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.FacingEffect.Aggregate", Polymodel_perf_facing_effect_time);
+
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.DrawPolygonModel", Polymodel_perf_draw_model_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.RenderPolygonModel", Polymodel_perf_render_polygon_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.SubmodelsVisited", Polymodel_perf_submodel_visit_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.SubmodelsDrawn", Polymodel_perf_submodel_draw_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.FacesConsidered", Polymodel_perf_faces_considered_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.BaseFacesDrawn", Polymodel_perf_base_face_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.AlphaFaces", Polymodel_perf_alpha_face_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.LightmapFaces", Polymodel_perf_lightmap_face_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.SpecularFaces", Polymodel_perf_specular_face_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.FogFaces", Polymodel_perf_fog_face_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.DrawPolyCalls", Polymodel_perf_draw_poly_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.FacingEffects", Polymodel_perf_facing_effect_count);
+}
+
+void PolymodelPerfAddDrawModel(double start_time)
+{
+	if (!Perf_markers_enabled)
+		return;
+
+	PolymodelPerfTouch(start_time);
+	Polymodel_perf_draw_model_count++;
+	Polymodel_perf_draw_model_time += PerfMarkersNow() - start_time;
+}
+
+void PolymodelPerfAddDrawModelSetup(double start_time)
+{
+	if (!Perf_markers_enabled)
+		return;
+
+	PolymodelPerfTouch(start_time);
+	Polymodel_perf_draw_model_setup_time += PerfMarkersNow() - start_time;
+}
 
 static int ModelFaceSortFunc(const short *a, const short *b)
 {
@@ -113,6 +291,10 @@ static void SetPolymodelGouraudPointLighting(g3Point& point, const vector& norma
 
 inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 {
+	double face_start_time = PolymodelPerfNow();
+	PolymodelPerfTouch(face_start_time);
+	if (Perf_markers_enabled)
+		Polymodel_perf_base_face_count++;
 	
 	g3Point	*pointlist[100];
 	int bm_handle;
@@ -184,6 +366,7 @@ inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 	ASSERT (fp->nverts<100);
 				
 	// Setup the points for this face
+	double point_setup_start_time = PolymodelPerfNow();
 	for (t=0;t<fp->nverts;t++) 
 	{
 		g3Point *p = &Robot_points[fp->vertnums[t]];
@@ -244,6 +427,7 @@ inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 		face_cc.cc_or|=p->p3_codes;
 		face_cc.cc_and&=p->p3_codes;
 	}
+	PolymodelPerfAdd(Polymodel_perf_face_base_point_time, point_setup_start_time);
 
 	if (face_cc.cc_or && Polymodel_use_effect && (Polymodel_effect.type & (PEF_FOGGED_MODEL|PEF_SPECULAR_MODEL|PEF_SPECULAR_FACES)))
 	{
@@ -252,6 +436,7 @@ inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 	}
 
 	// If there is a texture, set it up 
+	double state_setup_start_time = PolymodelPerfNow();
 	if (texp)
 	{
 		bm_handle=GetTextureBitmap(texp-GameTextures,0);
@@ -356,17 +541,24 @@ inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 
 	if (triface)
 		g3_SetTriangulationTest(1);
+	PolymodelPerfAdd(Polymodel_perf_face_base_state_time, state_setup_start_time);
 
 	if (lightmap_lmi_handle >= 0 && UsePerPixelPolymodelLighting())
 	{
+		double per_pixel_start_time = PolymodelPerfNow();
 		per_pixel_light_count = GetPerPixelLightmapLights((ushort)lightmap_lmi_handle, per_pixel_lights,
 			RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
 		if (per_pixel_light_count > 0)
 			rend_SetPerPixelDynamicLighting(&LightmapInfo[lightmap_lmi_handle].normal,
 				per_pixel_light_count, per_pixel_lights);
+		PolymodelPerfAdd(Polymodel_perf_face_base_per_pixel_time, per_pixel_start_time);
 	}
 		
+	double draw_start_time = PolymodelPerfNow();
 	g3_DrawPoly(fp->nverts,pointlist,bm_handle,MAP_TYPE_BITMAP,&face_cc);
+	if (Perf_markers_enabled)
+		Polymodel_perf_draw_poly_count++;
+	PolymodelPerfAdd(Polymodel_perf_face_base_draw_time, draw_start_time);
 
 	if (per_pixel_light_count > 0)
 		rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
@@ -381,6 +573,7 @@ inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 	{
 		rend_SetBumpmapReadyState(0,0);
 	}
+	PolymodelPerfAdd(Polymodel_perf_face_base_time, face_start_time);
 
 	#ifdef _DEBUG
 	if (Polymodel_outline_mode)
@@ -460,6 +653,11 @@ inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 
 inline void RenderSubmodelLightmapFace (poly_model *pm,bsp_info *sm,int facenum)
 {
+	double face_start_time = PolymodelPerfNow();
+	PolymodelPerfTouch(face_start_time);
+	if (Perf_markers_enabled)
+		Polymodel_perf_lightmap_face_count++;
+
 	g3Point	*pointlist[100];
 		
 	polyface *fp=&sm->faces[facenum];
@@ -489,14 +687,24 @@ inline void RenderSubmodelLightmapFace (poly_model *pm,bsp_info *sm,int facenum)
 	if (triangulated_faces[facenum])
 		g3_SetTriangulationTest (1);
 	
+	double draw_start_time = PolymodelPerfNow();
 	g3_DrawPoly(fp->nverts,pointlist,lm_handle,MAP_TYPE_LIGHTMAP);
+	if (Perf_markers_enabled)
+		Polymodel_perf_draw_poly_count++;
+	PolymodelPerfAdd(Polymodel_perf_lightmap_face_draw_time, draw_start_time);
 
 	if (triangulated_faces[facenum])
 		g3_SetTriangulationTest (0);
+	PolymodelPerfAdd(Polymodel_perf_lightmap_face_time, face_start_time);
 }
 
 inline void RenderSubmodelFaceFogged (poly_model *pm,bsp_info *sm,int facenum)
 {
+	double face_start_time = PolymodelPerfNow();
+	PolymodelPerfTouch(face_start_time);
+	if (Perf_markers_enabled)
+		Polymodel_perf_fog_face_count++;
+
 	g3Point	*pointlist[100];
 	polyface *fp=&sm->faces[facenum];
 	int modelnum=sm-pm->submodel;
@@ -546,14 +754,22 @@ inline void RenderSubmodelFaceFogged (poly_model *pm,bsp_info *sm,int facenum)
 		g3_SetTriangulationTest (1);
 
 	g3_DrawPoly(fp->nverts,pointlist,0);
+	if (Perf_markers_enabled)
+		Polymodel_perf_draw_poly_count++;
 
 	if (triangulated_faces[facenum])
 		g3_SetTriangulationTest (0);
+	PolymodelPerfAdd(Polymodel_perf_fog_face_time, face_start_time);
 
 }
 
 inline void RenderSubmodelFaceSpecular (poly_model *pm,bsp_info *sm,int facenum)
 {
+	double face_start_time = PolymodelPerfNow();
+	PolymodelPerfTouch(face_start_time);
+	if (Perf_markers_enabled)
+		Polymodel_perf_specular_face_count++;
+
 	g3Point	*pointlist[100];
 	polyface *fp=&sm->faces[facenum];
 	int modelnum=sm-pm->submodel;
@@ -615,9 +831,12 @@ inline void RenderSubmodelFaceSpecular (poly_model *pm,bsp_info *sm,int facenum)
 		g3_SetTriangulationTest (1);
 
 	g3_DrawPoly(fp->nverts,pointlist,0);
+	if (Perf_markers_enabled)
+		Polymodel_perf_draw_poly_count++;
 
 	if (triangulated_faces[facenum])
 		g3_SetTriangulationTest (0);
+	PolymodelPerfAdd(Polymodel_perf_specular_face_time, face_start_time);
 }
 
 
@@ -705,6 +924,8 @@ void DrawGlowEffect (vector *pos,float r,float g,float b,vector *norm,float size
 
 void RenderSubmodelFacesSorted (poly_model *pm,bsp_info *sm)
 {
+	double sorted_start_time = PolymodelPerfNow();
+	PolymodelPerfTouch(sorted_start_time);
 	int i,t;
 		
 	int rcount;
@@ -716,6 +937,8 @@ void RenderSubmodelFacesSorted (poly_model *pm,bsp_info *sm)
 	//Build list of visible (non-backfacing) faces, & compute average face depths
 	for (i=rcount=0;i<sm->num_faces;i++) 
 	{
+		if (Perf_markers_enabled)
+			Polymodel_perf_faces_considered_count++;
 		polyface		*fp = &sm->faces[i];
 	
 		//check for visible face
@@ -746,9 +969,12 @@ void RenderSubmodelFacesSorted (poly_model *pm,bsp_info *sm)
 
 		RenderSubmodelFace (pm,sm,facenum);
 	}
+	PolymodelPerfAdd(Polymodel_perf_faces_sorted_time, sorted_start_time);
 }
 void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 {
+	double unsorted_start_time = PolymodelPerfNow();
+	PolymodelPerfTouch(unsorted_start_time);
 	int i;
 	int modelnum=sm-pm->submodel;
 	short alpha_faces[MAX_FACES_PER_ROOM],num_alpha_faces=0;
@@ -772,6 +998,9 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 	
 	for (i=0;i<sm->num_faces;i++)
 	{
+		double scan_start_time = PolymodelPerfNow();
+		if (Perf_markers_enabled)
+			Polymodel_perf_faces_considered_count++;
 		vector tempv;
 		polyface *fp=&sm->faces[i];
 		texture *texp;
@@ -779,7 +1008,10 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 		// Check to see if this face even faces us!
 		tempv = view_pos - sm->verts[fp->vertnums[0]];
 		if ((tempv * fp->normal)<0)
+		{
+			PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
 			continue;
+		}
 		
 		if (fp->texnum!=-1)
 		{
@@ -788,6 +1020,9 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 			if (texp->flags & TF_ALPHA || texp->flags & TF_SATURATE)
 			{
 				alpha_faces[num_alpha_faces++] = i;
+				if (Perf_markers_enabled)
+					Polymodel_perf_alpha_face_count++;
+				PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
 				continue;
 			}
 		}
@@ -797,13 +1032,18 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 			State_elements[rcount].facenum=i;
 			State_elements[rcount].sort_key=pm->textures[fp->texnum];
 			rcount++;
+			PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
 		}
 		else
+		{
+			PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
 			RenderSubmodelFace (pm,sm,i);
+		}
 	}
 
 	if (StateLimited)
 	{
+		double sort_start_time = PolymodelPerfNow();
 		SortStates (State_elements,rcount);
 		for (i=rcount-1;i>=0;i--)
 		{
@@ -829,10 +1069,11 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 					RenderSubmodelLightmapFace (pm,sm,facenum);
 				}
 
-				rend_SetWrapType (WT_WRAP);
-				rend_SetMipState (1);	
-			}
+			rend_SetWrapType (WT_WRAP);
+			rend_SetMipState (1);
 		}
+		PolymodelPerfAdd(Polymodel_perf_faces_unsorted_sort_time, sort_start_time);
+	}
 	}
 
 	// Now render all alpha faces
@@ -847,6 +1088,7 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 	// Draw specular faces if needed
 	if (Polymodel_use_effect && Polymodel_effect.type & (PEF_SPECULAR_MODEL|PEF_SPECULAR_FACES))
 	{
+		double specular_start_time = PolymodelPerfNow();
 		rend_SetOverlayType (OT_NONE);
 		rend_SetTextureType (TT_FLAT);
 		rend_SetLighting (LS_NONE);
@@ -873,11 +1115,13 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 		}
 		
 		rend_SetZBufferWriteMask (1);
+		PolymodelPerfAdd(Polymodel_perf_specular_pass_time, specular_start_time);
 	}
 
 	// Draw fog if need be
 	if (Polymodel_use_effect && Polymodel_effect.type & PEF_FOGGED_MODEL)
 	{
+		double fog_start_time = PolymodelPerfNow();
 		matrix mat;
 
 		g3_GetUnscaledMatrix (&mat);
@@ -914,8 +1158,10 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 		
 		rend_SetCoplanarPolygonOffset(0);
 		rend_SetZBufferWriteMask (1);
+		PolymodelPerfAdd(Polymodel_perf_fog_pass_time, fog_start_time);
 	}
 
+	PolymodelPerfAdd(Polymodel_perf_faces_unsorted_time, unsorted_start_time);
 }
 
 
@@ -1049,11 +1295,14 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 {
 	int i;
 	matrix lightmatrix;
+	if (Perf_markers_enabled)
+		Polymodel_perf_submodel_visit_count++;
 
 	// Don't render door housings
 	if (IsNonRenderableSubmodel (pm,sm-pm->submodel))
 		return;
 
+	double instance_setup_start_time = PolymodelPerfNow();
 	if (Polymodel_light_type!=POLYMODEL_LIGHTING_LIGHTMAP)
 	{
 		// Turn off bumpmapping if not needed
@@ -1077,6 +1326,7 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 	
 	vm_AnglesToMatrix (&lightmatrix,sm->angs.p,sm->angs.h,sm->angs.b);
 	StartLightInstance(&temp_vec,&lightmatrix);
+	PolymodelPerfAdd(Polymodel_perf_submodel_instance_time, instance_setup_start_time);
 			
 	// Check my bit to see if I get drawn
 	if(f_render_sub & (0x00000001 << (sm - pm->submodel))) 
@@ -1093,6 +1343,7 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 			if (!FacingPass)
 				goto pop_lighting;
 
+			double facing_effect_start_time = PolymodelPerfNow();
 			vector zero_pos={0,0,0};
 			rend_SetOverlayType (OT_NONE);
 
@@ -1110,6 +1361,9 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 				else
 					DrawGlowEffect (&zero_pos,sm->glow_info->glow_r,sm->glow_info->glow_g,sm->glow_info->glow_b,&sm->glow_info->normal,sm->glow_info->glow_size);
 			}
+			if (Perf_markers_enabled)
+				Polymodel_perf_facing_effect_count++;
+			PolymodelPerfAdd(Polymodel_perf_facing_effect_time, facing_effect_start_time);
 			
 			goto pop_lighting;
 		}
@@ -1118,6 +1372,7 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 			if (!FacingPass)
 				goto pop_lighting;
 			
+			double facing_effect_start_time = PolymodelPerfNow();
 			vector pos;
 			rend_SetLighting (LS_NONE);
 			rend_SetColorModel (CM_MONO);
@@ -1136,6 +1391,9 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 			rend_SetZBufferWriteMask (0);	
 			g3_DrawBitmap (&pos,sm->rad,(sm->rad*bm_h(bm_handle,0))/bm_w(bm_handle,0),bm_handle);
 			rend_SetZBufferWriteMask (1);	
+			if (Perf_markers_enabled)
+				Polymodel_perf_facing_effect_count++;
+			PolymodelPerfAdd(Polymodel_perf_facing_effect_time, facing_effect_start_time);
 		
 			goto pop_lighting;
 		}
@@ -1145,12 +1403,18 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 				goto pop_lighting;
 		}
 
+		if (Perf_markers_enabled)
+			Polymodel_perf_submodel_draw_count++;
+		double rotate_start_time = PolymodelPerfNow();
 		RotateModelPoints (pm,sm);
+		PolymodelPerfAdd(Polymodel_perf_submodel_rotate_time, rotate_start_time);
 			
+		double faces_start_time = PolymodelPerfNow();
 		if (!UseHardware)
 			RenderSubmodelFacesSorted (pm, sm);
 		else
 			RenderSubmodelFacesUnsorted (pm, sm);
+		PolymodelPerfAdd(Polymodel_perf_submodel_faces_time, faces_start_time);
 	}
 	
 	pop_lighting:
@@ -1168,6 +1432,11 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 
 int RenderPolygonModel(poly_model * pm, uint f_render_sub)
 {
+	double render_start_time = PolymodelPerfNow();
+	PolymodelPerfTouch(render_start_time);
+	if (Perf_markers_enabled)
+		Polymodel_perf_render_polygon_count++;
+
 	ASSERT (pm->new_style==1);
 	int i=0;
 	
@@ -1175,16 +1444,19 @@ int RenderPolygonModel(poly_model * pm, uint f_render_sub)
 	rend_SetWrapType (WT_WRAP);
 	
 	FacingPass=0;
+	double root_pass_start_time = PolymodelPerfNow();
 	for (i=0;i<pm->n_models;i++)
 	{
 		bsp_info *sm=&pm->submodel[i];
 		if (sm->parent==-1)
 			RenderSubmodel (pm,sm, f_render_sub);
 	}
+	PolymodelPerfAdd(Polymodel_perf_root_pass_time, root_pass_start_time);
 
 	// Now render any facing submodels
 	if (pm->flags & PMF_FACING)
 	{
+		double facing_pass_start_time = PolymodelPerfNow();
 		// Don't render if we have it set for no glows
 		FacingPass=1;
 		rend_SetOverlayType (OT_NONE);
@@ -1194,9 +1466,11 @@ int RenderPolygonModel(poly_model * pm, uint f_render_sub)
 			if (sm->parent==-1)
 				RenderSubmodel (pm,sm, f_render_sub);
 		}
+		PolymodelPerfAdd(Polymodel_perf_facing_pass_time, facing_pass_start_time);
 	}
 
 	FacingPass=0;
+	PolymodelPerfAdd(Polymodel_perf_render_polygon_time, render_start_time);
 		
 	return 1;
 }

@@ -48,6 +48,7 @@
 #include "ship.h"
 #include "psrand.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #ifdef EDITOR
@@ -76,6 +77,202 @@ vector RenderObject_LightDirection;
 
 float Last_powerup_sparkle_time = 0.0f;
 bool Render_powerup_sparkles = false;
+
+static double Render_object_perf_first_time = 0.0;
+static double Render_object_perf_total_time = 0.0;
+static double Render_object_perf_setup_time = 0.0;
+static double Render_object_perf_draw_switch_time = 0.0;
+static double Render_object_perf_polymodel_base_time = 0.0;
+static double Render_object_perf_polymodel_normalize_time = 0.0;
+static double Render_object_perf_motion_blur_time = 0.0;
+static double Render_object_perf_extra_effects_time = 0.0;
+static double Render_object_perf_type_time[MAX_OBJECT_TYPES];
+static double Render_object_perf_render_type_time[10];
+static int Render_object_perf_call_count = 0;
+static int Render_object_perf_rendered_count = 0;
+static int Render_object_perf_outside_count = 0;
+static int Render_object_perf_mine_count = 0;
+static int Render_object_perf_attach_reject_count = 0;
+static int Render_object_perf_setup_reject_count = 0;
+static int Render_object_perf_safe_reject_count = 0;
+static int Render_object_perf_type_count[MAX_OBJECT_TYPES];
+static int Render_object_perf_render_type_count[10];
+
+static const char* RenderObjectPerfRenderTypeName(int render_type)
+{
+	switch (render_type)
+	{
+	case RT_NONE: return "None";
+	case RT_POLYOBJ: return "Polyobj";
+	case RT_FIREBALL: return "Fireball";
+	case RT_WEAPON: return "Weapon";
+	case RT_LINE: return "Line";
+	case RT_PARTICLE: return "Particle";
+	case RT_SPLINTER: return "Splinter";
+	case RT_ROOM: return "Room";
+	case RT_EDITOR_SPHERE: return "EditorSphere";
+	case RT_SHARD: return "Shard";
+	default: return "Other";
+	}
+}
+
+static const char* RenderObjectPerfObjectTypeName(int type)
+{
+	switch (type)
+	{
+	case OBJ_WALL: return "Wall";
+	case OBJ_FIREBALL: return "Fireball";
+	case OBJ_ROBOT: return "Robot";
+	case OBJ_SHARD: return "Shard";
+	case OBJ_PLAYER: return "Player";
+	case OBJ_WEAPON: return "Weapon";
+	case OBJ_VIEWER: return "Viewer";
+	case OBJ_POWERUP: return "Powerup";
+	case OBJ_DEBRIS: return "Debris";
+	case OBJ_CAMERA: return "Camera";
+	case OBJ_SHOCKWAVE: return "Shockwave";
+	case OBJ_CLUTTER: return "Clutter";
+	case OBJ_GHOST: return "Ghost";
+	case OBJ_LIGHT: return "Light";
+	case OBJ_COOP: return "Coop";
+	case OBJ_MARKER: return "Marker";
+	case OBJ_BUILDING: return "Building";
+	case OBJ_DOOR: return "Door";
+	case OBJ_ROOM: return "Room";
+	case OBJ_PARTICLE: return "Particle";
+	case OBJ_SPLINTER: return "Splinter";
+	case OBJ_DUMMY: return "Dummy";
+	case OBJ_OBSERVER: return "Observer";
+	case OBJ_DEBUG_LINE: return "DebugLine";
+	case OBJ_SOUNDSOURCE: return "SoundSource";
+	case OBJ_WAYPOINT: return "Waypoint";
+	default: return "Other";
+	}
+}
+
+static void RenderObjectPerfAdd(double& bucket, double start_time)
+{
+	if (Perf_markers_enabled)
+		bucket += PerfMarkersNow() - start_time;
+}
+
+static void RenderObjectPerfRecordCounter(double marker_time, const char* marker_name, int count)
+{
+	if (count <= 0)
+		return;
+
+	char marker[96];
+	snprintf(marker, sizeof(marker), "%s=%d", marker_name, count);
+	PerfMarkersRecordDuration(marker, marker_time, 0.0);
+}
+
+static void RenderObjectPerfRecordDuration(double marker_time, const char* marker_name, double duration)
+{
+	if (duration > 0.0)
+		PerfMarkersRecordDuration(marker_name, marker_time, duration);
+}
+
+void RenderObjectPerfReset()
+{
+	Render_object_perf_first_time = 0.0;
+	Render_object_perf_total_time = 0.0;
+	Render_object_perf_setup_time = 0.0;
+	Render_object_perf_draw_switch_time = 0.0;
+	Render_object_perf_polymodel_base_time = 0.0;
+	Render_object_perf_polymodel_normalize_time = 0.0;
+	Render_object_perf_motion_blur_time = 0.0;
+	Render_object_perf_extra_effects_time = 0.0;
+	Render_object_perf_call_count = 0;
+	Render_object_perf_rendered_count = 0;
+	Render_object_perf_outside_count = 0;
+	Render_object_perf_mine_count = 0;
+	Render_object_perf_attach_reject_count = 0;
+	Render_object_perf_setup_reject_count = 0;
+	Render_object_perf_safe_reject_count = 0;
+	memset(Render_object_perf_type_time, 0, sizeof(Render_object_perf_type_time));
+	memset(Render_object_perf_render_type_time, 0, sizeof(Render_object_perf_render_type_time));
+	memset(Render_object_perf_type_count, 0, sizeof(Render_object_perf_type_count));
+	memset(Render_object_perf_render_type_count, 0, sizeof(Render_object_perf_render_type_count));
+}
+
+void RenderObjectPerfFlush()
+{
+	if (!Perf_markers_enabled || Render_object_perf_call_count <= 0)
+		return;
+
+	double marker_time = Render_object_perf_first_time;
+	if (marker_time == 0.0)
+		marker_time = PerfMarkersNow();
+
+	RenderObjectPerfRecordDuration(marker_time, "RenderObject.Total.Aggregate", Render_object_perf_total_time);
+	RenderObjectPerfRecordDuration(marker_time, "RenderObject.Setup.Aggregate", Render_object_perf_setup_time);
+	RenderObjectPerfRecordDuration(marker_time, "RenderObject.DrawSwitch.Aggregate", Render_object_perf_draw_switch_time);
+	RenderObjectPerfRecordDuration(marker_time, "RenderObject.Polymodel.NormalizeTime.Aggregate", Render_object_perf_polymodel_normalize_time);
+	RenderObjectPerfRecordDuration(marker_time, "RenderObject.Polymodel.Base.Aggregate", Render_object_perf_polymodel_base_time);
+	RenderObjectPerfRecordDuration(marker_time, "RenderObject.Polymodel.MotionBlur.Aggregate", Render_object_perf_motion_blur_time);
+	RenderObjectPerfRecordDuration(marker_time, "RenderObject.Polymodel.ExtraEffects.Aggregate", Render_object_perf_extra_effects_time);
+
+	RenderObjectPerfRecordCounter(marker_time, "RenderObject.Count.Calls", Render_object_perf_call_count);
+	RenderObjectPerfRecordCounter(marker_time, "RenderObject.Count.Rendered", Render_object_perf_rendered_count);
+	RenderObjectPerfRecordCounter(marker_time, "RenderObject.Count.Outside", Render_object_perf_outside_count);
+	RenderObjectPerfRecordCounter(marker_time, "RenderObject.Count.Mine", Render_object_perf_mine_count);
+	RenderObjectPerfRecordCounter(marker_time, "RenderObject.Count.AttachRejected", Render_object_perf_attach_reject_count);
+	RenderObjectPerfRecordCounter(marker_time, "RenderObject.Count.SetupRejected", Render_object_perf_setup_reject_count);
+	RenderObjectPerfRecordCounter(marker_time, "RenderObject.Count.SafeRejected", Render_object_perf_safe_reject_count);
+
+	for (int i = 0; i < MAX_OBJECT_TYPES; i++)
+	{
+		if (Render_object_perf_type_count[i] <= 0)
+			continue;
+
+		char marker[96];
+		snprintf(marker, sizeof(marker), "RenderObject.Type.%s.Count=%d",
+			RenderObjectPerfObjectTypeName(i), Render_object_perf_type_count[i]);
+		PerfMarkersRecordDuration(marker, marker_time, Render_object_perf_type_time[i]);
+	}
+
+	for (int i = 0; i < (int)(sizeof(Render_object_perf_render_type_count) / sizeof(Render_object_perf_render_type_count[0])); i++)
+	{
+		if (Render_object_perf_render_type_count[i] <= 0)
+			continue;
+
+		char marker[96];
+		snprintf(marker, sizeof(marker), "RenderObject.RenderType.%s.Count=%d",
+			RenderObjectPerfRenderTypeName(i), Render_object_perf_render_type_count[i]);
+		PerfMarkersRecordDuration(marker, marker_time, Render_object_perf_render_type_time[i]);
+	}
+}
+
+class RenderObjectPerfCallScope
+{
+public:
+	RenderObjectPerfCallScope()
+	{
+		active = Perf_markers_enabled;
+		start_time = active ? PerfMarkersNow() : 0.0;
+		if (active)
+		{
+			if (Render_object_perf_first_time == 0.0)
+				Render_object_perf_first_time = start_time;
+			Render_object_perf_call_count++;
+		}
+	}
+
+	~RenderObjectPerfCallScope()
+	{
+		if (active)
+			Render_object_perf_total_time += PerfMarkersNow() - start_time;
+	}
+
+	bool IsActive() const
+	{
+		return active;
+	}
+
+private:
+	bool active;
+	double start_time;
+};
 
 //Do powerup sparkles and stuff
 void DrawPowerupSparkles(object* obj);
@@ -764,26 +961,64 @@ void RenderObject(object* obj)
 	if (obj->type == OBJ_DUMMY)
 		return;
 
+	RenderObjectPerfCallScope perf_scope;
+
 	if (obj->flags & OF_ATTACHED)
 	{
 		// See if we should be rendered, because our attach parent might be invisible
 		object* parent_obj = ObjGet(obj->attach_ultimate_handle);
 		if (!parent_obj)
+		{
+			if (perf_scope.IsActive())
+				Render_object_perf_attach_reject_count++;
 			return;
+		}
 		if (parent_obj->render_type == RT_NONE && parent_obj->type != OBJ_POWERUP && (parent_obj->type == OBJ_PLAYER || parent_obj->movement_type != MT_NONE))
+		{
+			if (perf_scope.IsActive())
+				Render_object_perf_attach_reject_count++;
 			return;
+		}
 	}
 
-	if (OBJECT_OUTSIDE(obj))
+	const bool object_outside = OBJECT_OUTSIDE(obj);
+	double setup_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
+	if (object_outside)
 		render_it = SetupTerrainObject(obj);
 	else
 		render_it = SetupMineObject(obj);
+	if (perf_scope.IsActive())
+		RenderObjectPerfAdd(Render_object_perf_setup_time, setup_start_time);
 
 	if (!render_it)
+	{
+		if (perf_scope.IsActive())
+			Render_object_perf_setup_reject_count++;
 		return;
+	}
 
 	if (!(obj->flags & OF_SAFE_TO_RENDER))
+	{
+		if (perf_scope.IsActive())
+			Render_object_perf_safe_reject_count++;
 		return;
+	}
+
+	if (perf_scope.IsActive())
+	{
+		Render_object_perf_rendered_count++;
+		if (object_outside)
+			Render_object_perf_outside_count++;
+		else
+			Render_object_perf_mine_count++;
+		if (obj->type >= 0 && obj->type < MAX_OBJECT_TYPES)
+			Render_object_perf_type_count[obj->type]++;
+		if (obj->render_type >= 0 &&
+			obj->render_type < (int)(sizeof(Render_object_perf_render_type_count) / sizeof(Render_object_perf_render_type_count[0])))
+		{
+			Render_object_perf_render_type_count[obj->render_type]++;
+		}
+	}
 
 	// Mark this a rendered this frame
 	obj->flags |= OF_RENDERED;
@@ -807,6 +1042,7 @@ void RenderObject(object* obj)
 	}
 #endif
 
+	double draw_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
 	switch (obj->render_type)
 	{
 	case RT_NONE:
@@ -835,24 +1071,35 @@ void RenderObject(object* obj)
 #endif
 		break;
 	case RT_POLYOBJ:
+	{
 #ifdef EDITOR
 		if ((GetFunctionMode() == EDITOR_MODE) && (obj - Objects == Cur_object_index))
 			DrawObjectSelectionBrackets(obj, 0);		//draw back brackets
 #endif
 		if (obj->rtype.pobj_info.anim_frame || (Poly_models[obj->rtype.pobj_info.model_num].frame_max != Poly_models[obj->rtype.pobj_info.model_num].frame_min))
 		{
+			double normalize_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
 			SetNormalizedTimeObj(obj, normalized_time);
+			if (perf_scope.IsActive())
+				RenderObjectPerfAdd(Render_object_perf_polymodel_normalize_time, normalize_start_time);
+			double polymodel_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
 			RenderObject_DrawPolymodel(obj, normalized_time);
+			if (perf_scope.IsActive())
+				RenderObjectPerfAdd(Render_object_perf_polymodel_base_time, polymodel_start_time);
 		}
 		else
 		{
+			double polymodel_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
 			RenderObject_DrawPolymodel(obj, NULL);
+			if (perf_scope.IsActive())
+				RenderObjectPerfAdd(Render_object_perf_polymodel_base_time, polymodel_start_time);
 		}
 
 		////////////////////////////////////////////
 		/////////////MOTION BLUR////////////////////
 		if (Use_motion_blur && (obj->type == OBJ_ROBOT || obj->type == OBJ_DEBRIS) && Object_map_position_history[OBJNUM(obj)] != -1)
 		{
+			double motion_blur_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
 			float vel_mag;	//velocity magnitude
 			float sphere_size_perc = 0.20f;	// percentage of object size
 			float AFT = 1.0f / 20.0f;	//Assumed frame time
@@ -933,6 +1180,8 @@ void RenderObject(object* obj)
 				obj->pos = saved_pos;
 				rend_SetAlphaFactor(saved_alpha_fac);
 			}
+			if (perf_scope.IsActive())
+				RenderObjectPerfAdd(Render_object_perf_motion_blur_time, motion_blur_start_time);
 		}
 		////////////////////////////////////////////
 
@@ -942,6 +1191,10 @@ void RenderObject(object* obj)
 			DrawDebugInfo(obj);
 		}
 #endif
+
+		const bool has_extra_effects = obj->type == OBJ_POWERUP || obj->type == OBJ_PLAYER ||
+			obj->type == OBJ_ROBOT || (obj->type == OBJ_BUILDING && obj->ai_info);
+		double extra_effects_start_time = (perf_scope.IsActive() && has_extra_effects) ? PerfMarkersNow() : 0.0;
 
 		// Render that powerup glow
 		if (obj->type == OBJ_POWERUP)
@@ -963,7 +1216,10 @@ void RenderObject(object* obj)
 			DrawSparkyDamageLightning(obj);
 			DrawVirusLightning(obj);
 		}
+		if (perf_scope.IsActive() && has_extra_effects)
+			RenderObjectPerfAdd(Render_object_perf_extra_effects_time, extra_effects_start_time);
 
+	}
 		break;
 	case RT_FIREBALL:
 		DrawFireballObject(obj);
@@ -999,6 +1255,18 @@ void RenderObject(object* obj)
 	}
 #endif
 	default: Error("Unknown render_type <%d>", obj->render_type);
+	}
+	if (perf_scope.IsActive())
+	{
+		const double draw_duration = PerfMarkersNow() - draw_start_time;
+		Render_object_perf_draw_switch_time += draw_duration;
+		if (obj->type >= 0 && obj->type < MAX_OBJECT_TYPES)
+			Render_object_perf_type_time[obj->type] += draw_duration;
+		if (obj->render_type >= 0 &&
+			obj->render_type < (int)(sizeof(Render_object_perf_render_type_time) / sizeof(Render_object_perf_render_type_time[0])))
+		{
+			Render_object_perf_render_type_time[obj->render_type] += draw_duration;
+		}
 	}
 
 #ifdef NEWDEMO

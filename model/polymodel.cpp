@@ -30,6 +30,7 @@
 #include "lighting.h"
 #include "ddio.h"
 #include "game.h"
+#include "gameloop.h"
 #include <stdlib.h>
 #include <string.h>
 #include "robotfire.h"
@@ -2754,6 +2755,7 @@ void DoneLightInstance ()
 void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized_time,int flags,float r,float g,float b, uint f_render_sub,ubyte use_effect,ubyte overlay)
 {
 	poly_model *po;
+	double draw_model_start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;
 	
 	ASSERT (Poly_models[model_num].used);
 	ASSERT (!(Poly_models[model_num].flags & PMF_NOT_RESIDENT));
@@ -2790,6 +2792,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
 	ApplyPolymodelSubmodelOffsetAdjustments(po);
 	PolymodelMotionCaptureCurrent(po, pos, orient);
+	PolymodelPerfAddDrawModelSetup(draw_model_start_time);
 
 	if (f_render_sub==0xFFFFFFFF || overlay)		//draw entire object
 	{
@@ -2838,6 +2841,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 
 	DoneLightInstance();
 	g3_DoneInstance();
+	PolymodelPerfAddDrawModel(draw_model_start_time);
 }
 
 // This draws a gouraud shaded version
@@ -2845,6 +2849,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 {
 	poly_model *po;
 	vector light_vec=*lightdir;
+	double draw_model_start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;
 
 	Polymodel_use_effect=use_effect;
 		
@@ -2883,6 +2888,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
 	ApplyPolymodelSubmodelOffsetAdjustments(po);
 	PolymodelMotionCaptureCurrent(po, pos, orient);
+	PolymodelPerfAddDrawModelSetup(draw_model_start_time);
 
 	if (f_render_sub==0xFFFFFFFF || overlay)		//draw entire object
 	{
@@ -2927,12 +2933,14 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	
 	g3_DoneInstance();
 	DoneLightInstance();
+	PolymodelPerfAddDrawModel(draw_model_start_time);
 }
 
 // This draws a lightmap shaded version
 void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized_time,int flags,lightmap_object *lm_object, uint f_render_sub,ubyte use_effect,ubyte overlay)
 {
 	poly_model *po;
+	double draw_model_start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;
 		
 	ASSERT (Poly_models[model_num].used);
 	ASSERT (!(Poly_models[model_num].flags & PMF_NOT_RESIDENT));
@@ -2964,6 +2972,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
 	ApplyPolymodelSubmodelOffsetAdjustments(po);
 	PolymodelMotionCaptureCurrent(po, pos, orient);
+	PolymodelPerfAddDrawModelSetup(draw_model_start_time);
 
 	if (f_render_sub==0xFFFFFFFF || overlay)		//draw entire object
 	{
@@ -3011,6 +3020,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	g3_DoneInstance();
 	DoneLightInstance();
 	rend_SetOverlayType (OT_NONE);
+	PolymodelPerfAddDrawModel(draw_model_start_time);
 }
 
 void FreeAllModels ()

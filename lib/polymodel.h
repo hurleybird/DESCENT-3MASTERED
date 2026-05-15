@@ -129,6 +129,11 @@ void PolymodelMotionCaptureCurrent(poly_model *pm, vector *pos, matrix *orient);
 void PolymodelMotionEndObject();
 void PolymodelMotionSetPoint(g3Point *point, poly_model *pm, int submodel_num, const vector *local_pos);
 
+void PolymodelPerfReset();
+void PolymodelPerfFlush();
+void PolymodelPerfAddDrawModel(double start_time);
+void PolymodelPerfAddDrawModelSetup(double start_time);
+
 void PolymodelSetSubmodelOffsetAdjustments(int model_num, const vector *offsets, int count);
 void PolymodelClearSubmodelOffsetAdjustments();
 

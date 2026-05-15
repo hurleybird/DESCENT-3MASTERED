@@ -20,6 +20,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <chrono>
+#include <vector>
 #include "gameloop.h"
 #include "game.h"
 #include "render.h"
@@ -139,6 +140,181 @@ bool Rendering_main_view = false;
 bool Skip_render_game_frame = false;
 bool Menu_interface_mode = false;
 
+const int PERF_MARKER_NAME_LEN = 96;
+
+struct PerfMarkerRecord
+{
+	char name[PERF_MARKER_NAME_LEN];
+	double start_time;
+	double duration;
+	int depth;
+};
+
+struct PerfMarkerStackEntry
+{
+	const char* name;
+	double start_time;
+	int depth;
+};
+
+bool Perf_markers_enabled = false;
+static FILE* Perf_marker_file = nullptr;
+static bool Perf_marker_frame_active = false;
+static int Perf_marker_frame_number = 0;
+static double Perf_marker_capture_start = 0.0;
+static double Perf_marker_frame_start = 0.0;
+static std::vector<PerfMarkerRecord> Perf_marker_records;
+static std::vector<PerfMarkerStackEntry> Perf_marker_stack;
+
+static void PerfMarkersCopyName(char* dest, const char* source)
+{
+	if (!source)
+		source = "unnamed";
+	strncpy(dest, source, PERF_MARKER_NAME_LEN - 1);
+	dest[PERF_MARKER_NAME_LEN - 1] = '\0';
+}
+
+static void PerfMarkersCloseFile()
+{
+	if (Perf_marker_file)
+	{
+		fflush(Perf_marker_file);
+		fclose(Perf_marker_file);
+		Perf_marker_file = nullptr;
+	}
+}
+
+void PerfMarkersSetEnabled(bool enabled)
+{
+	if (enabled == Perf_markers_enabled)
+		return;
+
+	if (!enabled)
+	{
+		if (Perf_marker_frame_active)
+			PerfMarkersEndFrame();
+		Perf_markers_enabled = false;
+		PerfMarkersCloseFile();
+		return;
+	}
+
+	char marker_path[_MAX_PATH];
+	ddio_MakePath(marker_path, Base_directory, "perfmarkers.txt", nullptr);
+	Perf_marker_file = fopen(marker_path, "w");
+	if (!Perf_marker_file)
+	{
+		mprintf((0, "Unable to open perf marker log: %s\n", marker_path));
+		Perf_markers_enabled = false;
+		return;
+	}
+
+	Perf_marker_records.clear();
+	Perf_marker_stack.clear();
+	Perf_marker_records.reserve(512);
+	Perf_marker_stack.reserve(32);
+	Perf_marker_frame_active = false;
+	Perf_marker_frame_number = 0;
+	Perf_marker_capture_start = timer_GetTime64();
+	Perf_marker_frame_start = 0.0;
+	Perf_markers_enabled = true;
+
+	fprintf(Perf_marker_file, "# PiccuEngine perf markers\n");
+	fprintf(Perf_marker_file, "# frame\tstart_ms\tduration_ms\tdepth\tmarker\n");
+}
+
+void PerfMarkersBeginFrame()
+{
+	if (!Perf_markers_enabled || !Perf_marker_file)
+		return;
+
+	Perf_marker_frame_active = true;
+	Perf_marker_frame_start = timer_GetTime64();
+	Perf_marker_records.clear();
+	Perf_marker_stack.clear();
+	PolymodelPerfReset();
+	RenderObjectPerfReset();
+	Perf_marker_frame_number++;
+}
+
+void PerfMarkersEndFrame()
+{
+	if (!Perf_markers_enabled || !Perf_marker_file || !Perf_marker_frame_active)
+		return;
+
+	const double frame_end = timer_GetTime64();
+	PolymodelPerfFlush();
+	RenderObjectPerfFlush();
+	fprintf(Perf_marker_file, "FRAME\t%d\t%.3f\t%.3f\t%.3f\tgametime=%.3f\tframetime=%.3f\n",
+		Perf_marker_frame_number,
+		(Perf_marker_frame_start - Perf_marker_capture_start) * 1000.0,
+		(frame_end - Perf_marker_frame_start) * 1000.0,
+		0.0,
+		Gametime,
+		Frametime);
+
+	for (const PerfMarkerRecord& record : Perf_marker_records)
+	{
+		fprintf(Perf_marker_file, "%d\t%.3f\t%.3f\t%d\t%s\n",
+			Perf_marker_frame_number,
+			(record.start_time - Perf_marker_frame_start) * 1000.0,
+			record.duration * 1000.0,
+			record.depth,
+			record.name);
+	}
+
+	if ((Perf_marker_frame_number % 120) == 0)
+		fflush(Perf_marker_file);
+
+	Perf_marker_frame_active = false;
+}
+
+void PerfMarkersBegin(const char* marker_name)
+{
+	if (!Perf_markers_enabled || !Perf_marker_file || !Perf_marker_frame_active)
+		return;
+
+	PerfMarkerStackEntry entry = {};
+	entry.name = marker_name;
+	entry.start_time = timer_GetTime64();
+	entry.depth = (int)Perf_marker_stack.size();
+	Perf_marker_stack.push_back(entry);
+}
+
+void PerfMarkersEnd(const char* marker_name)
+{
+	(void)marker_name;
+	if (!Perf_markers_enabled || !Perf_marker_file || !Perf_marker_frame_active || Perf_marker_stack.empty())
+		return;
+
+	const double end_time = timer_GetTime64();
+	const PerfMarkerStackEntry entry = Perf_marker_stack.back();
+	Perf_marker_stack.pop_back();
+
+	PerfMarkerRecord record = {};
+	PerfMarkersCopyName(record.name, entry.name);
+	record.start_time = entry.start_time;
+	record.duration = end_time - entry.start_time;
+	record.depth = entry.depth;
+	Perf_marker_records.push_back(record);
+}
+
+double PerfMarkersNow()
+{
+	return timer_GetTime64();
+}
+
+void PerfMarkersRecordDuration(const char* marker_name, double start_time, double duration)
+{
+	if (!Perf_markers_enabled || !Perf_marker_file || !Perf_marker_frame_active)
+		return;
+
+	PerfMarkerRecord record = {};
+	PerfMarkersCopyName(record.name, marker_name);
+	record.start_time = start_time;
+	record.duration = duration;
+	record.depth = (int)Perf_marker_stack.size();
+	Perf_marker_records.push_back(record);
+}
 
 //#ifdef GAMEGAUGE
 int frames_one_second = 0;
@@ -1863,6 +2039,7 @@ extern void DrawRoomVisPnts(object* obj);
 
 void GameRenderWorld(object* viewer, vector* viewer_eye, int viewer_roomnum, matrix* viewer_orient, float zoom, bool rear_view)
 {
+	PERF_MARKER_SCOPE("GameRenderWorld");
 	matrix temp_orient, save_orient;
 
 	//Get the viewer orientation
@@ -1876,7 +2053,10 @@ void GameRenderWorld(object* viewer, vector* viewer_eye, int viewer_roomnum, mat
 	}
 
 	//Start the 3D
-	g3_StartFrame(viewer_eye, viewer_orient, zoom);
+	{
+		PERF_MARKER_SCOPE("g3_StartFrame.World");
+		g3_StartFrame(viewer_eye, viewer_orient, zoom);
+	}
 
 	// Reset fog,zbuffer
 	Num_fogged_rooms_this_frame = 0;
@@ -1904,8 +2084,14 @@ void GameRenderWorld(object* viewer, vector* viewer_eye, int viewer_roomnum, mat
 	}
 
 	//Done with 3D
-	PostRender(viewer_roomnum);
-	g3_EndFrame();
+	{
+		PERF_MARKER_SCOPE("PostRender.World");
+		PostRender(viewer_roomnum);
+	}
+	{
+		PERF_MARKER_SCOPE("g3_EndFrame.World");
+		g3_EndFrame();
+	}
 
 	// Restore viewer orientation
 	if (rear_view)
@@ -1916,6 +2102,7 @@ void GameRenderWorld(object* viewer, vector* viewer_eye, int viewer_roomnum, mat
 //Render into the big window
 void GameDrawMainView()
 {
+	PERF_MARKER_SCOPE("GameDrawMainView");
 	extern bool Guided_missile_smallview;					// smallviews.cpp
 
 	bool rear_view = 0;
@@ -1924,7 +2111,10 @@ void GameDrawMainView()
 	DebugBlockPrint("SR");
 
 	//Start rendering
-	StartFrame(true);
+	{
+		PERF_MARKER_SCOPE("StartFrame.MainView");
+		StartFrame(true);
+	}
 
 	// Set guided view
 	if (!Cinematic_inuse && Players[Player_num].guided_obj != NULL && !Guided_missile_smallview)
@@ -1937,7 +2127,10 @@ void GameDrawMainView()
 
 	//Draw the world
 	Rendering_main_view = true;
-	GameRenderWorld(Viewer_object, &Viewer_object->pos, Viewer_object->roomnum, &Viewer_object->orient, Render_zoom, rear_view);
+	{
+		PERF_MARKER_SCOPE("GameRenderWorld.MainView");
+		GameRenderWorld(Viewer_object, &Viewer_object->pos, Viewer_object->roomnum, &Viewer_object->orient, Render_zoom, rear_view);
+	}
 	Rendering_main_view = false;
 
 	// Restore viewer object if guided
@@ -1945,18 +2138,33 @@ void GameDrawMainView()
 		Viewer_object = save_view;
 
 	// Room changes
-	DoRoomChangeFrame();
+	{
+		PERF_MARKER_SCOPE("DoRoomChangeFrame");
+		DoRoomChangeFrame();
+	}
 
 	// Draw Matcen Effects
-	DoMatcensRenderFrame();
+	{
+		PERF_MARKER_SCOPE("DoMatcensRenderFrame");
+		DoMatcensRenderFrame();
+	}
 
 	// Draw any render events
-	ProcessRenderEvents();
+	{
+		PERF_MARKER_SCOPE("ProcessRenderEvents");
+		ProcessRenderEvents();
+	}
 
-	rend_CaptureBloomSource();
+	{
+		PERF_MARKER_SCOPE("CaptureBloomSource.MainView");
+		rend_CaptureBloomSource();
+	}
 
 	//We're done with this window
-	EndFrame();
+	{
+		PERF_MARKER_SCOPE("EndFrame.MainView");
+		EndFrame();
+	}
 
 	DebugBlockPrint("DR");
 }
@@ -1967,19 +2175,38 @@ constexpr float HUD_RENDER_ZOOM = 0.56f;
 //Do Cockpit/Hud
 void GameDrawHud()
 {
+	PERF_MARKER_SCOPE("GameDrawHud");
 	//render HUD
 	//[ISB] Moved frame start and end to RenderHUDFrame so it can make decisions based on the current HUD mode. 
-	RenderHUDFrame(HUD_RENDER_ZOOM);
+	{
+		PERF_MARKER_SCOPE("RenderHUDFrame");
+		RenderHUDFrame(HUD_RENDER_ZOOM);
+	}
 
 	//render auxillary consoles
-	StartFrame(0, 0, Max_window_w, Max_window_h, false);
-	g3_StartFrame(&Viewer_object->pos, &Viewer_object->orient, HUD_RENDER_ZOOM);
+	{
+		PERF_MARKER_SCOPE("StartFrame.AuxHUD");
+		StartFrame(0, 0, Max_window_w, Max_window_h, false);
+	}
+	{
+		PERF_MARKER_SCOPE("g3_StartFrame.AuxHUD");
+		g3_StartFrame(&Viewer_object->pos, &Viewer_object->orient, HUD_RENDER_ZOOM);
+	}
 
-	RenderAuxHUDFrame();
+	{
+		PERF_MARKER_SCOPE("RenderAuxHUDFrame");
+		RenderAuxHUDFrame();
+	}
 
 	//End frame
-	g3_EndFrame();
-	EndFrame();
+	{
+		PERF_MARKER_SCOPE("g3_EndFrame.AuxHUD");
+		g3_EndFrame();
+	}
+	{
+		PERF_MARKER_SCOPE("EndFrame.AuxHUD");
+		EndFrame();
+	}
 }
 
 //Draw a frame of the game
@@ -1992,6 +2219,8 @@ void GameRenderFrame(void)
 	if (Dedicated_server)
 		return;
 
+	PerfMarkersBeginFrame();
+
 #ifndef RELEASE
 	Mine_depth = 0;
 #endif
@@ -1999,7 +2228,10 @@ void GameRenderFrame(void)
 	// increase our timing for the powerup sparkles, used globally by all
 	Last_powerup_sparkle_time += Frametime;
 
-	PreUpdateAllLightGlows();
+	{
+		PERF_MARKER_SCOPE("PreUpdateAllLightGlows");
+		PreUpdateAllLightGlows();
+	}
 
 	// Don't render if receiving data
 	if ((Game_mode & GM_MULTI) && NetPlayers[Player_num].sequence != NETSEQ_PLAYING)
@@ -2010,7 +2242,10 @@ void GameRenderFrame(void)
 
 	//Generate "shaken" view for player
 	if (!Game_paused)
+	{
+		PERF_MARKER_SCOPE("ShakePlayer");
 		ShakePlayer();
+	}
 
 	rend_SetZBufferState(1);
 	rend_SetZBufferWriteMask(1);
@@ -2018,6 +2253,7 @@ void GameRenderFrame(void)
 	// clear screen if needed
 	if (Clear_screen)
 	{
+		PERF_MARKER_SCOPE("ClearScreen");
 		StartFrame(0, 0, Max_window_w, Max_window_h, false);
 		rend_ClearScreen(GR_BLACK);
 		EndFrame();
@@ -2028,11 +2264,15 @@ void GameRenderFrame(void)
 	if (!no_render)
 	{
 		if (Game_paused && !Demo_do_one_frame)
+		{
+			PERF_MARKER_SCOPE("ObjDoLightingFrameAll");
 			ObjDoLightingFrameAll();
+		}
 
 		// render preliminary hud view (for dirty rectangles)
 		if (Small_hud_flag)
 		{
+			PERF_MARKER_SCOPE("RenderPreHUDFrame");
 			// small hud flag is set in RenderHUDFrame in GameDrawHud.
 			StartFrame(0, 0, Max_window_w, Max_window_h, false);
 			RenderPreHUDFrame();
@@ -2040,23 +2280,39 @@ void GameRenderFrame(void)
 		}
 
 		// Draw the big 3d view
-		GameDrawMainView();
+		{
+			PERF_MARKER_SCOPE("GameDrawMainView.Total");
+			GameDrawMainView();
+		}
 
 		//Do the small views.  These should be before GameDrawHUD() for the small windows
-		DrawSmallViews();
+		{
+			PERF_MARKER_SCOPE("DrawSmallViews");
+			DrawSmallViews();
+		}
 
 		// Do Cockpit/Hud
 		if (!HUD_disabled)
+		{
+			PERF_MARKER_SCOPE("GameDrawHud.Total");
 			GameDrawHud();
+		}
 
 		// Render Ingame Cinematics
-		Cinematic_RenderFrame();
+		{
+			PERF_MARKER_SCOPE("Cinematic_RenderFrame");
+			Cinematic_RenderFrame();
+		}
 
 		// Process the debug visual graph
-		DebugGraph_Render();
+		{
+			PERF_MARKER_SCOPE("DebugGraph_Render");
+			DebugGraph_Render();
+		}
 
 		if (Display_renderer_stats)
 		{
+			PERF_MARKER_SCOPE("DisplayRendererStats");
 			//display some rendering stats
 			tRendererStats stats;
 			rend_GetStatistics(&stats);
@@ -2084,16 +2340,23 @@ void GameRenderFrame(void)
 	//Do UI Frame
 	if (Game_interface_mode == GAME_INTERFACE && !Menu_interface_mode)
 	{
+		PERF_MARKER_SCOPE("DoUIFrameWithoutInput");
 		DoUIFrameWithoutInput();
 		//rend_Flip();
 	}
 
 	//Restore normal view
 	if (!Game_paused)
+	{
+		PERF_MARKER_SCOPE("UnshakePlayer");
 		UnshakePlayer();
+	}
 
 	//Done with the dynamic lights
-	ClearDynamicLightmaps();
+	{
+		PERF_MARKER_SCOPE("ClearDynamicLightmaps");
+		ClearDynamicLightmaps();
+	}
 
 	//Increment frame count
 	FrameCount++;
@@ -2102,13 +2365,18 @@ void GameRenderFrame(void)
 	gamegauge_total_frames++;
 	//#endif
 		// Update our glows
-	PostUpdateAllLightGlows();
+	{
+		PERF_MARKER_SCOPE("PostUpdateAllLightGlows");
+		PostUpdateAllLightGlows();
+	}
 
 	// Reset our powerup sparkle time if it has overflowed
 	while (Last_powerup_sparkle_time >= POWERUP_SPARKLE_INTERVAL)
 	{
 		Last_powerup_sparkle_time -= POWERUP_SPARKLE_INTERVAL;
 	}
+
+	PerfMarkersEndFrame();
 }
 
 void GameProcessMusic()

@@ -945,6 +945,8 @@ struct video_menu
 	bool* per_pixel_lighting;
 	bool* bloom_enabled;
 	bool* vsync;
+	bool* perf_markers;
+	bool* show_fps;
 
 	short* fov;
 	char* buffer;
@@ -1046,6 +1048,7 @@ struct video_menu
 		bool changed = false;
 		bool display_changed = fullscreen && sheet->HasChanged(fullscreen);
 		bool fov_changed = false;
+		bool ui_changed = false;
 
 		if (filtering && sheet->HasChanged(filtering))
 		{
@@ -1094,6 +1097,19 @@ struct video_menu
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
 			changed = true;
 		}
+		if (perf_markers && sheet->HasChanged(perf_markers))
+		{
+			PerfMarkersSetEnabled(*perf_markers);
+			ui_changed = true;
+		}
+		if (show_fps && sheet->HasChanged(show_fps))
+		{
+			if (*show_fps)
+				Hud_stat_mask |= STAT_FPS;
+			else
+				Hud_stat_mask &= ~STAT_FPS;
+			ui_changed = true;
+		}
 		if (antialiasing && sheet->HasChanged(antialiasing))
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1116,7 +1132,7 @@ struct video_menu
 			rend_SetPreferredState(&Render_preferred_state);
 
 		bool display_applied = apply_display_settings(display_changed);
-		if (changed || fov_changed || display_applied)
+		if (changed || fov_changed || display_applied || ui_changed)
 			sheet->UpdateChanges();
 	}
 
@@ -1130,6 +1146,8 @@ struct video_menu
 		per_pixel_lighting = NULL;
 		bloom_enabled = NULL;
 		vsync = NULL;
+		perf_markers = NULL;
+		show_fps = NULL;
 		fov = NULL;
 		buffer = NULL;
 		aspect_buffer = NULL;
@@ -1210,17 +1228,8 @@ struct video_menu
 			HBAOPresetToIndex(Render_preferred_state.hbao_enabled, Render_preferred_state.hbao_resolution) : 0;
 
 		sheet->NewGroup(NULL, 0, 252);
-		if (OpenGLProfile == GLPROFILE_CORE)
-		{
-			sheet->AddText("OpenGL core requested 4.5, got %d.%d (%s)",
-				RendererOpenGLMajorVersion,
-				RendererOpenGLMinorVersion,
-				RendererOpenGLVersionString[0] ? RendererOpenGLVersionString : "unknown");
-		}
-		else
-		{
-			sheet->AddText("OpenGL compatibility profile active");
-		}
+		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
+		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
 
 		return sheet;
 	};
@@ -1245,6 +1254,15 @@ struct video_menu
 		}
 		if (vsync)
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
+		if (perf_markers)
+			PerfMarkersSetEnabled(*perf_markers);
+		if (show_fps)
+		{
+			if (*show_fps)
+				Hud_stat_mask |= STAT_FPS;
+			else
+				Hud_stat_mask &= ~STAT_FPS;
+		}
 		if (antialiasing)
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1902,12 +1920,6 @@ struct details_menu
 		sheet->AddRadioButton(TXT_CFG_HIGH);
 		sheet->AddRadioButton(TXT_CFG_MAX);
 		*objcomp = Detail_settings.Object_complexity;
-
-		if (can_toggle_terrain_mesh)
-		{
-			sheet->NewGroup(NULL, 0, 252);
-			sheet->AddText("%s", Terrain_renderer_mode == TERRAIN_RENDERER_COMPUTE ? Terrain_compute_status_text : "Compute: not selected");
-		}
 
 		return sheet;
 	};

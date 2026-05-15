@@ -1649,6 +1649,7 @@ static void SetTerrainComputeViewUniforms()
 static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog_enabled, bool scissor_to_window,
 	int left, int top, int right, int bot, int render_width, int render_height)
 {
+	PERF_MARKER_SCOPE("DisplayTerrainListCompute");
 	(void)cellcount;
 	bool draw_lightmap = !StateLimited || UseMultitexture;
 
@@ -1658,7 +1659,10 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 	if (!CompileTerrainComputeProgram())
 		return false;
 
-	EnsureTerrainComputeFullDrawWork();
+	{
+		PERF_MARKER_SCOPE("Compute.EnsureFullDrawWork");
+		EnsureTerrainComputeFullDrawWork();
+	}
 	GlobalTransCount = (int)(Terrain_compute_cell_inputs.size() * 4);
 	TotalDepth = 0;
 	if (Terrain_compute_cell_inputs.empty())
@@ -1666,26 +1670,53 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 		SetTerrainComputeStatusActive((int)Terrain_compute_cell_inputs.size());
 		return true;
 	}
-	if (!EnsureTerrainComputeLightmapArray())
-		return false;
-	if (!EnsureTerrainComputeBaseTextureArray())
-		return false;
+	{
+		PERF_MARKER_SCOPE("Compute.EnsureLightmapArray");
+		if (!EnsureTerrainComputeLightmapArray())
+			return false;
+	}
+	{
+		PERF_MARKER_SCOPE("Compute.EnsureBaseTextureArray");
+		if (!EnsureTerrainComputeBaseTextureArray())
+			return false;
+	}
 
-	EnsureTerrainComputeVertexCapacity(Terrain_compute_cell_inputs.size() * TERRAIN_COMPUTE_VERTS_PER_CELL);
+	{
+		PERF_MARKER_SCOPE("Compute.EnsureVertexCapacity");
+		EnsureTerrainComputeVertexCapacity(Terrain_compute_cell_inputs.size() * TERRAIN_COMPUTE_VERTS_PER_CELL);
+	}
 
 	glUseProgram(Terrain_compute_program);
-	SetTerrainComputeViewUniforms();
+	{
+		PERF_MARKER_SCOPE("Compute.SetViewUniforms");
+		SetTerrainComputeViewUniforms();
+	}
 
-	BindTerrainComputeInputBuffer();
+	{
+		PERF_MARKER_SCOPE("Compute.BindInputBuffer");
+		BindTerrainComputeInputBuffer();
+	}
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, Terrain_compute_vertex_buffer);
-	PrepareTerrainComputeIndirectCommands();
+	{
+		PERF_MARKER_SCOPE("Compute.PrepareIndirectCommands");
+		PrepareTerrainComputeIndirectCommands();
+	}
 
 	GLuint groups = (GLuint)((Terrain_compute_cell_inputs.size() + 127) / 128);
-	glDispatchCompute(groups, 1, 1);
-	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
+	{
+		PERF_MARKER_SCOPE("Compute.Dispatch");
+		glDispatchCompute(groups, 1, 1);
+	}
+	{
+		PERF_MARKER_SCOPE("Compute.MemoryBarrier");
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
+	}
 	rendTEMP_ClearShaderBinding();
 
-	EnsureTerrainPipelinesReady();
+	{
+		PERF_MARKER_SCOPE("Compute.EnsureTerrainPipelines");
+		EnsureTerrainPipelinesReady();
+	}
 	if (fog_enabled)
 		rend_BindPipeline(Terrain_legacy_compute_fog_handle);
 	else
@@ -1698,7 +1729,10 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 	rend_SetLighting(LS_NONE);
 	rend_SetWrapType(WT_WRAP);
 	rend_ClearBoundTextures();
-	BindTerrainComputeTextureArrays();
+	{
+		PERF_MARKER_SCOPE("Compute.BindTextureArrays");
+		BindTerrainComputeTextureArrays();
+	}
 
 	glBindVertexArray(Terrain_compute_vertex_array);
 	bool depth_clamp_enabled = rendTEMP_DepthClampEnabled();
@@ -1711,8 +1745,11 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 	}
 
 	if (!Terrain_compute_batches.empty())
+	{
+		PERF_MARKER_SCOPE("Compute.MultiDrawIndirect");
 		glMultiDrawArraysIndirect(GL_TRIANGLES, nullptr, (GLsizei)Terrain_compute_batches.size(),
 			sizeof(TerrainGpuDrawCommand));
+	}
 	rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
 
@@ -1916,7 +1953,11 @@ static bool TerrainMeshChunkInFrustum(int chunk_x, int chunk_z)
 static int DisplayTerrainMesh(bool fog_enabled, bool scissor_to_window,
 	int left, int top, int right, int bot, int render_width, int render_height)
 {
-	EnsureTerrainMeshReady();
+	PERF_MARKER_SCOPE("DisplayTerrainMesh");
+	{
+		PERF_MARKER_SCOPE("Mesh.EnsureTerrainMeshReady");
+		EnsureTerrainMeshReady();
+	}
 
 	if (fog_enabled)
 		rend_BindPipeline(Terrain_lightmap_fog_handle);
@@ -1945,22 +1986,25 @@ static int DisplayTerrainMesh(bool fog_enabled, bool scissor_to_window,
 	bool use_occlusion = GetTerrainMeshOcclusionSource(&src_occlusion_index);
 	int chunks_drawn = 0;
 
-	for (int z = 0; z < OCCLUSION_SIZE; z++)
 	{
-		for (int x = 0; x < OCCLUSION_SIZE; x++)
+		PERF_MARKER_SCOPE("Mesh.DrawChunks");
+		for (int z = 0; z < OCCLUSION_SIZE; z++)
 		{
-			bool near_viewer = !Check_terrain_portal && TerrainMeshChunkNearViewer(x, z);
-			if (!near_viewer)
+			for (int x = 0; x < OCCLUSION_SIZE; x++)
 			{
-				if (!TerrainMeshChunkVisibleByOcclusion(x, z, use_occlusion, src_occlusion_index))
-					continue;
+				bool near_viewer = !Check_terrain_portal && TerrainMeshChunkNearViewer(x, z);
+				if (!near_viewer)
+				{
+					if (!TerrainMeshChunkVisibleByOcclusion(x, z, use_occlusion, src_occlusion_index))
+						continue;
 
-				if (!TerrainMeshChunkInFrustum(x, z))
-					continue;
+					if (!TerrainMeshChunkInFrustum(x, z))
+						continue;
+				}
+
+				TerrainMeshes[z * OCCLUSION_SIZE + x].DrawAll();
+				chunks_drawn++;
 			}
-
-			TerrainMeshes[z * OCCLUSION_SIZE + x].DrawAll();
-			chunks_drawn++;
 		}
 	}
 
@@ -2141,6 +2185,7 @@ bool ExternalRoomVisible(room* rp, vector* center, float* zdist)
 // Render all the rooms out on the terrain for this frame
 void RenderTerrainRooms()
 {
+	PERF_MARKER_SCOPE("RenderTerrainRooms");
 	object* obj;
 #ifdef EDITOR
 	if (!Terrain_render_ext_room_objs)
@@ -2163,73 +2208,83 @@ void RenderTerrainRooms()
 			use_occlusion = 0;
 		src_occlusion_index = oz * OCCLUSION_SIZE + ox;
 	}
-	for (i = 0; i <= Highest_object_index; i++)
 	{
-		obj = &Objects[i];
-		if (obj->type != OBJ_ROOM)
-			continue;
-
-		if (obj->flags & OF_DEAD)
-			continue;
-		if (obj->render_type == RT_NONE)
-			continue;
-		if (!OBJECT_OUTSIDE(obj))
-			continue;
-		float size = obj->size;
-
-		if (use_occlusion)
+		PERF_MARKER_SCOPE("TerrainRooms.Scan");
+		for (i = 0; i <= Highest_object_index; i++)
 		{
-			int y1 = (obj->pos.z / TERRAIN_SIZE) / OCCLUSION_SIZE;
-			int x1 = (obj->pos.x / TERRAIN_SIZE) / OCCLUSION_SIZE;
-			int dest_occlusion_index = (y1 * OCCLUSION_SIZE);
-			dest_occlusion_index += x1;
-			int occ_byte = dest_occlusion_index / 8;
-			int occ_bit = dest_occlusion_index % 8;
-			if (obj->pos.y < MAX_TERRAIN_HEIGHT)
-			{
-				if (!(Terrain_occlusion_map[src_occlusion_index][occ_byte] & (1 << occ_bit)))
-					continue;
-			}
-		}
-		if (!ExternalRoomVisible(&Rooms[obj->id], &obj->pos, &zdist))
-			continue;
-		if (!IsPointVisible(&obj->pos, size, &zdist))
-			continue;
-
-		if (Check_terrain_portal && ObjectOutOfPortal(obj))
-			continue;
-		/*if (!Terrain_from_mine)
-		{
-			if (!ShootRaysToObject (obj))
+			obj = &Objects[i];
+			if (obj->type != OBJ_ROOM)
 				continue;
-		}*/
-		rooms_to_render[room_count].vis_effect = 0;
-		rooms_to_render[room_count].objnum = obj - Objects;
-		rooms_to_render[room_count].dist = zdist;
-		room_count++;
+
+			if (obj->flags & OF_DEAD)
+				continue;
+			if (obj->render_type == RT_NONE)
+				continue;
+			if (!OBJECT_OUTSIDE(obj))
+				continue;
+			float size = obj->size;
+
+			if (use_occlusion)
+			{
+				int y1 = (obj->pos.z / TERRAIN_SIZE) / OCCLUSION_SIZE;
+				int x1 = (obj->pos.x / TERRAIN_SIZE) / OCCLUSION_SIZE;
+				int dest_occlusion_index = (y1 * OCCLUSION_SIZE);
+				dest_occlusion_index += x1;
+				int occ_byte = dest_occlusion_index / 8;
+				int occ_bit = dest_occlusion_index % 8;
+				if (obj->pos.y < MAX_TERRAIN_HEIGHT)
+				{
+					if (!(Terrain_occlusion_map[src_occlusion_index][occ_byte] & (1 << occ_bit)))
+						continue;
+				}
+			}
+			if (!ExternalRoomVisible(&Rooms[obj->id], &obj->pos, &zdist))
+				continue;
+			if (!IsPointVisible(&obj->pos, size, &zdist))
+				continue;
+
+			if (Check_terrain_portal && ObjectOutOfPortal(obj))
+				continue;
+			/*if (!Terrain_from_mine)
+			{
+				if (!ShootRaysToObject (obj))
+					continue;
+			}*/
+			rooms_to_render[room_count].vis_effect = 0;
+			rooms_to_render[room_count].objnum = obj - Objects;
+			rooms_to_render[room_count].dist = zdist;
+			room_count++;
+		}
 	}
 	// Sort and draw rooms
-	qsort(rooms_to_render, room_count, sizeof(*rooms_to_render), (int (*)(const void*, const void*))obj_sort_func);
-	for (i = room_count - 1; i >= 0; i--)
 	{
-		int objnum = rooms_to_render[i].objnum;
-		object* obj = &Objects[objnum];
+		PERF_MARKER_SCOPE("TerrainRooms.Sort");
+		qsort(rooms_to_render, room_count, sizeof(*rooms_to_render), (int (*)(const void*, const void*))obj_sort_func);
+	}
+	{
+		PERF_MARKER_SCOPE("TerrainRooms.RenderMines");
+		for (i = room_count - 1; i >= 0; i--)
+		{
+			int objnum = rooms_to_render[i].objnum;
+			object* obj = &Objects[objnum];
 #ifndef NEWEDITOR
-		RenderMine(obj->id, 0, 1);
+			RenderMine(obj->id, 0, 1);
 #else
-		RenderMine(obj->id, 0, 1, 1, 0, 0, NULL);
+			RenderMine(obj->id, 0, 1, 1, 0, 0, NULL);
 #endif
-		// Draw a surrounding sphere
+			// Draw a surrounding sphere
 #if (defined(_DEBUG) && !defined(NEWEDITOR))
-		if (Game_show_sphere == 2)
-			DrawDebugInfo(obj);
+			if (Game_show_sphere == 2)
+				DrawDebugInfo(obj);
 #endif
+		}
 	}
 }
 
 // Renders every visible terrain object
 void RenderAllTerrainObjects()
 {
+	PERF_MARKER_SCOPE("RenderAllTerrainObjects");
 	object* obj;
 	int snows[500];
 	int num_snows = 0;
@@ -2247,94 +2302,100 @@ void RenderAllTerrainObjects()
 			use_occlusion = 0;
 		src_occlusion_index = oz * OCCLUSION_SIZE + ox;
 	}
-	for (i = 0; i <= Highest_object_index; i++)
 	{
-		obj = &Objects[i];
-		if (obj == Viewer_object)
-			continue;
-		// Don't draw piggybacked objects
-		if (Viewer_object->type == OBJ_OBSERVER && i == Players[Viewer_object->id].piggy_objnum)
-			continue;
-		if (obj->type == OBJ_ROOM)
-			continue;
-
-		if (obj->type == OBJ_NONE)
-			continue;
-		if (obj->flags & OF_DEAD)
-			continue;
-		if (obj->render_type == RT_NONE)
-			continue;
-		if (!OBJECT_OUTSIDE(obj))
-			continue;
-		float size = obj->size;
-
-		// Special case weapons with streamers
-		if (obj->type == OBJ_WEAPON && (Weapons[obj->id].flags & WF_STREAMER))
-			size = Weapons[obj->id].phys_info.velocity.z;
-		if (use_occlusion)
+		PERF_MARKER_SCOPE("TerrainObjects.ScanObjects");
+		for (i = 0; i <= Highest_object_index; i++)
 		{
-			int y1 = (obj->pos.z / TERRAIN_SIZE) / OCCLUSION_SIZE;
-			int x1 = (obj->pos.x / TERRAIN_SIZE) / OCCLUSION_SIZE;
-			int dest_occlusion_index = (y1 * OCCLUSION_SIZE);
-			dest_occlusion_index += x1;
-			int occ_byte = dest_occlusion_index / 8;
-			int occ_bit = dest_occlusion_index % 8;
-			if (obj->pos.y + obj->size < MAX_TERRAIN_HEIGHT)
+			obj = &Objects[i];
+			if (obj == Viewer_object)
+				continue;
+			// Don't draw piggybacked objects
+			if (Viewer_object->type == OBJ_OBSERVER && i == Players[Viewer_object->id].piggy_objnum)
+				continue;
+			if (obj->type == OBJ_ROOM)
+				continue;
+
+			if (obj->type == OBJ_NONE)
+				continue;
+			if (obj->flags & OF_DEAD)
+				continue;
+			if (obj->render_type == RT_NONE)
+				continue;
+			if (!OBJECT_OUTSIDE(obj))
+				continue;
+			float size = obj->size;
+
+			// Special case weapons with streamers
+			if (obj->type == OBJ_WEAPON && (Weapons[obj->id].flags & WF_STREAMER))
+				size = Weapons[obj->id].phys_info.velocity.z;
+			if (use_occlusion)
 			{
-				if (!(Terrain_occlusion_map[src_occlusion_index][occ_byte] & (1 << occ_bit)))
+				int y1 = (obj->pos.z / TERRAIN_SIZE) / OCCLUSION_SIZE;
+				int x1 = (obj->pos.x / TERRAIN_SIZE) / OCCLUSION_SIZE;
+				int dest_occlusion_index = (y1 * OCCLUSION_SIZE);
+				dest_occlusion_index += x1;
+				int occ_byte = dest_occlusion_index / 8;
+				int occ_bit = dest_occlusion_index % 8;
+				if (obj->pos.y + obj->size < MAX_TERRAIN_HEIGHT)
+				{
+					if (!(Terrain_occlusion_map[src_occlusion_index][occ_byte] & (1 << occ_bit)))
+						continue;
+				}
+			}
+			if (obj->type == OBJ_WEAPON && Weapons[obj->id].flags & WF_ELECTRICAL)
+			{
+				// Automatically render all electrical objects
+				zdist = 0;
+			}
+			else
+			{
+				if (!IsPointVisible(&obj->pos, size, &zdist))
+					continue;
+
+				if (Check_terrain_portal && ObjectOutOfPortal(obj))
 					continue;
 			}
-		}
-		if (obj->type == OBJ_WEAPON && Weapons[obj->id].flags & WF_ELECTRICAL)
-		{
-			// Automatically render all electrical objects
-			zdist = 0;
-		}
-		else
-		{
-			if (!IsPointVisible(&obj->pos, size, &zdist))
-				continue;
 
-			if (Check_terrain_portal && ObjectOutOfPortal(obj))
-				continue;
-		}
-
-		if (Num_postrenders < MAX_POSTRENDERS)
-		{
-			Postrender_list[Num_postrenders].type = PRT_OBJECT;
-			Postrender_list[Num_postrenders].z = zdist;
-			Postrender_list[Num_postrenders++].objnum = obj - Objects;
+			if (Num_postrenders < MAX_POSTRENDERS)
+			{
+				Postrender_list[Num_postrenders].type = PRT_OBJECT;
+				Postrender_list[Num_postrenders].z = zdist;
+				Postrender_list[Num_postrenders++].objnum = obj - Objects;
+			}
 		}
 	}
 #ifndef NEWEDITOR
-	for (i = 0; i <= Highest_vis_effect_index; i++)
 	{
-		vis_effect* vis = &VisEffects[i];
+		PERF_MARKER_SCOPE("TerrainObjects.ScanVisEffects");
+		for (i = 0; i <= Highest_vis_effect_index; i++)
+		{
+			vis_effect* vis = &VisEffects[i];
 
-		if (vis->type == VIS_NONE)
-			continue;
-		if (vis->flags & VF_DEAD)
-			continue;
-		if (!ROOMNUM_OUTSIDE(vis->roomnum))
-			continue;
-		// Special case snow
-		if (vis->id == SNOWFLAKE_INDEX)
-		{
-			snows[num_snows] = vis - VisEffects;
-			num_snows++;
-		}
-		else
-		{
-			if ((vis->flags & VF_WINDSHIELD_EFFECT) || IsPointVisible(&vis->pos, vis->size, &zdist))
+			if (vis->type == VIS_NONE)
+				continue;
+			if (vis->flags & VF_DEAD)
+				continue;
+			if (!ROOMNUM_OUTSIDE(vis->roomnum))
+				continue;
+			// Special case snow
+			if (vis->id == SNOWFLAKE_INDEX)
 			{
-				if (vis->flags & VF_WINDSHIELD_EFFECT)
-					zdist = 0;
-
-				if (Num_postrenders < MAX_POSTRENDERS)
+				snows[num_snows] = vis - VisEffects;
+				num_snows++;
+			}
+			else
+			{
+				if ((vis->flags & VF_WINDSHIELD_EFFECT) || IsPointVisible(&vis->pos, vis->size, &zdist))
 				{
-					Postrender_list[Num_postrenders].type = PRT_VISEFFECT;
-					Postrender_list[Num_postrenders].z = zdist;
-					Postrender_list[Num_postrenders++].objnum = vis - VisEffects;
+					if (vis->flags & VF_WINDSHIELD_EFFECT)
+						zdist = 0;
+
+					if (Num_postrenders < MAX_POSTRENDERS)
+					{
+						Postrender_list[Num_postrenders].type = PRT_VISEFFECT;
+						Postrender_list[Num_postrenders].z = zdist;
+						Postrender_list[Num_postrenders++].objnum = vis - VisEffects;
+					}
 				}
 			}
 		}
@@ -2342,21 +2403,30 @@ void RenderAllTerrainObjects()
 #endif
 
 	// Sort objects
-	qsort(objs_to_render, obj_count, sizeof(*objs_to_render), (int (*)(const void*, const void*))obj_sort_func);
-	//Render the objects
-	for (i = obj_count - 1; i >= 0; i--)
 	{
-		int vis_effect = objs_to_render[i].vis_effect;
-		int objnum = objs_to_render[i].objnum;
-		if (vis_effect)
-			DrawVisEffect(&VisEffects[objnum]);
-		else
-			RenderObject(&Objects[objnum]);
+		PERF_MARKER_SCOPE("TerrainObjects.Sort");
+		qsort(objs_to_render, obj_count, sizeof(*objs_to_render), (int (*)(const void*, const void*))obj_sort_func);
+	}
+	//Render the objects
+	{
+		PERF_MARKER_SCOPE("TerrainObjects.RenderObjects");
+		for (i = obj_count - 1; i >= 0; i--)
+		{
+			int vis_effect = objs_to_render[i].vis_effect;
+			int objnum = objs_to_render[i].objnum;
+			if (vis_effect)
+				DrawVisEffect(&VisEffects[objnum]);
+			else
+				RenderObject(&Objects[objnum]);
+		}
 	}
 	// Render snows
 	rend_SetZBufferWriteMask(0);
-	for (i = 0; i < num_snows; i++)
-		DrawVisEffect(&VisEffects[snows[i]]);
+	{
+		PERF_MARKER_SCOPE("TerrainObjects.RenderSnow");
+		for (i = 0; i < num_snows; i++)
+			DrawVisEffect(&VisEffects[snows[i]]);
+	}
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBufferState(1);
 	rend_SetWrapType(WT_WRAP);
@@ -2432,9 +2502,11 @@ void DrawCloudLayer()
 //specified window (though it won't clip those tiles to the window)
 void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 {
+	PERF_MARKER_SCOPE(from_mine ? "RenderTerrain.FromMine" : "RenderTerrain.Main");
 	static int first = 1;
 	if (first)
 	{
+		PERF_MARKER_SCOPE("Terrain.InitSpeedups");
 		InitTerrainRenderSpeedups();
 		first = 0;
 	}
@@ -2513,6 +2585,7 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 	int nt = 0;
 	if (!use_mesh_terrain && !use_compute_no_far_lod)
 	{
+		PERF_MARKER_SCOPE("Terrain.GetVisibleTerrain");
 		nt = GetVisibleTerrain(&viewer_eye, &viewer_orient);
 	}
 	VisibleTerrainZ = terrain_fog_z;
@@ -2523,7 +2596,10 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 	rend_SetFogState(0);
 
 	// Draw the sky
-	DrawSky(&viewer_eye, &viewer_orient);
+	{
+		PERF_MARKER_SCOPE("Terrain.DrawSky");
+		DrawSky(&viewer_eye, &viewer_orient);
+	}
 
 	//// Set up our z wall
 	rend_SetZBufferState(1);
@@ -2554,21 +2630,27 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 	}
 	else if (use_mesh_terrain)
 	{
+		PERF_MARKER_SCOPE("Terrain.Surface.Mesh");
 		DisplayTerrainMesh((Terrain_sky.flags & TF_FOG) != 0, from_mine && valid_render_window,
 			left, top, right, bot, render_width, render_height);
 	}
 	else if (Terrain_renderer_mode == TERRAIN_RENDERER_COMPUTE)
 	{
+		PERF_MARKER_SCOPE("Terrain.Surface.Compute");
 		if (use_compute_no_far_lod)
 		{
 			if (!DisplayTerrainListCompute(0, false, (Terrain_sky.flags & TF_FOG) != 0,
 				from_mine && valid_render_window, left, top, right, bot, render_width, render_height))
 			{
+				PERF_MARKER_SCOPE("Terrain.ComputeFallbackLegacy");
 				int saved_terrain_lod_engine_off = Terrain_LOD_engine_off;
 				Terrain_LOD_engine_off = 1;
 				VisibleTerrainZ = terrain_search_z;
 				g3_SetFarClipZ(VisibleTerrainZ);
-				nt = GetVisibleTerrain(&viewer_eye, &viewer_orient);
+				{
+					PERF_MARKER_SCOPE("Terrain.Fallback.GetVisibleTerrain");
+					nt = GetVisibleTerrain(&viewer_eye, &viewer_orient);
+				}
 				Terrain_LOD_engine_off = saved_terrain_lod_engine_off;
 				VisibleTerrainZ = terrain_fog_z;
 				g3_SetFarClipZ(terrain_draw_far_clip);
@@ -2588,6 +2670,7 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 	}
 	else if (Render_use_newrender)
 	{
+		PERF_MARKER_SCOPE("Terrain.Surface.NewRender");
 		//mesh test
 		rend_UseShaderTest();
 		rend_SetColorModel(CM_RGB);
@@ -2613,6 +2696,7 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 		// And display!
 		if (nt > 0)
 		{
+			PERF_MARKER_SCOPE("Terrain.Surface.Legacy");
 			DisplayTerrainList(nt);
 		}
 	}
@@ -2621,10 +2705,16 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 		g3_SetFarClipZ(VisibleTerrainZ);
 
 	// Draw rooms
-	RenderTerrainRooms();
+	{
+		PERF_MARKER_SCOPE("Terrain.RenderRooms");
+		RenderTerrainRooms();
+	}
 
 	// Show objects
-	RenderAllTerrainObjects();
+	{
+		PERF_MARKER_SCOPE("Terrain.RenderObjects");
+		RenderAllTerrainObjects();
+	}
 
 	mprintf_at((2, 5, 0, "Objs Drawn=%5d", Terrain_objects_drawn));
 	Last_terrain_render_time = Gametime;
@@ -3866,6 +3956,7 @@ void TerrainCellVisible(int index, int* upper_left, int* lower_right)
 
 void DisplayTerrainList(int cellcount, bool from_automap)
 {
+	PERF_MARKER_SCOPE("DisplayTerrainList.Legacy");
 	int total = 0, on, t, i, lod, simplemul;
 	int bm_handle;
 	bool draw_lightmap = false;
@@ -3881,57 +3972,66 @@ void DisplayTerrainList(int cellcount, bool from_automap)
 	if (!StateLimited || UseMultitexture)
 		draw_lightmap = true;
 
-	RotateTerrainList(cellcount, from_automap);
+	{
+		PERF_MARKER_SCOPE("Legacy.RotateTerrainList");
+		RotateTerrainList(cellcount, from_automap);
+	}
 
 	// If state limited, sort by texture
 	if (StateLimited || from_automap)
+	{
+		PERF_MARKER_SCOPE("Legacy.SortStates");
 		SortStates(State_elements, cellcount);
+	}
 	if (from_automap)
 	{
 		savecell = cellcount;
 		cellcount = 0;
 	}
 
-	for (i = 0; i < cellcount; i++)
 	{
-		int cx, cz;
-		int seg_to_render;
-		if (StateLimited)
-			seg_to_render = State_elements[i].facenum;
-		else
-			seg_to_render = i;
-		t = Terrain_list[seg_to_render].segment;
-		lod = Terrain_list[seg_to_render].lod;
-		simplemul = 1 << ((MAX_TERRAIN_LOD - 1) - lod);
-
-		cx = t % TERRAIN_WIDTH;
-		cz = t / TERRAIN_WIDTH;
-
-		if (cx < TERRAIN_WIDTH - simplemul && cz < TERRAIN_DEPTH - simplemul || lod != (MAX_TERRAIN_LOD - 1))
+		PERF_MARKER_SCOPE("Legacy.DrawCells");
+		for (i = 0; i < cellcount; i++)
 		{
-			int ul, lr;	// upper_left,lower_right
-			if (Terrain_seg[t].flags & TF_INVISIBLE)
-				if (!Show_invisible_terrain)
-					goto draw_objects;	// bad! No gotos! -JL
-			// Check to see if these triangles are visible if they're the smallest lod
-			TerrainCellVisible(seg_to_render, &ul, &lr);
-
-			total += (ul + lr);
-			if (ul == 0 && lr == 0)
-				goto draw_objects;
-
-			bm_handle = GetTextureBitmap(Terrain_tex_seg[Terrain_seg[t].texseg_index].tex_index, 0);
-
-			if (draw_lightmap)
-				on = DrawTerrainTrianglesHardware(seg_to_render, bm_handle, ul, lr);
+			int cx, cz;
+			int seg_to_render;
+			if (StateLimited)
+				seg_to_render = State_elements[i].facenum;
 			else
-				on = DrawTerrainTrianglesHardwareNoLight(seg_to_render, bm_handle, ul, lr);
-		}
+				seg_to_render = i;
+			t = Terrain_list[seg_to_render].segment;
+			lod = Terrain_list[seg_to_render].lod;
+			simplemul = 1 << ((MAX_TERRAIN_LOD - 1) - lod);
 
-	draw_objects:;
-		// Now draw any objects in this segment
+			cx = t % TERRAIN_WIDTH;
+			cz = t / TERRAIN_WIDTH;
+
+			if (cx < TERRAIN_WIDTH - simplemul && cz < TERRAIN_DEPTH - simplemul || lod != (MAX_TERRAIN_LOD - 1))
+			{
+				int ul, lr;	// upper_left,lower_right
+				if (Terrain_seg[t].flags & TF_INVISIBLE)
+					if (!Show_invisible_terrain)
+						goto draw_objects;	// bad! No gotos! -JL
+				// Check to see if these triangles are visible if they're the smallest lod
+				TerrainCellVisible(seg_to_render, &ul, &lr);
+
+				total += (ul + lr);
+				if (ul == 0 && lr == 0)
+					goto draw_objects;
+
+				bm_handle = GetTextureBitmap(Terrain_tex_seg[Terrain_seg[t].texseg_index].tex_index, 0);
+
+				if (draw_lightmap)
+					on = DrawTerrainTrianglesHardware(seg_to_render, bm_handle, ul, lr);
+				else
+					on = DrawTerrainTrianglesHardwareNoLight(seg_to_render, bm_handle, ul, lr);
+			}
+
+		draw_objects:;
+			// Now draw any objects in this segment
 #if (!defined(RELEASE) || defined(NEWEDITOR))
 #endif
+		}
 	}
 #if (defined(EDITOR) || defined(NEWEDITOR))
 	if (!UseHardware)
@@ -3973,15 +4073,18 @@ void DisplayTerrainList(int cellcount, bool from_automap)
 		rend_SetWrapType(WT_WRAP);
 		rend_SetZBias(-.5f);
 
-		for (i = 0; i < cellcount; i++)
 		{
-			int ul, lr;
-			int seg_to_render;
-			seg_to_render = State_elements[i].facenum;
-			TerrainCellVisible(seg_to_render, &ul, &lr);
-			if (ul == 0 && lr == 0)
-				continue;
-			DrawTerrainLightmapsHardware(seg_to_render, ul, lr);
+			PERF_MARKER_SCOPE("Legacy.DrawLightmaps");
+			for (i = 0; i < cellcount; i++)
+			{
+				int ul, lr;
+				int seg_to_render;
+				seg_to_render = State_elements[i].facenum;
+				TerrainCellVisible(seg_to_render, &ul, &lr);
+				if (ul == 0 && lr == 0)
+					continue;
+				DrawTerrainLightmapsHardware(seg_to_render, ul, lr);
+			}
 		}
 		rend_SetZBias(0);
 	}

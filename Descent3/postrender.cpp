@@ -20,6 +20,7 @@
 #include "..\neweditor\globals.h"
 #endif
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <algorithm>
 #include "object.h"
@@ -31,6 +32,7 @@
 #include "config.h"
 #include "terrain.h"
 #include "renderer.h"
+#include "gameloop.h"
 
 postrender_struct Postrender_list[MAX_POSTRENDERS];
 int Num_postrenders = 0;
@@ -39,6 +41,39 @@ static vector Viewer_eye;
 static matrix Viewer_orient;
 static int Viewer_roomnum;
 
+static const char* PostRenderObjectTypeName(int type)
+{
+	switch (type)
+	{
+	case OBJ_WALL: return "Wall";
+	case OBJ_FIREBALL: return "Fireball";
+	case OBJ_ROBOT: return "Robot";
+	case OBJ_SHARD: return "Shard";
+	case OBJ_PLAYER: return "Player";
+	case OBJ_WEAPON: return "Weapon";
+	case OBJ_VIEWER: return "Viewer";
+	case OBJ_POWERUP: return "Powerup";
+	case OBJ_DEBRIS: return "Debris";
+	case OBJ_CAMERA: return "Camera";
+	case OBJ_SHOCKWAVE: return "Shockwave";
+	case OBJ_CLUTTER: return "Clutter";
+	case OBJ_GHOST: return "Ghost";
+	case OBJ_LIGHT: return "Light";
+	case OBJ_COOP: return "Coop";
+	case OBJ_MARKER: return "Marker";
+	case OBJ_BUILDING: return "Building";
+	case OBJ_DOOR: return "Door";
+	case OBJ_ROOM: return "Room";
+	case OBJ_PARTICLE: return "Particle";
+	case OBJ_SPLINTER: return "Splinter";
+	case OBJ_DUMMY: return "Dummy";
+	case OBJ_OBSERVER: return "Observer";
+	case OBJ_DEBUG_LINE: return "DebugLine";
+	case OBJ_SOUNDSOURCE: return "SoundSource";
+	case OBJ_WAYPOINT: return "Waypoint";
+	default: return "Other";
+	}
+}
 
 // Resets out postrender list for a new frame
 void ResetPostrenderList()
@@ -65,6 +100,7 @@ void SetupPostrenderRoom(room* rp)
 // Rotates a face, and then renders it
 void DrawPostrenderFace(int roomnum, int facenum, bool change_z)
 {
+	PERF_MARKER_SCOPE("PostRenderFace");
 	int i;
 
 	// Always draw as non state limited
@@ -82,28 +118,39 @@ void DrawPostrenderFace(int roomnum, int facenum, bool change_z)
 
 	// Rotate points
 	rp->wpb_index = 0;
-	for (i = 0; i < fp->num_verts; i++)
 	{
-		g3_RotatePoint(&World_point_buffer[fp->face_verts[i]], &rp->verts[fp->face_verts[i]]);
-		g3_ProjectPoint(&World_point_buffer[fp->face_verts[i]]);
+		PERF_MARKER_SCOPE("PostRenderFace.RotateProject");
+		for (i = 0; i < fp->num_verts; i++)
+		{
+			g3_RotatePoint(&World_point_buffer[fp->face_verts[i]], &rp->verts[fp->face_verts[i]]);
+			g3_ProjectPoint(&World_point_buffer[fp->face_verts[i]]);
+		}
 	}
 
-	SetupPostrenderRoom(rp);
+	{
+		PERF_MARKER_SCOPE("PostRenderFace.SetupRoom");
+		SetupPostrenderRoom(rp);
+	}
 
 	// Render!
 	if (change_z)
 		rend_SetZBufferWriteMask(0);
-	RenderFace(rp, facenum);
+	{
+		PERF_MARKER_SCOPE("PostRenderFace.RenderFace");
+		RenderFace(rp, facenum);
+	}
 
 	// Render any effects for this face
 	if (Num_specular_faces_to_render > 0)
 	{
+		PERF_MARKER_SCOPE("PostRenderFace.Specular");
 		RenderSpecularFacesFlat(rp);
 		Num_specular_faces_to_render = 0;
 	}
 
 	if (Num_fog_faces_to_render > 0)
 	{
+		PERF_MARKER_SCOPE("PostRenderFace.Fog");
 		RenderFogFaces(rp);
 		Num_fog_faces_to_render = 0;
 	}
@@ -118,39 +165,141 @@ void DrawPostrenderFace(int roomnum, int facenum, bool change_z)
 // Renders all the objects/viseffects/walls we have in our postrender list
 void PostRender(int roomnum)
 {
-	g3_GetViewPosition(&Viewer_eye);
-	g3_GetUnscaledMatrix(&Viewer_orient);
+	PERF_MARKER_SCOPE("PostRender");
+	{
+		PERF_MARKER_SCOPE("PostRender.GetView");
+		g3_GetViewPosition(&Viewer_eye);
+		g3_GetUnscaledMatrix(&Viewer_orient);
+	}
 
 	Viewer_roomnum = roomnum;
 
 	int i, index;
 	// Sort the objects
-	SortPostrenders();
+	{
+		PERF_MARKER_SCOPE("PostRender.Sort");
+		SortPostrenders();
+	}
 	//qsort(Postrender_list,Num_postrenders,sizeof(*Postrender_list),(int (cdecl *)(const void*,const void*))Postrender_sort_func);
 
-	for (i = Num_postrenders - 1; i >= 0; i--)
+	double vis_effect_time = 0.0;
+	double object_time = 0.0;
+	double room_setup_time = 0.0;
+	double face_time = 0.0;
+	double object_outside_time = 0.0;
+	double object_mine_time = 0.0;
+	double object_type_time[MAX_OBJECT_TYPES] = {};
+	double first_vis_effect_time = 0.0;
+	double first_object_time = 0.0;
+	double first_room_setup_time = 0.0;
+	double first_face_time = 0.0;
+	int object_outside_count = 0;
+	int object_mine_count = 0;
+	int object_type_count[MAX_OBJECT_TYPES] = {};
+
 	{
+		PERF_MARKER_SCOPE("PostRender.RenderItems");
+		for (i = Num_postrenders - 1; i >= 0; i--)
+		{
 
-		if (Postrender_list[i].type == PRT_VISEFFECT)
-		{
-			index = Postrender_list[i].visnum;
-			DrawVisEffect(&VisEffects[index]);
-		}
-		else if (Postrender_list[i].type == PRT_OBJECT)
-		{
-			object* objp = &Objects[Postrender_list[i].objnum];
+			if (Postrender_list[i].type == PRT_VISEFFECT)
+			{
+				double start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;
+				if (first_vis_effect_time == 0.0)
+					first_vis_effect_time = start_time;
+				index = Postrender_list[i].visnum;
+				DrawVisEffect(&VisEffects[index]);
+				if (Perf_markers_enabled)
+					vis_effect_time += PerfMarkersNow() - start_time;
+			}
+			else if (Postrender_list[i].type == PRT_OBJECT)
+			{
+				double object_start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;
+				if (first_object_time == 0.0)
+					first_object_time = object_start_time;
+				object* objp = &Objects[Postrender_list[i].objnum];
+				bool object_outside = OBJECT_OUTSIDE(objp);
 
-			if (!OBJECT_OUTSIDE(&Objects[Postrender_list[i].objnum]))
-				SetupPostrenderRoom(&Rooms[Objects[Postrender_list[i].objnum].roomnum]);
-			RenderObject(objp);
+				if (!object_outside)
+				{
+					double setup_start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;
+					if (first_room_setup_time == 0.0)
+						first_room_setup_time = setup_start_time;
+					SetupPostrenderRoom(&Rooms[objp->roomnum]);
+					if (Perf_markers_enabled)
+						room_setup_time += PerfMarkersNow() - setup_start_time;
+				}
+				RenderObject(objp);
+				if (Perf_markers_enabled)
+				{
+					double duration = PerfMarkersNow() - object_start_time;
+					object_time += duration;
+					if (object_outside)
+					{
+						object_outside_time += duration;
+						object_outside_count++;
+					}
+					else
+					{
+						object_mine_time += duration;
+						object_mine_count++;
+					}
+					if (objp->type >= 0 && objp->type < MAX_OBJECT_TYPES)
+					{
+						object_type_time[objp->type] += duration;
+						object_type_count[objp->type]++;
+					}
+				}
+			}
+			else
+			{
+				double start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;
+				if (first_face_time == 0.0)
+					first_face_time = start_time;
+				// Do room face
+				DrawPostrenderFace(Postrender_list[i].roomnum, Postrender_list[i].facenum);
+				if (Perf_markers_enabled)
+					face_time += PerfMarkersNow() - start_time;
+			}
 		}
-		else
+	}
+	if (Perf_markers_enabled)
+	{
+		if (vis_effect_time > 0.0)
+			PerfMarkersRecordDuration("PostRender.VisEffects.Aggregate", first_vis_effect_time, vis_effect_time);
+		if (object_time > 0.0)
+			PerfMarkersRecordDuration("PostRender.Objects.Aggregate", first_object_time, object_time);
+		if (object_outside_time > 0.0)
 		{
-			// Do room face
-			DrawPostrenderFace(Postrender_list[i].roomnum, Postrender_list[i].facenum);
+			char marker[96];
+			snprintf(marker, sizeof(marker), "PostRender.Objects.Outside.Count=%d", object_outside_count);
+			PerfMarkersRecordDuration(marker, first_object_time, object_outside_time);
 		}
+		if (object_mine_time > 0.0)
+		{
+			char marker[96];
+			snprintf(marker, sizeof(marker), "PostRender.Objects.Mine.Count=%d", object_mine_count);
+			PerfMarkersRecordDuration(marker, first_object_time, object_mine_time);
+		}
+		for (int object_type = 0; object_type < MAX_OBJECT_TYPES; object_type++)
+		{
+			if (object_type_count[object_type] <= 0)
+				continue;
+
+			char marker[96];
+			snprintf(marker, sizeof(marker), "PostRender.Objects.Type.%s.Count=%d",
+				PostRenderObjectTypeName(object_type), object_type_count[object_type]);
+			PerfMarkersRecordDuration(marker, first_object_time, object_type_time[object_type]);
+		}
+		if (room_setup_time > 0.0)
+			PerfMarkersRecordDuration("PostRender.SetupRooms.Aggregate", first_room_setup_time, room_setup_time);
+		if (face_time > 0.0)
+			PerfMarkersRecordDuration("PostRender.Faces.Aggregate", first_face_time, face_time);
 	}
 	Num_postrenders = 0;
 	rend_SetFogState(0);
-	RenderLightGlows();
+	{
+		PERF_MARKER_SCOPE("PostRender.RenderLightGlows");
+		RenderLightGlows();
+	}
 }

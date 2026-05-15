@@ -3429,6 +3429,7 @@ void RenderRoomOutline(room* rp)
 //					called_from_terrain - set if calling this routine from the terrain renderer
 void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 {
+	PERF_MARKER_SCOPE(called_from_terrain ? "RenderMine.FromTerrain" : "RenderMine.Main");
 #ifdef EDITOR
 	In_editor_mode = (GetFunctionMode() == EDITOR_MODE);
 #endif
@@ -3455,6 +3456,7 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 
 	if (Render_use_newrender)
 	{
+		PERF_MARKER_SCOPE("RenderMine.NewRender");
 		NewRender_Render(Viewer_eye, Viewer_orient, viewer_roomnum);
 		return;
 	}
@@ -3470,12 +3472,18 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 	}
 
 	//Build the list of visible rooms
-	BuildRoomList(viewer_roomnum);		//fills in Render_list & N_render_segs
+	{
+		PERF_MARKER_SCOPE("RenderMine.BuildRoomList");
+		BuildRoomList(viewer_roomnum);		//fills in Render_list & N_render_segs
+	}
 
 	//If we determined that the terrain is visible, render it
 	if (Must_render_terrain && !Called_from_terrain && !(In_editor_mode && Render_inside_only))
 	{
-		RenderTerrain(1, Terrain_portal_left, Terrain_portal_top, Terrain_portal_right, Terrain_portal_bottom);
+		{
+			PERF_MARKER_SCOPE("RenderMine.RenderTerrainPortal");
+			RenderTerrain(1, Terrain_portal_left, Terrain_portal_top, Terrain_portal_right, Terrain_portal_bottom);
+		}
 		// Mark all room points to be rerotated due to terrain trashing our point list
 		for (int i = 0; i <= Highest_room_index; i++)
 		{
@@ -3498,7 +3506,10 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 	}
 
 	// First render mirrored rooms
-	RenderMirrorRooms();
+	{
+		PERF_MARKER_SCOPE("RenderMine.RenderMirrorRooms");
+		RenderMirrorRooms();
+	}
 
 	Num_mirror_rooms = 0;
 
@@ -3507,6 +3518,7 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 	}
 	else
 	{
+		PERF_MARKER_SCOPE("RenderMine.RenderRooms");
 		//Render the list of rooms
 		for (int nn = N_render_rooms - 1; nn >= 0; nn--)
 		{
