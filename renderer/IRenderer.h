@@ -169,6 +169,13 @@ public:
 	// Given a handle to a bitmap and nv point vertices, draws a 3D polygon
 	virtual void DrawPolygon3D(int handle, g3Point** p, int nv, int map_type = MAP_TYPE_BITMAP) = 0;
 
+	virtual void DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, int count,
+		int map_type = MAP_TYPE_BITMAP)
+	{
+		for (int i = 0; i < count; i++)
+			DrawPolygon3D(handle, items[i].pointlist, items[i].nv, map_type);
+	}
+
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 	virtual void DrawPolygon2D(int handle, g3Point** p, int nv) = 0;
 

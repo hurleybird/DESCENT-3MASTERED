@@ -127,6 +127,14 @@ void rend_DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 	renderer_inst->DrawPolygon3D(handle, p, nv, map_type);
 }
 
+void rend_DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, int count, int map_type)
+{
+	if (!Renderer_initted || !items || count <= 0)
+		return;
+
+	renderer_inst->DrawPolygon3DBatch(handle, items, count, map_type);
+}
+
 void rend_DrawPolygon2D(int handle, g3Point** p, int nv)
 {
 	if (!Renderer_initted)

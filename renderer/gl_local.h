@@ -256,11 +256,15 @@ private:
 	void InitPersistentDrawBuffer(size_t size);
 	void DestroyPersistentDrawBuffer();
 	int CopyVertices(int numvertices);
+	int CopyVertices(const gl_vertex* vertices, int numvertices);
 	void SetDrawDefaults();
 	void SelectDrawShader();
+	void BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xscalar, float yscalar,
+		ubyte fr, ubyte fg, ubyte fb);
 	void InitMotionVectorDraw();
 	void DestroyMotionVectorDraw();
 	void DrawMotionVectorPolygon(int nv, g3Point** p);
+	void DrawMotionVectorTriangles(const gl_motion_vertex* vertices, int nv);
 
 	// Turns on/off multitexture blending
 	void SetMultitextureBlendMode(bool state);
@@ -454,6 +458,8 @@ public:
 
 	// Given a handle to a bitmap and nv point vertices, draws a 3D polygon
 	void DrawPolygon3D(int handle, g3Point** p, int nv, int map_type = MAP_TYPE_BITMAP) override;
+	void DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, int count,
+		int map_type = MAP_TYPE_BITMAP) override;
 
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 	void DrawPolygon2D(int handle, g3Point** p, int nv) override;

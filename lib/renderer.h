@@ -317,6 +317,12 @@ struct tRendererStats
 	int texture_uploads;
 };
 
+struct renderer_poly_batch_item
+{
+	g3Point **pointlist;
+	int nv;
+};
+
 // returns rendering statistics for the frame
 void rend_GetStatistics(tRendererStats *stats);
 
@@ -324,6 +330,9 @@ void rend_SetTextureType (texture_type tt);
 
 // Given a handle to a bitmap and nv point vertices, draws a 3D polygon
 void rend_DrawPolygon3D(int handle,g3Point **p,int nv,int map_type=MAP_TYPE_BITMAP);
+
+// Draws several 3D polygons that share the current renderer state and texture.
+void rend_DrawPolygon3DBatch(int handle,const renderer_poly_batch_item *items,int count,int map_type=MAP_TYPE_BITMAP);
 
 // Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 void rend_DrawPolygon2D(int handle,g3Point **p,int nv);

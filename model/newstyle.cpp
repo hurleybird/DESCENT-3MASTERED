@@ -41,6 +41,7 @@
 #include <stdlib.h>
 #include <search.h>
 #include <string.h>
+#include <vector>
 
 #include "psrand.h"
 
@@ -287,6 +288,191 @@ int Lightmap_debug_model=-1;
 static bool UsePerPixelPolymodelLighting();
 static light_state GetPolymodelGouraudLightingState();
 static void SetPolymodelGouraudPointLighting(g3Point& point, const vector& normal);
+
+struct PolymodelBatchedFace
+{
+	int nv;
+	g3Point *points[100];
+};
+
+struct PolymodelBaseFaceBatch
+{
+	int bitmap_handle;
+	ubyte alpha_value;
+	std::vector<PolymodelBatchedFace> faces;
+};
+
+class PolymodelBaseFaceBatcher
+{
+public:
+	void Add(int bitmap_handle, ubyte alpha_value, const PolymodelBatchedFace& face)
+	{
+		for (size_t i = 0; i < m_batches.size(); i++)
+		{
+			if (m_batches[i].bitmap_handle == bitmap_handle && m_batches[i].alpha_value == alpha_value)
+			{
+				m_batches[i].faces.push_back(face);
+				return;
+			}
+		}
+
+		PolymodelBaseFaceBatch batch;
+		batch.bitmap_handle = bitmap_handle;
+		batch.alpha_value = alpha_value;
+		batch.faces.push_back(face);
+		m_batches.push_back(batch);
+	}
+
+	void Flush()
+	{
+		if (m_batches.empty())
+			return;
+
+		double state_setup_start_time = PolymodelPerfNow();
+		rend_SetOverlayType(OT_NONE);
+		rend_SetTextureType(TT_LINEAR);
+		rend_SetColorModel(CM_RGB);
+		if (Polymodel_light_type == POLYMODEL_LIGHTING_GOURAUD)
+		{
+			if (UsePerPixelPolymodelLighting())
+				rend_SetPerPixelLightingDirection(Polymodel_light_direction);
+			rend_SetLighting(GetPolymodelGouraudLightingState());
+		}
+		else
+		{
+			rend_SetLighting(LS_NONE);
+		}
+		rend_SetAlphaType(ATF_TEXTURE + ATF_VERTEX);
+		PolymodelPerfAdd(Polymodel_perf_face_base_state_time, state_setup_start_time);
+		PolymodelPerfAdd(Polymodel_perf_face_base_time, state_setup_start_time);
+
+		for (size_t i = 0; i < m_batches.size(); i++)
+		{
+			PolymodelBaseFaceBatch& batch = m_batches[i];
+			if (batch.faces.empty())
+				continue;
+
+			double alpha_start_time = PolymodelPerfNow();
+			rend_SetAlphaValue(batch.alpha_value);
+			PolymodelPerfAdd(Polymodel_perf_face_base_state_time, alpha_start_time);
+			PolymodelPerfAdd(Polymodel_perf_face_base_time, alpha_start_time);
+
+			std::vector<renderer_poly_batch_item> items(batch.faces.size());
+			for (size_t face_index = 0; face_index < batch.faces.size(); face_index++)
+			{
+				items[face_index].pointlist = batch.faces[face_index].points;
+				items[face_index].nv = batch.faces[face_index].nv;
+			}
+
+			double draw_start_time = PolymodelPerfNow();
+			rend_DrawPolygon3DBatch(batch.bitmap_handle, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
+			if (Perf_markers_enabled)
+				Polymodel_perf_draw_poly_count++;
+			PolymodelPerfAdd(Polymodel_perf_face_base_draw_time, draw_start_time);
+			PolymodelPerfAdd(Polymodel_perf_face_base_time, draw_start_time);
+		}
+
+		if (Polymodel_light_type == POLYMODEL_LIGHTING_GOURAUD && UsePerPixelPolymodelLighting())
+			rend_SetLighting(LS_GOURAUD);
+
+		m_batches.clear();
+	}
+
+private:
+	std::vector<PolymodelBaseFaceBatch> m_batches;
+};
+
+static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
+	PolymodelBaseFaceBatcher& batcher)
+{
+	polyface *fp = &sm->faces[facenum];
+	if (fp->texnum == -1 || fp->nverts < 3 || fp->nverts >= 100)
+		return false;
+
+	if (StateLimited || Polymodel_light_type == POLYMODEL_LIGHTING_LIGHTMAP || (sm->flags & SOF_CUSTOM))
+		return false;
+
+	if (Polymodel_effect.type & PEF_BUMPMAPPED)
+		return false;
+
+	if (Polymodel_use_effect && (Polymodel_effect.type &
+		(PEF_ALPHA | PEF_CUSTOM_COLOR | PEF_CUSTOM_TEXTURE)))
+	{
+		return false;
+	}
+
+	texture *texp = &GameTextures[pm->textures[fp->texnum]];
+	if (texp->flags & (TF_ALPHA | TF_SATURATE | TF_LIGHT))
+		return false;
+
+	double face_start_time = PolymodelPerfNow();
+	PolymodelPerfTouch(face_start_time);
+	g3Codes face_cc;
+	face_cc.cc_and = 0xff;
+	face_cc.cc_or = 0;
+	triangulated_faces[facenum] = 0;
+
+	float uchange = 0, vchange = 0;
+	if (texp->slide_u != 0)
+	{
+		int int_time = Gametime / texp->slide_u;
+		float norm_time = Gametime - (int_time * texp->slide_u);
+		norm_time /= texp->slide_u;
+		uchange = norm_time;
+	}
+
+	if (texp->slide_v != 0)
+	{
+		int int_time = Gametime / texp->slide_v;
+		float norm_time = Gametime - (int_time * texp->slide_v);
+		norm_time /= texp->slide_v;
+		vchange = norm_time;
+	}
+
+	PolymodelBatchedFace batched_face;
+	batched_face.nv = fp->nverts;
+
+	double point_setup_start_time = PolymodelPerfNow();
+	for (int t = 0; t < fp->nverts; t++)
+	{
+		g3Point *p = &Robot_points[fp->vertnums[t]];
+		batched_face.points[t] = p;
+		p->p3_uvl.u = fp->u[t] + uchange;
+		p->p3_uvl.v = fp->v[t] + vchange;
+		p->p3_uvl.a = sm->alpha[fp->vertnums[t]];
+		p->p3_flags |= PF_UV + PF_RGBA + PF_L;
+
+		face_cc.cc_or |= p->p3_codes;
+		face_cc.cc_and &= p->p3_codes;
+	}
+	PolymodelPerfAdd(Polymodel_perf_face_base_point_time, point_setup_start_time);
+
+	if (face_cc.cc_and)
+	{
+		if (Perf_markers_enabled)
+			Polymodel_perf_base_face_count++;
+		PolymodelPerfAdd(Polymodel_perf_face_base_time, face_start_time);
+		return true;
+	}
+
+	if (face_cc.cc_or)
+		return false;
+
+	for (int t = 0; t < fp->nverts; t++)
+	{
+		if (!(batched_face.points[t]->p3_flags & PF_PROJECTED))
+			g3_ProjectPoint(batched_face.points[t]);
+	}
+
+	int bm_handle = GetTextureBitmap(texp - GameTextures, 0);
+	ubyte alpha_value = (ubyte)(texp->alpha * 255.0f);
+	batcher.Add(bm_handle, alpha_value, batched_face);
+
+	if (Perf_markers_enabled)
+		Polymodel_perf_base_face_count++;
+	PolymodelPerfAdd(Polymodel_perf_face_base_time, face_start_time);
+	return true;
+}
 
 
 inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
@@ -980,6 +1166,7 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 	short alpha_faces[MAX_FACES_PER_ROOM],num_alpha_faces=0;
 	int rcount=0;
 	vector view_pos;
+	PolymodelBaseFaceBatcher base_face_batcher;
 
 	g3_GetViewPosition (&view_pos);
 	g3_GetUnscaledMatrix (&Unscaled_bumpmap_matrix);
@@ -1037,9 +1224,15 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 		else
 		{
 			PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
+			if (TryBatchSubmodelBaseFace(pm, sm, i, base_face_batcher))
+				continue;
+			base_face_batcher.Flush();
 			RenderSubmodelFace (pm,sm,i);
 		}
 	}
+
+	if (!StateLimited)
+		base_face_batcher.Flush();
 
 	if (StateLimited)
 	{

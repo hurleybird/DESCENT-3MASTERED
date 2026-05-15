@@ -18,6 +18,8 @@
 */
 #include "gl_local.h"
 
+#include <vector>
+
 //The number of vertex attributes the legacy code used.
 constexpr int NUM_LEGACY_VERTEX_ATTRIBS = 5;
 //The count of vertices that each buffer will store
@@ -188,7 +190,54 @@ void GL3Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 	UseDrawVAO();
 }
 
+void GL3Renderer::DrawMotionVectorTriangles(const gl_motion_vertex* vertices, int nv)
+{
+	if (!motion_object_active || motionvectorshader.Handle() == 0 ||
+		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || !vertices || nv <= 0)
+	{
+		return;
+	}
+
+	GLboolean color_mask[4];
+	GLboolean depth_mask;
+	GLint old_draw = 0;
+	GLint old_draw_buffer = 0;
+	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+	glGetIntegerv(GL_DRAW_BUFFER, &old_draw_buffer);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
+	GLenum draw_buffer = GL_COLOR_ATTACHMENT1;
+	glDrawBuffers(1, &draw_buffer);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_FALSE);
+
+	motionvectorshader.Use();
+	if (motionvector_screen_size != -1)
+		glUniform2f(motionvector_screen_size, (float)OpenGL_state.screen_width, (float)OpenGL_state.screen_height);
+
+	glBindVertexArray(motionvector_vao);
+	glBindBuffer(GL_ARRAY_BUFFER, motionvector_vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(gl_motion_vertex) * nv, vertices, GL_STREAM_DRAW);
+	glDrawArrays(GL_TRIANGLES, 0, nv);
+	motion_vectors_dirty = true;
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	glDrawBuffer(old_draw_buffer);
+	if ((GLuint)old_draw == framebuffers[framebuffer_current_draw].Handle())
+		hbao_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+	glDepthMask(depth_mask);
+	UseDrawVAO();
+}
+
 int GL3Renderer::CopyVertices(int numvertices)
+{
+	return CopyVertices(GL_vertices, numvertices);
+}
+
+int GL3Renderer::CopyVertices(const gl_vertex* vertices, int numvertices)
 {
 	if (OpenGL_buffer_storage_enabled)
 	{
@@ -202,7 +251,7 @@ int GL3Renderer::CopyVertices(int numvertices)
 		glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
 		int startoffset = nextcommittedvertex;
 		void* dataptr = (void*)((uintptr_t)drawbuffermap + startoffset * sizeof(gl_vertex));
-		memcpy(dataptr, GL_vertices, numvertices * sizeof(gl_vertex));
+		memcpy(dataptr, vertices, numvertices * sizeof(gl_vertex));
 
 		nextcommittedvertex += numvertices;
 
@@ -221,13 +270,96 @@ int GL3Renderer::CopyVertices(int numvertices)
 		int startoffset = nextcommittedvertex;
 
 		void* dataptr = glMapBufferRange(GL_ARRAY_BUFFER, startoffset * sizeof(gl_vertex), numvertices * sizeof(gl_vertex), GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
-		memcpy(dataptr, GL_vertices, numvertices * sizeof(gl_vertex));
+		memcpy(dataptr, vertices, numvertices * sizeof(gl_vertex));
 		glUnmapBuffer(GL_ARRAY_BUFFER);
 
 		nextcommittedvertex += numvertices;
 
 		return startoffset;
 	}
+}
+
+void GL3Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xscalar, float yscalar,
+	ubyte fr, ubyte fg, ubyte fb)
+{
+	float alpha = Alpha_multiplier * OpenGL_Alpha_factor;
+	if (OpenGL_state.cur_alpha_type & ATF_VERTEX)
+		alpha = pnt->p3_a * Alpha_multiplier * OpenGL_Alpha_factor;
+
+	if (OpenGL_state.cur_light_state != LS_NONE)
+	{
+		if (OpenGL_state.cur_light_state == LS_FLAT_GOURAUD)
+		{
+			vert.color.r = fr;
+			vert.color.g = fg;
+			vert.color.b = fb;
+			vert.color.a = (ubyte)alpha;
+		}
+		else
+		{
+			if (OpenGL_state.cur_color_model == CM_MONO)
+			{
+				vert.color.r = pnt->p3_l * 255;
+				vert.color.g = pnt->p3_l * 255;
+				vert.color.b = pnt->p3_l * 255;
+				vert.color.a = (ubyte)alpha;
+			}
+			else
+			{
+				vert.color.r = pnt->p3_r * 255;
+				vert.color.g = pnt->p3_g * 255;
+				vert.color.b = pnt->p3_b * 255;
+				vert.color.a = (ubyte)alpha;
+			}
+		}
+	}
+	else
+	{
+		if (OpenGL_state.cur_texture_type != 0)
+		{
+			vert.color.r = 255;
+			vert.color.g = 255;
+			vert.color.b = 255;
+			vert.color.a = (ubyte)alpha;
+		}
+		else
+		{
+			vert.color.r = fr;
+			vert.color.g = fg;
+			vert.color.b = fb;
+			vert.color.a = (ubyte)alpha;
+		}
+	}
+
+	if (OpenGL_state.cur_texture_type != 0)
+	{
+		float texw = 1.0 / (pnt->p3_z + Z_bias);
+		vert.tex_coord.s = pnt->p3_u * texw;
+		vert.tex_coord.t = pnt->p3_v * texw;
+		vert.tex_coord.w = texw;
+
+		if (Overlay_type != OT_NONE)
+		{
+			vert.tex_coord2.s = pnt->p3_u2 * xscalar * texw;
+			vert.tex_coord2.t = pnt->p3_v2 * yscalar * texw;
+			vert.tex_coord2.w = texw;
+		}
+	}
+
+	if (OpenGL_state.cur_light_state == LS_PHONG || per_pixel_dynamic_light_count > 0)
+	{
+		float payloadw = 1.0f / (pnt->p3_z + Z_bias);
+		vert.normal.x = pnt->p3_vecPreRot.x * payloadw;
+		vert.normal.y = pnt->p3_vecPreRot.y * payloadw;
+		vert.normal.z = pnt->p3_vecPreRot.z * payloadw;
+		vert.normal.w = payloadw;
+	}
+
+	vert.vert.x = pnt->p3_sx;
+	vert.vert.y = pnt->p3_sy;
+
+	float z = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / (pnt->p3_z + Z_bias))));
+	vert.vert.z = -z;
 }
 
 void GL3Renderer::SetDrawDefaults()
@@ -540,6 +672,130 @@ void GL3Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 	DrawMotionVectorPolygon(nv, p);
 	OpenGL_polys_drawn++;
 	OpenGL_verts_processed += nv;
+
+	CHECK_ERROR(10);
+}
+
+void GL3Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, int count, int map_type)
+{
+	if (!items || count <= 0)
+		return;
+
+	ubyte fr = 0, fg = 0, fb = 0;
+	float one_over_square_res = 1;
+	float xscalar = 1;
+	float yscalar = 1;
+
+	SelectDrawShader();
+
+	if (OpenGL_state.cur_light_state == LS_FLAT_GOURAUD || OpenGL_state.cur_texture_type == 0)
+	{
+		fr = GR_COLOR_RED(OpenGL_state.cur_color);
+		fg = GR_COLOR_GREEN(OpenGL_state.cur_color);
+		fb = GR_COLOR_BLUE(OpenGL_state.cur_color);
+	}
+
+	if (UseMultitexture)
+	{
+		SetMultitextureBlendMode(false);
+	}
+
+	if (OpenGL_state.cur_texture_quality != 0)
+	{
+		MakeBitmapCurrent(handle, map_type, 0);
+		MakeWrapTypeCurrent(handle, map_type, 0);
+		MakeFilterTypeCurrent(handle, map_type, 0);
+
+		if (Overlay_type != OT_NONE)
+		{
+			one_over_square_res = 1.0f / GameLightmaps[Overlay_map].square_res;
+			xscalar = (float)GameLightmaps[Overlay_map].width * one_over_square_res;
+			yscalar = (float)GameLightmaps[Overlay_map].height * one_over_square_res;
+			MakeBitmapCurrent(Overlay_map, MAP_TYPE_LIGHTMAP, 1);
+			MakeWrapTypeCurrent(Overlay_map, MAP_TYPE_LIGHTMAP, 1);
+			MakeFilterTypeCurrent(Overlay_map, MAP_TYPE_LIGHTMAP, 1);
+		}
+	}
+
+	int triangle_vertices = 0;
+	int original_vertices = 0;
+	for (int i = 0; i < count; i++)
+	{
+		if (items[i].nv >= 3 && items[i].nv < 100)
+		{
+			triangle_vertices += (items[i].nv - 2) * 3;
+			original_vertices += items[i].nv;
+		}
+	}
+
+	if (triangle_vertices <= 0)
+		return;
+
+	std::vector<gl_vertex> vertices;
+	vertices.reserve(triangle_vertices);
+
+	std::vector<gl_motion_vertex> motion_vertices;
+	const bool capture_motion = motion_object_active && motionvectorshader.Handle() != 0 &&
+		motionvector_vao != 0 && motion_vectors.velocity_texture != 0;
+	if (capture_motion)
+		motion_vertices.reserve(triangle_vertices);
+
+	int polygons_drawn = 0;
+	for (int i = 0; i < count; i++)
+	{
+		const renderer_poly_batch_item& item = items[i];
+		if (item.nv < 3 || item.nv >= 100)
+			continue;
+
+		gl_vertex face_vertices[100];
+		for (int v = 0; v < item.nv; v++)
+			BuildDrawVertex(face_vertices[v], item.pointlist[v], xscalar, yscalar, fr, fg, fb);
+
+		bool motion_valid = capture_motion;
+		if (motion_valid)
+		{
+			for (int v = 0; v < item.nv; v++)
+			{
+				if (!item.pointlist[v]->p3_motion_valid)
+				{
+					motion_valid = false;
+					break;
+				}
+			}
+		}
+
+		for (int v = 0; v < item.nv - 2; v++)
+		{
+			const int indices[3] = {0, v + 1, v + 2};
+			for (int corner = 0; corner < 3; corner++)
+				vertices.push_back(face_vertices[indices[corner]]);
+
+			if (motion_valid)
+			{
+				for (int corner = 0; corner < 3; corner++)
+				{
+					const int index = indices[corner];
+					gl_motion_vertex motion_vertex;
+					motion_vertex.x = face_vertices[index].vert.x;
+					motion_vertex.y = face_vertices[index].vert.y;
+					motion_vertex.z = face_vertices[index].vert.z;
+					motion_vertex.velocity_x = item.pointlist[index]->p3_sx - item.pointlist[index]->p3_prev_sx;
+					motion_vertex.velocity_y = item.pointlist[index]->p3_sy - item.pointlist[index]->p3_prev_sy;
+					motion_vertices.push_back(motion_vertex);
+				}
+			}
+		}
+		polygons_drawn++;
+	}
+
+	if (vertices.empty())
+		return;
+
+	int offset = CopyVertices(vertices.data(), (int)vertices.size());
+	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)vertices.size());
+	DrawMotionVectorTriangles(motion_vertices.data(), (int)motion_vertices.size());
+	OpenGL_polys_drawn += polygons_drawn;
+	OpenGL_verts_processed += original_vertices;
 
 	CHECK_ERROR(10);
 }
