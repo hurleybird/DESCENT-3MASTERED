@@ -292,24 +292,52 @@ static void SetPolymodelGouraudPointLighting(g3Point& point, const vector& norma
 struct PolymodelBatchedFace
 {
 	int nv;
-	g3Point *points[100];
+	g3Point point_storage[100];
+	g3Point *pointlist[100];
+
+	void RefreshPointList()
+	{
+		for (int i = 0; i < nv; i++)
+			pointlist[i] = &point_storage[i];
+	}
+};
+
+struct PolymodelBaseFaceBatchKey
+{
+	int bitmap_handle;
+	texture_type texture_type_value;
+	light_state lighting;
+	color_model color_model_value;
+	sbyte alpha_type;
+	ubyte alpha_value;
+	ddgr_color flat_color;
+
+	bool Equals(const PolymodelBaseFaceBatchKey& other) const
+	{
+		return bitmap_handle == other.bitmap_handle &&
+			texture_type_value == other.texture_type_value &&
+			lighting == other.lighting &&
+			color_model_value == other.color_model_value &&
+			alpha_type == other.alpha_type &&
+			alpha_value == other.alpha_value &&
+			flat_color == other.flat_color;
+	}
 };
 
 struct PolymodelBaseFaceBatch
 {
-	int bitmap_handle;
-	ubyte alpha_value;
+	PolymodelBaseFaceBatchKey key;
 	std::vector<PolymodelBatchedFace> faces;
 };
 
 class PolymodelBaseFaceBatcher
 {
 public:
-	void Add(int bitmap_handle, ubyte alpha_value, const PolymodelBatchedFace& face)
+	void Add(const PolymodelBaseFaceBatchKey& key, const PolymodelBatchedFace& face)
 	{
 		for (size_t i = 0; i < m_batches.size(); i++)
 		{
-			if (m_batches[i].bitmap_handle == bitmap_handle && m_batches[i].alpha_value == alpha_value)
+			if (m_batches[i].key.Equals(key))
 			{
 				m_batches[i].faces.push_back(face);
 				return;
@@ -317,8 +345,7 @@ public:
 		}
 
 		PolymodelBaseFaceBatch batch;
-		batch.bitmap_handle = bitmap_handle;
-		batch.alpha_value = alpha_value;
+		batch.key = key;
 		batch.faces.push_back(face);
 		m_batches.push_back(batch);
 	}
@@ -328,44 +355,35 @@ public:
 		if (m_batches.empty())
 			return;
 
-		double state_setup_start_time = PolymodelPerfNow();
-		rend_SetOverlayType(OT_NONE);
-		rend_SetTextureType(TT_LINEAR);
-		rend_SetColorModel(CM_RGB);
-		if (Polymodel_light_type == POLYMODEL_LIGHTING_GOURAUD)
-		{
-			if (UsePerPixelPolymodelLighting())
-				rend_SetPerPixelLightingDirection(Polymodel_light_direction);
-			rend_SetLighting(GetPolymodelGouraudLightingState());
-		}
-		else
-		{
-			rend_SetLighting(LS_NONE);
-		}
-		rend_SetAlphaType(ATF_TEXTURE + ATF_VERTEX);
-		PolymodelPerfAdd(Polymodel_perf_face_base_state_time, state_setup_start_time);
-		PolymodelPerfAdd(Polymodel_perf_face_base_time, state_setup_start_time);
-
 		for (size_t i = 0; i < m_batches.size(); i++)
 		{
 			PolymodelBaseFaceBatch& batch = m_batches[i];
 			if (batch.faces.empty())
 				continue;
 
-			double alpha_start_time = PolymodelPerfNow();
-			rend_SetAlphaValue(batch.alpha_value);
-			PolymodelPerfAdd(Polymodel_perf_face_base_state_time, alpha_start_time);
-			PolymodelPerfAdd(Polymodel_perf_face_base_time, alpha_start_time);
+			double state_setup_start_time = PolymodelPerfNow();
+			rend_SetOverlayType(OT_NONE);
+			rend_SetColorModel(batch.key.color_model_value);
+			rend_SetTextureType(batch.key.texture_type_value);
+			if (batch.key.lighting == LS_PHONG)
+				rend_SetPerPixelLightingDirection(Polymodel_light_direction);
+			rend_SetLighting(batch.key.lighting);
+			rend_SetFlatColor(batch.key.flat_color);
+			rend_SetAlphaValue(batch.key.alpha_value);
+			rend_SetAlphaType(batch.key.alpha_type);
+			PolymodelPerfAdd(Polymodel_perf_face_base_state_time, state_setup_start_time);
+			PolymodelPerfAdd(Polymodel_perf_face_base_time, state_setup_start_time);
 
 			std::vector<renderer_poly_batch_item> items(batch.faces.size());
 			for (size_t face_index = 0; face_index < batch.faces.size(); face_index++)
 			{
-				items[face_index].pointlist = batch.faces[face_index].points;
+				batch.faces[face_index].RefreshPointList();
+				items[face_index].pointlist = batch.faces[face_index].pointlist;
 				items[face_index].nv = batch.faces[face_index].nv;
 			}
 
 			double draw_start_time = PolymodelPerfNow();
-			rend_DrawPolygon3DBatch(batch.bitmap_handle, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
+			rend_DrawPolygon3DBatch(batch.key.bitmap_handle, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
 			if (Perf_markers_enabled)
 				Polymodel_perf_draw_poly_count++;
 			PolymodelPerfAdd(Polymodel_perf_face_base_draw_time, draw_start_time);
@@ -382,27 +400,66 @@ private:
 	std::vector<PolymodelBaseFaceBatch> m_batches;
 };
 
+static void CopyPolymodelBatchPoints(PolymodelBatchedFace& batched_face, g3Point **pointlist, int nv)
+{
+	batched_face.nv = nv;
+	for (int i = 0; i < nv; i++)
+	{
+		batched_face.point_storage[i] = *pointlist[i];
+		batched_face.point_storage[i].p3_flags &= ~PF_TEMP_POINT;
+		if (!(batched_face.point_storage[i].p3_flags & PF_PROJECTED))
+			g3_ProjectPoint(&batched_face.point_storage[i]);
+	}
+}
+
+static ddgr_color GetPolymodelCustomFlatColor(ddgr_color base_color)
+{
+	int r = GR_COLOR_RED(base_color);
+	int g = GR_COLOR_GREEN(base_color);
+	int b = GR_COLOR_BLUE(base_color);
+
+	if (Polymodel_light_type == POLYMODEL_LIGHTING_GOURAUD)
+	{
+		if (Polymodel_use_effect && Polymodel_effect.type & PEF_COLOR)
+		{
+			r = Polymodel_effect.r * (float)r * Polylighting_static_red;
+			g = Polymodel_effect.g * (float)g * Polylighting_static_green;
+			b = Polymodel_effect.b * (float)b * Polylighting_static_blue;
+		}
+		else
+		{
+			r = (float)r * Polylighting_static_red;
+			g = (float)g * Polylighting_static_green;
+			b = (float)b * Polylighting_static_blue;
+		}
+	}
+
+	return GR_RGB(r, g, b);
+}
+
 static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	PolymodelBaseFaceBatcher& batcher)
 {
 	polyface *fp = &sm->faces[facenum];
-	if (fp->texnum == -1 || fp->nverts < 3 || fp->nverts >= 100)
+	if (fp->nverts < 3 || fp->nverts >= 100)
 		return false;
 
-	if (StateLimited || Polymodel_light_type == POLYMODEL_LIGHTING_LIGHTMAP || (sm->flags & SOF_CUSTOM))
+	if (StateLimited || Polymodel_light_type == POLYMODEL_LIGHTING_LIGHTMAP)
 		return false;
 
-	if (Polymodel_effect.type & PEF_BUMPMAPPED)
+	if (Polymodel_use_effect && (Polymodel_effect.type & PEF_ALPHA))
 		return false;
 
-	if (Polymodel_use_effect && (Polymodel_effect.type &
-		(PEF_ALPHA | PEF_CUSTOM_COLOR | PEF_CUSTOM_TEXTURE)))
-	{
-		return false;
-	}
+	const bool custom = (sm->flags & SOF_CUSTOM) != 0;
+	texture *texp = NULL;
+	if (fp->texnum != -1)
+		texp = &GameTextures[pm->textures[fp->texnum]];
 
-	texture *texp = &GameTextures[pm->textures[fp->texnum]];
-	if (texp->flags & (TF_ALPHA | TF_SATURATE | TF_LIGHT))
+	if (texp && custom && Polymodel_use_effect && (Polymodel_effect.type & PEF_CUSTOM_TEXTURE))
+		texp = &GameTextures[Polymodel_effect.custom_texture];
+
+	if (texp && (Polymodel_effect.type & PEF_BUMPMAPPED) && texp->bumpmap != -1 &&
+		Polymodel_light_type == POLYMODEL_LIGHTING_GOURAUD)
 		return false;
 
 	double face_start_time = PolymodelPerfNow();
@@ -412,8 +469,44 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	face_cc.cc_or = 0;
 	triangulated_faces[facenum] = 0;
 
+	PolymodelBaseFaceBatchKey key = {};
+	key.bitmap_handle = 0;
+	key.texture_type_value = TT_FLAT;
+	key.lighting = LS_NONE;
+	key.color_model_value = CM_RGB;
+	key.alpha_type = ATF_CONSTANT + ATF_VERTEX;
+	key.alpha_value = 255;
+	key.flat_color = GetPolymodelCustomFlatColor(fp->color);
+
+	if (texp)
+	{
+		if (texp->flags & (TF_ALPHA | TF_SATURATE))
+			return false;
+
+		key.bitmap_handle = GetTextureBitmap(texp - GameTextures, 0);
+		key.texture_type_value = TT_LINEAR;
+		key.alpha_type = ATF_TEXTURE + ATF_VERTEX;
+		key.alpha_value = (ubyte)(texp->alpha * 255.0f);
+		key.flat_color = 0;
+		if (Polymodel_light_type == POLYMODEL_LIGHTING_GOURAUD)
+			key.lighting = GetPolymodelGouraudLightingState();
+
+		if (texp->flags & TF_LIGHT)
+		{
+			key.lighting = LS_FLAT_GOURAUD;
+			key.flat_color = GR_RGB(255, 255, 255);
+		}
+
+		if (Polymodel_use_effect && (Polymodel_effect.type & PEF_CUSTOM_COLOR) &&
+			(texp - GameTextures) == Multicolor_texture)
+		{
+			key.lighting = LS_FLAT_GOURAUD;
+			key.flat_color = GetPolymodelCustomFlatColor(Polymodel_effect.custom_color);
+		}
+	}
+
 	float uchange = 0, vchange = 0;
-	if (texp->slide_u != 0)
+	if (texp && texp->slide_u != 0)
 	{
 		int int_time = Gametime / texp->slide_u;
 		float norm_time = Gametime - (int_time * texp->slide_u);
@@ -421,7 +514,7 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 		uchange = norm_time;
 	}
 
-	if (texp->slide_v != 0)
+	if (texp && texp->slide_v != 0)
 	{
 		int int_time = Gametime / texp->slide_v;
 		float norm_time = Gametime - (int_time * texp->slide_v);
@@ -429,18 +522,20 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 		vchange = norm_time;
 	}
 
-	PolymodelBatchedFace batched_face;
-	batched_face.nv = fp->nverts;
+	g3Point *source_pointlist[100];
 
 	double point_setup_start_time = PolymodelPerfNow();
 	for (int t = 0; t < fp->nverts; t++)
 	{
 		g3Point *p = &Robot_points[fp->vertnums[t]];
-		batched_face.points[t] = p;
-		p->p3_uvl.u = fp->u[t] + uchange;
-		p->p3_uvl.v = fp->v[t] + vchange;
-		p->p3_uvl.a = sm->alpha[fp->vertnums[t]];
-		p->p3_flags |= PF_UV + PF_RGBA + PF_L;
+		source_pointlist[t] = p;
+		if (texp)
+		{
+			p->p3_uvl.u = fp->u[t] + uchange;
+			p->p3_uvl.v = fp->v[t] + vchange;
+			p->p3_uvl.a = sm->alpha[fp->vertnums[t]];
+			p->p3_flags |= PF_UV + PF_RGBA + PF_L;
+		}
 
 		face_cc.cc_or |= p->p3_codes;
 		face_cc.cc_and &= p->p3_codes;
@@ -455,18 +550,42 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 		return true;
 	}
 
+	int draw_nv = fp->nverts;
+	g3Point **draw_pointlist = source_pointlist;
+	bool was_clipped = false;
 	if (face_cc.cc_or)
-		return false;
-
-	for (int t = 0; t < fp->nverts; t++)
 	{
-		if (!(batched_face.points[t]->p3_flags & PF_PROJECTED))
-			g3_ProjectPoint(batched_face.points[t]);
+		if (Polymodel_use_effect && (Polymodel_effect.type &
+			(PEF_FOGGED_MODEL | PEF_SPECULAR_MODEL | PEF_SPECULAR_FACES)))
+		{
+			return false;
+		}
+
+		draw_pointlist = g3_ClipPolygon(source_pointlist, &draw_nv, &face_cc);
+		was_clipped = true;
+		if (draw_nv == 0 || (face_cc.cc_or & CC_BEHIND) || face_cc.cc_and)
+		{
+			g3_FreeTempPoints(draw_pointlist, draw_nv);
+			if (Perf_markers_enabled)
+				Polymodel_perf_base_face_count++;
+			PolymodelPerfAdd(Polymodel_perf_face_base_time, face_start_time);
+			return true;
+		}
+
+		if (draw_nv < 3 || draw_nv >= 100)
+		{
+			g3_FreeTempPoints(draw_pointlist, draw_nv);
+			return false;
+		}
 	}
 
-	int bm_handle = GetTextureBitmap(texp - GameTextures, 0);
-	ubyte alpha_value = (ubyte)(texp->alpha * 255.0f);
-	batcher.Add(bm_handle, alpha_value, batched_face);
+	PolymodelBatchedFace batched_face;
+	CopyPolymodelBatchPoints(batched_face, draw_pointlist, draw_nv);
+
+	if (was_clipped)
+		g3_FreeTempPoints(draw_pointlist, draw_nv);
+
+	batcher.Add(key, batched_face);
 
 	if (Perf_markers_enabled)
 		Polymodel_perf_base_face_count++;
