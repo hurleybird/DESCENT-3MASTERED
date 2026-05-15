@@ -155,6 +155,8 @@ static bool Terrain_mesh_dirty = true;
 static int Terrain_mesh_checksum = -1;
 static uint32_t Terrain_lightmap_handle = 0xFFFFFFFFu;
 static uint32_t Terrain_lightmap_fog_handle = 0xFFFFFFFFu;
+static uint32_t Terrain_legacy_compute_handle = 0xFFFFFFFFu;
+static uint32_t Terrain_legacy_compute_fog_handle = 0xFFFFFFFFu;
 
 extern vector Clip_plane_point;
 
@@ -222,6 +224,8 @@ static size_t Terrain_compute_vertex_capacity = 0;
 static std::vector<TerrainGpuCellWork> Terrain_compute_cell_work;
 static std::vector<TerrainGpuCellInput> Terrain_compute_cell_inputs;
 static std::vector<TerrainGpuBatch> Terrain_compute_batches;
+static constexpr int TERRAIN_COMPUTE_VERTS_PER_TRIANGLE = 6;
+static constexpr int TERRAIN_COMPUTE_VERTS_PER_CELL = TERRAIN_COMPUTE_VERTS_PER_TRIANGLE * 2;
 
 static void SetTerrainComputeStatus(const char* status)
 {
@@ -482,6 +486,10 @@ static void EnsureTerrainPipelinesReady()
 		Terrain_lightmap_handle = rend_GetPipelineByName("terrain_lightmap");
 	if (Terrain_lightmap_fog_handle == 0xFFFFFFFFu)
 		Terrain_lightmap_fog_handle = rend_GetPipelineByName("terrain_lightmap_fog");
+	if (Terrain_legacy_compute_handle == 0xFFFFFFFFu)
+		Terrain_legacy_compute_handle = rend_GetPipelineByName("terrain_legacy_compute");
+	if (Terrain_legacy_compute_fog_handle == 0xFFFFFFFFu)
+		Terrain_legacy_compute_fog_handle = rend_GetPipelineByName("terrain_legacy_compute_fog");
 }
 
 static void ConfigureTerrainComputeVertexArray()
@@ -560,6 +568,17 @@ uniform vec3 terrain_row0;
 uniform vec3 terrain_x_step;
 uniform vec3 terrain_z_step;
 uniform vec3 terrain_y_step;
+
+const float TERRAIN_COMPUTE_NEAR_Z = 0.001;
+const uint VERTS_PER_TRIANGLE = 6u;
+
+struct ClipVertex
+{
+	vec3 world;
+	vec3 rotated;
+	vec2 base_uv;
+	vec2 lightmap_uv;
+};
 
 vec3 RotatePoint(vec3 world)
 {
@@ -642,15 +661,98 @@ vec2 LightmapUv(uint segment, uint corner)
 	return uv;
 }
 
-void WriteVertex(uint index, vec3 position, vec3 normal, vec2 base_uv, vec2 lightmap_uv)
+void WriteDegenerateVertex(uint index)
 {
-	vertices[index].position = position;
+	vertices[index].position = vec3(0.0, 0.0, -1.0);
 	vertices[index].color = 0xffffffffu;
-	vertices[index].normal = normal;
+	vertices[index].normal = vec3(0.0);
 	vertices[index].lmpage = 0;
-	vertices[index].uv1 = base_uv;
-	vertices[index].uv2 = lightmap_uv;
-	vertices[index].uvslide = vec2(0.0);
+	vertices[index].uv1 = vec2(0.0);
+	vertices[index].uv2 = vec2(0.0);
+	vertices[index].uvslide = vec2(1.0, 0.0);
+}
+
+void WriteVertex(uint index, vec3 world, vec3 rotated, vec2 base_uv, vec2 lightmap_uv)
+{
+	float eye_z = max(rotated.z, TERRAIN_COMPUTE_NEAR_Z);
+	float texw = 1.0 / eye_z;
+	float legacy_depth = clamp(1.0 - texw, 0.0, 1.0);
+
+	vertices[index].position = vec3(rotated.x * texw, rotated.y * texw, legacy_depth * 2.0 - 1.0);
+	vertices[index].color = 0xffffffffu;
+	vertices[index].normal = world;
+	vertices[index].lmpage = 0;
+	vertices[index].uv1 = base_uv * texw;
+	vertices[index].uv2 = lightmap_uv * texw;
+	vertices[index].uvslide = vec2(texw, legacy_depth);
+}
+
+ClipVertex MixClipVertex(ClipVertex a, ClipVertex b, float t)
+{
+	ClipVertex result;
+	result.world = mix(a.world, b.world, t);
+	result.rotated = mix(a.rotated, b.rotated, t);
+	result.base_uv = mix(a.base_uv, b.base_uv, t);
+	result.lightmap_uv = mix(a.lightmap_uv, b.lightmap_uv, t);
+	return result;
+}
+
+ClipVertex IntersectEyePlane(ClipVertex inside_vertex, ClipVertex outside_vertex)
+{
+	float denom = outside_vertex.rotated.z - inside_vertex.rotated.z;
+	float t = (abs(denom) > 0.000001) ? ((TERRAIN_COMPUTE_NEAR_Z - inside_vertex.rotated.z) / denom) : 0.0;
+	return MixClipVertex(inside_vertex, outside_vertex, clamp(t, 0.0, 1.0));
+}
+
+void ClipTriangleToEyePlane(ClipVertex input_poly[3], out ClipVertex output_poly[4], out int output_count)
+{
+	output_count = 0;
+	ClipVertex previous = input_poly[2];
+	bool previous_inside = previous.rotated.z >= TERRAIN_COMPUTE_NEAR_Z;
+
+	for (int i = 0; i < 3; i++)
+	{
+		ClipVertex current = input_poly[i];
+		bool current_inside = current.rotated.z >= TERRAIN_COMPUTE_NEAR_Z;
+
+		if (current_inside)
+		{
+			if (!previous_inside)
+				output_poly[output_count++] = IntersectEyePlane(current, previous);
+			output_poly[output_count++] = current;
+		}
+		else if (previous_inside)
+		{
+			output_poly[output_count++] = IntersectEyePlane(previous, current);
+		}
+
+		previous = current;
+		previous_inside = current_inside;
+	}
+}
+
+void WriteDegenerateTriangleFan(uint vertex_base)
+{
+	for (uint i = 0u; i < VERTS_PER_TRIANGLE; i++)
+		WriteDegenerateVertex(vertex_base + i);
+}
+
+void WriteClippedTriangleFan(uint vertex_base, ClipVertex poly[4], int vertex_count)
+{
+	uint cursor = 0u;
+	if (vertex_count >= 3)
+	{
+		for (int i = 1; i < vertex_count - 1; i++)
+		{
+			WriteVertex(vertex_base + cursor + 0u, poly[0].world, poly[0].rotated, poly[0].base_uv, poly[0].lightmap_uv);
+			WriteVertex(vertex_base + cursor + 1u, poly[i].world, poly[i].rotated, poly[i].base_uv, poly[i].lightmap_uv);
+			WriteVertex(vertex_base + cursor + 2u, poly[i + 1].world, poly[i + 1].rotated, poly[i + 1].base_uv, poly[i + 1].lightmap_uv);
+			cursor += 3u;
+		}
+	}
+
+	while (cursor < VERTS_PER_TRIANGLE)
+		WriteDegenerateVertex(vertex_base + cursor++);
 }
 
 void EmitTriangle(uint vertex_base,
@@ -664,30 +766,30 @@ void EmitTriangle(uint vertex_base,
 	vec3 facing_normal = cross(rotated1 - rotated0, rotated2 - rotated1);
 	bool visible = dot(facing_normal, rotated1) < 0.0;
 
-	vec3 normal = cross(world1 - world0, world2 - world1);
-	float normal_len = length(normal);
-	if (normal_len > 0.00001)
-	{
-		normal /= normal_len;
-		if (normal.y < 0.0)
-			normal = -normal;
-	}
-	else
-	{
-		normal = vec3(0.0, 1.0, 0.0);
-	}
-
 	if (!visible)
 	{
-		WriteVertex(vertex_base + 0u, world0, normal, uv0, lm0);
-		WriteVertex(vertex_base + 1u, world0, normal, uv1, lm1);
-		WriteVertex(vertex_base + 2u, world0, normal, uv2, lm2);
+		WriteDegenerateTriangleFan(vertex_base);
 		return;
 	}
 
-	WriteVertex(vertex_base + 0u, world0, normal, uv0, lm0);
-	WriteVertex(vertex_base + 1u, world1, normal, uv1, lm1);
-	WriteVertex(vertex_base + 2u, world2, normal, uv2, lm2);
+	ClipVertex input_poly[3];
+	input_poly[0].world = world0;
+	input_poly[0].rotated = rotated0;
+	input_poly[0].base_uv = uv0;
+	input_poly[0].lightmap_uv = lm0;
+	input_poly[1].world = world1;
+	input_poly[1].rotated = rotated1;
+	input_poly[1].base_uv = uv1;
+	input_poly[1].lightmap_uv = lm1;
+	input_poly[2].world = world2;
+	input_poly[2].rotated = rotated2;
+	input_poly[2].base_uv = uv2;
+	input_poly[2].lightmap_uv = lm2;
+
+	ClipVertex clipped_poly[4];
+	int clipped_count = 0;
+	ClipTriangleToEyePlane(input_poly, clipped_poly, clipped_count);
+	WriteClippedTriangleFan(vertex_base, clipped_poly, clipped_count);
 }
 
 void main()
@@ -715,9 +817,9 @@ void main()
 	vec2 lm2 = LightmapUv(segment, 2u);
 	vec2 lm3 = LightmapUv(segment, 3u);
 
-	uint vertex_base = id * 6u;
+	uint vertex_base = id * 12u;
 	EmitTriangle(vertex_base + 0u, world0, world1, world3, uv0, uv1, uv3, lm0, lm1, lm3);
-	EmitTriangle(vertex_base + 3u, world3, world1, world2, uv3, uv1, uv2, lm3, lm1, lm2);
+	EmitTriangle(vertex_base + 6u, world3, world1, world2, uv3, uv1, uv2, lm3, lm1, lm2);
 }
 )glsl";
 
@@ -912,12 +1014,12 @@ static void FinalizeTerrainComputeBatches()
 			TerrainGpuBatch batch = {};
 			batch.texture = work.texture;
 			batch.lightmap = work.lightmap;
-			batch.first_vertex = (int)(i * 6);
+			batch.first_vertex = (int)(i * TERRAIN_COMPUTE_VERTS_PER_CELL);
 			batch.vertex_count = 0;
 			Terrain_compute_batches.push_back(batch);
 		}
 
-		Terrain_compute_batches.back().vertex_count += 6;
+		Terrain_compute_batches.back().vertex_count += TERRAIN_COMPUTE_VERTS_PER_CELL;
 	}
 
 	GlobalTransCount = (int)(Terrain_compute_cell_inputs.size() * 4);
@@ -1007,7 +1109,7 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 		return true;
 	}
 
-	EnsureTerrainComputeVertexCapacity(Terrain_compute_cell_inputs.size() * 6);
+	EnsureTerrainComputeVertexCapacity(Terrain_compute_cell_inputs.size() * TERRAIN_COMPUTE_VERTS_PER_CELL);
 
 	glUseProgram(Terrain_compute_program);
 	SetTerrainComputeViewUniforms();
@@ -1026,9 +1128,9 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 
 	EnsureTerrainPipelinesReady();
 	if (fog_enabled)
-		rend_BindPipeline(Terrain_lightmap_fog_handle);
+		rend_BindPipeline(Terrain_legacy_compute_fog_handle);
 	else
-		rend_BindPipeline(Terrain_lightmap_handle);
+		rend_BindPipeline(Terrain_legacy_compute_handle);
 
 	rend_SetColorModel(CM_RGB);
 	rend_SetTextureType(TT_LINEAR);
