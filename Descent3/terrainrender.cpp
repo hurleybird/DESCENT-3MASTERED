@@ -257,7 +257,7 @@ static std::vector<uint32_t> Terrain_compute_base_texture_checksums;
 static int Terrain_compute_lightmap_array_size = 0;
 static int Terrain_compute_lightmap_array_handles[4] = { -1, -1, -1, -1 };
 static uint32_t Terrain_compute_lightmap_checksums[4] = { 0, 0, 0, 0 };
-static constexpr int TERRAIN_COMPUTE_VERTS_PER_TRIANGLE = 6;
+static constexpr int TERRAIN_COMPUTE_VERTS_PER_TRIANGLE = 18;
 static constexpr int TERRAIN_COMPUTE_VERTS_PER_CELL = TERRAIN_COMPUTE_VERTS_PER_TRIANGLE * 2;
 static constexpr int TERRAIN_COMPUTE_LIGHTMAP_LAYERS = 4;
 
@@ -979,7 +979,13 @@ uniform vec3 terrain_x_step;
 uniform vec3 terrain_z_step;
 uniform vec3 terrain_y_step;
 
-const float TERRAIN_COMPUTE_NEAR_Z = 0.001;
+const float TERRAIN_COMPUTE_MIN_Z = 0.000001;
+const int TERRAIN_CLIP_MAX_VERTS = 8;
+const int TERRAIN_CLIP_LEFT = 1;
+const int TERRAIN_CLIP_RIGHT = 2;
+const int TERRAIN_CLIP_BOT = 4;
+const int TERRAIN_CLIP_TOP = 8;
+const int TERRAIN_CLIP_BEHIND = 128;
 struct ClipVertex
 {
 	vec3 world;
@@ -1071,7 +1077,7 @@ vec2 LightmapUv(uint segment, uint corner)
 
 void WriteVertex(uint index, uint texture_page, uint lightmap_page, vec3 world, vec3 rotated, vec2 base_uv, vec2 lightmap_uv)
 {
-	float eye_z = max(rotated.z, TERRAIN_COMPUTE_NEAR_Z);
+	float eye_z = max(rotated.z, TERRAIN_COMPUTE_MIN_Z);
 	float texw = 1.0 / eye_z;
 	float legacy_depth = clamp(1.0 - texw, 0.0, 1.0);
 
@@ -1094,38 +1100,137 @@ ClipVertex MixClipVertex(ClipVertex a, ClipVertex b, float t)
 	return result;
 }
 
-ClipVertex IntersectEyePlane(ClipVertex inside_vertex, ClipVertex outside_vertex)
+int TerrainClipCode(ClipVertex vertex)
 {
-	float denom = outside_vertex.rotated.z - inside_vertex.rotated.z;
-	float t = (abs(denom) > 0.000001) ? ((TERRAIN_COMPUTE_NEAR_Z - inside_vertex.rotated.z) / denom) : 0.0;
+	int code = 0;
+	if (vertex.rotated.x < -vertex.rotated.z)
+		code |= TERRAIN_CLIP_LEFT;
+	if (vertex.rotated.x > vertex.rotated.z)
+		code |= TERRAIN_CLIP_RIGHT;
+	if (vertex.rotated.y < -vertex.rotated.z)
+		code |= TERRAIN_CLIP_BOT;
+	if (vertex.rotated.y > vertex.rotated.z)
+		code |= TERRAIN_CLIP_TOP;
+	if (vertex.rotated.z < 0.0)
+		code |= TERRAIN_CLIP_BEHIND;
+	return code;
+}
+
+void TerrainClipCodes(ClipVertex poly[TERRAIN_CLIP_MAX_VERTS], int count, out int code_or, out int code_and)
+{
+	code_or = 0;
+	code_and = 255;
+	for (int i = 0; i < count; i++)
+	{
+		int code = TerrainClipCode(poly[i]);
+		code_or |= code;
+		code_and &= code;
+	}
+}
+
+float TerrainClipPlaneDistance(ClipVertex vertex, int plane)
+{
+	if (plane == TERRAIN_CLIP_LEFT)
+		return vertex.rotated.x + vertex.rotated.z;
+	if (plane == TERRAIN_CLIP_RIGHT)
+		return vertex.rotated.z - vertex.rotated.x;
+	if (plane == TERRAIN_CLIP_BOT)
+		return vertex.rotated.y + vertex.rotated.z;
+	return vertex.rotated.z - vertex.rotated.y;
+}
+
+ClipVertex IntersectTerrainClipPlane(ClipVertex inside_vertex, ClipVertex outside_vertex, int plane)
+{
+	float inside_distance = TerrainClipPlaneDistance(inside_vertex, plane);
+	float outside_distance = TerrainClipPlaneDistance(outside_vertex, plane);
+	float denom = inside_distance - outside_distance;
+	float t = (abs(denom) > 0.000001) ? (inside_distance / denom) : 0.0;
 	return MixClipVertex(inside_vertex, outside_vertex, clamp(t, 0.0, 1.0));
 }
 
-void ClipTriangleToEyePlane(ClipVertex input_poly[3], out ClipVertex output_poly[4], out int output_count)
+void TerrainClipAppend(inout ClipVertex poly[TERRAIN_CLIP_MAX_VERTS], inout int count, ClipVertex vertex)
 {
-	output_count = 0;
-	ClipVertex previous = input_poly[2];
-	bool previous_inside = previous.rotated.z >= TERRAIN_COMPUTE_NEAR_Z;
+	if (count < TERRAIN_CLIP_MAX_VERTS)
+		poly[count++] = vertex;
+}
 
-	for (int i = 0; i < 3; i++)
+void ClipTerrainPolyToPlane(inout ClipVertex poly[TERRAIN_CLIP_MAX_VERTS], inout int count, int plane)
+{
+	ClipVertex output_poly[TERRAIN_CLIP_MAX_VERTS];
+	int output_count = 0;
+	ClipVertex previous = poly[count - 1];
+	bool previous_inside = TerrainClipPlaneDistance(previous, plane) >= 0.0;
+
+	for (int i = 0; i < count; i++)
 	{
-		ClipVertex current = input_poly[i];
-		bool current_inside = current.rotated.z >= TERRAIN_COMPUTE_NEAR_Z;
+		ClipVertex current = poly[i];
+		bool current_inside = TerrainClipPlaneDistance(current, plane) >= 0.0;
 
 		if (current_inside)
 		{
 			if (!previous_inside)
-				output_poly[output_count++] = IntersectEyePlane(current, previous);
-			output_poly[output_count++] = current;
+				TerrainClipAppend(output_poly, output_count, IntersectTerrainClipPlane(current, previous, plane));
+			TerrainClipAppend(output_poly, output_count, current);
 		}
 		else if (previous_inside)
 		{
-			output_poly[output_count++] = IntersectEyePlane(previous, current);
+			TerrainClipAppend(output_poly, output_count, IntersectTerrainClipPlane(previous, current, plane));
 		}
 
 		previous = current;
 		previous_inside = current_inside;
 	}
+
+	count = output_count;
+	for (int i = 0; i < TERRAIN_CLIP_MAX_VERTS; i++)
+	{
+		if (i < count)
+			poly[i] = output_poly[i];
+	}
+}
+
+bool ClipTerrainTriangle(ClipVertex input_poly[3], out ClipVertex output_poly[TERRAIN_CLIP_MAX_VERTS], out int output_count)
+{
+	output_count = 3;
+	for (int i = 0; i < 3; i++)
+		output_poly[i] = input_poly[i];
+
+	int code_or = 0;
+	int code_and = 255;
+	TerrainClipCodes(output_poly, output_count, code_or, code_and);
+	if (code_and != 0)
+		return false;
+
+	if ((code_or & TERRAIN_CLIP_LEFT) != 0)
+	{
+		ClipTerrainPolyToPlane(output_poly, output_count, TERRAIN_CLIP_LEFT);
+		TerrainClipCodes(output_poly, output_count, code_or, code_and);
+		if (output_count < 3 || code_and != 0)
+			return false;
+	}
+	if ((code_or & TERRAIN_CLIP_RIGHT) != 0)
+	{
+		ClipTerrainPolyToPlane(output_poly, output_count, TERRAIN_CLIP_RIGHT);
+		TerrainClipCodes(output_poly, output_count, code_or, code_and);
+		if (output_count < 3 || code_and != 0)
+			return false;
+	}
+	if ((code_or & TERRAIN_CLIP_BOT) != 0)
+	{
+		ClipTerrainPolyToPlane(output_poly, output_count, TERRAIN_CLIP_BOT);
+		TerrainClipCodes(output_poly, output_count, code_or, code_and);
+		if (output_count < 3 || code_and != 0)
+			return false;
+	}
+	if ((code_or & TERRAIN_CLIP_TOP) != 0)
+	{
+		ClipTerrainPolyToPlane(output_poly, output_count, TERRAIN_CLIP_TOP);
+		TerrainClipCodes(output_poly, output_count, code_or, code_and);
+		if (output_count < 3 || code_and != 0)
+			return false;
+	}
+
+	return (code_or & TERRAIN_CLIP_BEHIND) == 0;
 }
 
 uint ClippedTriangleVertexCount(int vertex_count)
@@ -1133,7 +1238,7 @@ uint ClippedTriangleVertexCount(int vertex_count)
 	return vertex_count >= 3 ? uint(vertex_count - 2) * 3u : 0u;
 }
 
-void WriteClippedTriangleFan(uint vertex_base, uint texture_page, uint lightmap_page, ClipVertex poly[4], int vertex_count)
+void WriteClippedTriangleFan(uint vertex_base, uint texture_page, uint lightmap_page, ClipVertex poly[TERRAIN_CLIP_MAX_VERTS], int vertex_count)
 {
 	uint cursor = 0u;
 	if (vertex_count >= 3)
@@ -1178,9 +1283,10 @@ void EmitTriangle(uint batch_index, uint batch_output_first_vertex, uint texture
 	input_poly[2].base_uv = uv2;
 	input_poly[2].lightmap_uv = lm2;
 
-	ClipVertex clipped_poly[4];
+	ClipVertex clipped_poly[TERRAIN_CLIP_MAX_VERTS];
 	int clipped_count = 0;
-	ClipTriangleToEyePlane(input_poly, clipped_poly, clipped_count);
+	if (!ClipTerrainTriangle(input_poly, clipped_poly, clipped_count))
+		return;
 	uint write_count = ClippedTriangleVertexCount(clipped_count);
 	if (write_count == 0u)
 		return;
@@ -2442,7 +2548,11 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 		rend_SetZValues(0, 5000);
 	}
 
-	if (use_mesh_terrain)
+	if (Terrain_renderer_mode == TERRAIN_RENDERER_OFF)
+	{
+		SetTerrainComputeStatus("not selected");
+	}
+	else if (use_mesh_terrain)
 	{
 		DisplayTerrainMesh((Terrain_sky.flags & TF_FOG) != 0, from_mine && valid_render_window,
 			left, top, right, bot, render_width, render_height);

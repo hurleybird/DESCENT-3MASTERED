@@ -1887,6 +1887,7 @@ struct details_menu
 			terrain_mesh = sheet->AddFirstRadioButton("Legacy");
 			sheet->AddRadioButton("Mesh");
 			sheet->AddRadioButton("Compute");
+			sheet->AddRadioButton("Off");
 			*terrain_mesh = Terrain_renderer_mode;
 		}
 		else

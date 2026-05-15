@@ -800,7 +800,7 @@ void LoadGameSettings()
 	Database->read("RS_use_terrain_mesh_renderer", &Use_terrain_mesh_renderer);
 	Terrain_renderer_mode = Use_terrain_mesh_renderer ? TERRAIN_RENDERER_MESH : TERRAIN_RENDERER_LEGACY;
 	Database->read_int("RS_terrain_renderer_mode", &Terrain_renderer_mode);
-	if (Terrain_renderer_mode < TERRAIN_RENDERER_LEGACY || Terrain_renderer_mode > TERRAIN_RENDERER_COMPUTE)
+	if (Terrain_renderer_mode < TERRAIN_RENDERER_LEGACY || Terrain_renderer_mode > TERRAIN_RENDERER_OFF)
 		Terrain_renderer_mode = Use_terrain_mesh_renderer ? TERRAIN_RENDERER_MESH : TERRAIN_RENDERER_LEGACY;
 	Use_terrain_mesh_renderer = Terrain_renderer_mode == TERRAIN_RENDERER_MESH;
 	if (DesiredOpenGLProfile != GLPROFILE_CORE && DesiredOpenGLProfile != GLPROFILE_COMPAT)
@@ -815,7 +815,8 @@ void LoadGameSettings()
 	{
 		Render_preferred_state.per_pixel_lighting = false;
 		Render_preferred_state.hbao_enabled = false;
-		Terrain_renderer_mode = TERRAIN_RENDERER_LEGACY;
+		if (Terrain_renderer_mode != TERRAIN_RENDERER_OFF)
+			Terrain_renderer_mode = TERRAIN_RENDERER_LEGACY;
 		Use_terrain_mesh_renderer = false;
 	}
 
