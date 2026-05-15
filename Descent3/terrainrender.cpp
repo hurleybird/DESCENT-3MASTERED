@@ -113,17 +113,53 @@ struct TerrainDrawElement
 	ElementRange range;
 };
 
-static int SetTerrainPerPixelLights(int lmhandle)
+struct TerrainPerPixelLightCacheEntry
+{
+	int lmhandle;
+	int light_count;
+	renderer_per_pixel_light lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
+};
+
+static void ApplyTerrainPerPixelLights(int light_count, const renderer_per_pixel_light* lights)
 {
 	static vector light_normal = { 0, 1, 0 };
-	renderer_per_pixel_light lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
-	int light_count = GetPerPixelLightmapTextureLights(lmhandle, lights, RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+
 	if (light_count > 0)
 		rend_SetPerPixelDynamicLighting(&light_normal, light_count, lights);
 	else
 		rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
+}
+
+static int SetTerrainPerPixelLights(int lmhandle)
+{
+	renderer_per_pixel_light lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
+	int light_count = GetPerPixelLightmapTextureLights(lmhandle, lights, RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+	ApplyTerrainPerPixelLights(light_count, lights);
 
 	return light_count;
+}
+
+static int GetCachedTerrainPerPixelLights(int lmhandle, std::vector<TerrainPerPixelLightCacheEntry>& cache,
+	const renderer_per_pixel_light** lights)
+{
+	for (TerrainPerPixelLightCacheEntry& entry : cache)
+	{
+		if (entry.lmhandle == lmhandle)
+		{
+			*lights = entry.lights;
+			return entry.light_count;
+		}
+	}
+
+	TerrainPerPixelLightCacheEntry entry = {};
+	entry.lmhandle = lmhandle;
+	entry.light_count = GetPerPixelLightmapTextureLights(lmhandle, entry.lights,
+		RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+	cache.push_back(entry);
+
+	TerrainPerPixelLightCacheEntry& cached_entry = cache.back();
+	*lights = cached_entry.lights;
+	return cached_entry.light_count;
 }
 
 struct TerrainDrawCell
@@ -1213,15 +1249,35 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 		rendTEMP_SetScissorRect(left, top, right, bot, render_width, render_height);
 	}
 
+	std::vector<TerrainPerPixelLightCacheEntry> per_pixel_light_cache;
+	per_pixel_light_cache.reserve(4);
+	int last_bitmap_handle = -1;
+	int last_lightmap_handle = -1;
+	int last_lighting_lightmap = -1;
 	for (size_t i = 0; i < Terrain_compute_batches.size(); i++)
 	{
 		TerrainGpuBatch& batch = Terrain_compute_batches[i];
-		rend_BindBitmap(GetTextureBitmap(batch.texture, 0));
-		rend_BindLightmap(batch.lightmap);
-		SetTerrainPerPixelLights(batch.lightmap);
+		int bitmap_handle = GetTextureBitmap(batch.texture, 0);
+		if (bitmap_handle != last_bitmap_handle)
+		{
+			rend_BindBitmap(bitmap_handle);
+			last_bitmap_handle = bitmap_handle;
+		}
+		if (batch.lightmap != last_lightmap_handle)
+		{
+			rend_BindLightmap(batch.lightmap);
+			last_lightmap_handle = batch.lightmap;
+		}
+		if (batch.lightmap != last_lighting_lightmap)
+		{
+			const renderer_per_pixel_light* lights = nullptr;
+			int light_count = GetCachedTerrainPerPixelLights(batch.lightmap, per_pixel_light_cache, &lights);
+			ApplyTerrainPerPixelLights(light_count, lights);
+			last_lighting_lightmap = batch.lightmap;
+		}
 		glDrawArraysIndirect(GL_TRIANGLES, (const void*)(i * sizeof(TerrainGpuDrawCommand)));
-		rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 	}
+	rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
 
 	rendTEMP_UnbindVertexBuffer();
