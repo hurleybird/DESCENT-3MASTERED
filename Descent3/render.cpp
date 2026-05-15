@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <algorithm>
+#include <vector>
 #include "descent.h"
 #include "3d.h"
 #include "mono.h"
@@ -1749,6 +1750,335 @@ void RenderScorchesForRoom(room* rp)
 	rend_SetZBufferWriteMask(1);
 }
 
+struct RoomBatchedFace
+{
+	int nv;
+	g3Point point_storage[MAX_VERTS_PER_FACE];
+	g3Point* pointlist[MAX_VERTS_PER_FACE];
+
+	void RefreshPointList()
+	{
+		for (int i = 0; i < nv; i++)
+			pointlist[i] = &point_storage[i];
+	}
+};
+
+struct RoomBaseFaceBatchKey
+{
+	int bitmap_handle;
+	int overlay_map;
+	ubyte overlay_type;
+	sbyte alpha_type;
+	ubyte alpha_value;
+	color_model color_model_value;
+
+	bool Equals(const RoomBaseFaceBatchKey& other) const
+	{
+		return bitmap_handle == other.bitmap_handle &&
+			overlay_map == other.overlay_map &&
+			overlay_type == other.overlay_type &&
+			alpha_type == other.alpha_type &&
+			alpha_value == other.alpha_value &&
+			color_model_value == other.color_model_value;
+	}
+};
+
+struct RoomBaseFaceBatch
+{
+	RoomBaseFaceBatchKey key;
+	std::vector<RoomBatchedFace> faces;
+};
+
+class RoomBaseFaceBatcher
+{
+public:
+	void Add(const RoomBaseFaceBatchKey& key, const RoomBatchedFace& face)
+	{
+		for (size_t i = 0; i < m_batches.size(); i++)
+		{
+			if (m_batches[i].key.Equals(key))
+			{
+				m_batches[i].faces.push_back(face);
+				return;
+			}
+		}
+
+		RoomBaseFaceBatch batch;
+		batch.key = key;
+		batch.faces.push_back(face);
+		m_batches.push_back(batch);
+	}
+
+	void Flush()
+	{
+		if (m_batches.empty())
+			return;
+
+		for (size_t i = 0; i < m_batches.size(); i++)
+		{
+			RoomBaseFaceBatch& batch = m_batches[i];
+			if (batch.faces.empty())
+				continue;
+
+			rend_SetAlphaType(batch.key.alpha_type);
+			rend_SetAlphaValue(batch.key.alpha_value);
+			rend_SetLighting(LS_GOURAUD);
+			rend_SetColorModel(batch.key.color_model_value);
+			rend_SetOverlayType(batch.key.overlay_type);
+			if (batch.key.overlay_type != OT_NONE)
+				rend_SetOverlayMap(batch.key.overlay_map);
+			rend_SetTextureType(TT_PERSPECTIVE);
+
+			std::vector<renderer_poly_batch_item> items(batch.faces.size());
+			for (size_t face_index = 0; face_index < batch.faces.size(); face_index++)
+			{
+				batch.faces[face_index].RefreshPointList();
+				items[face_index].pointlist = batch.faces[face_index].pointlist;
+				items[face_index].nv = batch.faces[face_index].nv;
+			}
+
+			rend_DrawPolygon3DBatch(batch.key.bitmap_handle, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
+		}
+
+		m_batches.clear();
+	}
+
+private:
+	std::vector<RoomBaseFaceBatch> m_batches;
+};
+
+static void CopyRoomBatchPoints(RoomBatchedFace& batched_face, g3Point** pointlist, int nv)
+{
+	batched_face.nv = nv;
+	for (int i = 0; i < nv; i++)
+	{
+		batched_face.point_storage[i] = *pointlist[i];
+		batched_face.point_storage[i].p3_flags &= ~PF_TEMP_POINT;
+		if (!(batched_face.point_storage[i].p3_flags & PF_PROJECTED))
+			g3_ProjectPoint(&batched_face.point_storage[i]);
+	}
+}
+
+static void AddBatchedRoomFaceSideEffects(room* rp, face* fp, int facenum, bool spec_face)
+{
+	if (!Render_mirror_for_room && Rendering_main_view && fp->portal_num == -1 &&
+		((fp->flags & FF_CORONA) || FastCoronas) && (fp->flags & FF_LIGHTMAP) && UseHardware &&
+		(GameTextures[fp->tmap].flags & TF_LIGHT))
+	{
+		if (Num_glows_this_frame < MAX_LIGHT_GLOWS && Detail_settings.Coronas_enabled)
+		{
+			LightGlowsThisFrame[Num_glows_this_frame].roomnum = rp - Rooms;
+			LightGlowsThisFrame[Num_glows_this_frame].facenum = facenum;
+			Num_glows_this_frame++;
+		}
+	}
+
+	if (!Render_mirror_for_room && spec_face)
+		UpdateSpecularFace(rp, fp);
+
+	if ((fp->flags & FF_SCORCHED) && !Render_mirror_for_room &&
+		Num_scorches_to_render < MAX_FACES_PER_ROOM)
+	{
+		Scorches_to_render[Num_scorches_to_render++] = facenum;
+	}
+
+	if (!Render_mirror_for_room && !In_editor_mode && (rp->flags & RF_FOG))
+		UpdateFogFace(rp, fp);
+
+	fp->renderframe = FrameCount % 256;
+}
+
+static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& batcher)
+{
+	if (Render_mirror_for_room || In_editor_mode)
+		return false;
+
+	if (rp->flags & RF_TRIANGULATE)
+		return false;
+
+	face* fp = &rp->faces[facenum];
+	if (fp->num_verts < 3 || fp->num_verts > MAX_VERTS_PER_FACE)
+		return false;
+
+	if (No_render_windows_hack == 1 && fp->portal_num != -1)
+		return false;
+
+	bool spec_face = false;
+	if (!Detail_settings.Specular_lighting || !(GameTextures[fp->tmap].flags & TF_SPECULAR) ||
+		((fp->special_handle == BAD_SPECIAL_FACE_INDEX) && !(rp->flags & RF_EXTERNAL)))
+	{
+		spec_face = false;
+	}
+	else
+	{
+		spec_face = true;
+	}
+
+	float uchange = 0;
+	float vchange = 0;
+	if (GameTextures[fp->tmap].slide_u != 0)
+	{
+		int int_time = Gametime / GameTextures[fp->tmap].slide_u;
+		float norm_time = Gametime - (int_time * GameTextures[fp->tmap].slide_u);
+		norm_time /= GameTextures[fp->tmap].slide_u;
+		uchange = norm_time;
+	}
+
+	if (GameTextures[fp->tmap].slide_v != 0)
+	{
+		int int_time = Gametime / GameTextures[fp->tmap].slide_v;
+		float norm_time = Gametime - (int_time * GameTextures[fp->tmap].slide_v);
+		norm_time /= GameTextures[fp->tmap].slide_v;
+		vchange = norm_time;
+	}
+
+	g3Codes face_cc;
+	face_cc.cc_and = 0xff;
+	face_cc.cc_or = 0;
+	g3Point pointbuffer[MAX_VERTS_PER_FACE];
+	g3Point* pointlist[MAX_VERTS_PER_FACE];
+
+	fp->flags &= ~FF_TRIANGULATED;
+
+	for (int vn = 0; vn < fp->num_verts; vn++)
+	{
+		pointbuffer[vn] = World_point_buffer[rp->wpb_index + fp->face_verts[vn]];
+		g3Point* p = &pointbuffer[vn];
+		pointlist[vn] = p;
+		p->p3_uvl.u = fp->face_uvls[vn].u;
+		p->p3_uvl.v = fp->face_uvls[vn].v;
+		p->p3_uvl.u2 = fp->face_uvls[vn].u2;
+		p->p3_uvl.v2 = fp->face_uvls[vn].v2;
+		p->p3_flags |= PF_UV + PF_L + PF_UV2;
+#ifndef RELEASE
+		if (fp->flags & FF_LIGHTMAP)
+			p->p3_uvl.l = Room_light_val;
+		else
+			p->p3_uvl.l = 1.0;
+#else
+		p->p3_uvl.l = Room_light_val;
+#endif
+		p->p3_uvl.u += uchange;
+		p->p3_uvl.v += vchange;
+		face_cc.cc_and &= p->p3_codes;
+		face_cc.cc_or |= p->p3_codes;
+	}
+
+	if (face_cc.cc_and)
+	{
+		if (spec_face && GameTextures[fp->tmap].flags & TF_SMOOTH_SPECULAR)
+		{
+			fp->flags |= FF_SPEC_INVISIBLE;
+			UpdateSpecularFace(rp, fp);
+		}
+		return true;
+	}
+
+	if (face_cc.cc_or)
+		return false;
+
+	if (rp->flags & RF_FOG && fp->portal_num != -1 && !(rp->portals[fp->portal_num].flags & PF_RENDER_FACES))
+		return false;
+
+	if (NoLightmaps)
+	{
+		static bool initialized = false;
+		static float lm_red[32], lm_green[32], lm_blue[32];
+		if (!initialized)
+		{
+			initialized = true;
+			for (int i = 0; i < 32; i++)
+			{
+				lm_red[i] = (float)i / 31.0;
+				lm_green[i] = (float)i / 31.0;
+				lm_blue[i] = (float)i / 31.0;
+			}
+		}
+
+		if (fp->flags & FF_LIGHTMAP)
+		{
+			int lm_handle = LightmapInfo[fp->lmi_handle].lm_handle;
+			ushort* data = (ushort*)lm_data(lm_handle);
+			int w = lm_w(lm_handle);
+			int h = lm_h(lm_handle);
+
+			for (int i = 0; i < fp->num_verts; i++)
+			{
+				float u = fp->face_uvls[i].u2 * (w - 1);
+				float v = fp->face_uvls[i].v2 * (h - 1);
+				g3Point* p = &pointbuffer[i];
+				int int_u = u;
+				int int_v = v;
+				ushort texel = data[int_v * w + int_u];
+				int r = (texel >> 10) & 0x1f;
+				int g = (texel >> 5) & 0x1f;
+				int b = (texel) & 0x1f;
+				p->p3_r = p->p3_l * lm_red[r];
+				p->p3_g = p->p3_l * lm_green[g];
+				p->p3_b = p->p3_l * lm_blue[b];
+				p->p3_flags |= PF_RGBA;
+			}
+		}
+		else
+		{
+			for (int i = 0; i < fp->num_verts; i++)
+			{
+				g3Point* p = &pointbuffer[i];
+				p->p3_r = p->p3_l;
+				p->p3_g = p->p3_l;
+				p->p3_b = p->p3_l;
+				p->p3_flags |= PF_RGBA;
+			}
+		}
+	}
+
+	int bm_handle;
+	if ((fp->flags & FF_DESTROYED) && (GameTextures[fp->tmap].flags & TF_DESTROYABLE))
+	{
+		bm_handle = GetTextureBitmap(GameTextures[fp->tmap].destroy_handle, 0);
+		ASSERT(bm_handle != -1);
+	}
+	else
+		bm_handle = GetTextureBitmap(fp->tmap, 0);
+
+	sbyte alpha_type = (sbyte)GetFaceAlpha(fp, bm_handle);
+	if (alpha_type != AT_ALWAYS)
+		return false;
+
+	if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting &&
+		UseHardware && rend_CanUseNewrender())
+	{
+		renderer_per_pixel_light per_pixel_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
+		int per_pixel_light_count = GetPerPixelLightmapLights(fp->lmi_handle, per_pixel_lights,
+			RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+		if (per_pixel_light_count > 0)
+			return false;
+	}
+
+	RoomBaseFaceBatchKey key = {};
+	key.bitmap_handle = bm_handle;
+	key.alpha_type = alpha_type;
+	key.alpha_value = 255;
+	key.color_model_value = NoLightmaps ? CM_RGB : CM_MONO;
+	key.overlay_type = OT_NONE;
+	key.overlay_map = 0;
+
+	if (fp->flags & FF_LIGHTMAP)
+	{
+		if (!(GameTextures[fp->tmap].flags & TF_SATURATE))
+		{
+			key.overlay_type = OT_BLEND;
+			key.overlay_map = LightmapInfo[fp->lmi_handle].lm_handle;
+		}
+	}
+
+	RoomBatchedFace batched_face;
+	CopyRoomBatchPoints(batched_face, pointlist, fp->num_verts);
+	batcher.Add(key, batched_face);
+	AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face);
+	return true;
+}
+
 //Draw the specified face
 //Parameters:	rp - pointer to the room the face is un
 //				facenum - which face in the specified room
@@ -2237,6 +2567,8 @@ void SetupRoomFog(room* rp, vector* eye, matrix* orient, int viewer_room)
 void RenderRoomUnsorted(room* rp)
 {
 	int rcount = 0;
+	RoomBaseFaceBatcher base_face_batcher;
+	const bool batch_room_faces = UseHardware && rend_CanUseNewrender();
 	ASSERT(rp->num_faces <= MAX_FACES_PER_ROOM);
 
 	// Rotate points in this room if need be
@@ -2323,9 +2655,15 @@ void RenderRoomUnsorted(room* rp)
 		}
 		else
 		{
+			if (batch_room_faces && TryBatchRoomBaseFace(rp, fn, base_face_batcher))
+				continue;
+
+			base_face_batcher.Flush();
 			RenderFace(rp, fn);
 		}
 	}
+
+	base_face_batcher.Flush();
 }
 
 // Figures out a scalar value to apply to all vertices in the room
