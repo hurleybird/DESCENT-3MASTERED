@@ -205,13 +205,26 @@ struct TerrainGpuBatch
 {
 	int texture;
 	int lightmap;
+	int first_cell;
+	int cell_count;
 	int first_vertex;
 	int vertex_count;
 };
 
+struct TerrainGpuDrawCommand
+{
+	uint32_t count;
+	uint32_t instance_count;
+	uint32_t first;
+	uint32_t base_instance;
+};
+
+static_assert(sizeof(TerrainGpuDrawCommand) == 16, "TerrainGpuDrawCommand must match DrawArraysIndirectCommand");
+
 static GLuint Terrain_compute_program = 0;
 static GLuint Terrain_compute_input_buffer = 0;
 static GLuint Terrain_compute_vertex_buffer = 0;
+static GLuint Terrain_compute_indirect_buffer = 0;
 static GLuint Terrain_compute_vertex_array = 0;
 static GLint Terrain_compute_cell_count_uniform = -1;
 static GLint Terrain_compute_row0_uniform = -1;
@@ -228,6 +241,7 @@ static ubyte Terrain_compute_draw_work_show_invisible = 0xff;
 static std::vector<TerrainGpuCellWork> Terrain_compute_cell_work;
 static std::vector<TerrainGpuCellInput> Terrain_compute_cell_inputs;
 static std::vector<TerrainGpuBatch> Terrain_compute_batches;
+static std::vector<TerrainGpuDrawCommand> Terrain_compute_draw_commands;
 static constexpr int TERRAIN_COMPUTE_VERTS_PER_TRIANGLE = 6;
 static constexpr int TERRAIN_COMPUTE_VERTS_PER_CELL = TERRAIN_COMPUTE_VERTS_PER_TRIANGLE * 2;
 
@@ -567,6 +581,19 @@ layout(std430, binding = 1) writeonly buffer TerrainVertexBuffer
 	TerrainVertexOutput vertices[];
 };
 
+struct DrawArraysIndirectCommand
+{
+	uint count;
+	uint instance_count;
+	uint first;
+	uint base_instance;
+};
+
+layout(std430, binding = 2) buffer TerrainDrawCommandBuffer
+{
+	DrawArraysIndirectCommand draws[];
+};
+
 uniform uint cell_count;
 uniform vec3 terrain_row0;
 uniform vec3 terrain_x_step;
@@ -574,8 +601,6 @@ uniform vec3 terrain_z_step;
 uniform vec3 terrain_y_step;
 
 const float TERRAIN_COMPUTE_NEAR_Z = 0.001;
-const uint VERTS_PER_TRIANGLE = 6u;
-
 struct ClipVertex
 {
 	vec3 world;
@@ -665,17 +690,6 @@ vec2 LightmapUv(uint segment, uint corner)
 	return uv;
 }
 
-void WriteDegenerateVertex(uint index)
-{
-	vertices[index].position = vec3(0.0, 0.0, -1.0);
-	vertices[index].color = 0xffffffffu;
-	vertices[index].normal = vec3(0.0);
-	vertices[index].lmpage = 0;
-	vertices[index].uv1 = vec2(0.0);
-	vertices[index].uv2 = vec2(0.0);
-	vertices[index].uvslide = vec2(1.0, 0.0);
-}
-
 void WriteVertex(uint index, vec3 world, vec3 rotated, vec2 base_uv, vec2 lightmap_uv)
 {
 	float eye_z = max(rotated.z, TERRAIN_COMPUTE_NEAR_Z);
@@ -735,10 +749,9 @@ void ClipTriangleToEyePlane(ClipVertex input_poly[3], out ClipVertex output_poly
 	}
 }
 
-void WriteDegenerateTriangleFan(uint vertex_base)
+uint ClippedTriangleVertexCount(int vertex_count)
 {
-	for (uint i = 0u; i < VERTS_PER_TRIANGLE; i++)
-		WriteDegenerateVertex(vertex_base + i);
+	return vertex_count >= 3 ? uint(vertex_count - 2) * 3u : 0u;
 }
 
 void WriteClippedTriangleFan(uint vertex_base, ClipVertex poly[4], int vertex_count)
@@ -754,12 +767,9 @@ void WriteClippedTriangleFan(uint vertex_base, ClipVertex poly[4], int vertex_co
 			cursor += 3u;
 		}
 	}
-
-	while (cursor < VERTS_PER_TRIANGLE)
-		WriteDegenerateVertex(vertex_base + cursor++);
 }
 
-void EmitTriangle(uint vertex_base,
+void EmitTriangle(uint batch_index, uint batch_output_first_vertex,
 	vec3 world0, vec3 world1, vec3 world2,
 	vec2 uv0, vec2 uv1, vec2 uv2,
 	vec2 lm0, vec2 lm1, vec2 lm2)
@@ -772,7 +782,6 @@ void EmitTriangle(uint vertex_base,
 
 	if (!visible)
 	{
-		WriteDegenerateTriangleFan(vertex_base);
 		return;
 	}
 
@@ -793,6 +802,11 @@ void EmitTriangle(uint vertex_base,
 	ClipVertex clipped_poly[4];
 	int clipped_count = 0;
 	ClipTriangleToEyePlane(input_poly, clipped_poly, clipped_count);
+	uint write_count = ClippedTriangleVertexCount(clipped_count);
+	if (write_count == 0u)
+		return;
+
+	uint vertex_base = batch_output_first_vertex + atomicAdd(draws[batch_index].count, write_count);
 	WriteClippedTriangleFan(vertex_base, clipped_poly, clipped_count);
 }
 
@@ -805,6 +819,8 @@ void main()
 	TerrainCellInput cell = cells[id];
 	uint segment = cell.packed.x;
 	uint rotation = cell.packed.y;
+	uint batch_index = cell.packed.z;
+	uint batch_output_first_vertex = cell.packed.w;
 
 	vec3 world0 = CellPosition(segment, cell.height, 0u);
 	vec3 world1 = CellPosition(segment, cell.height, 1u);
@@ -821,9 +837,8 @@ void main()
 	vec2 lm2 = LightmapUv(segment, 2u);
 	vec2 lm3 = LightmapUv(segment, 3u);
 
-	uint vertex_base = id * 12u;
-	EmitTriangle(vertex_base + 0u, world0, world1, world3, uv0, uv1, uv3, lm0, lm1, lm3);
-	EmitTriangle(vertex_base + 6u, world3, world1, world2, uv3, uv1, uv2, lm3, lm1, lm2);
+	EmitTriangle(batch_index, batch_output_first_vertex, world0, world1, world3, uv0, uv1, uv3, lm0, lm1, lm3);
+	EmitTriangle(batch_index, batch_output_first_vertex, world3, world1, world2, uv3, uv1, uv2, lm3, lm1, lm2);
 }
 )glsl";
 
@@ -878,6 +893,7 @@ void main()
 
 	glGenBuffers(1, &Terrain_compute_input_buffer);
 	glGenBuffers(1, &Terrain_compute_vertex_buffer);
+	glGenBuffers(1, &Terrain_compute_indirect_buffer);
 	glGenVertexArrays(1, &Terrain_compute_vertex_array);
 	ConfigureTerrainComputeVertexArray();
 
@@ -1018,12 +1034,18 @@ static void FinalizeTerrainComputeBatches()
 			TerrainGpuBatch batch = {};
 			batch.texture = work.texture;
 			batch.lightmap = work.lightmap;
+			batch.first_cell = (int)i;
+			batch.cell_count = 0;
 			batch.first_vertex = (int)(i * TERRAIN_COMPUTE_VERTS_PER_CELL);
 			batch.vertex_count = 0;
 			Terrain_compute_batches.push_back(batch);
 		}
 
-		Terrain_compute_batches.back().vertex_count += TERRAIN_COMPUTE_VERTS_PER_CELL;
+		TerrainGpuBatch& batch = Terrain_compute_batches.back();
+		batch.cell_count++;
+		batch.vertex_count += TERRAIN_COMPUTE_VERTS_PER_CELL;
+		Terrain_compute_cell_inputs[i].packed[2] = (uint32_t)(Terrain_compute_batches.size() - 1);
+		Terrain_compute_cell_inputs[i].packed[3] = (uint32_t)batch.first_vertex;
 	}
 
 	GlobalTransCount = (int)(Terrain_compute_cell_inputs.size() * 4);
@@ -1090,6 +1112,25 @@ static void BindTerrainComputeInputBuffer()
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, Terrain_compute_input_buffer);
 }
 
+static void PrepareTerrainComputeIndirectCommands()
+{
+	Terrain_compute_draw_commands.resize(Terrain_compute_batches.size());
+	for (size_t i = 0; i < Terrain_compute_batches.size(); i++)
+	{
+		TerrainGpuBatch& batch = Terrain_compute_batches[i];
+		Terrain_compute_draw_commands[i].count = 0;
+		Terrain_compute_draw_commands[i].instance_count = 1;
+		Terrain_compute_draw_commands[i].first = (uint32_t)batch.first_vertex;
+		Terrain_compute_draw_commands[i].base_instance = 0;
+	}
+
+	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, Terrain_compute_indirect_buffer);
+	glBufferData(GL_DRAW_INDIRECT_BUFFER,
+		(GLsizeiptr)(Terrain_compute_draw_commands.size() * sizeof(TerrainGpuDrawCommand)),
+		Terrain_compute_draw_commands.empty() ? nullptr : Terrain_compute_draw_commands.data(), GL_STREAM_DRAW);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, Terrain_compute_indirect_buffer);
+}
+
 static void SetTerrainComputeViewUniforms()
 {
 	vector viewer_eye;
@@ -1142,10 +1183,11 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 
 	BindTerrainComputeInputBuffer();
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, Terrain_compute_vertex_buffer);
+	PrepareTerrainComputeIndirectCommands();
 
 	GLuint groups = (GLuint)((Terrain_compute_cell_inputs.size() + 127) / 128);
 	glDispatchCompute(groups, 1, 1);
-	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
 	rendTEMP_ClearShaderBinding();
 
 	EnsureTerrainPipelinesReady();
@@ -1171,14 +1213,16 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 		rendTEMP_SetScissorRect(left, top, right, bot, render_width, render_height);
 	}
 
-	for (TerrainGpuBatch& batch : Terrain_compute_batches)
+	for (size_t i = 0; i < Terrain_compute_batches.size(); i++)
 	{
+		TerrainGpuBatch& batch = Terrain_compute_batches[i];
 		rend_BindBitmap(GetTextureBitmap(batch.texture, 0));
 		rend_BindLightmap(batch.lightmap);
 		SetTerrainPerPixelLights(batch.lightmap);
-		glDrawArrays(GL_TRIANGLES, batch.first_vertex, batch.vertex_count);
+		glDrawArraysIndirect(GL_TRIANGLES, (const void*)(i * sizeof(TerrainGpuDrawCommand)));
 		rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 	}
+	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
 
 	rendTEMP_UnbindVertexBuffer();
 	if (scissor_to_window)
