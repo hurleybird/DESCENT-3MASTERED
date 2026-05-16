@@ -32,16 +32,12 @@ namespace
 		0.437980f, 0.620309f, 0.062196f, 0.119485f, 0.235646f, 0.795892f, 0.044437f, 0.617311f,
 	};
 
-	constexpr int GTAO_FIXED_SAMPLES = 64;
-	constexpr int GTAO_MEDIUM_BLUR_RADIUS = 3;
-	constexpr float GTAO_RADIUS = 4.0f;
-	constexpr float GTAO_INTENSITY = 2.0f;
-	constexpr float GTAO_BIAS = 0.25f;
+	constexpr int GTAO_DEFAULT_SAMPLES = 128;
 
 	void GTAOSamplePattern(int samples, int* directions_out, int* steps_out)
 	{
 		if (samples < 1)
-			samples = GTAO_FIXED_SAMPLES;
+			samples = GTAO_DEFAULT_SAMPLES;
 
 		int directions;
 		if (samples <= 12)
@@ -79,6 +75,24 @@ namespace
 			return 0.0f;
 		if (value > 1.0f)
 			return 1.0f;
+		return value;
+	}
+
+	int ClampInt(int value, int min_value, int max_value)
+	{
+		if (value < min_value)
+			return min_value;
+		if (value > max_value)
+			return max_value;
+		return value;
+	}
+
+	float ClampFloat(float value, float min_value, float max_value)
+	{
+		if (value < min_value)
+			return min_value;
+		if (value > max_value)
+			return max_value;
 		return value;
 	}
 
@@ -385,15 +399,14 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	if (fabsf(m00) < 1e-6f) m00 = 1.0f;
 	if (fabsf(m11) < 1e-6f) m11 = 1.0f;
 
-	//Fixed quality settings selected after tuning.
-	int samples = GTAO_FIXED_SAMPLES;
+	int samples = ClampInt((int)pref_state.gtao_sample_count, 1, 1024);
 	int directions = 0;
 	int steps = 0;
 	GTAOSamplePattern(samples, &directions, &steps);
 
-	float radius = GTAO_RADIUS;
-	float bias = GTAO_BIAS;
-	float intensity = GTAO_INTENSITY;
+	float radius = ClampFloat(pref_state.gtao_radius, 0.1f, 12.0f);
+	float bias = ClampFloat(pref_state.gtao_bias, 0.0f, 1.0f);
+	float intensity = ClampFloat(pref_state.gtao_intensity, 0.0f, 4.0f);
 
 	//Convert world-space radius to a pixel-space scale at depth==1. The shader
 	//then divides by per-pixel depth to get the on-screen step size. This is
@@ -463,7 +476,7 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	//-------------------------------------------------------------------------
 	// Pass 3: Optional separable bilateral blur (X then Y).
 	//-------------------------------------------------------------------------
-	int blur_radius = GTAO_MEDIUM_BLUR_RADIUS;
+	int blur_radius = ClampInt((int)pref_state.gtao_blur_radius, 0, 8);
 	ColorFramebuffer* blurred = &ao_framebuffer;
 
 	if (blur_radius > 0)

@@ -278,6 +278,11 @@ struct renderer_preferred_state
 
 	bool gtao_enabled;       //Master GTAO on/off
 	ubyte gtao_resolution;   //gtao_resolution enum
+	ushort gtao_sample_count;
+	ubyte gtao_blur_radius;
+	float gtao_radius;
+	float gtao_intensity;
+	float gtao_bias;
 };
 
 struct renderer_lfb

@@ -384,6 +384,14 @@ void SaveGameSettings()
 	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
 	Database->write("RS_gtao_enabled", Render_preferred_state.gtao_enabled);
 	Database->write("RS_gtao_resolution", Render_preferred_state.gtao_resolution);
+	Database->write("RS_gtao_sample_count", Render_preferred_state.gtao_sample_count);
+	Database->write("RS_gtao_blur_radius", Render_preferred_state.gtao_blur_radius);
+	sprintf(tempbuffer, "%f", Render_preferred_state.gtao_radius);
+	Database->write("RS_gtao_radius", tempbuffer, strlen(tempbuffer) + 1);
+	sprintf(tempbuffer, "%f", Render_preferred_state.gtao_intensity);
+	Database->write("RS_gtao_intensity", tempbuffer, strlen(tempbuffer) + 1);
+	sprintf(tempbuffer, "%f", Render_preferred_state.gtao_bias);
+	Database->write("RS_gtao_bias", tempbuffer, strlen(tempbuffer) + 1);
 
 	Database->write("Dynamic_Lighting",Detail_settings.Dynamic_lighting);
 
@@ -545,6 +553,11 @@ void LoadGameSettings()
 	Render_preferred_state.bloom_spread = 0.75f;
 	Render_preferred_state.gtao_enabled = false;
 	Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
+	Render_preferred_state.gtao_sample_count = 128;
+	Render_preferred_state.gtao_blur_radius = 8;
+	Render_preferred_state.gtao_radius = 4.0f;
+	Render_preferred_state.gtao_intensity = 2.0f;
+	Render_preferred_state.gtao_bias = 0.25f;
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
 	Terrain_renderer_mode = TERRAIN_RENDERER_COMPUTE;
@@ -722,6 +735,25 @@ void LoadGameSettings()
 	Render_preferred_state.gtao_resolution = (ubyte)tempint;
 	if (Render_preferred_state.gtao_resolution == GTAO_RESOLUTION_AUTO)
 		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
+	tempint = Render_preferred_state.gtao_sample_count;
+	Database->read_int("RS_gtao_sample_count", &tempint);
+	if (tempint < 1) tempint = 1;
+	if (tempint > 1024) tempint = 1024;
+	Render_preferred_state.gtao_sample_count = (ushort)tempint;
+	tempint = Render_preferred_state.gtao_blur_radius;
+	Database->read_int("RS_gtao_blur_radius", &tempint);
+	if (tempint < 0) tempint = 0;
+	if (tempint > 8) tempint = 8;
+	Render_preferred_state.gtao_blur_radius = (ubyte)tempint;
+	READ_FLOAT_SETTING("RS_gtao_radius", Render_preferred_state.gtao_radius);
+	if (Render_preferred_state.gtao_radius < 0.1f) Render_preferred_state.gtao_radius = 0.1f;
+	if (Render_preferred_state.gtao_radius > 12.0f) Render_preferred_state.gtao_radius = 12.0f;
+	READ_FLOAT_SETTING("RS_gtao_intensity", Render_preferred_state.gtao_intensity);
+	if (Render_preferred_state.gtao_intensity < 0.0f) Render_preferred_state.gtao_intensity = 0.0f;
+	if (Render_preferred_state.gtao_intensity > 4.0f) Render_preferred_state.gtao_intensity = 4.0f;
+	READ_FLOAT_SETTING("RS_gtao_bias", Render_preferred_state.gtao_bias);
+	if (Render_preferred_state.gtao_bias < 0.0f) Render_preferred_state.gtao_bias = 0.0f;
+	if (Render_preferred_state.gtao_bias > 1.0f) Render_preferred_state.gtao_bias = 1.0f;
 	// force feedback stuff
 	Database->read("EnableJoystickFF",&D3Use_force_feedback);
 	Database->read("ForceFeedbackAutoCenter",&D3Force_auto_center);
