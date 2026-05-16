@@ -125,7 +125,7 @@ static bool ConfigCanUsePerPixelLighting()
 	return OpenGLProfile == GLPROFILE_CORE;
 }
 
-static bool ConfigCanUseHBAO()
+static bool ConfigCanUseGTAO()
 {
 	return OpenGLProfile == GLPROFILE_CORE;
 }
@@ -176,12 +176,12 @@ float ConfigNormalizeBloomIntensity(float intensity)
 	return intensity;
 }
 
-static int ConfigNormalizeHBAOResolution(int resolution)
+static int ConfigNormalizeGTAOResolution(int resolution)
 {
-	if (resolution < HBAO_RESOLUTION_AUTO)
-		return HBAO_RESOLUTION_AUTO;
-	if (resolution > HBAO_RESOLUTION_QUARTER)
-		return HBAO_RESOLUTION_QUARTER;
+	if (resolution < GTAO_RESOLUTION_AUTO)
+		return GTAO_RESOLUTION_AUTO;
+	if (resolution > GTAO_RESOLUTION_QUARTER)
+		return GTAO_RESOLUTION_QUARTER;
 	return resolution;
 }
 
@@ -449,14 +449,6 @@ void ConfigSetDetailLevel(int level)
 #define GAMMA_SLIDER_UNITS	145 //[ISB] Allow gamma all the way down to 0.1
 
 #define IDV_AUTOGAMMA	6
-#define IDV_HBAOTUNING	7
-
-#define UID_HBAO_RESET	0x1010
-
-#define HBAO_SAMPLE_SLIDER_UNITS	(HBAO_MAX_SAMPLES - HBAO_MIN_SAMPLES)
-#define HBAO_RADIUS_SLIDER_UNITS	315
-#define HBAO_INTENSITY_SLIDER_UNITS	160
-#define HBAO_BIAS_SLIDER_UNITS	100
 
 void gamma_callback(newuiTiledWindow* wnd, void* data)
 {
@@ -896,173 +888,45 @@ void ConfigValidateGameWindowSize()
 		&Game_window_res_width, &Game_window_res_height, &Game_window_aspect);
 }
 
-static void ConfigApplyFixedHBAOSettings()
-{
-	Render_preferred_state.hbao_use_exclusion_mask = true;
-	Render_preferred_state.hbao_algorithm = HBAO_ALGORITHM_GTAO;
-	Render_preferred_state.hbao_quality = HBAO_QUALITY_HIGH;
-	Render_preferred_state.hbao_samples = HBAO_DEFAULT_SAMPLES;
-	Render_preferred_state.hbao_blur = HBAO_BLUR_WIDE;
-	Render_preferred_state.hbao_radius = 3.0f;
-	Render_preferred_state.hbao_intensity = 1.25f;
-	Render_preferred_state.hbao_bias = 0.2f;
-}
-
-static int ConfigNormalizeHBAOAlgorithm(int algorithm)
-{
-	if (algorithm < HBAO_ALGORITHM_HBAO)
-		return HBAO_ALGORITHM_HBAO;
-	if (algorithm > HBAO_ALGORITHM_GTAO)
-		return HBAO_ALGORITHM_GTAO;
-	return algorithm;
-}
-
-static int ConfigNormalizeHBAOQuality(int quality)
-{
-	if (quality < HBAO_QUALITY_LOW)
-		return HBAO_QUALITY_LOW;
-	if (quality > HBAO_QUALITY_HIGH)
-		return HBAO_QUALITY_HIGH;
-	return quality;
-}
-
-static int ConfigNormalizeHBAOSamples(int samples)
-{
-	if (samples < HBAO_MIN_SAMPLES)
-		return HBAO_DEFAULT_SAMPLES;
-	if (samples > HBAO_MAX_SAMPLES)
-		return HBAO_MAX_SAMPLES;
-	return samples;
-}
-
-static int HBAOQualityToSamples(int quality)
-{
-	switch (ConfigNormalizeHBAOQuality(quality))
-	{
-	case HBAO_QUALITY_LOW:
-		return 12;
-	case HBAO_QUALITY_MEDIUM:
-		return 24;
-	case HBAO_QUALITY_HIGH:
-	default:
-		return HBAO_DEFAULT_SAMPLES;
-	}
-}
-
-static int HBAOSamplesToQuality(int samples)
-{
-	samples = ConfigNormalizeHBAOSamples(samples);
-	if (samples <= 12)
-		return HBAO_QUALITY_LOW;
-	if (samples <= 24)
-		return HBAO_QUALITY_MEDIUM;
-	return HBAO_QUALITY_HIGH;
-}
-
-static int ConfigNormalizeHBAOBlur(int blur)
-{
-	if (blur < HBAO_BLUR_NONE)
-		return HBAO_BLUR_NONE;
-	if (blur > HBAO_BLUR_WIDE)
-		return HBAO_BLUR_WIDE;
-	return blur;
-}
-
-static float ConfigClampFloat(float value, float min_value, float max_value)
-{
-	if (value < min_value)
-		return min_value;
-	if (value > max_value)
-		return max_value;
-	return value;
-}
-
-static void ConfigNormalizeHBAOSettings()
-{
-	Render_preferred_state.hbao_algorithm = (ubyte)ConfigNormalizeHBAOAlgorithm(Render_preferred_state.hbao_algorithm);
-	int quality = ConfigNormalizeHBAOQuality(Render_preferred_state.hbao_quality);
-	int samples = Render_preferred_state.hbao_samples;
-	if (samples < HBAO_MIN_SAMPLES)
-		samples = HBAOQualityToSamples(quality);
-	Render_preferred_state.hbao_samples = (ushort)ConfigNormalizeHBAOSamples(samples);
-	Render_preferred_state.hbao_quality = (ubyte)HBAOSamplesToQuality(Render_preferred_state.hbao_samples);
-	Render_preferred_state.hbao_resolution = (ubyte)ConfigNormalizeHBAOResolution(Render_preferred_state.hbao_resolution);
-	if (Render_preferred_state.hbao_resolution == HBAO_RESOLUTION_AUTO)
-		Render_preferred_state.hbao_resolution = HBAO_RESOLUTION_HALF;
-	Render_preferred_state.hbao_blur = (ubyte)ConfigNormalizeHBAOBlur(Render_preferred_state.hbao_blur);
-	Render_preferred_state.hbao_radius = ConfigClampFloat(Render_preferred_state.hbao_radius, 0.5f, 32.0f);
-	Render_preferred_state.hbao_intensity = ConfigClampFloat(Render_preferred_state.hbao_intensity, 0.0f, 4.0f);
-	Render_preferred_state.hbao_bias = ConfigClampFloat(Render_preferred_state.hbao_bias, 0.0f, 0.5f);
-}
-
-static int HBAOResolutionToTuningIndex(int resolution)
-{
-	switch (ConfigNormalizeHBAOResolution(resolution))
-	{
-	case HBAO_RESOLUTION_QUARTER:
-		return 0;
-	case HBAO_RESOLUTION_FULL:
-		return 2;
-	case HBAO_RESOLUTION_HALF:
-	case HBAO_RESOLUTION_AUTO:
-	default:
-		return 1;
-	}
-}
-
-static int HBAOTuningIndexToResolution(int index)
-{
-	switch (index)
-	{
-	case 0:
-		return HBAO_RESOLUTION_QUARTER;
-	case 2:
-		return HBAO_RESOLUTION_FULL;
-	case 1:
-	default:
-		return HBAO_RESOLUTION_HALF;
-	}
-}
-
-static int HBAOPresetToIndex(bool enabled, int resolution)
+static int GTAOPresetToIndex(bool enabled, int resolution)
 {
 	if (!enabled)
 		return 0;
 
-	switch (ConfigNormalizeHBAOResolution(resolution))
+	switch (ConfigNormalizeGTAOResolution(resolution))
 	{
-	case HBAO_RESOLUTION_QUARTER:
+	case GTAO_RESOLUTION_QUARTER:
 		return 1;
-	case HBAO_RESOLUTION_FULL:
+	case GTAO_RESOLUTION_FULL:
 		return 3;
-	case HBAO_RESOLUTION_HALF:
-	case HBAO_RESOLUTION_AUTO:
+	case GTAO_RESOLUTION_HALF:
+	case GTAO_RESOLUTION_AUTO:
 	default:
 		return 2;
 	}
 }
 
-static void ApplyHBAOPresetFromIndex(int index)
+static void ApplyGTAOPresetFromIndex(int index)
 {
 	switch (index)
 	{
 	case 1:
-		Render_preferred_state.hbao_enabled = true;
-		Render_preferred_state.hbao_resolution = HBAO_RESOLUTION_QUARTER;
+		Render_preferred_state.gtao_enabled = true;
+		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_QUARTER;
 		break;
 	case 2:
-		Render_preferred_state.hbao_enabled = true;
-		Render_preferred_state.hbao_resolution = HBAO_RESOLUTION_HALF;
+		Render_preferred_state.gtao_enabled = true;
+		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
 		break;
 	case 3:
-		Render_preferred_state.hbao_enabled = true;
-		Render_preferred_state.hbao_resolution = HBAO_RESOLUTION_FULL;
+		Render_preferred_state.gtao_enabled = true;
+		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_FULL;
 		break;
 	case 0:
 	default:
-		Render_preferred_state.hbao_enabled = false;
-		if (Render_preferred_state.hbao_resolution == HBAO_RESOLUTION_AUTO)
-			Render_preferred_state.hbao_resolution = HBAO_RESOLUTION_HALF;
+		Render_preferred_state.gtao_enabled = false;
+		if (Render_preferred_state.gtao_resolution == GTAO_RESOLUTION_AUTO)
+			Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
 		break;
 	}
 }
@@ -1086,7 +950,7 @@ struct video_menu
 	bool* fullscreen;
 	int* antialiasing;
 	int* supersampling;
-	int* hbao;
+	int* gtao;
 	int* backend;
 
 	int window_width, window_height;
@@ -1207,18 +1071,18 @@ struct video_menu
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
 			changed = true;
 		}
-		if (hbao && sheet->HasChanged(hbao))
+		if (gtao && sheet->HasChanged(gtao))
 		{
-			if (ConfigCanUseHBAO())
+			if (ConfigCanUseGTAO())
 			{
-				ApplyHBAOPresetFromIndex(*hbao);
+				ApplyGTAOPresetFromIndex(*gtao);
 			}
 			else
 			{
-				ApplyHBAOPresetFromIndex(0);
-				if (*hbao != 0)
+				ApplyGTAOPresetFromIndex(0);
+				if (*gtao != 0)
 				{
-					*hbao = 0;
+					*gtao = 0;
 					sheet->UpdateChanges();
 				}
 			}
@@ -1268,270 +1132,15 @@ struct video_menu
 			sheet->UpdateChanges();
 	}
 
-	void update_hbao_preset_control()
+	void update_gtao_preset_control()
 	{
-		if (!hbao)
+		if (!gtao)
 			return;
 
-		*hbao = ConfigCanUseHBAO() ?
-			HBAOPresetToIndex(Render_preferred_state.hbao_enabled, Render_preferred_state.hbao_resolution) : 0;
+		*gtao = ConfigCanUseGTAO() ?
+			GTAOPresetToIndex(Render_preferred_state.gtao_enabled, Render_preferred_state.gtao_resolution) : 0;
 		if (sheet)
 			sheet->UpdateChanges();
-	}
-
-	bool apply_hbao_tuning_controls(bool* enabled, bool* use_exclusion_mask, int* algorithm, short* samples, int* resolution, int* blur,
-		short* radius, short* intensity, short* bias,
-		const tSliderSettings& sample_settings,
-		const tSliderSettings& radius_settings, const tSliderSettings& intensity_settings,
-		const tSliderSettings& bias_settings)
-	{
-		bool changed = false;
-		const bool new_enabled = ConfigCanUseHBAO() && enabled && *enabled;
-		const bool new_use_exclusion_mask = use_exclusion_mask ? *use_exclusion_mask :
-			Render_preferred_state.hbao_use_exclusion_mask;
-		const ubyte new_algorithm = (ubyte)ConfigNormalizeHBAOAlgorithm(algorithm ? *algorithm : Render_preferred_state.hbao_algorithm);
-		const ushort new_samples = (ushort)ConfigNormalizeHBAOSamples(samples ?
-			CALC_SLIDER_INT_VALUE(*samples, sample_settings.min_val.i, sample_settings.max_val.i, HBAO_SAMPLE_SLIDER_UNITS) :
-			Render_preferred_state.hbao_samples);
-		const ubyte new_quality = (ubyte)HBAOSamplesToQuality(new_samples);
-		const ubyte new_resolution = (ubyte)HBAOTuningIndexToResolution(resolution ? *resolution :
-			HBAOResolutionToTuningIndex(Render_preferred_state.hbao_resolution));
-		const ubyte new_blur = (ubyte)ConfigNormalizeHBAOBlur(blur ? *blur : Render_preferred_state.hbao_blur);
-		const float new_radius = ConfigClampFloat(radius ?
-			CALC_SLIDER_FLOAT_VALUE(*radius, radius_settings.min_val.f, radius_settings.max_val.f, HBAO_RADIUS_SLIDER_UNITS) :
-			Render_preferred_state.hbao_radius, 0.5f, 32.0f);
-		const float new_intensity = ConfigClampFloat(intensity ?
-			CALC_SLIDER_FLOAT_VALUE(*intensity, intensity_settings.min_val.f, intensity_settings.max_val.f, HBAO_INTENSITY_SLIDER_UNITS) :
-			Render_preferred_state.hbao_intensity, 0.0f, 4.0f);
-		const float new_bias = ConfigClampFloat(bias ?
-			CALC_SLIDER_FLOAT_VALUE(*bias, bias_settings.min_val.f, bias_settings.max_val.f, HBAO_BIAS_SLIDER_UNITS) :
-			Render_preferred_state.hbao_bias, 0.0f, 0.5f);
-
-		if (Render_preferred_state.hbao_enabled != new_enabled)
-		{
-			Render_preferred_state.hbao_enabled = new_enabled;
-			changed = true;
-		}
-		if (Render_preferred_state.hbao_use_exclusion_mask != new_use_exclusion_mask)
-		{
-			Render_preferred_state.hbao_use_exclusion_mask = new_use_exclusion_mask;
-			changed = true;
-		}
-		if (Render_preferred_state.hbao_algorithm != new_algorithm)
-		{
-			Render_preferred_state.hbao_algorithm = new_algorithm;
-			changed = true;
-		}
-		if (Render_preferred_state.hbao_quality != new_quality)
-		{
-			Render_preferred_state.hbao_quality = new_quality;
-			changed = true;
-		}
-		if (Render_preferred_state.hbao_samples != new_samples)
-		{
-			Render_preferred_state.hbao_samples = new_samples;
-			changed = true;
-		}
-		if (Render_preferred_state.hbao_resolution != new_resolution)
-		{
-			Render_preferred_state.hbao_resolution = new_resolution;
-			changed = true;
-		}
-		if (Render_preferred_state.hbao_blur != new_blur)
-		{
-			Render_preferred_state.hbao_blur = new_blur;
-			changed = true;
-		}
-		if (Render_preferred_state.hbao_radius != new_radius)
-		{
-			Render_preferred_state.hbao_radius = new_radius;
-			changed = true;
-		}
-		if (Render_preferred_state.hbao_intensity != new_intensity)
-		{
-			Render_preferred_state.hbao_intensity = new_intensity;
-			changed = true;
-		}
-		if (Render_preferred_state.hbao_bias != new_bias)
-		{
-			Render_preferred_state.hbao_bias = new_bias;
-			changed = true;
-		}
-
-		return changed;
-	}
-
-	void refresh_hbao_tuning_controls(newuiSheet* tuning_sheet, bool* enabled, bool* use_exclusion_mask, int* algorithm, short* samples,
-		int* resolution, int* blur, short* radius, short* intensity, short* bias,
-		const tSliderSettings& sample_settings,
-		const tSliderSettings& radius_settings, const tSliderSettings& intensity_settings,
-		const tSliderSettings& bias_settings)
-	{
-		if (enabled)
-			*enabled = Render_preferred_state.hbao_enabled;
-		if (use_exclusion_mask)
-			*use_exclusion_mask = Render_preferred_state.hbao_use_exclusion_mask;
-		if (algorithm)
-			*algorithm = ConfigNormalizeHBAOAlgorithm(Render_preferred_state.hbao_algorithm);
-		if (samples)
-			*samples = CALC_SLIDER_POS_INT(Render_preferred_state.hbao_samples, &sample_settings, HBAO_SAMPLE_SLIDER_UNITS);
-		if (resolution)
-			*resolution = HBAOResolutionToTuningIndex(Render_preferred_state.hbao_resolution);
-		if (blur)
-			*blur = ConfigNormalizeHBAOBlur(Render_preferred_state.hbao_blur);
-		if (radius)
-			*radius = CALC_SLIDER_POS_FLOAT(Render_preferred_state.hbao_radius, &radius_settings, HBAO_RADIUS_SLIDER_UNITS);
-		if (intensity)
-			*intensity = CALC_SLIDER_POS_FLOAT(Render_preferred_state.hbao_intensity, &intensity_settings, HBAO_INTENSITY_SLIDER_UNITS);
-		if (bias)
-			*bias = CALC_SLIDER_POS_FLOAT(Render_preferred_state.hbao_bias, &bias_settings, HBAO_BIAS_SLIDER_UNITS);
-		if (tuning_sheet)
-			tuning_sheet->UpdateChanges();
-	}
-
-	bool show_hbao_tuning_panel()
-	{
-		if (!ConfigCanUseHBAO())
-		{
-			DoMessageBox(TXT_WARNING, "Ambient occlusion requires the OpenGL Core profile.", MSGBOX_OK);
-			return false;
-		}
-
-		ConfigNormalizeHBAOSettings();
-		renderer_preferred_state old_state = Render_preferred_state;
-
-		newuiTiledWindow menu;
-		newuiSheet* tuning_sheet;
-		bool* enabled;
-		bool* use_exclusion_mask;
-		int* algorithm;
-		short* samples;
-		int* resolution;
-		int* blur;
-		short* radius;
-		short* intensity;
-		short* bias;
-
-		tSliderSettings sample_settings = {};
-		sample_settings.min_val.i = HBAO_MIN_SAMPLES;
-		sample_settings.max_val.i = HBAO_MAX_SAMPLES;
-		sample_settings.type = SLIDER_UNITS_INT;
-
-		tSliderSettings radius_settings = {};
-		radius_settings.min_val.f = 0.5f;
-		radius_settings.max_val.f = 32.0f;
-		radius_settings.type = SLIDER_UNITS_FLOAT;
-
-		tSliderSettings intensity_settings = {};
-		intensity_settings.min_val.f = 0.0f;
-		intensity_settings.max_val.f = 4.0f;
-		intensity_settings.type = SLIDER_UNITS_FLOAT;
-
-		tSliderSettings bias_settings = {};
-		bias_settings.min_val.f = 0.0f;
-		bias_settings.max_val.f = 0.5f;
-		bias_settings.type = SLIDER_UNITS_FLOAT;
-
-		menu.Create("AO tuning", 0, 0, 448, 384);
-		tuning_sheet = menu.GetSheet();
-
-		tuning_sheet->NewGroup("General", 0, 0);
-		enabled = tuning_sheet->AddLongCheckBox("Enabled", Render_preferred_state.hbao_enabled);
-		use_exclusion_mask = tuning_sheet->AddLongCheckBox("Use exclusion mask",
-			Render_preferred_state.hbao_use_exclusion_mask);
-
-		tuning_sheet->NewGroup("Algorithm", 214, 0);
-		algorithm = tuning_sheet->AddFirstLongRadioButton("HBAO");
-		tuning_sheet->AddLongRadioButton("GTAO");
-		*algorithm = ConfigNormalizeHBAOAlgorithm(Render_preferred_state.hbao_algorithm);
-
-		tuning_sheet->NewGroup("Samples", 0, 70);
-		samples = tuning_sheet->AddSlider("Count", HBAO_SAMPLE_SLIDER_UNITS,
-			CALC_SLIDER_POS_INT(Render_preferred_state.hbao_samples, &sample_settings, HBAO_SAMPLE_SLIDER_UNITS),
-			&sample_settings);
-
-		tuning_sheet->NewGroup("Resolution", 214, 70);
-		resolution = tuning_sheet->AddFirstLongRadioButton("Quarter");
-		tuning_sheet->AddLongRadioButton("Half");
-		tuning_sheet->AddLongRadioButton("Full");
-		*resolution = HBAOResolutionToTuningIndex(Render_preferred_state.hbao_resolution);
-
-		tuning_sheet->NewGroup("Blur", 0, 168);
-		blur = tuning_sheet->AddFirstLongRadioButton("None");
-		tuning_sheet->AddLongRadioButton("Narrow");
-		tuning_sheet->AddLongRadioButton("Medium");
-		tuning_sheet->AddLongRadioButton("Wide");
-		*blur = ConfigNormalizeHBAOBlur(Render_preferred_state.hbao_blur);
-
-		tuning_sheet->NewGroup("Shape", 214, 168);
-		radius = tuning_sheet->AddSlider("Radius", HBAO_RADIUS_SLIDER_UNITS,
-			CALC_SLIDER_POS_FLOAT(Render_preferred_state.hbao_radius, &radius_settings, HBAO_RADIUS_SLIDER_UNITS),
-			&radius_settings);
-		intensity = tuning_sheet->AddSlider("Intensity", HBAO_INTENSITY_SLIDER_UNITS,
-			CALC_SLIDER_POS_FLOAT(Render_preferred_state.hbao_intensity, &intensity_settings, HBAO_INTENSITY_SLIDER_UNITS),
-			&intensity_settings);
-		bias = tuning_sheet->AddSlider("Bias", HBAO_BIAS_SLIDER_UNITS,
-			CALC_SLIDER_POS_FLOAT(Render_preferred_state.hbao_bias, &bias_settings, HBAO_BIAS_SLIDER_UNITS),
-			&bias_settings);
-
-		tuning_sheet->NewGroup(NULL, 118, 338, NEWUI_ALIGN_HORIZ);
-		tuning_sheet->AddButton("Defaults", UID_HBAO_RESET);
-		tuning_sheet->AddButton(TXT_OK, UID_OK);
-		tuning_sheet->AddButton(TXT_CANCEL, UID_CANCEL);
-
-		menu.Open();
-
-		int result;
-		do
-		{
-			result = menu.DoUI();
-			bool changed = false;
-
-			if (result == UID_HBAO_RESET)
-			{
-				ConfigApplyFixedHBAOSettings();
-				ConfigNormalizeHBAOSettings();
-				refresh_hbao_tuning_controls(tuning_sheet, enabled, use_exclusion_mask, algorithm, samples, resolution, blur,
-					radius, intensity, bias, sample_settings, radius_settings, intensity_settings, bias_settings);
-				changed = true;
-			}
-			else if (tuning_sheet->HasChanged(enabled) || tuning_sheet->HasChanged(use_exclusion_mask) ||
-				tuning_sheet->HasChanged(algorithm) ||
-				tuning_sheet->HasChanged(samples) ||
-				tuning_sheet->HasChanged(resolution) ||
-				tuning_sheet->HasChanged(blur) || tuning_sheet->HasChanged(radius) ||
-				tuning_sheet->HasChanged(intensity) || tuning_sheet->HasChanged(bias))
-			{
-				changed = apply_hbao_tuning_controls(enabled, use_exclusion_mask, algorithm, samples, resolution, blur,
-					radius, intensity, bias, sample_settings, radius_settings, intensity_settings, bias_settings);
-			}
-
-			if (changed)
-			{
-				rend_SetPreferredState(&Render_preferred_state);
-				tuning_sheet->UpdateChanges();
-			}
-		} while (result != UID_OK && result != UID_CANCEL && result != NEWUIRES_FORCEQUIT);
-
-		bool accepted = result == UID_OK;
-		if (accepted)
-		{
-			if (apply_hbao_tuning_controls(enabled, use_exclusion_mask, algorithm, samples, resolution, blur,
-				radius, intensity, bias, sample_settings, radius_settings, intensity_settings, bias_settings))
-			{
-				rend_SetPreferredState(&Render_preferred_state);
-			}
-		}
-		else
-		{
-			Render_preferred_state = old_state;
-			rend_SetPreferredState(&Render_preferred_state);
-		}
-
-		menu.Close();
-		menu.Destroy();
-		update_hbao_preset_control();
-		return accepted;
 	}
 
 	// sets the menu up.
@@ -1552,7 +1161,7 @@ struct video_menu
 		fullscreen = NULL;
 		antialiasing = NULL;
 		supersampling = NULL;
-		hbao = NULL;
+		gtao = NULL;
 		backend = NULL;
 		window_width = window_height = 0;
 		window_aspect = CONFIG_ASPECT_16_9;
@@ -1617,14 +1226,13 @@ struct video_menu
 		sheet->AddRadioButton("4x");
 		*supersampling = SupersamplingFactorToIndex(Render_preferred_state.supersampling_factor);
 
-		sheet->NewGroup("AO", 184, 162);
-		hbao = sheet->AddFirstRadioButton(TXT_OFF);
+		sheet->NewGroup("GTAO", 184, 162);
+		gtao = sheet->AddFirstRadioButton(TXT_OFF);
 		sheet->AddRadioButton(TXT_LOW);
 		sheet->AddRadioButton(TXT_CFG_MEDIUM);
 		sheet->AddRadioButton(TXT_CFG_HIGH);
-		*hbao = ConfigCanUseHBAO() ?
-			HBAOPresetToIndex(Render_preferred_state.hbao_enabled, Render_preferred_state.hbao_resolution) : 0;
-		sheet->AddLongButton("AO tuning...", IDV_HBAOTUNING);
+		*gtao = ConfigCanUseGTAO() ?
+			GTAOPresetToIndex(Render_preferred_state.gtao_enabled, Render_preferred_state.gtao_resolution) : 0;
 
 		sheet->NewGroup(NULL, 0, 252);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
@@ -1644,12 +1252,12 @@ struct video_menu
 			Render_preferred_state.per_pixel_lighting = ConfigCanUsePerPixelLighting() && *per_pixel_lighting;
 		if (bloom_enabled)
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
-		if (hbao)
+		if (gtao)
 		{
-			if (ConfigCanUseHBAO())
-				ApplyHBAOPresetFromIndex(*hbao);
+			if (ConfigCanUseGTAO())
+				ApplyGTAOPresetFromIndex(*gtao);
 			else
-				ApplyHBAOPresetFromIndex(0);
+				ApplyGTAOPresetFromIndex(0);
 		}
 		if (vsync)
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
@@ -1693,7 +1301,7 @@ struct video_menu
 			if (DesiredOpenGLProfile != GLPROFILE_CORE)
 				Render_preferred_state.per_pixel_lighting = false;
 			if (DesiredOpenGLProfile != GLPROFILE_CORE)
-				ApplyHBAOPresetFromIndex(0);
+				ApplyGTAOPresetFromIndex(0);
 		}
 
 		sheet = NULL;
@@ -1833,9 +1441,6 @@ struct video_menu
 		break;
 		case IDV_AUTOGAMMA:
 			config_gamma();
-			break;
-		case IDV_HBAOTUNING:
-			show_hbao_tuning_panel();
 			break;
 		}
 	};

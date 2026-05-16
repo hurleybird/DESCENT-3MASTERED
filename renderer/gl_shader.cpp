@@ -270,7 +270,7 @@ void GL3Renderer::BindPipeline(uint32_t handle)
 	if (handle < NUM_SHADERDEFS)
 	{
 		if (strstr(gl_shaderdefs[handle].name, "fog") != nullptr)
-			hbao_mask_dirty = true;
+			post_protection_mask_dirty = true;
 		gl_shaderprogs[handle].Use();
 	}
 }
@@ -281,7 +281,7 @@ void GL3Renderer::UpdateCommon(float* projection, float* modelview, int depth)
 	memcpy(newblock.projection, projection, sizeof(newblock.projection));
 	memcpy(newblock.modelview, modelview, sizeof(newblock.modelview));
 
-	//Cache the main-scene projection for HBAO. depth==0 is the regular world
+	//Cache the main-scene projection for GTAO. depth==0 is the regular world
 	//pass; instance/portal draws use deeper slots which we don't care about
 	//for ambient occlusion (it runs against the main framebuffer only).
 	if (depth == 0)

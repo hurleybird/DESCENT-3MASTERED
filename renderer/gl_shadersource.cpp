@@ -303,7 +303,7 @@ const char* bloomCompositeFragmentSrc =
 "}\n"
 "";
 
-const char* hbaoDeferredCompositeFragmentSrc =
+const char* aoDeferredCompositeFragmentSrc =
 "#version 450 core\n"
 "\n"
 "in vec2 outuv;\n"
@@ -367,12 +367,11 @@ const char* testFragmentSrc =
 "";
 
 //-----------------------------------------------------------------------------
-// HBAO (Horizon-Based Ambient Occlusion) shaders.
+// GTAO (Ground-Truth Ambient Occlusion) shaders.
 //
-// Based on NVIDIA's HBAO formulation (Bavoil & Sainz, SIGGRAPH 2008). The
-// algorithm walks rays in screen space from each pixel, computing the
-// horizon angle relative to the surface normal at the sampled depth. The
-// resulting AO factor is bilaterally blurred with depth weighting and
+// The algorithm walks paired rays in screen space from each pixel and uses
+// the strongest observed horizon along each direction as the occlusion term.
+// The resulting AO factor is bilaterally blurred with depth weighting and
 // then multiplied into the scene color.
 //
 // Inputs:
@@ -384,7 +383,7 @@ const char* testFragmentSrc =
 //   Reconstructed normal points TOWARD the camera (negative z).
 //-----------------------------------------------------------------------------
 
-const char* hbaoDepthFragmentSrc =
+const char* gtaoDepthFragmentSrc =
 "#version 450 core\n"
 "\n"
 "in vec2 outuv;\n"
@@ -392,9 +391,7 @@ const char* hbaoDepthFragmentSrc =
 "\n"
 "uniform sampler2D depth_tex;\n"
 "uniform sampler2DMS depth_ms_tex;\n"
-"uniform sampler2D depth_overlay_tex;\n"
 "uniform int depth_samples;\n"
-"uniform int has_depth_overlay;\n"
 "uniform vec2 input_screen_size;\n"
 "uniform vec2 ao_screen_size;\n"
 "\n"
@@ -414,15 +411,13 @@ const char* hbaoDepthFragmentSrc =
 "    {\n"
 "        d = texelFetch(depth_tex, pixel, 0).r;\n"
 "    }\n"
-"    if (has_depth_overlay != 0)\n"
-"        d = min(d, texelFetch(depth_overlay_tex, pixel, 0).r);\n"
 "    return d;\n"
 "}\n"
 "\n"
 "void main()\n"
 "{\n"
 "    //Cost of this pass scaled with source_W * source_H regardless of\n"
-"    //hbao_resolution, which is why the F2 slider used to barely move perf.\n"
+"    //gtao_resolution, which is why the F2 slider used to barely move perf.\n"
 "    //A fixed 2x2 min covers typical 2x-4x downsample ratios; the AO horizon\n"
 "    //march is a low-frequency screen-space approximation and does not need\n"
 "    //a conservative min over the entire source footprint.\n"
@@ -440,7 +435,7 @@ const char* hbaoDepthFragmentSrc =
 "}\n"
 "";
 
-const char* hbaoAOFragmentSrc =
+const char* gtaoAOFragmentSrc =
 "#version 450 core\n"
 "\n"
 "in vec2 outuv;\n"
@@ -458,11 +453,9 @@ const char* hbaoAOFragmentSrc =
 "uniform float max_radius_pixels;\n"
 "uniform float neg_inv_radius2;\n"
 "uniform float angle_bias;\n"
-"uniform float ao_multiplier;\n"
 "uniform vec2 inv_screen_size;\n"
 "uniform vec2 ao_inv_screen_size;\n"
 "uniform vec2 screen_size;\n"
-"uniform int algorithm;\n"
 "uniform int directions;\n"
 "uniform int steps;\n"
 "\n"
@@ -510,14 +503,6 @@ const char* hbaoAOFragmentSrc =
 "float falloff(float dist_sq)\n"
 "{\n"
 "    return dist_sq * neg_inv_radius2 + 1.0;\n"
-"}\n"
-"\n"
-"float compute_hbao_sample(vec3 P, vec3 N, vec3 S)\n"
-"{\n"
-"    vec3 V = S - P;\n"
-"    float VdotV = dot(V, V);\n"
-"    float NdotV = dot(N, V) * inversesqrt(max(VdotV, 1e-6));\n"
-"    return clamp(NdotV - angle_bias, 0.0, 1.0) * clamp(falloff(VdotV), 0.0, 1.0);\n"
 "}\n"
 "\n"
 "float compute_gtao_horizon(vec3 P, vec3 N, vec2 dir, float step_pixels, float jitter, float side)\n"
@@ -570,38 +555,18 @@ const char* hbaoAOFragmentSrc =
 "    vec2 rand = fetch_noise(screen_pos);\n"
 "\n"
 "    float ao = 0.0;\n"
-"    if (algorithm == 0)\n"
+"    int gtao_directions = max((directions + 1) / 2, 1);\n"
+"    float alpha = PI / float(gtao_directions);\n"
+"    for (int d = 0; d < gtao_directions; ++d)\n"
 "    {\n"
-"        float alpha = 2.0 * PI / float(directions);\n"
-"        for (int d = 0; d < directions; ++d)\n"
-"        {\n"
-"            float angle = alpha * (float(d) + rand.x);\n"
-"            vec2 dir = vec2(cos(angle), sin(angle));\n"
-"            float ray_pixels = fract(rand.y) * step_pixels + 1.0;\n"
-"            for (int s = 0; s < steps; ++s)\n"
-"            {\n"
-"                vec2 sample_uv = (round(ray_pixels * dir) * ao_inv_screen_size) + outuv;\n"
-"                ao += compute_hbao_sample(P, N, fetch_view_pos(sample_uv));\n"
-"                ray_pixels += step_pixels;\n"
-"            }\n"
-"        }\n"
-"        ao = ao * ao_multiplier;\n"
+"        float angle = alpha * (float(d) + rand.x);\n"
+"        vec2 dir = vec2(cos(angle), sin(angle));\n"
+"        float jitter = fract(rand.y + float(d) * 0.61803398875);\n"
+"        ao += compute_gtao_horizon(P, N, dir, step_pixels, jitter, 1.0);\n"
+"        ao += compute_gtao_horizon(P, N, dir, step_pixels, jitter, -1.0);\n"
 "    }\n"
-"    else\n"
-"    {\n"
-"        int gtao_directions = max((directions + 1) / 2, 1);\n"
-"        float alpha = PI / float(gtao_directions);\n"
-"        for (int d = 0; d < gtao_directions; ++d)\n"
-"        {\n"
-"            float angle = alpha * (float(d) + rand.x);\n"
-"            vec2 dir = vec2(cos(angle), sin(angle));\n"
-"            float jitter = fract(rand.y + float(d) * 0.61803398875);\n"
-"            ao += compute_gtao_horizon(P, N, dir, step_pixels, jitter, 1.0);\n"
-"            ao += compute_gtao_horizon(P, N, dir, step_pixels, jitter, -1.0);\n"
-"        }\n"
-"        ao = ao / max(float(gtao_directions) * 2.0, 1.0);\n"
-"        ao = ao / max(1.0 - angle_bias, 0.01);\n"
-"    }\n"
+"    ao = ao / max(float(gtao_directions) * 2.0, 1.0);\n"
+"    ao = ao / max(1.0 - angle_bias, 0.01);\n"
 "\n"
 "    ao = clamp(1.0 - ao, 0.0, 1.0);\n"
 "\n"
@@ -609,7 +574,7 @@ const char* hbaoAOFragmentSrc =
 "}\n"
 "";
 
-const char* hbaoBlurFragmentSrc =
+const char* gtaoBlurFragmentSrc =
 "#version 450 core\n"
 "\n"
 "in vec2 outuv;\n"
@@ -653,7 +618,7 @@ const char* hbaoBlurFragmentSrc =
 "}\n"
 "";
 
-const char* hbaoSuppressionFragmentSrc =
+const char* gtaoSuppressionFragmentSrc =
 "#version 450 core\n"
 "\n"
 "in vec2 outuv;\n"
@@ -784,7 +749,7 @@ const char* hbaoSuppressionFragmentSrc =
 
 //Apply pass: multiplies destination color by the AO factor.
 //Uses (GL_DST_COLOR, GL_ZERO) blend, so the output color is the AO multiplier.
-const char* hbaoApplyFragmentSrc =
+const char* gtaoApplyFragmentSrc =
 "#version 450 core\n"
 "\n"
 "in vec2 outuv;\n"

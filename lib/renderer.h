@@ -244,43 +244,15 @@ struct DLLrendering_state
 
 };
 
-//HBAO quality presets - controls number of directions and steps per direction.
-enum hbao_quality
-{
-	HBAO_QUALITY_LOW = 0,    //4 directions, 3 steps
-	HBAO_QUALITY_MEDIUM = 1, //6 directions, 4 steps
-	HBAO_QUALITY_HIGH = 2,   //8 directions, 4 steps
-};
-
-#define HBAO_MIN_SAMPLES 1
-#define HBAO_DEFAULT_SAMPLES 32
-#define HBAO_MAX_SAMPLES 1024
-
-//Ambient occlusion algorithm used by the HBAO/GTAO post pass.
-enum hbao_algorithm
-{
-	HBAO_ALGORITHM_HBAO = 0,
-	HBAO_ALGORITHM_GTAO = 1,
-};
-
-//HBAO blur kernel width.
-enum hbao_blur
-{
-	HBAO_BLUR_NONE = 0,
-	HBAO_BLUR_NARROW = 1,
-	HBAO_BLUR_MEDIUM = 2,
-	HBAO_BLUR_WIDE = 3,
-};
-
-//HBAO internal render resolution. Auto keeps AO near display-space or lower
+//GTAO internal render resolution. Auto keeps AO near display-space or lower
 //when SSAA/high resolutions would otherwise make the pass scale with the
 //supersampled framebuffer.
-enum hbao_resolution
+enum gtao_resolution
 {
-	HBAO_RESOLUTION_AUTO = 0,
-	HBAO_RESOLUTION_FULL = 1,
-	HBAO_RESOLUTION_HALF = 2,
-	HBAO_RESOLUTION_QUARTER = 3,
+	GTAO_RESOLUTION_AUTO = 0,
+	GTAO_RESOLUTION_FULL = 1,
+	GTAO_RESOLUTION_HALF = 2,
+	GTAO_RESOLUTION_QUARTER = 3,
 };
 
 struct renderer_preferred_state
@@ -304,16 +276,8 @@ struct renderer_preferred_state
 	float bloom_intensity;
 	float bloom_spread;
 
-	bool hbao_enabled;       //Master HBAO on/off
-	bool hbao_use_exclusion_mask; //Apply drawn post-process exclusion mask to AO
-	ubyte hbao_algorithm;    //hbao_algorithm enum
-	ubyte hbao_quality;      //Legacy hbao_quality bucket derived from sample count
-	ushort hbao_samples;     //Total AO samples per pixel
-	ubyte hbao_resolution;   //hbao_resolution enum
-	ubyte hbao_blur;         //hbao_blur enum
-	float hbao_radius;       //World-space sample radius in map units (1..16-ish)
-	float hbao_intensity;    //AO strength multiplier (0..4)
-	float hbao_bias;         //Angle bias (0..0.5)
+	bool gtao_enabled;       //Master GTAO on/off
+	ubyte gtao_resolution;   //gtao_resolution enum
 };
 
 struct renderer_lfb
@@ -355,7 +319,7 @@ void rend_DrawPolygon2D(int handle,g3Point **p,int nv);
 void rend_BeginMotionObject(int object_handle, float screen_x, float screen_y);
 void rend_EndMotionObject();
 bool rend_ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y);
-void rend_SetHBAOSuppression(float value);
+void rend_SetAOSuppression(float value);
 void rend_SetBloomSuppression(float value);
 
 // Tells the software renderer whether or not to use mipping
@@ -379,9 +343,6 @@ void rend_EndFrame();
 
 // Captures the current scene buffer as the source for frame-level bloom.
 void rend_CaptureBloomSource();
-
-// Captures an overlay depth buffer that HBAO can merge into its scene depth source.
-void rend_CaptureHBAODepthOverlay();
 
 bool rend_BeginPostPresentFrame();
 void rend_StartPostPresentFrame(int x1,int y1,int x2,int y2,int clear_flags=RF_CLEAR_ZBUFFER);

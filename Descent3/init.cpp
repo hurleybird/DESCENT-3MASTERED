@@ -154,60 +154,6 @@ float Mouselook_sensitivity = kAnglesPerDegree * kDefaultMouselookSensitivity;
 float Mouse_sensitivity     = 1.0f;
 bool Mouse_limitpolling = false;
 
-static void ApplyFixedHBAOSettings()
-{
-	Render_preferred_state.hbao_use_exclusion_mask = true;
-	Render_preferred_state.hbao_algorithm = HBAO_ALGORITHM_GTAO;
-	Render_preferred_state.hbao_quality = HBAO_QUALITY_HIGH;
-	Render_preferred_state.hbao_samples = HBAO_DEFAULT_SAMPLES;
-	Render_preferred_state.hbao_blur = HBAO_BLUR_WIDE;
-	Render_preferred_state.hbao_radius = 3.0f;
-	Render_preferred_state.hbao_intensity = 1.25f;
-	Render_preferred_state.hbao_bias = 0.2f;
-}
-
-static int NormalizeHBAOAlgorithm(int algorithm)
-{
-	if (algorithm < HBAO_ALGORITHM_HBAO)
-		return HBAO_ALGORITHM_HBAO;
-	if (algorithm > HBAO_ALGORITHM_GTAO)
-		return HBAO_ALGORITHM_GTAO;
-	return algorithm;
-}
-
-static int HBAOQualityToSamples(int quality)
-{
-	switch (quality)
-	{
-	case HBAO_QUALITY_LOW:
-		return 12;
-	case HBAO_QUALITY_MEDIUM:
-		return 24;
-	case HBAO_QUALITY_HIGH:
-	default:
-		return HBAO_DEFAULT_SAMPLES;
-	}
-}
-
-static int NormalizeHBAOSamples(int samples)
-{
-	if (samples < HBAO_MIN_SAMPLES)
-		return HBAO_DEFAULT_SAMPLES;
-	if (samples > HBAO_MAX_SAMPLES)
-		return HBAO_MAX_SAMPLES;
-	return samples;
-}
-
-static int HBAOSamplesToQuality(int samples)
-{
-	samples = NormalizeHBAOSamples(samples);
-	if (samples <= 12)
-		return HBAO_QUALITY_LOW;
-	if (samples <= 24)
-		return HBAO_QUALITY_MEDIUM;
-	return HBAO_QUALITY_HIGH;
-}
-
 int IsLocalOk(void)
 {
 #ifdef WIN32	
@@ -436,19 +382,8 @@ void SaveGameSettings()
 	Database->write("RS_bloom_intensity", tempbuffer, strlen(tempbuffer) + 1);
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_spread);
 	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
-	Database->write("RS_hbao_enabled", Render_preferred_state.hbao_enabled);
-	Database->write("RS_hbao_use_exclusion_mask", Render_preferred_state.hbao_use_exclusion_mask);
-	Database->write("RS_hbao_algorithm", Render_preferred_state.hbao_algorithm);
-	Database->write("RS_hbao_quality", Render_preferred_state.hbao_quality);
-	Database->write("RS_hbao_samples", Render_preferred_state.hbao_samples);
-	Database->write("RS_hbao_resolution", Render_preferred_state.hbao_resolution);
-	Database->write("RS_hbao_blur", Render_preferred_state.hbao_blur);
-	sprintf(tempbuffer, "%f", Render_preferred_state.hbao_radius);
-	Database->write("RS_hbao_radius", tempbuffer, strlen(tempbuffer) + 1);
-	sprintf(tempbuffer, "%f", Render_preferred_state.hbao_intensity);
-	Database->write("RS_hbao_intensity", tempbuffer, strlen(tempbuffer) + 1);
-	sprintf(tempbuffer, "%f", Render_preferred_state.hbao_bias);
-	Database->write("RS_hbao_bias", tempbuffer, strlen(tempbuffer) + 1);
+	Database->write("RS_gtao_enabled", Render_preferred_state.gtao_enabled);
+	Database->write("RS_gtao_resolution", Render_preferred_state.gtao_resolution);
 
 	Database->write("Dynamic_Lighting",Detail_settings.Dynamic_lighting);
 
@@ -610,10 +545,8 @@ void LoadGameSettings()
 	Render_preferred_state.bloom_threshold = 0.75f;
 	Render_preferred_state.bloom_intensity = 0.75f;
 	Render_preferred_state.bloom_spread = 0.75f;
-	Render_preferred_state.hbao_enabled = false;
-	Render_preferred_state.hbao_use_exclusion_mask = true;
-	Render_preferred_state.hbao_resolution = HBAO_RESOLUTION_HALF;
-	ApplyFixedHBAOSettings();
+	Render_preferred_state.gtao_enabled = false;
+	Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
 	Terrain_renderer_mode = TERRAIN_RENDERER_MESH;
@@ -784,57 +717,14 @@ void LoadGameSettings()
 	if (bloom_intensity_value && bloom_intensity_value[0])
 		Render_preferred_state.bloom_intensity = ConfigNormalizeBloomIntensity((float)strtod(bloom_intensity_value, &stoptemp));
 
-	Database->read("RS_hbao_enabled", &Render_preferred_state.hbao_enabled);
-	Database->read("RS_hbao_use_exclusion_mask", &Render_preferred_state.hbao_use_exclusion_mask);
-	tempint = Render_preferred_state.hbao_algorithm;
-	Database->read_int("RS_hbao_algorithm", &tempint);
-	Render_preferred_state.hbao_algorithm = (ubyte)NormalizeHBAOAlgorithm(tempint);
-	tempint = Render_preferred_state.hbao_quality;
-	Database->read_int("RS_hbao_quality", &tempint);
-	if (tempint < 0) tempint = 0;
-	if (tempint > HBAO_QUALITY_HIGH) tempint = HBAO_QUALITY_HIGH;
-	Render_preferred_state.hbao_quality = (ubyte)tempint;
-	tempint = HBAOQualityToSamples(Render_preferred_state.hbao_quality);
-	Database->read_int("RS_hbao_samples", &tempint);
-	tempint = NormalizeHBAOSamples(tempint);
-	Render_preferred_state.hbao_samples = (ushort)tempint;
-	Render_preferred_state.hbao_quality = (ubyte)HBAOSamplesToQuality(tempint);
-	tempint = Render_preferred_state.hbao_resolution;
-	Database->read_int("RS_hbao_resolution", &tempint);
-	if (tempint < HBAO_RESOLUTION_AUTO) tempint = HBAO_RESOLUTION_AUTO;
-	if (tempint > HBAO_RESOLUTION_QUARTER) tempint = HBAO_RESOLUTION_QUARTER;
-	Render_preferred_state.hbao_resolution = (ubyte)tempint;
-	tempint = Render_preferred_state.hbao_blur;
-	Database->read_int("RS_hbao_blur", &tempint);
-	if (tempint < 0) tempint = 0;
-	if (tempint > HBAO_BLUR_WIDE) tempint = HBAO_BLUR_WIDE;
-	Render_preferred_state.hbao_blur = (ubyte)tempint;
-	templen = TEMPBUFFERSIZE;
-	if (Database->read("RS_hbao_radius", tempbuffer, &templen))
-	{
-		float v = (float)strtod(tempbuffer, &stoptemp);
-		if (v < 0.5f) v = 0.5f;
-		if (v > 32.0f) v = 32.0f;
-		Render_preferred_state.hbao_radius = v;
-	}
-	templen = TEMPBUFFERSIZE;
-	if (Database->read("RS_hbao_intensity", tempbuffer, &templen))
-	{
-		float v = (float)strtod(tempbuffer, &stoptemp);
-		if (v < 0.0f) v = 0.0f;
-		if (v > 4.0f) v = 4.0f;
-		Render_preferred_state.hbao_intensity = v;
-	}
-	templen = TEMPBUFFERSIZE;
-	if (Database->read("RS_hbao_bias", tempbuffer, &templen))
-	{
-		float v = (float)strtod(tempbuffer, &stoptemp);
-		if (v < 0.0f) v = 0.0f;
-		if (v > 0.5f) v = 0.5f;
-		Render_preferred_state.hbao_bias = v;
-	}
-	if (Render_preferred_state.hbao_resolution == HBAO_RESOLUTION_AUTO)
-		Render_preferred_state.hbao_resolution = HBAO_RESOLUTION_HALF;
+	Database->read("RS_gtao_enabled", &Render_preferred_state.gtao_enabled);
+	tempint = Render_preferred_state.gtao_resolution;
+	Database->read_int("RS_gtao_resolution", &tempint);
+	if (tempint < GTAO_RESOLUTION_AUTO) tempint = GTAO_RESOLUTION_AUTO;
+	if (tempint > GTAO_RESOLUTION_QUARTER) tempint = GTAO_RESOLUTION_QUARTER;
+	Render_preferred_state.gtao_resolution = (ubyte)tempint;
+	if (Render_preferred_state.gtao_resolution == GTAO_RESOLUTION_AUTO)
+		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
 	// force feedback stuff
 	Database->read("EnableJoystickFF",&D3Use_force_feedback);
 	Database->read("ForceFeedbackAutoCenter",&D3Force_auto_center);
@@ -867,7 +757,7 @@ void LoadGameSettings()
 	if (DesiredOpenGLProfile != GLPROFILE_CORE)
 	{
 		Render_preferred_state.per_pixel_lighting = false;
-		Render_preferred_state.hbao_enabled = false;
+		Render_preferred_state.gtao_enabled = false;
 		if (Terrain_renderer_mode != TERRAIN_RENDERER_OFF)
 			Terrain_renderer_mode = TERRAIN_RENDERER_LEGACY;
 		Use_terrain_mesh_renderer = false;

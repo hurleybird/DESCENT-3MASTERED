@@ -1934,9 +1934,9 @@ void DrawPowerupGlowDisk(object* obj)
 	}
 
 	// Draw lo-res disk
-	rend_SetHBAOSuppression(1.0f);
+	rend_SetAOSuppression(1.0f);
 	DrawColoredDisk(&obj->pos, li->red_light1, li->green_light1, li->blue_light1, POWERUP_HALO_ALPHA * alpha_scalar, 0.0f, (obj->size / 2) + size_adjust, 0, 2);
-	rend_SetHBAOSuppression(0.0f);
+	rend_SetAOSuppression(0.0f);
 }
 
 // Draws the glowing disk around a player indicating damage
@@ -1969,9 +1969,9 @@ void DrawPlayerDamageDisk(object* obj)
 	rend_SetAlphaValue(.4 * damage_norm * 255);
 	rend_SetOverlayType(OT_NONE);
 	rend_SetLighting(LS_NONE);
-	rend_SetHBAOSuppression(1.0f);
+	rend_SetAOSuppression(1.0f);
 	g3_DrawRotatedBitmap(&obj->pos, rot_angle, obj->size, (obj->size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle);
-	rend_SetHBAOSuppression(0.0f);
+	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBias(0);
 }
@@ -2006,9 +2006,9 @@ void DrawPlayerInvulSphere(object* obj)
 	rend_SetAlphaValue(.6 * Players[obj->id].invul_magnitude * 255);
 	rend_SetOverlayType(OT_NONE);
 	rend_SetLighting(LS_NONE);
-	rend_SetHBAOSuppression(1.0f);
+	rend_SetAOSuppression(1.0f);
 	g3_DrawPlanarRotatedBitmap(&hit_pos, &norm_vec, 0, 3, 3, bm_handle);
-	rend_SetHBAOSuppression(0.0f);
+	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 }
 
@@ -2041,9 +2041,9 @@ void DrawPlayerRotatingBall(object* obj)
 		PlayerGetBallPosition(&worldpos, obj->id, i);
 		// Get color of balls
 		ddgr_color color = GR_RGB(Players[obj->id].ball_r[i] * 255, Players[obj->id].ball_g[i] * 255, Players[obj->id].ball_b[i] * 255);
-		rend_SetHBAOSuppression(1.0f);
+		rend_SetAOSuppression(1.0f);
 		g3_DrawBitmap(&worldpos, obj->size / 4, ((obj->size / 4) * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle, color);
-		rend_SetHBAOSuppression(0.0f);
+		rend_SetAOSuppression(0.0f);
 	}
 	rend_SetZBufferWriteMask(1);
 }

@@ -676,7 +676,7 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	extern const char* downsampleFragmentSrc;
 	extern const char* motionVectorVertexSrc;
 	extern const char* motionVectorFragmentSrc;
-	extern const char* hbaoDeferredCompositeFragmentSrc;
+	extern const char* aoDeferredCompositeFragmentSrc;
 	blitshader.AttachSource(blitVertexSrc, blitFragmentSrc);
 	blitshader.Use();
 	GLint blitshader_source = blitshader.FindUniform("heh");
@@ -704,23 +704,23 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	if (motionvector_screen_size == -1)
 		Error("GLRenderer::Init: Failed to find motion-vector screen_size uniform!");
 
-	hbao_compositeshader.AttachSource(blitVertexSrc, hbaoDeferredCompositeFragmentSrc);
-	hbao_compositeshader.Use();
-	hbao_composite_final_source = hbao_compositeshader.FindUniform("final_source");
-	hbao_composite_scene_source = hbao_compositeshader.FindUniform("scene_source");
-	hbao_composite_ao_scene_source = hbao_compositeshader.FindUniform("ao_scene_source");
-	if (hbao_composite_final_source != -1)
-		glUniform1i(hbao_composite_final_source, 0);
-	if (hbao_composite_scene_source != -1)
-		glUniform1i(hbao_composite_scene_source, 1);
-	if (hbao_composite_ao_scene_source != -1)
-		glUniform1i(hbao_composite_ao_scene_source, 2);
-	if (hbao_composite_final_source == -1 || hbao_composite_scene_source == -1 || hbao_composite_ao_scene_source == -1)
-		Error("GLRenderer::Init: Failed to find HBAO deferred composite uniforms!");
+	ao_compositeshader.AttachSource(blitVertexSrc, aoDeferredCompositeFragmentSrc);
+	ao_compositeshader.Use();
+	ao_composite_final_source = ao_compositeshader.FindUniform("final_source");
+	ao_composite_scene_source = ao_compositeshader.FindUniform("scene_source");
+	ao_composite_ao_scene_source = ao_compositeshader.FindUniform("ao_scene_source");
+	if (ao_composite_final_source != -1)
+		glUniform1i(ao_composite_final_source, 0);
+	if (ao_composite_scene_source != -1)
+		glUniform1i(ao_composite_scene_source, 1);
+	if (ao_composite_ao_scene_source != -1)
+		glUniform1i(ao_composite_ao_scene_source, 2);
+	if (ao_composite_final_source == -1 || ao_composite_scene_source == -1 || ao_composite_ao_scene_source == -1)
+		Error("GLRenderer::Init: Failed to find AO deferred composite uniforms!");
 	ShaderProgram::ClearBinding();
 
 	bloom.InitShaders();
-	hbao.InitShaders();
+	gtao.InitShaders();
 
 	//Simple shader for testing, before everything is made to use shaders.
 	extern const char* testVertexSrc;
@@ -741,9 +741,9 @@ void GL3Renderer::Close()
 	blitshader.Destroy();
 	downsampleshader.Destroy();
 	motionvectorshader.Destroy();
-	hbao_compositeshader.Destroy();
+	ao_compositeshader.Destroy();
 	bloom.DestroyShaders();
-	hbao.Destroy();
+	gtao.Destroy();
 
 	FreeImages();
 	if (framebuffer_ok)

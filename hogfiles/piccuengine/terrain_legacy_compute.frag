@@ -18,7 +18,7 @@ flat in int outlmpage;
 flat in int outtexpage;
 
 layout(location = 0) out vec4 color;
-layout(location = 2) out vec4 hbao_mask;
+layout(location = 2) out vec4 post_mask;
 
 vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 {
@@ -67,5 +67,5 @@ void main()
 	vec4 lmcolor = texture(lightmaptexture, vec3(outuv2.xy / outuv2.z, float(clamp(outlmpage, 0, 3))));
 	lmcolor.rgb = ApplyDynamicLightmapLighting(lmcolor.rgb);
 	color = basecolor * lmcolor * outcolor;
-	hbao_mask = vec4(0.0, 0.0, 0.0, 1.0);
+	post_mask = vec4(0.0, 0.0, 0.0, 1.0);
 }

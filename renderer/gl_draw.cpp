@@ -184,7 +184,7 @@ void GL3Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 	glDrawBuffer(old_draw_buffer);
 	if ((GLuint)old_draw == framebuffers[framebuffer_current_draw].Handle())
-		hbao_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
 	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
 	glDepthMask(depth_mask);
 	UseDrawVAO();
@@ -226,7 +226,7 @@ void GL3Renderer::DrawMotionVectorTriangles(const gl_motion_vertex* vertices, in
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 	glDrawBuffer(old_draw_buffer);
 	if ((GLuint)old_draw == framebuffers[framebuffer_current_draw].Handle())
-		hbao_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
 	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
 	glDepthMask(depth_mask);
 	UseDrawVAO();
@@ -417,7 +417,7 @@ void GL3Renderer::SetDrawDefaults()
 		drawshader_dynamic_directions_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_directions[0]");
 		drawshader_dynamic_dot_ranges_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_dot_ranges[0]");
 		drawshader_dynamic_directional_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_directional[0]");
-		drawshader_hbao_suppression_uniforms[i] = drawshaders[i].FindUniform("hbao_suppression");
+		drawshader_ao_suppression_uniforms[i] = drawshaders[i].FindUniform("ao_suppression");
 		drawshader_bloom_suppression_uniforms[i] = drawshaders[i].FindUniform("bloom_suppression");
 	}
 
@@ -474,7 +474,7 @@ void GL3Renderer::SelectDrawShader()
 
 	if (OpenGL_state.cur_fog_state)
 	{
-		hbao_mask_dirty = true;
+		post_protection_mask_dirty = true;
 		if (OpenGL_state.cur_alpha_type == AT_SPECULAR)
 			shader_index = 7;
 		else if (OpenGL_state.cur_texture_quality == 0)
@@ -507,8 +507,8 @@ void GL3Renderer::SelectDrawShader()
 	if (!shader_changed && !legacy_draw_uniforms_dirty)
 		return;
 
-	if (drawshader_hbao_suppression_uniforms[shader_index] != -1)
-		glUniform1f(drawshader_hbao_suppression_uniforms[shader_index], hbao_suppression_draw_value);
+	if (drawshader_ao_suppression_uniforms[shader_index] != -1)
+		glUniform1f(drawshader_ao_suppression_uniforms[shader_index], ao_suppression_draw_value);
 	if (drawshader_bloom_suppression_uniforms[shader_index] != -1)
 		glUniform1f(drawshader_bloom_suppression_uniforms[shader_index], bloom_suppression_draw_value);
 
@@ -1063,13 +1063,13 @@ void GL3Renderer::DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y
 	pnts[3].p3_sy = y2;
 	pnts[3].p3_u = u;
 	pnts[3].p3_v = v + h;
-	float old_hbao_suppression = hbao_suppression_draw_value;
+	float old_ao_suppression = ao_suppression_draw_value;
 	float old_bloom_suppression = bloom_suppression_draw_value;
-	SetHBAOSuppression(1.0f);
+	SetAOSuppression(1.0f);
 	SetBloomSuppression(1.0f);
 	DrawPolygon2D(bm_handle, ptr_pnts, 4);
 	SetBloomSuppression(old_bloom_suppression);
-	SetHBAOSuppression(old_hbao_suppression);
+	SetAOSuppression(old_ao_suppression);
 }
 
 // Draws a line

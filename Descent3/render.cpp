@@ -1669,7 +1669,7 @@ void RenderFogFaces(room* rp)
 	rend_SetCoplanarPolygonOffset(1);
 
 	rend_SetFlatColor(GR_RGB((int)(rp->fog_r * 255.0), (int)(rp->fog_g * 255.0), (int)(rp->fog_b * 255.0)));
-	rend_SetHBAOSuppression(1.0f);
+	rend_SetAOSuppression(1.0f);
 	for (int i = 0; i < Num_fog_faces_to_render; i++)
 	{
 		face* fp = &rp->faces[Fog_faces[i]];
@@ -1720,7 +1720,7 @@ void RenderFogFaces(room* rp)
 			g3_SetTriangulationTest(0);
 	}
 
-	rend_SetHBAOSuppression(0.0f);
+	rend_SetAOSuppression(0.0f);
 	rend_SetCoplanarPolygonOffset(0);
 	rend_SetZBufferWriteMask(1);
 }
@@ -3922,7 +3922,7 @@ void RenderLightGlows()
 	rend_SetAlphaType(AT_SATURATE_TEXTURE);
 	rend_SetOverlayType(OT_NONE);
 	rend_SetFogState(0);
-	rend_SetHBAOSuppression(1.0f);
+	rend_SetAOSuppression(1.0f);
 	int count = 0;
 
 	for (int i = 0; i < MAX_LIGHT_GLOWS && count < Num_glows; i++)
@@ -3934,7 +3934,7 @@ void RenderLightGlows()
 		}
 	}
 
-	rend_SetHBAOSuppression(0.0f);
+	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBufferState(1);
 }

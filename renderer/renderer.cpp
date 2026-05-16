@@ -167,12 +167,12 @@ bool rend_ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, fl
 	return renderer_inst->ProjectPreviousFramePoint(world_pos, screen_x, screen_y);
 }
 
-void rend_SetHBAOSuppression(float value)
+void rend_SetAOSuppression(float value)
 {
 	if (!Renderer_initted)
 		return;
 
-	renderer_inst->SetHBAOSuppression(value);
+	renderer_inst->SetAOSuppression(value);
 }
 
 void rend_SetBloomSuppression(float value)
@@ -243,14 +243,6 @@ void rend_CaptureBloomSource()
 		return;
 
 	renderer_inst->CaptureBloomSource();
-}
-
-void rend_CaptureHBAODepthOverlay()
-{
-	if (!Renderer_initted)
-		return;
-
-	renderer_inst->CaptureHBAODepthOverlay();
 }
 
 bool rend_BeginPostPresentFrame()

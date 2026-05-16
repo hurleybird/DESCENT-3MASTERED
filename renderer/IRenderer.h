@@ -160,8 +160,7 @@ public:
 	// Captures the current scene buffer as the source for frame-level bloom.
 	virtual void CaptureBloomSource() = 0;
 
-	// Captures optional overlay depth for HBAO composition.
-	virtual void CaptureHBAODepthOverlay() {}
+	// Captures the bloom source used by late post-processing.
 
 	// Clears the display to a specified color
 	virtual void ClearScreen(ddgr_color color) = 0;
@@ -185,7 +184,7 @@ public:
 	virtual void BeginMotionObject(int object_handle, float screen_x, float screen_y) {}
 	virtual void EndMotionObject() {}
 	virtual bool ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y) { return false; }
-	virtual void SetHBAOSuppression(float value) {}
+	virtual void SetAOSuppression(float value) {}
 	virtual void SetBloomSuppression(float value) {}
 
 	// Draws a scaled 2d bitmap to our buffer

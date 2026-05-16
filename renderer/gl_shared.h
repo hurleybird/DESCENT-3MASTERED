@@ -223,7 +223,7 @@ struct MotionVectorResources
 	GLuint TextureForRead(GLuint source_framebuffer);
 };
 
-struct HBAOMaskResources
+struct PostProtectionMaskResources
 {
 	GLuint mask_texture = 0;
 	GLuint resolved_texture = 0;
@@ -238,22 +238,6 @@ struct HBAOMaskResources
 	void ClearAttached(GLuint framebuffer);
 	void UseSceneDrawBuffers(GLuint framebuffer);
 	GLuint TextureForRead(GLuint source_framebuffer);
-};
-
-struct NativePostMaskResources
-{
-	GLuint hbao_mask_texture = 0;
-	GLuint bloom_mask_texture = 0;
-	uint32_t width = 0;
-	uint32_t height = 0;
-
-	void Update(uint32_t width, uint32_t height);
-	void Clear();
-	void Destroy();
-	GLuint HBAOTextureForRead() const { return hbao_mask_texture; }
-	GLuint BloomTextureForRead() const { return bloom_mask_texture; }
-	GLuint HBAOImageTextureForWrite() const { return hbao_mask_texture; }
-	GLuint BloomImageTextureForWrite() const { return bloom_mask_texture; }
 };
 
 void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter);
@@ -290,10 +274,10 @@ struct BloomResources
 		const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture);
 };
 
-//Horizon-Based Ambient Occlusion. Renders depth-driven AO based on the NVIDIA
-//HBAO formulation, then modulates the scene color in place.
+//Ground-Truth Ambient Occlusion. Renders depth-driven AO, then modulates the
+//scene color in place.
 //Reconstructs view-space normals from the depth buffer (we have no normals G-buffer).
-struct HBAOResources
+struct GTAOResources
 {
 	//Raw source depth resolved/downsampled to the AO working resolution.
 	ColorFramebuffer ao_depth_framebuffer;
@@ -315,9 +299,7 @@ struct HBAOResources
 	//Depth downsample/resolve shader uniforms.
 	GLint depth_source = -1;
 	GLint depth_source_ms = -1;
-	GLint depth_overlay_source = -1;
 	GLint depth_samples = -1;
-	GLint depth_has_overlay = -1;
 	GLint depth_input_screen_size = -1;
 	GLint depth_ao_screen_size = -1;
 
@@ -329,12 +311,9 @@ struct HBAOResources
 	GLint ao_max_radius_pixels = -1;
 	GLint ao_neg_inv_radius2 = -1;  //-1/(r*r)
 	GLint ao_angle_bias = -1;
-	GLint ao_multiplier = -1;       //2 / (steps*directions) * (1/(1-bias))
-	GLint ao_intensity = -1;
 	GLint ao_inv_screen_size = -1;  //1/width, 1/height
 	GLint ao_ao_inv_screen_size = -1;
 	GLint ao_screen_size = -1;      //width, height
-	GLint ao_algorithm = -1;
 	GLint ao_directions = -1;
 	GLint ao_steps = -1;
 
@@ -373,8 +352,7 @@ struct HBAOResources
 	//null, by sampling pref_state and projection info.
 	void Apply(Framebuffer* source, Framebuffer* target, const renderer_preferred_state& pref_state,
 		const rendering_state& render_state, const float* projection,
-		float nearz, float farz, GLuint suppression_mask_texture,
-		GLuint depth_overlay_texture);
+		float nearz, float farz, GLuint suppression_mask_texture);
 };
 
 inline int RendererSupersamplingFactor(const renderer_preferred_state& state)

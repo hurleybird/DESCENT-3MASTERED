@@ -24,7 +24,7 @@ in vec3 outnormal;
 flat in vec3[4] outlightpos;
 
 layout(location = 0) out vec4 color;
-layout(location = 2) out vec4 hbao_mask;
+layout(location = 2) out vec4 post_mask;
 
 void main()
 {
@@ -44,5 +44,5 @@ void main()
 			specular_data.speculars[i].color.xyz * lmcolor.rgb * specular_data.strength * weights[i];
 	}
 	color = vec4(spec_color, basecolor.a);
-	hbao_mask = vec4(0.0);
+	post_mask = vec4(0.0);
 }

@@ -16,7 +16,7 @@ in vec3 outworld;
 in vec3 outnormal;
 
 layout(location = 0) out vec4 color;
-layout(location = 2) out vec4 hbao_mask;
+layout(location = 2) out vec4 post_mask;
 
 vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 {
@@ -62,5 +62,5 @@ void main()
 	vec4 lmcolor = texture(lightmaptexture, outuv2);
 	lmcolor.rgb = ApplyDynamicLightmapLighting(lmcolor.rgb);
 	color = vec4(basecolor.rgb * lmcolor.rgb, basecolor.a);
-	hbao_mask = vec4(0.0, 0.0, 0.0, 1.0);
+	post_mask = vec4(0.0, 0.0, 0.0, 1.0);
 }

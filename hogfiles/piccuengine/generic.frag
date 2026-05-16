@@ -25,7 +25,7 @@ uniform float dynamic_light_radii[8];
 uniform vec3 dynamic_light_directions[8];
 uniform float dynamic_light_dot_ranges[8];
 uniform int dynamic_light_directional[8];
-uniform float hbao_suppression;
+uniform float ao_suppression;
 uniform float bloom_suppression;
 
 in vec4 outcolor;
@@ -41,7 +41,7 @@ in vec3 outpt;
 #endif
 
 layout(location = 0) out vec4 color;
-layout(location = 2) out vec4 hbao_mask;
+layout(location = 2) out vec4 post_mask;
 
 vec4 ApplyPhongLighting(vec4 source_color)
 {
@@ -111,7 +111,7 @@ void main()
 		color = vertex_color;
 	#endif
 	float suppression_alpha = clamp(color.a, 0.0, 1.0);
-	ao_mask = clamp(hbao_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
+	ao_mask = clamp(ao_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
 	bloom_mask = clamp(bloom_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
 	
 	#if defined(USE_FOG)
@@ -120,7 +120,7 @@ void main()
 		float fog_depth = clamp(-outpt.z, 0.0, 1.0);
 		float mag = clamp((fog_depth - fog_start) / max(fog_end - fog_start, 0.0001), 0.0, 1.0);
 		color = vec4(mix(color.rgb, fog.color.rgb, mag), color.a);
-		bloom_mask = max(bloom_mask, 1.0 - pow(1.0 - mag, 3.0));
+		bloom_mask = max(bloom_mask, mag);
 	#endif
-	hbao_mask = vec4(ao_mask, bloom_mask, 0.0, 1.0);
+	post_mask = vec4(ao_mask, bloom_mask, 0.0, 1.0);
 }

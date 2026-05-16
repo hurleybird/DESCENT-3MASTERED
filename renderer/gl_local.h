@@ -89,16 +89,14 @@ class GL3Renderer : public IRenderer
 	Framebuffer bloom_source_framebuffer;
 	Framebuffer bloom_source_resolved_framebuffer;
 	Framebuffer bloom_source_downscale_framebuffer;
-	Framebuffer hbao_depth_overlay_framebuffer;
-	Framebuffer hbao_scene_framebuffer;
-	Framebuffer hbao_composite_framebuffer;
+	Framebuffer ao_scene_framebuffer;
+	Framebuffer ao_composite_framebuffer;
 	Framebuffer post_present_framebuffer;
 	MotionVectorResources motion_vectors;
-	HBAOMaskResources hbao_mask;
+	PostProtectionMaskResources post_protection_mask;
 	int framebuffer_current_draw = 0;
 	bool bloom_source_valid = false;
-	bool hbao_depth_overlay_valid = false;
-	bool hbao_scene_valid = false;
+	bool ao_scene_valid = false;
 	bool post_present_pending_swap = false;
 
 	unsigned int framebuffer_blit_x = 0, framebuffer_blit_y = 0, framebuffer_blit_w = 0, framebuffer_blit_h = 0;
@@ -106,10 +104,10 @@ class GL3Renderer : public IRenderer
 	ShaderProgram blitshader;
 	ShaderProgram downsampleshader;
 	ShaderProgram motionvectorshader;
-	ShaderProgram hbao_compositeshader;
+	ShaderProgram ao_compositeshader;
 	BloomResources bloom;
-	HBAOResources hbao;
-	//Cached projection matrix and near/far for HBAO. Updated on every
+	GTAOResources gtao;
+	//Cached projection matrix and near/far for GTAO. Updated on every
 	//UpdateCommon(depth=0) call so the AO pass uses the main world projection.
 	float last_projection[16] = {};
 	float last_nearz = 1.0f;
@@ -126,9 +124,9 @@ class GL3Renderer : public IRenderer
 	GLint downsampleshader_gamma = -1;
 	GLint downsampleshader_dest_origin = -1;
 	GLint motionvector_screen_size = -1;
-	GLint hbao_composite_final_source = -1;
-	GLint hbao_composite_scene_source = -1;
-	GLint hbao_composite_ao_scene_source = -1;
+	GLint ao_composite_final_source = -1;
+	GLint ao_composite_scene_source = -1;
+	GLint ao_composite_ao_scene_source = -1;
 	GLfloat max_line_width = 1.0f;
 	GLfloat max_point_size = 1.0f;
 
@@ -166,14 +164,14 @@ class GL3Renderer : public IRenderer
 	GLint drawshader_dynamic_directions_uniforms[8] = {};
 	GLint drawshader_dynamic_dot_ranges_uniforms[8] = {};
 	GLint drawshader_dynamic_directional_uniforms[8] = {};
-	GLint drawshader_hbao_suppression_uniforms[8] = {};
+	GLint drawshader_ao_suppression_uniforms[8] = {};
 	GLint drawshader_bloom_suppression_uniforms[8] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
-	float hbao_suppression_draw_value = 0.0f;
+	float ao_suppression_draw_value = 0.0f;
 	float bloom_suppression_draw_value = 0.0f;
-	bool hbao_mask_dirty = false;
-	bool hbao_mask_cleared_this_frame = false;
+	bool post_protection_mask_dirty = false;
+	bool post_protection_mask_cleared_this_frame = false;
 	vector per_pixel_light_direction = { 0, 0, -1 };
 	vector per_pixel_dynamic_face_normal = { 0, 0, 1 };
 	int per_pixel_dynamic_light_count = 0;
@@ -235,7 +233,7 @@ class GL3Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, true, HBAO_ALGORITHM_GTAO, HBAO_QUALITY_HIGH, HBAO_DEFAULT_SAMPLES, HBAO_RESOLUTION_HALF, HBAO_BLUR_WIDE, 3.0f, 1.25f, 0.2f };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -457,7 +455,6 @@ public:
 	void EndFrame() override;
 
 	void CaptureBloomSource() override;
-	void CaptureHBAODepthOverlay() override;
 
 	// Clears the display to a specified color
 	void ClearScreen(ddgr_color color) override;
@@ -476,7 +473,7 @@ public:
 	void BeginMotionObject(int object_handle, float screen_x, float screen_y) override;
 	void EndMotionObject() override;
 	bool ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y) override;
-	void SetHBAOSuppression(float value) override;
+	void SetAOSuppression(float value) override;
 	void SetBloomSuppression(float value) override;
 
 	// Draws a scaled 2d bitmap to our buffer

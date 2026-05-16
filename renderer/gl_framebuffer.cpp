@@ -56,7 +56,7 @@ void GL_DestroyFramebufferVAO()
 
 //Returns the framebuffer fullscreen-triangle VAO, initialising it lazily.
 //Exposed so post-processing passes that draw a fullscreen triangle without
-//also clearing the destination (HBAO's "apply" pass) can reuse it.
+//also clearing the destination (AO apply pass) can reuse it.
 GLuint GL_GetFramebufferVAO()
 {
 	if (!fbVAOName)
@@ -771,7 +771,7 @@ GLuint MotionVectorResources::TextureForRead(GLuint source_framebuffer)
 	return resolved_texture;
 }
 
-void HBAOMaskResources::Update(uint32_t new_width, uint32_t new_height, uint32_t msaa_samples)
+void PostProtectionMaskResources::Update(uint32_t new_width, uint32_t new_height, uint32_t msaa_samples)
 {
 	if (new_width == 0 || new_height == 0)
 	{
@@ -825,7 +825,7 @@ void HBAOMaskResources::Update(uint32_t new_width, uint32_t new_height, uint32_t
 	rend_ClearBoundTextures();
 }
 
-void HBAOMaskResources::Destroy()
+void PostProtectionMaskResources::Destroy()
 {
 	glDeleteTextures(1, &mask_texture);
 	glDeleteTextures(1, &resolved_texture);
@@ -836,7 +836,7 @@ void HBAOMaskResources::Destroy()
 	width = height = samples = 0;
 }
 
-void HBAOMaskResources::AttachToFramebuffer(GLuint framebuffer)
+void PostProtectionMaskResources::AttachToFramebuffer(GLuint framebuffer)
 {
 	if (mask_texture == 0)
 		return;
@@ -849,7 +849,7 @@ void HBAOMaskResources::AttachToFramebuffer(GLuint framebuffer)
 	GLenum fbstatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 	if (fbstatus != GL_FRAMEBUFFER_COMPLETE)
 	{
-		mprintf((0, "HBAOMaskResources::AttachToFramebuffer: disabling HBAO suppression mask, framebuffer status 0x%x.\n",
+		mprintf((0, "PostProtectionMaskResources::AttachToFramebuffer: disabling post protection mask, framebuffer status 0x%x.\n",
 			fbstatus));
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, texture_type, 0, 0);
 		Destroy();
@@ -858,7 +858,7 @@ void HBAOMaskResources::AttachToFramebuffer(GLuint framebuffer)
 	}
 }
 
-void HBAOMaskResources::ClearAttached(GLuint framebuffer)
+void PostProtectionMaskResources::ClearAttached(GLuint framebuffer)
 {
 	if (mask_texture == 0)
 		return;
@@ -880,7 +880,7 @@ void HBAOMaskResources::ClearAttached(GLuint framebuffer)
 		glDrawBuffer(old_draw_buffer);
 }
 
-void HBAOMaskResources::UseSceneDrawBuffers(GLuint framebuffer)
+void PostProtectionMaskResources::UseSceneDrawBuffers(GLuint framebuffer)
 {
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
 	if (mask_texture != 0)
@@ -908,7 +908,7 @@ void GL_ConfigurePostMaskBlend()
 	glBlendFunci(2, GL_ONE, GL_ONE);
 }
 
-GLuint HBAOMaskResources::TextureForRead(GLuint source_framebuffer)
+GLuint PostProtectionMaskResources::TextureForRead(GLuint source_framebuffer)
 {
 	if (mask_texture == 0)
 		return 0;
@@ -929,58 +929,6 @@ GLuint HBAOMaskResources::TextureForRead(GLuint source_framebuffer)
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 	return resolved_texture;
-}
-
-static void AllocateNativePostMaskTexture(GLuint& texture, uint32_t width, uint32_t height)
-{
-	glGenTextures(1, &texture);
-	glBindTexture(GL_TEXTURE_2D, texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-}
-
-void NativePostMaskResources::Update(uint32_t new_width, uint32_t new_height)
-{
-	if (new_width == 0 || new_height == 0)
-	{
-		Destroy();
-		return;
-	}
-
-	if (width == new_width && height == new_height && hbao_mask_texture != 0 && bloom_mask_texture != 0)
-		return;
-
-	Destroy();
-
-	width = new_width;
-	height = new_height;
-
-	AllocateNativePostMaskTexture(hbao_mask_texture, width, height);
-	AllocateNativePostMaskTexture(bloom_mask_texture, width, height);
-	Clear();
-	rend_ClearBoundTextures();
-}
-
-void NativePostMaskResources::Clear()
-{
-	const GLubyte zero = 0;
-	if (hbao_mask_texture != 0)
-		glClearTexImage(hbao_mask_texture, 0, GL_RED, GL_UNSIGNED_BYTE, &zero);
-	if (bloom_mask_texture != 0)
-		glClearTexImage(bloom_mask_texture, 0, GL_RED, GL_UNSIGNED_BYTE, &zero);
-}
-
-void NativePostMaskResources::Destroy()
-{
-	glDeleteTextures(1, &hbao_mask_texture);
-	glDeleteTextures(1, &bloom_mask_texture);
-	hbao_mask_texture = 0;
-	bloom_mask_texture = 0;
-	width = 0;
-	height = 0;
 }
 
 void Framebuffer::BindForRead()

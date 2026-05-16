@@ -24,7 +24,7 @@ in vec3 outnormal;
 in vec3 outpt;
 
 layout(location = 0) out vec4 color;
-layout(location = 2) out vec4 hbao_mask;
+layout(location = 2) out vec4 post_mask;
 
 vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 {
@@ -75,7 +75,6 @@ void main()
 	float fog_end = clamp(1.0 - (1.0 / max(fog.end_dist, 0.0001)), 0.0, 1.0);
 	float fog_depth = clamp(1.0 - (1.0 / eye_dist), 0.0, 1.0);
 	float fog_amount = clamp((fog_depth - fog_start) / max(fog_end - fog_start, 0.0001), 0.0, 1.0);
-	float hbao_fog = 1.0 - pow(1.0 - fog_amount, 3.0);
 	color = vec4(mix(litcolor.rgb, fog.color.rgb, fog_amount), basecolor.a);
-	hbao_mask = vec4(0.0, hbao_fog, 0.0, 1.0);
+	post_mask = vec4(0.0, fog_amount, 0.0, 1.0);
 }
