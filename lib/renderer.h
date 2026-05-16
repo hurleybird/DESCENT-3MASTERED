@@ -435,6 +435,9 @@ void rend_SetWrapType (wrap_type val);
 // Takes a screenshot of the current frame and puts it into the handle passed
 void rend_Screenshot (int bm_handle);
 
+// Saves a screenshot directly to PNG when the renderer supports it.
+int rend_SaveScreenshotPNG(const char *filename);
+
 // Adds a bias to each coordinates z value.  This is useful for making 2d bitmaps
 // get drawn without being clipped by the zbuffer
 void rend_SetZBias (float z_bias);

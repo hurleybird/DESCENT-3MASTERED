@@ -180,51 +180,6 @@ static int ConfigNormalizeGTAOResolution(int resolution)
 	return resolution;
 }
 
-static int ConfigNormalizeGTAOSampleCount(int samples)
-{
-	if (samples < 1)
-		return 1;
-	if (samples > 1024)
-		return 1024;
-	return samples;
-}
-
-static int ConfigNormalizeGTAOBlurRadius(int radius)
-{
-	if (radius < 0)
-		return 0;
-	if (radius > 20)
-		return 20;
-	return radius;
-}
-
-static float ConfigNormalizeGTAORadius(float radius)
-{
-	if (radius < 0.1f)
-		return 0.1f;
-	if (radius > 12.0f)
-		return 12.0f;
-	return radius;
-}
-
-static float ConfigNormalizeGTAOIntensity(float intensity)
-{
-	if (intensity < 0.0f)
-		return 0.0f;
-	if (intensity > 4.0f)
-		return 4.0f;
-	return intensity;
-}
-
-static float ConfigNormalizeGTAOBias(float bias)
-{
-	if (bias < 0.0f)
-		return 0.0f;
-	if (bias > 1.0f)
-		return 1.0f;
-	return bias;
-}
-
 static int SupersamplingFactorToIndex(int factor)
 {
 	switch (ConfigNormalizeSupersamplingFactor(factor))
@@ -667,7 +622,6 @@ void config_gamma()
 #define ASPECTBUFFER_SIZE 32
 #define IDV_CHANGEWINDOW 10
 #define IDV_CHANGEASPECT 11
-#define IDV_GTAOADVANCED 12
 #define UID_RESOLUTION 110
 #define UID_ASPECT 111
 
@@ -1184,113 +1138,6 @@ struct video_menu
 			sheet->UpdateChanges();
 	}
 
-	void apply_gtao_advanced_sliders(short* samples, short* blur, short* radius, short* intensity, short* bias)
-	{
-		Render_preferred_state.gtao_sample_count = (ushort)ConfigNormalizeGTAOSampleCount(
-			CALC_SLIDER_INT_VALUE(*samples, 1, 1024, 1023));
-		Render_preferred_state.gtao_blur_radius = (ubyte)ConfigNormalizeGTAOBlurRadius(
-			CALC_SLIDER_INT_VALUE(*blur, 0, 20, 20));
-		Render_preferred_state.gtao_radius = ConfigNormalizeGTAORadius(
-			CALC_SLIDER_FLOAT_VALUE(*radius, 0.1f, 12.0f, 119));
-		Render_preferred_state.gtao_intensity = ConfigNormalizeGTAOIntensity(
-			CALC_SLIDER_FLOAT_VALUE(*intensity, 0.0f, 4.0f, 80));
-		Render_preferred_state.gtao_bias = ConfigNormalizeGTAOBias(
-			CALC_SLIDER_FLOAT_VALUE(*bias, 0.0f, 1.0f, 100));
-		rend_SetPreferredState(&Render_preferred_state);
-	}
-
-	void open_gtao_advanced_menu()
-	{
-		if (!ConfigCanUseGTAO())
-		{
-			DoMessageBox(TXT_WARNING, "GTAO tuning requires the OpenGL core profile.", MSGBOX_OK);
-			return;
-		}
-
-		newuiTiledWindow menu;
-		newuiSheet* tuning_sheet;
-		short* samples;
-		short* blur;
-		short* radius;
-		short* intensity;
-		short* bias;
-		tSliderSettings settings;
-		renderer_preferred_state saved_state = Render_preferred_state;
-
-		menu.Create("GTAO tuning", 0, 0, 360, 300);
-		tuning_sheet = menu.GetSheet();
-		tuning_sheet->NewGroup(NULL, 10, 0);
-
-		settings.min_val.i = 1;
-		settings.max_val.i = 1024;
-		settings.type = SLIDER_UNITS_INT;
-		samples = tuning_sheet->AddSlider("Samples", 1023,
-			CALC_SLIDER_POS_INT(ConfigNormalizeGTAOSampleCount(Render_preferred_state.gtao_sample_count), &settings, 1023),
-			&settings);
-
-		settings.min_val.i = 0;
-		settings.max_val.i = 20;
-		settings.type = SLIDER_UNITS_INT;
-		blur = tuning_sheet->AddSlider("Blur radius", 20,
-			CALC_SLIDER_POS_INT(ConfigNormalizeGTAOBlurRadius(Render_preferred_state.gtao_blur_radius), &settings, 20),
-			&settings);
-
-		settings.min_val.f = 0.1f;
-		settings.max_val.f = 12.0f;
-		settings.type = SLIDER_UNITS_FLOAT;
-		radius = tuning_sheet->AddSlider("Radius", 119,
-			CALC_SLIDER_POS_FLOAT(ConfigNormalizeGTAORadius(Render_preferred_state.gtao_radius), &settings, 119),
-			&settings);
-
-		settings.min_val.f = 0.0f;
-		settings.max_val.f = 4.0f;
-		settings.type = SLIDER_UNITS_FLOAT;
-		intensity = tuning_sheet->AddSlider("Intensity", 80,
-			CALC_SLIDER_POS_FLOAT(ConfigNormalizeGTAOIntensity(Render_preferred_state.gtao_intensity), &settings, 80),
-			&settings);
-
-		settings.min_val.f = 0.0f;
-		settings.max_val.f = 1.0f;
-		settings.type = SLIDER_UNITS_FLOAT;
-		bias = tuning_sheet->AddSlider("Bias", 100,
-			CALC_SLIDER_POS_FLOAT(ConfigNormalizeGTAOBias(Render_preferred_state.gtao_bias), &settings, 100),
-			&settings);
-
-		tuning_sheet->NewGroup(NULL, 100, 232, NEWUI_ALIGN_HORIZ);
-		tuning_sheet->AddButton(TXT_OK, UID_OK);
-		tuning_sheet->AddButton(TXT_CANCEL, UID_CANCEL);
-
-		menu.Open();
-
-		int res;
-		do
-		{
-			res = menu.DoUI();
-			if (tuning_sheet->HasChanged(samples) || tuning_sheet->HasChanged(blur) ||
-				tuning_sheet->HasChanged(radius) || tuning_sheet->HasChanged(intensity) ||
-				tuning_sheet->HasChanged(bias))
-			{
-				apply_gtao_advanced_sliders(samples, blur, radius, intensity, bias);
-				tuning_sheet->UpdateChanges();
-			}
-		} while (res != UID_OK && res != UID_CANCEL);
-
-		if (res == UID_CANCEL)
-		{
-			Render_preferred_state = saved_state;
-			rend_SetPreferredState(&Render_preferred_state);
-		}
-		else
-		{
-			apply_gtao_advanced_sliders(samples, blur, radius, intensity, bias);
-		}
-
-		menu.Close();
-		menu.Destroy();
-		if (sheet)
-			sheet->UpdateChanges();
-	}
-
 	// sets the menu up.
 	newuiSheet* setup(newuiMenu* menu)
 	{
@@ -1381,7 +1228,6 @@ struct video_menu
 		sheet->AddRadioButton(TXT_CFG_HIGH);
 		*gtao = ConfigCanUseGTAO() ?
 			GTAOPresetToIndex(Render_preferred_state.gtao_enabled, Render_preferred_state.gtao_resolution) : 0;
-		sheet->AddLongButton("GTAO tuning...", IDV_GTAOADVANCED);
 
 		sheet->NewGroup(NULL, 0, 252);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
@@ -1590,9 +1436,6 @@ struct video_menu
 		break;
 		case IDV_AUTOGAMMA:
 			config_gamma();
-			break;
-		case IDV_GTAOADVANCED:
-			open_gtao_advanced_menu();
 			break;
 		}
 	};

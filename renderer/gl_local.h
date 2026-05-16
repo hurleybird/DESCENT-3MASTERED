@@ -234,7 +234,7 @@ class GL3Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 8, 4.0f, 2.0f, 0.25f };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.0f, 0.25f };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -537,6 +537,7 @@ public:
 
 	// Takes a screenshot of the current frame and puts it into the handle passed
 	void Screenshot(int bm_handle) override;
+	int SaveScreenshotPNG(const char* filename) override;
 
 	//NEW STATE
 

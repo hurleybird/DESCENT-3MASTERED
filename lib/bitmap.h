@@ -167,6 +167,9 @@ int bm_SaveBitmapTGA (const char *filename,int handle);
 // Saves the passed bitmap handle as an RGBA PNG
 int bm_SaveBitmapPNG(const char *filename, int handle);
 
+// Saves top-to-bottom RGBA8 rows as a PNG.
+int bm_SaveRawRGBA32PNG(const char *filename, int width, int height, const ubyte *rgba);
+
 // Sets the bitmap priority.  This comes in handy for our 3d hardware
 void bm_set_priority (int handle,int priority);
 

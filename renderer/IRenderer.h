@@ -248,6 +248,9 @@ public:
 	// Takes a screenshot of the current frame and puts it into the handle passed
 	virtual void Screenshot(int bm_handle) = 0;
 
+	// Saves a screenshot without routing through the 16-bit bitmap manager.
+	virtual int SaveScreenshotPNG(const char* filename) { return 0; }
+
 	//NEW STATE
 
 	virtual void UpdateCommon(float* projection, float* modelview, int depth = 0) = 0;

@@ -1189,6 +1189,74 @@ void GLCompatibilityRenderer::Screenshot(int bm_handle)
 	mem_free(temp_data);
 }
 
+int GLCompatibilityRenderer::SaveScreenshotPNG(const char* filename)
+{
+	int w = OpenGL_state.screen_width;
+	int h = OpenGL_state.screen_height;
+	int total = w * h;
+
+	uint* temp_data = (uint*)mem_malloc(total * 4);
+	if (!temp_data)
+		return 0;
+
+	ubyte* rgba_data = (ubyte*)mem_malloc(total * 4);
+	if (!rgba_data)
+	{
+		mem_free(temp_data);
+		return 0;
+	}
+
+	int supersampling_factor = SupersamplingFactor();
+	float display_gamma = OpenGL_preferred_state.gamma != 0.0f ? 1.f / OpenGL_preferred_state.gamma : 1.f;
+	if (supersampling_factor >= 4)
+	{
+		downsampleshader.Use();
+		framebuffers[framebuffer_current_draw].DownsampleTo(downscale_framebuffer.Handle(), 0, 0,
+			downscale_framebuffer.Width(), downscale_framebuffer.Height(), downsampleshader_gamma, display_gamma,
+			downsampleshader_dest_origin);
+		downsampleshader.Use();
+		downscale_framebuffer.DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
+			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
+			downsampleshader_dest_origin);
+		resolved_framebuffer.BindForRead();
+	}
+	else if (supersampling_factor >= 2)
+	{
+		downsampleshader.Use();
+		framebuffers[framebuffer_current_draw].DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
+			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
+			downsampleshader_dest_origin);
+		resolved_framebuffer.BindForRead();
+	}
+	else
+	{
+		framebuffers[framebuffer_current_draw].BindForRead();
+	}
+	if (supersampling_factor >= 2)
+		ShaderProgram::ClearBinding();
+	glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, (GLvoid*)temp_data);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
+
+	for (int y = 0; y < h; y++)
+	{
+		for (int x = 0; x < w; x++)
+		{
+			uint spix = temp_data[((h - 1) - y) * w + x];
+			ubyte* dest = &rgba_data[(y * w + x) * 4];
+			dest[0] = (ubyte)(spix & 0xff);
+			dest[1] = (ubyte)((spix >> 8) & 0xff);
+			dest[2] = (ubyte)((spix >> 16) & 0xff);
+			dest[3] = 255;
+		}
+	}
+
+	int saved = bm_SaveRawRGBA32PNG(filename, w, h, rgba_data);
+	mem_free(rgba_data);
+	mem_free(temp_data);
+	return saved;
+}
+
 void GLCompatibilityRenderer::UpdateFramebuffer(void)
 {
 	int target_samples = RendererMsaaSamples(OpenGL_preferred_state);

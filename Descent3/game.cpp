@@ -838,7 +838,7 @@ static bool UseTGAScreenshots()
 // Does a screenshot and tells the bitmap lib to save out the picture.
 void DoScreenshot()
 {
-	int bm_handle;
+	int bm_handle = -1;
 	int count;
 	char str[255], filename[255];
 	CFILE* infile;
@@ -853,18 +853,6 @@ void DoScreenshot()
 		height = rs.screen_height;
 	}
 
-
-	bm_handle = bm_AllocBitmap(width, height, 0);
-	if (bm_handle < 0)
-	{
-		AddHUDMessage(TXT_ERRSCRNSHT);
-		return;
-	}
-
-	StopTime();
-
-	// Tell our renderer lib to take a screen shot
-	rend_Screenshot(bm_handle);
 
 	// Find a valid filename
 	count = 1;
@@ -888,10 +876,28 @@ void DoScreenshot()
 			break;
 	}
 
-	strcpy(GameBitmaps[bm_handle].name, str);
+	StopTime();
 
-	// Now save it
-	int saved = use_tga ? bm_SaveBitmapTGA(filename, bm_handle) : bm_SaveBitmapPNG(filename, bm_handle);
+	int saved = (!use_tga && UseHardware) ? rend_SaveScreenshotPNG(filename) : 0;
+	if (!saved)
+	{
+		bm_handle = bm_AllocBitmap(width, height, 0);
+		if (bm_handle < 0)
+		{
+			AddHUDMessage(TXT_ERRSCRNSHT);
+			StartTime();
+			return;
+		}
+
+		// Tell our renderer lib to take a screen shot
+		rend_Screenshot(bm_handle);
+		strcpy(GameBitmaps[bm_handle].name, str);
+
+		// Now save it
+		saved = use_tga ? bm_SaveBitmapTGA(filename, bm_handle) : bm_SaveBitmapPNG(filename, bm_handle);
+		bm_FreeBitmap(bm_handle);
+	}
+
 	if (saved && Demo_flags != DF_PLAYBACK)
 	{
 		AddHUDMessage(TXT_SCRNSHT, filename);
@@ -900,9 +906,6 @@ void DoScreenshot()
 	{
 		AddHUDMessage(TXT_ERRSCRNSHT);
 	}
-
-	// Free memory			
-	bm_FreeBitmap(bm_handle);
 
 	StartTime();
 }

@@ -112,6 +112,8 @@ int Timedemo_frame = -1;
 //NOTE: this is a count of 3d frames, not game frames
 int FrameCount = 0;
 
+static bool Screenshot_requested = false;
+
 bool HUD_disabled = 0;
 #ifdef _DEBUG
 int DoAI = 1;
@@ -855,7 +857,7 @@ void ProcessNormalKey(int key)
 	case KEY_PRINT_SCREEN:
 	case KEY_SHIFTED + KEY_PRINT_SCREEN:
 		mprintf((0, "Doing screenshot!\n"));
-		DoScreenshot();
+		Screenshot_requested = true;
 		return;
 
 	case KEY_SHIFTED + KEY_MINUS:
@@ -2946,10 +2948,20 @@ void GameFrame(void)
 				if (rend_BeginPostPresentFrame())
 				{
 					GameDrawPostPresentFrame(false);
+					if (Screenshot_requested)
+					{
+						DoScreenshot();
+						Screenshot_requested = false;
+					}
 					rend_EndPostPresentFrame();
 				}
 				else
 				{
+					if (Screenshot_requested)
+					{
+						DoScreenshot();
+						Screenshot_requested = false;
+					}
 					rend_Flip();
 				}
 			}

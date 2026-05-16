@@ -1486,6 +1486,12 @@ static void png_write_chunk(CFILE* fp, const char type[4], const ubyte* data, in
 	png_write_u32(fp, crc ^ 0xffffffffU);
 }
 
+static ubyte png_expand_5_to_8(int value)
+{
+	value &= 0x1f;
+	return (ubyte)((value << 3) | (value >> 2));
+}
+
 static int png_build_stored_zlib(const ubyte* raw, int raw_len, ubyte** out_data, int* out_len)
 {
 	int block_count = (raw_len + 65534) / 65535;
@@ -1528,6 +1534,82 @@ static int png_build_stored_zlib(const ubyte* raw, int raw_len, ubyte** out_data
 	return 1;
 }
 
+static int png_save_filtered_rgba(const char* filename, int width, int height, const ubyte* raw, int raw_len)
+{
+	if (width <= 0 || height <= 0)
+		return 0;
+
+	ubyte* zlib_data = NULL;
+	int zlib_len = 0;
+	if (!png_build_stored_zlib(raw, raw_len, &zlib_data, &zlib_len))
+	{
+		return 0;
+	}
+
+	CFILE* fp = (CFILE*)cfopen(filename, "wb");
+	if (fp == NULL)
+	{
+		mprintf((0, "SavePNG:couldn't open %s!\n", filename));
+		mem_free(zlib_data);
+		return 0;
+	}
+
+	static const ubyte png_sig[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
+	cf_WriteBytes(png_sig, sizeof(png_sig), fp);
+
+	ubyte ihdr[13];
+	ihdr[0] = (ubyte)((width >> 24) & 0xff);
+	ihdr[1] = (ubyte)((width >> 16) & 0xff);
+	ihdr[2] = (ubyte)((width >> 8) & 0xff);
+	ihdr[3] = (ubyte)(width & 0xff);
+	ihdr[4] = (ubyte)((height >> 24) & 0xff);
+	ihdr[5] = (ubyte)((height >> 16) & 0xff);
+	ihdr[6] = (ubyte)((height >> 8) & 0xff);
+	ihdr[7] = (ubyte)(height & 0xff);
+	ihdr[8] = 8;  // bit depth
+	ihdr[9] = 6;  // RGBA
+	ihdr[10] = 0; // deflate
+	ihdr[11] = 0; // no filter
+	ihdr[12] = 0; // no interlace
+	png_write_chunk(fp, "IHDR", ihdr, sizeof(ihdr));
+
+	ubyte gama[4] = { 0x00, 0x00, 0xb1, 0x8f }; // 45455, the PNG sRGB gamma value.
+	png_write_chunk(fp, "gAMA", gama, sizeof(gama));
+
+	ubyte srgb[1] = { 0 }; // Perceptual rendering intent.
+	png_write_chunk(fp, "sRGB", srgb, sizeof(srgb));
+
+	png_write_chunk(fp, "IDAT", zlib_data, zlib_len);
+	png_write_chunk(fp, "IEND", NULL, 0);
+
+	cfclose(fp);
+	mem_free(zlib_data);
+	return 1;
+}
+
+int bm_SaveRawRGBA32PNG(const char* filename, int width, int height, const ubyte* rgba)
+{
+	if (width <= 0 || height <= 0 || !rgba)
+		return 0;
+
+	int row_bytes = width * 4;
+	int raw_len = (row_bytes + 1) * height;
+	ubyte* raw = (ubyte*)mem_malloc(raw_len);
+	if (!raw)
+		return 0;
+
+	for (int y = 0; y < height; y++)
+	{
+		ubyte* row = &raw[y * (row_bytes + 1)];
+		row[0] = 0;
+		memcpy(&row[1], &rgba[y * row_bytes], row_bytes);
+	}
+
+	int saved = png_save_filtered_rgba(filename, width, height, raw, raw_len);
+	mem_free(raw);
+	return saved;
+}
+
 int bm_SaveBitmapPNG(const char* filename, int handle)
 {
 	ASSERT(GameBitmaps[handle].format == BITMAP_FORMAT_1555);
@@ -1550,57 +1632,18 @@ int bm_SaveBitmapPNG(const char* filename, int handle)
 		row[0] = 0;
 		for (int x = 0; x < width; x++)
 		{
-			ddgr_color color = GR_16_TO_COLOR(src_data[y * width + x]);
+			ushort color = src_data[y * width + x];
 			ubyte* dest = &row[1 + x * 4];
-			dest[0] = (ubyte)GR_COLOR_RED(color);
-			dest[1] = (ubyte)GR_COLOR_GREEN(color);
-			dest[2] = (ubyte)GR_COLOR_BLUE(color);
+			dest[0] = png_expand_5_to_8(color >> 10);
+			dest[1] = png_expand_5_to_8(color >> 5);
+			dest[2] = png_expand_5_to_8(color);
 			dest[3] = 255;
 		}
 	}
 
-	ubyte* zlib_data = NULL;
-	int zlib_len = 0;
-	if (!png_build_stored_zlib(raw, raw_len, &zlib_data, &zlib_len))
-	{
-		mem_free(raw);
-		return 0;
-	}
-
-	CFILE* fp = (CFILE*)cfopen(filename, "wb");
-	if (fp == NULL)
-	{
-		mprintf((0, "SavePNG:couldn't open %s!\n", filename));
-		mem_free(zlib_data);
-		mem_free(raw);
-		return 0;
-	}
-
-	static const ubyte png_sig[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
-	cf_WriteBytes(png_sig, sizeof(png_sig), fp);
-
-	ubyte ihdr[13];
-	ihdr[0] = (ubyte)((width >> 24) & 0xff);
-	ihdr[1] = (ubyte)((width >> 16) & 0xff);
-	ihdr[2] = (ubyte)((width >> 8) & 0xff);
-	ihdr[3] = (ubyte)(width & 0xff);
-	ihdr[4] = (ubyte)((height >> 24) & 0xff);
-	ihdr[5] = (ubyte)((height >> 16) & 0xff);
-	ihdr[6] = (ubyte)((height >> 8) & 0xff);
-	ihdr[7] = (ubyte)(height & 0xff);
-	ihdr[8] = 8;  // bit depth
-	ihdr[9] = 6;  // RGBA
-	ihdr[10] = 0; // deflate
-	ihdr[11] = 0; // no filter
-	ihdr[12] = 0; // no interlace
-	png_write_chunk(fp, "IHDR", ihdr, sizeof(ihdr));
-	png_write_chunk(fp, "IDAT", zlib_data, zlib_len);
-	png_write_chunk(fp, "IEND", NULL, 0);
-
-	cfclose(fp);
-	mem_free(zlib_data);
+	int saved = png_save_filtered_rgba(filename, width, height, raw, raw_len);
 	mem_free(raw);
-	return 1;
+	return saved;
 }
 
 // clears bitmap

@@ -497,6 +497,14 @@ void rend_Screenshot(int bm_handle)
 	renderer_inst->Screenshot(bm_handle);
 }
 
+int rend_SaveScreenshotPNG(const char* filename)
+{
+	if (!Renderer_initted)
+		return 0;
+
+	return renderer_inst->SaveScreenshotPNG(filename);
+}
+
 // Adds a bias to each coordinates z value.  This is useful for making 2d bitmaps
 // get drawn without being clipped by the zbuffer
 void rend_SetZBias(float z_bias)
