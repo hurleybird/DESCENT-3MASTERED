@@ -115,6 +115,7 @@ class Framebuffer
 	GLuint		m_colorname, m_subcolorname, m_depthname, m_subdepthname;
 	uint32_t	m_width, m_height;
 	uint32_t	m_samples;
+	uint32_t	m_requested_samples;
 	//Track whether the MSAA->sub resolve is up to date. Each MSAA resolve blit
 	//costs W*H*samples of bandwidth, and multiple post-process stages can ask
 	//for the resolved depth/color in a single frame. We skip the blit when the
@@ -176,6 +177,11 @@ public:
 	uint32_t Samples() const
 	{
 		return m_samples;
+	}
+
+	uint32_t RequestedSamples() const
+	{
+		return m_requested_samples;
 	}
 };
 
@@ -244,6 +250,7 @@ void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter);
 void GL_ConfigurePostMaskBlend();
 void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
 void GL_DrawFramebufferQuadNoClear(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
+int GL_GetSupportedMsaaSamples(int requested_samples);
 //Lazy accessor for the framebuffer fullscreen-triangle VAO. Initialises it if
 //needed. Use this when you need to draw a fullscreen triangle to a target you
 //have already bound yourself (and do not want GL_DrawFramebufferQuad's clear).

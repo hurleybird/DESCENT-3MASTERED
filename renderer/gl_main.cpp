@@ -500,6 +500,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 	}
 	else if (late_post_enabled && framebuffers[framebuffer_current_draw].Samples() >= 2)
 	{
+		resolved_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
 		{
 			PERF_MARKER_SCOPE("Post.PresentResolve.MSAA");
 			framebuffers[framebuffer_current_draw].BlitToRaw(resolved_framebuffer.Handle(), 0, 0,
@@ -725,6 +726,15 @@ void GL4Renderer::CaptureBloomSource()
 	const bool ao_enabled = OpenGL_preferred_state.gtao_enabled && framebuffer_ok;
 	const bool bloom_enabled = OpenGL_preferred_state.bloom_enabled;
 	const bool late_post_enabled = ao_enabled || bloom_enabled;
+
+	if (!late_post_enabled)
+	{
+		bloom_source_framebuffer.Destroy();
+		bloom_source_resolved_framebuffer.Destroy();
+		bloom_source_downscale_framebuffer.Destroy();
+		ao_scene_framebuffer.Destroy();
+		ao_composite_framebuffer.Destroy();
+	}
 
 	if (framebuffer_ok)
 	{
@@ -1543,11 +1553,11 @@ int GL4Renderer::SaveScreenshotPNG(const char* filename)
 
 void GL4Renderer::UpdateFramebuffer(void)
 {
-	int target_samples = RendererMsaaSamples(OpenGL_preferred_state);
+	int target_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(OpenGL_preferred_state));
 	int target_width = FramebufferWidth();
 	int target_height = FramebufferHeight();
 	bool framebuffer_state_changed = framebuffers[0].Handle() != 0 &&
-		(framebuffers[0].Samples() != (uint32_t)target_samples ||
+		(framebuffers[0].RequestedSamples() != (uint32_t)target_samples ||
 		 framebuffers[0].Width() != (uint32_t)target_width ||
 		 framebuffers[0].Height() != (uint32_t)target_height);
 	if (framebuffer_state_changed)
@@ -1579,7 +1589,7 @@ void GL4Renderer::UpdateFramebuffer(void)
 		post_protection_mask.UseSceneDrawBuffers(framebuffers[i].Handle());
 	}
 	int supersampling_factor = SupersamplingFactor();
-	if (supersampling_factor >= 2 || target_samples >= 2)
+	if (supersampling_factor >= 2 || ((OpenGL_preferred_state.bloom_enabled || OpenGL_preferred_state.gtao_enabled) && target_samples >= 2))
 		resolved_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
 	else
 		resolved_framebuffer.Destroy();

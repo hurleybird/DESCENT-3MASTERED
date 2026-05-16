@@ -434,7 +434,12 @@ void GLCompatibilityRenderer::CaptureBloomSource()
 {
 	bloom_source_valid = false;
 	if (!OpenGL_preferred_state.bloom_enabled)
+	{
+		bloom_source_framebuffer.Destroy();
+		bloom_source_resolved_framebuffer.Destroy();
+		bloom_source_downscale_framebuffer.Destroy();
 		return;
+	}
 
 	int width = OpenGL_state.screen_width;
 	int height = OpenGL_state.screen_height;
@@ -1259,11 +1264,11 @@ int GLCompatibilityRenderer::SaveScreenshotPNG(const char* filename)
 
 void GLCompatibilityRenderer::UpdateFramebuffer(void)
 {
-	int target_samples = RendererMsaaSamples(OpenGL_preferred_state);
+	int target_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(OpenGL_preferred_state));
 	int target_width = FramebufferWidth();
 	int target_height = FramebufferHeight();
 	bool framebuffer_state_changed = framebuffers[0].Handle() != 0 &&
-		(framebuffers[0].Samples() != (uint32_t)target_samples ||
+		(framebuffers[0].RequestedSamples() != (uint32_t)target_samples ||
 		 framebuffers[0].Width() != (uint32_t)target_width ||
 		 framebuffers[0].Height() != (uint32_t)target_height);
 	if (framebuffer_state_changed)

@@ -217,11 +217,12 @@ Framebuffer::Framebuffer()
 	m_width = m_height = 0;
 	m_name = m_subname = m_colorname = m_subcolorname = m_depthname = m_subdepthname = 0;
 	m_samples = 0;
+	m_requested_samples = 0;
 	m_subcolor_dirty = true;
 	m_subdepth_dirty = true;
 }
 
-static int GetSupportedMsaaSamples(int requested_samples)
+int GL_GetSupportedMsaaSamples(int requested_samples)
 {
 	if (requested_samples < 2)
 		return 0;
@@ -262,9 +263,9 @@ void Framebuffer::Update(int width, int height, int msaa_samples)
 		return;
 	}
 
-	msaa_samples = GetSupportedMsaaSamples(msaa_samples);
+	msaa_samples = GL_GetSupportedMsaaSamples(msaa_samples);
 
-	if (width == m_width && height == m_height && (uint32_t)msaa_samples == m_samples)
+	if (width == m_width && height == m_height && (uint32_t)msaa_samples == m_requested_samples && m_name != 0)
 		return;
 
 	int attempts[4] = { 0, 0, 0, 0 };
@@ -290,6 +291,7 @@ void Framebuffer::Update(int width, int height, int msaa_samples)
 		Destroy();
 		if (Allocate(width, height, samples))
 		{
+			m_requested_samples = msaa_samples;
 			if (samples != msaa_samples)
 				mprintf((0, "Framebuffer::Update: falling back from %dx MSAA to %dx MSAA for %dx%d framebuffer.\n",
 					msaa_samples, samples, width, height));
@@ -431,6 +433,7 @@ void Framebuffer::Destroy()
 	m_subname = m_subcolorname = m_subdepthname = 0;
 	m_width = m_height = 0;
 	m_samples = 0;
+	m_requested_samples = 0;
 	m_subcolor_dirty = true;
 	m_subdepth_dirty = true;
 }
@@ -654,7 +657,7 @@ void MotionVectorResources::Update(uint32_t new_width, uint32_t new_height, uint
 		return;
 	}
 
-	msaa_samples = GetSupportedMsaaSamples(msaa_samples);
+	msaa_samples = GL_GetSupportedMsaaSamples(msaa_samples);
 	if (width == new_width && height == new_height && samples == msaa_samples && velocity_texture != 0)
 		return;
 
@@ -779,7 +782,7 @@ void PostProtectionMaskResources::Update(uint32_t new_width, uint32_t new_height
 		return;
 	}
 
-	msaa_samples = GetSupportedMsaaSamples(msaa_samples);
+	msaa_samples = GL_GetSupportedMsaaSamples(msaa_samples);
 	if (width == new_width && height == new_height && samples == msaa_samples && mask_texture != 0)
 		return;
 
@@ -1063,7 +1066,11 @@ Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred
 	const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture)
 {
 	if (!pref_state.bloom_enabled || source == nullptr)
+	{
+		if (framebuffers[0].Handle() != 0)
+			DestroyFramebuffers();
 		return nullptr;
+	}
 
 	int source_width = (int)source->Width();
 	int source_height = (int)source->Height();
@@ -1073,7 +1080,11 @@ Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred
 		source_height = render_state.screen_height;
 	}
 	if (source_width < 16 || source_height < 16)
+	{
+		if (framebuffers[0].Handle() != 0)
+			DestroyFramebuffers();
 		return nullptr;
+	}
 
 	const int max_downsample_levels = NUM_BLOOM_FBOS / 2;
 	int widths[max_downsample_levels] = {};
@@ -1092,7 +1103,11 @@ Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred
 	}
 
 	if (downsample_count == 0)
+	{
+		if (framebuffers[0].Handle() != 0)
+			DestroyFramebuffers();
 		return nullptr;
+	}
 
 	for (int i = 0; i < downsample_count; i++)
 		framebuffers[i].Update(widths[i], heights[i], 0);
