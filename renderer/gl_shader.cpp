@@ -268,7 +268,11 @@ uint32_t GL3Renderer::GetPipelineByName(const char* name)
 void GL3Renderer::BindPipeline(uint32_t handle)
 {
 	if (handle < NUM_SHADERDEFS)
+	{
+		if (strstr(gl_shaderdefs[handle].name, "fog") != nullptr)
+			hbao_mask_dirty = true;
 		gl_shaderprogs[handle].Use();
+	}
 }
 
 void GL3Renderer::UpdateCommon(float* projection, float* modelview, int depth)

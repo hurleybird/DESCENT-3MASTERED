@@ -80,5 +80,5 @@ void main()
 	float fog_amount = clamp((outdepth - fog_start) / max(fog_end - fog_start, 0.0001), 0.0, 1.0);
 	float hbao_fog = 1.0 - pow(1.0 - fog_amount, 3.0);
 	color = vec4(mix(litcolor.rgb, fog.color.rgb, fog_amount), litcolor.a);
-	hbao_mask = vec4(hbao_fog, 0.0, 0.0, 1.0);
+	hbao_mask = vec4(0.0, hbao_fog, 0.0, 1.0);
 }

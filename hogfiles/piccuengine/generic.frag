@@ -96,7 +96,8 @@ vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 void main()
 {
 	vec4 vertex_color = ApplyPhongLighting(outcolor);
-	float suppression = 0.0;
+	float ao_mask = 0.0;
+	float bloom_mask = 0.0;
 
 	#if defined(USE_SPECULAR)
 		color = vec4(vertex_color.rgb, texture(colortexture, outuv.xy / outuv.z).a * vertex_color.a);
@@ -110,8 +111,8 @@ void main()
 		color = vertex_color;
 	#endif
 	float suppression_alpha = clamp(color.a, 0.0, 1.0);
-	suppression = clamp(hbao_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
-	float bloom_mask = clamp(bloom_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
+	ao_mask = clamp(hbao_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
+	bloom_mask = clamp(bloom_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
 	
 	#if defined(USE_FOG)
 		float fog_start = clamp(1.0 - (1.0 / max(fog.start_dist, 0.0001)), 0.0, 1.0);
@@ -119,7 +120,7 @@ void main()
 		float fog_depth = clamp(-outpt.z, 0.0, 1.0);
 		float mag = clamp((fog_depth - fog_start) / max(fog_end - fog_start, 0.0001), 0.0, 1.0);
 		color = vec4(mix(color.rgb, fog.color.rgb, mag), color.a);
-		suppression = max(suppression, 1.0 - pow(1.0 - mag, 3.0));
+		bloom_mask = max(bloom_mask, 1.0 - pow(1.0 - mag, 3.0));
 	#endif
-	hbao_mask = vec4(max(suppression, bloom_mask), 0.0, 0.0, 1.0);
+	hbao_mask = vec4(ao_mask, bloom_mask, 0.0, 1.0);
 }

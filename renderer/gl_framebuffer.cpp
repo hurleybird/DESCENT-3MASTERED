@@ -793,12 +793,12 @@ void HBAOMaskResources::Update(uint32_t new_width, uint32_t new_height, uint32_t
 	if (samples >= 2)
 	{
 		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, mask_texture);
-		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, samples, GL_R8, width, height, GL_FALSE);
+		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, samples, GL_RG8, width, height, GL_FALSE);
 	}
 	else
 	{
 		glBindTexture(GL_TEXTURE_2D, mask_texture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, width, height, 0, GL_RG, GL_UNSIGNED_BYTE, nullptr);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -809,7 +809,7 @@ void HBAOMaskResources::Update(uint32_t new_width, uint32_t new_height, uint32_t
 	{
 		glGenTextures(1, &resolved_texture);
 		glBindTexture(GL_TEXTURE_2D, resolved_texture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, width, height, 0, GL_RG, GL_UNSIGNED_BYTE, nullptr);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -892,12 +892,20 @@ void HBAOMaskResources::UseSceneDrawBuffers(GLuint framebuffer)
 			GL_COLOR_ATTACHMENT2
 		};
 		glDrawBuffers(3, draw_buffers);
+		GL_ConfigurePostMaskBlend();
 	}
 	else
 	{
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	}
 	glReadBuffer(GL_COLOR_ATTACHMENT0);
+}
+
+void GL_ConfigurePostMaskBlend()
+{
+	glEnablei(GL_BLEND, 2);
+	glBlendEquationi(2, GL_MAX);
+	glBlendFunci(2, GL_ONE, GL_ONE);
 }
 
 GLuint HBAOMaskResources::TextureForRead(GLuint source_framebuffer)

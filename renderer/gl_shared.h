@@ -257,6 +257,7 @@ struct NativePostMaskResources
 };
 
 void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter);
+void GL_ConfigurePostMaskBlend();
 void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
 void GL_DrawFramebufferQuadNoClear(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
 //Lazy accessor for the framebuffer fullscreen-triangle VAO. Initialises it if

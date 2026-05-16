@@ -379,7 +379,12 @@ void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 	if (framebuffer_ok)
 	{
 		motion_vectors.ClearAttached(framebuffers[framebuffer_current_draw].Handle());
-		hbao_mask.ClearAttached(framebuffers[framebuffer_current_draw].Handle());
+		if (!hbao_mask_cleared_this_frame)
+		{
+			hbao_mask.ClearAttached(framebuffers[framebuffer_current_draw].Handle());
+			hbao_mask_dirty = false;
+			hbao_mask_cleared_this_frame = true;
+		}
 		hbao_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
 	}
 	motion_vectors_dirty = false;
@@ -389,7 +394,6 @@ void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		legacy_draw_uniforms_dirty = true;
 	hbao_suppression_draw_value = 0.0f;
 	bloom_suppression_draw_value = 0.0f;
-	hbao_mask_dirty = false;
 	if (framebuffer_ok && framebuffers[framebuffer_current_draw].Samples() >= 2)
 		glEnable(GL_MULTISAMPLE);
 	else
@@ -538,9 +542,44 @@ bool GL3Renderer::BeginPostPresentFrame()
 
 		GLuint hbao_depth_overlay_texture = hbao_depth_overlay_valid ?
 			hbao_depth_overlay_framebuffer.DepthTextureRaw() : 0;
-		hbao.Apply(present_framebuffer, present_framebuffer, OpenGL_preferred_state,
-			OpenGL_state, last_projection, near_z, far_z, post_protection_mask,
-			hbao_depth_overlay_texture);
+		bool deferred_hbao = hbao_scene_valid && bloom_source_valid &&
+			bloom_source_framebuffer.Handle() != 0 &&
+			bloom_source_framebuffer.Width() == present_framebuffer->Width() &&
+			bloom_source_framebuffer.Height() == present_framebuffer->Height();
+
+		if (deferred_hbao)
+		{
+			hbao_scene_framebuffer.Update(present_framebuffer->Width(), present_framebuffer->Height(), 0);
+			bloom_source_framebuffer.BlitToRaw(hbao_scene_framebuffer.Handle(), 0, 0,
+				hbao_scene_framebuffer.Width(), hbao_scene_framebuffer.Height(), GL_NEAREST);
+			bloom_source_framebuffer.BlitDepthTo(hbao_scene_framebuffer.Handle(), 0, 0,
+				hbao_scene_framebuffer.Width(), hbao_scene_framebuffer.Height());
+
+			hbao.Apply(&hbao_scene_framebuffer, &hbao_scene_framebuffer, OpenGL_preferred_state,
+				OpenGL_state, last_projection, near_z, far_z, post_protection_mask,
+				hbao_depth_overlay_texture);
+
+			hbao_composite_framebuffer.Update(present_framebuffer->Width(), present_framebuffer->Height(), 0);
+			hbao_compositeshader.Use();
+			rend_ClearBoundTextures();
+			GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
+			GL_BindFramebufferTexture(bloom_source_framebuffer.ColorTextureForRead(), 1, GL_NEAREST);
+			GL_BindFramebufferTexture(hbao_scene_framebuffer.ColorTextureForRead(), 2, GL_NEAREST);
+			{
+				PERF_MARKER_SCOPE("HBAO.DeferredComposite");
+				GL_DrawFramebufferQuad(hbao_composite_framebuffer.Handle(), 0, 0,
+					hbao_composite_framebuffer.Width(), hbao_composite_framebuffer.Height());
+			}
+			bloom_source_framebuffer.BlitDepthTo(hbao_composite_framebuffer.Handle(), 0, 0,
+				hbao_composite_framebuffer.Width(), hbao_composite_framebuffer.Height());
+			present_framebuffer = &hbao_composite_framebuffer;
+		}
+		else
+		{
+			hbao.Apply(present_framebuffer, present_framebuffer, OpenGL_preferred_state,
+				OpenGL_state, last_projection, near_z, far_z, post_protection_mask,
+				hbao_depth_overlay_texture);
+		}
 	}
 
 	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_enabled ? present_framebuffer : nullptr,
@@ -655,6 +694,7 @@ void GL3Renderer::EndPostPresentFrame()
 	hbao_depth_overlay_valid = false;
 	hbao_scene_valid = false;
 	hbao_mask_dirty = false;
+	hbao_mask_cleared_this_frame = false;
 	post_present_pending_swap = false;
 
 #ifdef _DEBUG
@@ -696,6 +736,36 @@ void GL3Renderer::CaptureBloomSource()
 			glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
 
 			bloom_source_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
+			if (hbao_enabled)
+			{
+				int supersampling_factor = SupersamplingFactor();
+				float display_gamma = OpenGL_preferred_state.gamma != 0.0f ? 1.f / OpenGL_preferred_state.gamma : 1.f;
+				if (supersampling_factor >= 4)
+				{
+					bloom_source_downscale_framebuffer.Update(OpenGL_state.screen_width * 2, OpenGL_state.screen_height * 2, 0);
+					downsampleshader.Use();
+					framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_downscale_framebuffer.Handle(), 0, 0,
+						bloom_source_downscale_framebuffer.Width(), bloom_source_downscale_framebuffer.Height(),
+						downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+					downsampleshader.Use();
+					bloom_source_downscale_framebuffer.DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
+						bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
+						downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+				}
+				else if (supersampling_factor >= 2)
+				{
+					downsampleshader.Use();
+					framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
+						bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
+						downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+				}
+				else
+				{
+					framebuffers[framebuffer_current_draw].BlitToRaw(bloom_source_framebuffer.Handle(), 0, 0,
+						bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(), GL_NEAREST);
+				}
+				hbao_scene_valid = true;
+			}
 			{
 				PERF_MARKER_SCOPE("Post.CaptureDepth");
 				framebuffers[framebuffer_current_draw].BlitDepthTo(bloom_source_framebuffer.Handle(), 0, 0,
@@ -770,6 +840,9 @@ void GL3Renderer::SetFlatColor(ddgr_color color)
 // Sets the fog state to TRUE or FALSE
 void GL3Renderer::SetFogState(sbyte state)
 {
+	if (state)
+		hbao_mask_dirty = true;
+
 	if (state == OpenGL_state.cur_fog_state)
 		return;
 
@@ -1160,6 +1233,7 @@ void GL3Renderer::SetAlphaType(sbyte atype)
 	}
 	OpenGL_state.cur_alpha_type = atype;
 	Alpha_multiplier = GetAlphaMultiplier();
+	GL_ConfigurePostMaskBlend();
 	CHECK_ERROR(15);
 }
 
@@ -1472,6 +1546,8 @@ void GL3Renderer::UpdateFramebuffer(void)
 	hbao_depth_overlay_valid = false;
 	hbao_scene_valid = false;
 	legacy_draw_uniforms_dirty = true;
+	hbao_mask_dirty = false;
+	hbao_mask_cleared_this_frame = false;
 
 	framebuffer_current_draw = 0;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[0].Handle());

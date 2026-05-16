@@ -898,6 +898,7 @@ void ConfigValidateGameWindowSize()
 
 static void ConfigApplyFixedHBAOSettings()
 {
+	Render_preferred_state.hbao_use_exclusion_mask = true;
 	Render_preferred_state.hbao_algorithm = HBAO_ALGORITHM_GTAO;
 	Render_preferred_state.hbao_quality = HBAO_QUALITY_HIGH;
 	Render_preferred_state.hbao_samples = HBAO_DEFAULT_SAMPLES;
@@ -1278,7 +1279,7 @@ struct video_menu
 			sheet->UpdateChanges();
 	}
 
-	bool apply_hbao_tuning_controls(bool* enabled, int* algorithm, short* samples, int* resolution, int* blur,
+	bool apply_hbao_tuning_controls(bool* enabled, bool* use_exclusion_mask, int* algorithm, short* samples, int* resolution, int* blur,
 		short* radius, short* intensity, short* bias,
 		const tSliderSettings& sample_settings,
 		const tSliderSettings& radius_settings, const tSliderSettings& intensity_settings,
@@ -1286,6 +1287,8 @@ struct video_menu
 	{
 		bool changed = false;
 		const bool new_enabled = ConfigCanUseHBAO() && enabled && *enabled;
+		const bool new_use_exclusion_mask = use_exclusion_mask ? *use_exclusion_mask :
+			Render_preferred_state.hbao_use_exclusion_mask;
 		const ubyte new_algorithm = (ubyte)ConfigNormalizeHBAOAlgorithm(algorithm ? *algorithm : Render_preferred_state.hbao_algorithm);
 		const ushort new_samples = (ushort)ConfigNormalizeHBAOSamples(samples ?
 			CALC_SLIDER_INT_VALUE(*samples, sample_settings.min_val.i, sample_settings.max_val.i, HBAO_SAMPLE_SLIDER_UNITS) :
@@ -1307,6 +1310,11 @@ struct video_menu
 		if (Render_preferred_state.hbao_enabled != new_enabled)
 		{
 			Render_preferred_state.hbao_enabled = new_enabled;
+			changed = true;
+		}
+		if (Render_preferred_state.hbao_use_exclusion_mask != new_use_exclusion_mask)
+		{
+			Render_preferred_state.hbao_use_exclusion_mask = new_use_exclusion_mask;
 			changed = true;
 		}
 		if (Render_preferred_state.hbao_algorithm != new_algorithm)
@@ -1353,7 +1361,7 @@ struct video_menu
 		return changed;
 	}
 
-	void refresh_hbao_tuning_controls(newuiSheet* tuning_sheet, bool* enabled, int* algorithm, short* samples,
+	void refresh_hbao_tuning_controls(newuiSheet* tuning_sheet, bool* enabled, bool* use_exclusion_mask, int* algorithm, short* samples,
 		int* resolution, int* blur, short* radius, short* intensity, short* bias,
 		const tSliderSettings& sample_settings,
 		const tSliderSettings& radius_settings, const tSliderSettings& intensity_settings,
@@ -1361,6 +1369,8 @@ struct video_menu
 	{
 		if (enabled)
 			*enabled = Render_preferred_state.hbao_enabled;
+		if (use_exclusion_mask)
+			*use_exclusion_mask = Render_preferred_state.hbao_use_exclusion_mask;
 		if (algorithm)
 			*algorithm = ConfigNormalizeHBAOAlgorithm(Render_preferred_state.hbao_algorithm);
 		if (samples)
@@ -1393,6 +1403,7 @@ struct video_menu
 		newuiTiledWindow menu;
 		newuiSheet* tuning_sheet;
 		bool* enabled;
+		bool* use_exclusion_mask;
 		int* algorithm;
 		short* samples;
 		int* resolution;
@@ -1426,6 +1437,8 @@ struct video_menu
 
 		tuning_sheet->NewGroup("General", 0, 0);
 		enabled = tuning_sheet->AddLongCheckBox("Enabled", Render_preferred_state.hbao_enabled);
+		use_exclusion_mask = tuning_sheet->AddLongCheckBox("Use exclusion mask",
+			Render_preferred_state.hbao_use_exclusion_mask);
 
 		tuning_sheet->NewGroup("Algorithm", 214, 0);
 		algorithm = tuning_sheet->AddFirstLongRadioButton("HBAO");
@@ -1478,17 +1491,18 @@ struct video_menu
 			{
 				ConfigApplyFixedHBAOSettings();
 				ConfigNormalizeHBAOSettings();
-				refresh_hbao_tuning_controls(tuning_sheet, enabled, algorithm, samples, resolution, blur,
+				refresh_hbao_tuning_controls(tuning_sheet, enabled, use_exclusion_mask, algorithm, samples, resolution, blur,
 					radius, intensity, bias, sample_settings, radius_settings, intensity_settings, bias_settings);
 				changed = true;
 			}
-			else if (tuning_sheet->HasChanged(enabled) || tuning_sheet->HasChanged(algorithm) ||
+			else if (tuning_sheet->HasChanged(enabled) || tuning_sheet->HasChanged(use_exclusion_mask) ||
+				tuning_sheet->HasChanged(algorithm) ||
 				tuning_sheet->HasChanged(samples) ||
 				tuning_sheet->HasChanged(resolution) ||
 				tuning_sheet->HasChanged(blur) || tuning_sheet->HasChanged(radius) ||
 				tuning_sheet->HasChanged(intensity) || tuning_sheet->HasChanged(bias))
 			{
-				changed = apply_hbao_tuning_controls(enabled, algorithm, samples, resolution, blur,
+				changed = apply_hbao_tuning_controls(enabled, use_exclusion_mask, algorithm, samples, resolution, blur,
 					radius, intensity, bias, sample_settings, radius_settings, intensity_settings, bias_settings);
 			}
 
@@ -1502,7 +1516,7 @@ struct video_menu
 		bool accepted = result == UID_OK;
 		if (accepted)
 		{
-			if (apply_hbao_tuning_controls(enabled, algorithm, samples, resolution, blur,
+			if (apply_hbao_tuning_controls(enabled, use_exclusion_mask, algorithm, samples, resolution, blur,
 				radius, intensity, bias, sample_settings, radius_settings, intensity_settings, bias_settings))
 			{
 				rend_SetPreferredState(&Render_preferred_state);

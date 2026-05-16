@@ -156,6 +156,7 @@ bool Mouse_limitpolling = false;
 
 static void ApplyFixedHBAOSettings()
 {
+	Render_preferred_state.hbao_use_exclusion_mask = true;
 	Render_preferred_state.hbao_algorithm = HBAO_ALGORITHM_GTAO;
 	Render_preferred_state.hbao_quality = HBAO_QUALITY_HIGH;
 	Render_preferred_state.hbao_samples = HBAO_DEFAULT_SAMPLES;
@@ -436,6 +437,7 @@ void SaveGameSettings()
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_spread);
 	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
 	Database->write("RS_hbao_enabled", Render_preferred_state.hbao_enabled);
+	Database->write("RS_hbao_use_exclusion_mask", Render_preferred_state.hbao_use_exclusion_mask);
 	Database->write("RS_hbao_algorithm", Render_preferred_state.hbao_algorithm);
 	Database->write("RS_hbao_quality", Render_preferred_state.hbao_quality);
 	Database->write("RS_hbao_samples", Render_preferred_state.hbao_samples);
@@ -609,6 +611,7 @@ void LoadGameSettings()
 	Render_preferred_state.bloom_intensity = 0.75f;
 	Render_preferred_state.bloom_spread = 0.75f;
 	Render_preferred_state.hbao_enabled = false;
+	Render_preferred_state.hbao_use_exclusion_mask = true;
 	Render_preferred_state.hbao_resolution = HBAO_RESOLUTION_HALF;
 	ApplyFixedHBAOSettings();
 	DesiredOpenGLProfile = GLPROFILE_CORE;
@@ -782,6 +785,7 @@ void LoadGameSettings()
 		Render_preferred_state.bloom_intensity = ConfigNormalizeBloomIntensity((float)strtod(bloom_intensity_value, &stoptemp));
 
 	Database->read("RS_hbao_enabled", &Render_preferred_state.hbao_enabled);
+	Database->read("RS_hbao_use_exclusion_mask", &Render_preferred_state.hbao_use_exclusion_mask);
 	tempint = Render_preferred_state.hbao_algorithm;
 	Database->read_int("RS_hbao_algorithm", &tempint);
 	Render_preferred_state.hbao_algorithm = (ubyte)NormalizeHBAOAlgorithm(tempint);

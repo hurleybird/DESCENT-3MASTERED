@@ -305,6 +305,7 @@ struct renderer_preferred_state
 	float bloom_spread;
 
 	bool hbao_enabled;       //Master HBAO on/off
+	bool hbao_use_exclusion_mask; //Apply drawn post-process exclusion mask to AO
 	ubyte hbao_algorithm;    //hbao_algorithm enum
 	ubyte hbao_quality;      //Legacy hbao_quality bucket derived from sample count
 	ushort hbao_samples;     //Total AO samples per pixel

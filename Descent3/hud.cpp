@@ -1005,7 +1005,6 @@ void RenderHUDFrame(float zoom)
 		RenderCockpit();
 		g3_EndFrame();
 		EndFrame();
-		rend_CaptureHBAODepthOverlay();
 	}
 
 	rend_SetZBufferState(1);

@@ -552,15 +552,16 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	// Pass 4: Build the final HBAO suppression mask.
 	//-------------------------------------------------------------------------
 	GLuint final_suppression_mask = 0;
-	bool bloom_mask_enabled = pref_state.bloom_enabled && scene_color_texture != 0;
-	if (suppression_shader.Handle() != 0 && (suppression_mask_texture != 0 || bloom_mask_enabled))
+	GLuint ao_exclusion_mask_texture = pref_state.hbao_use_exclusion_mask ? suppression_mask_texture : 0;
+	bool bloom_mask_enabled = pref_state.hbao_use_exclusion_mask && pref_state.bloom_enabled && scene_color_texture != 0;
+	if (suppression_shader.Handle() != 0 && (ao_exclusion_mask_texture != 0 || bloom_mask_enabled))
 	{
 		PERF_MARKER_SCOPE("HBAO.Suppression");
 
 		suppression_framebuffer.Update(ao_width, ao_height, GL_R8, GL_RED, GL_UNSIGNED_BYTE);
 		suppression_shader.Use();
 		if (suppression_has_mask != -1)
-			glUniform1i(suppression_has_mask, suppression_mask_texture != 0 ? 1 : 0);
+			glUniform1i(suppression_has_mask, ao_exclusion_mask_texture != 0 ? 1 : 0);
 		if (suppression_use_bloom_mask != -1)
 			glUniform1i(suppression_use_bloom_mask, bloom_mask_enabled ? 1 : 0);
 		if (suppression_source_samples != -1)
@@ -575,8 +576,8 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		if (suppression_bloom_threshold != -1)
 			glUniform1f(suppression_bloom_threshold, Clamp01(pref_state.bloom_threshold));
 		rend_ClearBoundTextures();
-		if (suppression_mask_texture != 0)
-			GL_BindFramebufferTexture(suppression_mask_texture, 0, GL_NEAREST);
+		if (ao_exclusion_mask_texture != 0)
+			GL_BindFramebufferTexture(ao_exclusion_mask_texture, 0, GL_NEAREST);
 		if (scene_color_texture != 0)
 			GL_BindFramebufferTexture(scene_color_texture, 1, GL_LINEAR);
 		HBAODrawFullscreen(suppression_framebuffer.Handle(), ao_width, ao_height);

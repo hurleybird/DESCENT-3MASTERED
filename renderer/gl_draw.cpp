@@ -474,6 +474,7 @@ void GL3Renderer::SelectDrawShader()
 
 	if (OpenGL_state.cur_fog_state)
 	{
+		hbao_mask_dirty = true;
 		if (OpenGL_state.cur_alpha_type == AT_SPECULAR)
 			shader_index = 7;
 		else if (OpenGL_state.cur_texture_quality == 0)
