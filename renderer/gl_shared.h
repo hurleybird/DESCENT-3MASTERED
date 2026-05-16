@@ -116,6 +116,7 @@ class Framebuffer
 	uint32_t	m_width, m_height;
 	uint32_t	m_samples;
 	uint32_t	m_requested_samples;
+	bool		m_msaa_renderbuffer_storage;
 	//Track whether the MSAA->sub resolve is up to date. Each MSAA resolve blit
 	//costs W*H*samples of bandwidth, and multiple post-process stages can ask
 	//for the resolved depth/color in a single frame. We skip the blit when the
@@ -183,6 +184,11 @@ public:
 	{
 		return m_requested_samples;
 	}
+
+	bool UsesMsaaRenderbufferStorage() const
+	{
+		return m_msaa_renderbuffer_storage;
+	}
 };
 
 class ColorFramebuffer
@@ -237,6 +243,7 @@ struct PostProtectionMaskResources
 	uint32_t width = 0;
 	uint32_t height = 0;
 	uint32_t samples = 0;
+	bool msaa_renderbuffer_storage = false;
 
 	void Update(uint32_t width, uint32_t height, uint32_t msaa_samples);
 	void Destroy();
@@ -247,6 +254,7 @@ struct PostProtectionMaskResources
 };
 
 void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter);
+void GL_UnbindFramebufferTextures();
 void GL_ConfigurePostMaskBlend();
 void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
 void GL_DrawFramebufferQuadNoClear(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);

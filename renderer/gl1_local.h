@@ -76,6 +76,7 @@ class GLCompatibilityRenderer : public IRenderer
 	bool msaa_forced_off_scene_presented = false;
 	renderer_preferred_state msaa_deferred_preferred_state = {};
 	bool msaa_deferred_preferred_state_valid = false;
+	bool msaa_deferred_apply_pending = false;
 
 	unsigned int framebuffer_blit_x = 0, framebuffer_blit_y = 0, framebuffer_blit_w = 0, framebuffer_blit_h = 0;
 

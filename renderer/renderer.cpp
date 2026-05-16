@@ -245,6 +245,14 @@ void rend_CaptureBloomSource()
 	renderer_inst->CaptureBloomSource();
 }
 
+void rend_PerfGpuSceneMark(renderer_gpu_scene_mark mark)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->PerfGpuSceneMark(mark);
+}
+
 bool rend_BeginPostPresentFrame()
 {
 	if (!Renderer_initted)

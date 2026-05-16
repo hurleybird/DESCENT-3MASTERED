@@ -32,6 +32,449 @@ static void GL4PerfGpuDrain(const char* marker_name)
 	(void)marker_name;
 }
 
+static constexpr int GL4_GPU_FRAME_QUERY_COUNT = 8;
+static GLuint GL4_gpu_frame_queries[GL4_GPU_FRAME_QUERY_COUNT] = {};
+static bool GL4_gpu_frame_queries_initialized = false;
+static bool GL4_gpu_frame_query_active = false;
+static int GL4_gpu_frame_query_active_index = -1;
+static int GL4_gpu_frame_query_write_index = 0;
+struct GL4GpuFrameQueryState
+{
+	bool pending = false;
+	int requested_samples = 0;
+	int actual_samples = 0;
+	int ssaa_factor = 1;
+};
+static GL4GpuFrameQueryState GL4_gpu_frame_query_state[GL4_GPU_FRAME_QUERY_COUNT];
+
+static bool GL4PerfGpuFrameQueriesAvailable()
+{
+	return glGenQueries != nullptr && glDeleteQueries != nullptr &&
+		glBeginQuery != nullptr && glEndQuery != nullptr &&
+		glGetQueryObjectiv != nullptr && glGetQueryObjectui64v != nullptr;
+}
+
+static void GL4PerfGpuFramePoll()
+{
+	if (!Perf_markers_enabled || !GL4_gpu_frame_queries_initialized)
+		return;
+
+	for (int i = 0; i < GL4_GPU_FRAME_QUERY_COUNT; i++)
+	{
+		if (!GL4_gpu_frame_query_state[i].pending)
+			continue;
+
+		GLint available = 0;
+		glGetQueryObjectiv(GL4_gpu_frame_queries[i], GL_QUERY_RESULT_AVAILABLE, &available);
+		if (!available)
+			continue;
+
+		GLuint64 elapsed_ns = 0;
+		glGetQueryObjectui64v(GL4_gpu_frame_queries[i], GL_QUERY_RESULT, &elapsed_ns);
+
+		char marker[96];
+		snprintf(marker, sizeof(marker), "GPU.FrameToBeforeSwap req=%d actual=%d ssaa=%d",
+			GL4_gpu_frame_query_state[i].requested_samples,
+			GL4_gpu_frame_query_state[i].actual_samples,
+			GL4_gpu_frame_query_state[i].ssaa_factor);
+		PerfMarkersRecordDuration(marker, PerfMarkersNow(), (double)elapsed_ns / 1000000000.0);
+		GL4_gpu_frame_query_state[i].pending = false;
+	}
+}
+
+static void GL4PerfGpuFrameBegin(const Framebuffer& framebuffer, int ssaa_factor)
+{
+	if (!Perf_markers_enabled || GL4_gpu_frame_query_active || !GL4PerfGpuFrameQueriesAvailable())
+		return;
+
+	if (!GL4_gpu_frame_queries_initialized)
+	{
+		glGenQueries(GL4_GPU_FRAME_QUERY_COUNT, GL4_gpu_frame_queries);
+		GL4_gpu_frame_queries_initialized = true;
+	}
+
+	GL4PerfGpuFramePoll();
+
+	int index = GL4_gpu_frame_query_write_index;
+	if (GL4_gpu_frame_query_state[index].pending)
+		return;
+
+	GL4_gpu_frame_query_state[index].requested_samples = (int)framebuffer.RequestedSamples();
+	GL4_gpu_frame_query_state[index].actual_samples = (int)framebuffer.Samples();
+	GL4_gpu_frame_query_state[index].ssaa_factor = ssaa_factor;
+	glBeginQuery(GL_TIME_ELAPSED, GL4_gpu_frame_queries[index]);
+	GL4_gpu_frame_query_active = true;
+	GL4_gpu_frame_query_active_index = index;
+}
+
+static void GL4PerfGpuFrameEndBeforeSwap()
+{
+	if (!GL4_gpu_frame_query_active)
+		return;
+
+	glEndQuery(GL_TIME_ELAPSED);
+	GL4_gpu_frame_query_state[GL4_gpu_frame_query_active_index].pending = true;
+	GL4_gpu_frame_query_active = false;
+	GL4_gpu_frame_query_write_index =
+		(GL4_gpu_frame_query_active_index + 1) % GL4_GPU_FRAME_QUERY_COUNT;
+	GL4_gpu_frame_query_active_index = -1;
+}
+
+static void GL4PerfGpuFrameShutdown()
+{
+	if (!GL4_gpu_frame_queries_initialized || !GL4PerfGpuFrameQueriesAvailable())
+		return;
+
+	if (GL4_gpu_frame_query_active)
+	{
+		glEndQuery(GL_TIME_ELAPSED);
+		GL4_gpu_frame_query_active = false;
+		GL4_gpu_frame_query_active_index = -1;
+	}
+
+	glDeleteQueries(GL4_GPU_FRAME_QUERY_COUNT, GL4_gpu_frame_queries);
+	memset(GL4_gpu_frame_queries, 0, sizeof(GL4_gpu_frame_queries));
+	memset(GL4_gpu_frame_query_state, 0, sizeof(GL4_gpu_frame_query_state));
+	GL4_gpu_frame_queries_initialized = false;
+	GL4_gpu_frame_query_write_index = 0;
+}
+
+enum GL4GpuSplitPoint
+{
+	GL4_GPU_SPLIT_START = 0,
+	GL4_GPU_SPLIT_AFTER_WORLD_START,
+	GL4_GPU_SPLIT_AFTER_WORLD_GEOMETRY,
+	GL4_GPU_SPLIT_AFTER_WORLD_POSTRENDER,
+	GL4_GPU_SPLIT_AFTER_WORLD_END,
+	GL4_GPU_SPLIT_AFTER_MAIN_WORLD,
+	GL4_GPU_SPLIT_AFTER_ROOM_CHANGE,
+	GL4_GPU_SPLIT_AFTER_MATCENS,
+	GL4_GPU_SPLIT_AFTER_RENDER_EVENTS,
+	GL4_GPU_SPLIT_AFTER_CAPTURE_BLOOM,
+	GL4_GPU_SPLIT_AFTER_MAIN_VIEW,
+	GL4_GPU_SPLIT_AFTER_SMALL_VIEWS,
+	GL4_GPU_SPLIT_AFTER_HUD,
+	GL4_GPU_SPLIT_AFTER_CINEMATIC,
+	GL4_GPU_SPLIT_AFTER_DEBUG,
+	GL4_GPU_SPLIT_AFTER_UI,
+	GL4_GPU_SPLIT_BEFORE_POST,
+	GL4_GPU_SPLIT_AFTER_PREP,
+	GL4_GPU_SPLIT_AFTER_GTAO,
+	GL4_GPU_SPLIT_AFTER_BLOOM,
+	GL4_GPU_SPLIT_BEFORE_SWAP,
+	GL4_GPU_SPLIT_COUNT
+};
+
+static constexpr int GL4_GPU_SPLIT_QUERY_COUNT = 8;
+static GLuint GL4_gpu_split_queries[GL4_GPU_SPLIT_QUERY_COUNT][GL4_GPU_SPLIT_COUNT] = {};
+static bool GL4_gpu_split_queries_initialized = false;
+static int GL4_gpu_split_write_index = 0;
+static int GL4_gpu_split_active_index = -1;
+struct GL4GpuSplitQueryState
+{
+	bool pending = false;
+	bool active = false;
+	bool has_point[GL4_GPU_SPLIT_COUNT] = {};
+	int requested_samples = 0;
+	int actual_samples = 0;
+	int ssaa_factor = 1;
+};
+static GL4GpuSplitQueryState GL4_gpu_split_query_state[GL4_GPU_SPLIT_QUERY_COUNT];
+
+static bool GL4PerfGpuSplitQueriesAvailable()
+{
+	return glGenQueries != nullptr && glDeleteQueries != nullptr &&
+		glQueryCounter != nullptr && glGetQueryObjectiv != nullptr &&
+		glGetQueryObjectui64v != nullptr;
+}
+
+static void GL4PerfGpuSplitRecord(const char* label, const GL4GpuSplitQueryState& state,
+	GLuint64 start, GLuint64 end)
+{
+	if (end < start)
+		return;
+
+	char marker[96];
+	snprintf(marker, sizeof(marker), "GPU.Split.%s req=%d actual=%d ssaa=%d",
+		label, state.requested_samples, state.actual_samples, state.ssaa_factor);
+	PerfMarkersRecordDuration(marker, PerfMarkersNow(), (double)(end - start) / 1000000000.0);
+}
+
+static void GL4PerfGpuSplitPoll()
+{
+	if (!Perf_markers_enabled || !GL4_gpu_split_queries_initialized)
+		return;
+
+	for (int i = 0; i < GL4_GPU_SPLIT_QUERY_COUNT; i++)
+	{
+		GL4GpuSplitQueryState& state = GL4_gpu_split_query_state[i];
+		if (!state.pending)
+			continue;
+
+		GLint available = 0;
+		glGetQueryObjectiv(GL4_gpu_split_queries[i][GL4_GPU_SPLIT_BEFORE_SWAP],
+			GL_QUERY_RESULT_AVAILABLE, &available);
+		if (!available)
+			continue;
+
+		GLuint64 t[GL4_GPU_SPLIT_COUNT] = {};
+		for (int point = 0; point < GL4_GPU_SPLIT_COUNT; point++)
+		{
+			if (!state.has_point[point])
+				continue;
+			glGetQueryObjectui64v(GL4_gpu_split_queries[i][point], GL_QUERY_RESULT, &t[point]);
+		}
+
+		if (state.has_point[GL4_GPU_SPLIT_START] &&
+			state.has_point[GL4_GPU_SPLIT_BEFORE_POST])
+		{
+			GL4PerfGpuSplitRecord("Scene", state, t[GL4_GPU_SPLIT_START],
+				t[GL4_GPU_SPLIT_BEFORE_POST]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_START] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_MAIN_WORLD])
+		{
+			GL4PerfGpuSplitRecord("MainWorld", state, t[GL4_GPU_SPLIT_START],
+				t[GL4_GPU_SPLIT_AFTER_MAIN_WORLD]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_START] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_WORLD_START])
+		{
+			GL4PerfGpuSplitRecord("WorldStart", state, t[GL4_GPU_SPLIT_START],
+				t[GL4_GPU_SPLIT_AFTER_WORLD_START]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_WORLD_START] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_WORLD_GEOMETRY])
+		{
+			GL4PerfGpuSplitRecord("WorldGeometry", state, t[GL4_GPU_SPLIT_AFTER_WORLD_START],
+				t[GL4_GPU_SPLIT_AFTER_WORLD_GEOMETRY]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_WORLD_GEOMETRY] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_WORLD_POSTRENDER])
+		{
+			GL4PerfGpuSplitRecord("WorldPostRender", state, t[GL4_GPU_SPLIT_AFTER_WORLD_GEOMETRY],
+				t[GL4_GPU_SPLIT_AFTER_WORLD_POSTRENDER]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_WORLD_POSTRENDER] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_WORLD_END])
+		{
+			GL4PerfGpuSplitRecord("WorldEnd", state, t[GL4_GPU_SPLIT_AFTER_WORLD_POSTRENDER],
+				t[GL4_GPU_SPLIT_AFTER_WORLD_END]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_MAIN_WORLD] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_ROOM_CHANGE])
+		{
+			GL4PerfGpuSplitRecord("RoomChange", state, t[GL4_GPU_SPLIT_AFTER_MAIN_WORLD],
+				t[GL4_GPU_SPLIT_AFTER_ROOM_CHANGE]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_ROOM_CHANGE] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_MATCENS])
+		{
+			GL4PerfGpuSplitRecord("Matcens", state, t[GL4_GPU_SPLIT_AFTER_ROOM_CHANGE],
+				t[GL4_GPU_SPLIT_AFTER_MATCENS]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_MATCENS] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_RENDER_EVENTS])
+		{
+			GL4PerfGpuSplitRecord("RenderEvents", state, t[GL4_GPU_SPLIT_AFTER_MATCENS],
+				t[GL4_GPU_SPLIT_AFTER_RENDER_EVENTS]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_RENDER_EVENTS] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_CAPTURE_BLOOM])
+		{
+			GL4PerfGpuSplitRecord("CaptureBloom", state, t[GL4_GPU_SPLIT_AFTER_RENDER_EVENTS],
+				t[GL4_GPU_SPLIT_AFTER_CAPTURE_BLOOM]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_CAPTURE_BLOOM] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_MAIN_VIEW])
+		{
+			GL4PerfGpuSplitRecord("MainViewEnd", state, t[GL4_GPU_SPLIT_AFTER_CAPTURE_BLOOM],
+				t[GL4_GPU_SPLIT_AFTER_MAIN_VIEW]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_MAIN_WORLD] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_MAIN_VIEW])
+		{
+			GL4PerfGpuSplitRecord("MainLate", state, t[GL4_GPU_SPLIT_AFTER_MAIN_WORLD],
+				t[GL4_GPU_SPLIT_AFTER_MAIN_VIEW]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_MAIN_VIEW] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_SMALL_VIEWS])
+		{
+			GL4PerfGpuSplitRecord("SmallViews", state, t[GL4_GPU_SPLIT_AFTER_MAIN_VIEW],
+				t[GL4_GPU_SPLIT_AFTER_SMALL_VIEWS]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_SMALL_VIEWS] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_HUD])
+		{
+			GL4PerfGpuSplitRecord("HUD", state, t[GL4_GPU_SPLIT_AFTER_SMALL_VIEWS],
+				t[GL4_GPU_SPLIT_AFTER_HUD]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_HUD] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_CINEMATIC])
+		{
+			GL4PerfGpuSplitRecord("Cinematic", state, t[GL4_GPU_SPLIT_AFTER_HUD],
+				t[GL4_GPU_SPLIT_AFTER_CINEMATIC]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_CINEMATIC] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_DEBUG])
+		{
+			GL4PerfGpuSplitRecord("DebugStats", state, t[GL4_GPU_SPLIT_AFTER_CINEMATIC],
+				t[GL4_GPU_SPLIT_AFTER_DEBUG]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_DEBUG] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_UI])
+		{
+			GL4PerfGpuSplitRecord("UI", state, t[GL4_GPU_SPLIT_AFTER_DEBUG],
+				t[GL4_GPU_SPLIT_AFTER_UI]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_UI] &&
+			state.has_point[GL4_GPU_SPLIT_BEFORE_POST])
+		{
+			GL4PerfGpuSplitRecord("SceneTail", state, t[GL4_GPU_SPLIT_AFTER_UI],
+				t[GL4_GPU_SPLIT_BEFORE_POST]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_BEFORE_POST] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_PREP])
+		{
+			GL4PerfGpuSplitRecord("PostPrep", state, t[GL4_GPU_SPLIT_BEFORE_POST],
+				t[GL4_GPU_SPLIT_AFTER_PREP]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_PREP] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_GTAO])
+		{
+			GL4PerfGpuSplitRecord("GTAO", state, t[GL4_GPU_SPLIT_AFTER_PREP],
+				t[GL4_GPU_SPLIT_AFTER_GTAO]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_GTAO] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_BLOOM])
+		{
+			GL4PerfGpuSplitRecord("Bloom", state, t[GL4_GPU_SPLIT_AFTER_GTAO],
+				t[GL4_GPU_SPLIT_AFTER_BLOOM]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_BLOOM] &&
+			state.has_point[GL4_GPU_SPLIT_BEFORE_SWAP])
+		{
+			GL4PerfGpuSplitRecord("Backbuffer", state, t[GL4_GPU_SPLIT_AFTER_BLOOM],
+				t[GL4_GPU_SPLIT_BEFORE_SWAP]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_START] &&
+			state.has_point[GL4_GPU_SPLIT_BEFORE_SWAP])
+		{
+			GL4PerfGpuSplitRecord("Total", state, t[GL4_GPU_SPLIT_START],
+				t[GL4_GPU_SPLIT_BEFORE_SWAP]);
+		}
+
+		memset(&state, 0, sizeof(state));
+	}
+}
+
+static void GL4PerfGpuSplitMark(GL4GpuSplitPoint point)
+{
+	if (GL4_gpu_split_active_index < 0 || !GL4_gpu_split_queries_initialized)
+		return;
+
+	GL4GpuSplitQueryState& state = GL4_gpu_split_query_state[GL4_gpu_split_active_index];
+	if (!state.active || state.has_point[point])
+		return;
+
+	glQueryCounter(GL4_gpu_split_queries[GL4_gpu_split_active_index][point], GL_TIMESTAMP);
+	state.has_point[point] = true;
+}
+
+static GL4GpuSplitPoint GL4GpuSplitPointFromSceneMark(renderer_gpu_scene_mark mark)
+{
+	switch (mark)
+	{
+	case RENDERER_GPU_SCENE_AFTER_MAIN_WORLD:
+		return GL4_GPU_SPLIT_AFTER_MAIN_WORLD;
+	case RENDERER_GPU_SCENE_AFTER_WORLD_START:
+		return GL4_GPU_SPLIT_AFTER_WORLD_START;
+	case RENDERER_GPU_SCENE_AFTER_WORLD_GEOMETRY:
+		return GL4_GPU_SPLIT_AFTER_WORLD_GEOMETRY;
+	case RENDERER_GPU_SCENE_AFTER_WORLD_POSTRENDER:
+		return GL4_GPU_SPLIT_AFTER_WORLD_POSTRENDER;
+	case RENDERER_GPU_SCENE_AFTER_WORLD_END:
+		return GL4_GPU_SPLIT_AFTER_WORLD_END;
+	case RENDERER_GPU_SCENE_AFTER_ROOM_CHANGE:
+		return GL4_GPU_SPLIT_AFTER_ROOM_CHANGE;
+	case RENDERER_GPU_SCENE_AFTER_MATCENS:
+		return GL4_GPU_SPLIT_AFTER_MATCENS;
+	case RENDERER_GPU_SCENE_AFTER_RENDER_EVENTS:
+		return GL4_GPU_SPLIT_AFTER_RENDER_EVENTS;
+	case RENDERER_GPU_SCENE_AFTER_CAPTURE_BLOOM:
+		return GL4_GPU_SPLIT_AFTER_CAPTURE_BLOOM;
+	case RENDERER_GPU_SCENE_AFTER_MAIN_VIEW:
+		return GL4_GPU_SPLIT_AFTER_MAIN_VIEW;
+	case RENDERER_GPU_SCENE_AFTER_SMALL_VIEWS:
+		return GL4_GPU_SPLIT_AFTER_SMALL_VIEWS;
+	case RENDERER_GPU_SCENE_AFTER_HUD:
+		return GL4_GPU_SPLIT_AFTER_HUD;
+	case RENDERER_GPU_SCENE_AFTER_CINEMATIC:
+		return GL4_GPU_SPLIT_AFTER_CINEMATIC;
+	case RENDERER_GPU_SCENE_AFTER_DEBUG:
+		return GL4_GPU_SPLIT_AFTER_DEBUG;
+	case RENDERER_GPU_SCENE_AFTER_UI:
+		return GL4_GPU_SPLIT_AFTER_UI;
+	default:
+		return GL4_GPU_SPLIT_COUNT;
+	}
+}
+
+static void GL4PerfGpuSplitBegin(const Framebuffer& framebuffer, int ssaa_factor)
+{
+	if (!Perf_markers_enabled || GL4_gpu_split_active_index >= 0 || !GL4PerfGpuSplitQueriesAvailable())
+		return;
+
+	if (!GL4_gpu_split_queries_initialized)
+	{
+		glGenQueries(GL4_GPU_SPLIT_QUERY_COUNT * GL4_GPU_SPLIT_COUNT,
+			&GL4_gpu_split_queries[0][0]);
+		GL4_gpu_split_queries_initialized = true;
+	}
+
+	GL4PerfGpuSplitPoll();
+
+	int index = GL4_gpu_split_write_index;
+	if (GL4_gpu_split_query_state[index].pending || GL4_gpu_split_query_state[index].active)
+		return;
+
+	GL4GpuSplitQueryState& state = GL4_gpu_split_query_state[index];
+	memset(&state, 0, sizeof(state));
+	state.active = true;
+	state.requested_samples = (int)framebuffer.RequestedSamples();
+	state.actual_samples = (int)framebuffer.Samples();
+	state.ssaa_factor = ssaa_factor;
+	GL4_gpu_split_active_index = index;
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_START);
+}
+
+static void GL4PerfGpuSplitEndBeforeSwap()
+{
+	if (GL4_gpu_split_active_index < 0)
+		return;
+
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_BEFORE_SWAP);
+	GL4GpuSplitQueryState& state = GL4_gpu_split_query_state[GL4_gpu_split_active_index];
+	state.pending = true;
+	state.active = false;
+	GL4_gpu_split_write_index = (GL4_gpu_split_active_index + 1) % GL4_GPU_SPLIT_QUERY_COUNT;
+	GL4_gpu_split_active_index = -1;
+}
+
+static void GL4PerfGpuSplitShutdown()
+{
+	if (!GL4_gpu_split_queries_initialized || !GL4PerfGpuSplitQueriesAvailable())
+		return;
+
+	glDeleteQueries(GL4_GPU_SPLIT_QUERY_COUNT * GL4_GPU_SPLIT_COUNT,
+		&GL4_gpu_split_queries[0][0]);
+	memset(GL4_gpu_split_queries, 0, sizeof(GL4_gpu_split_queries));
+	memset(GL4_gpu_split_query_state, 0, sizeof(GL4_gpu_split_query_state));
+	GL4_gpu_split_queries_initialized = false;
+	GL4_gpu_split_write_index = 0;
+	GL4_gpu_split_active_index = -1;
+}
+
 static void GL4PerfFramebufferState(const char* phase, const Framebuffer& framebuffer,
 	int slot, int ssaa_factor)
 {
@@ -43,6 +486,66 @@ static void GL4PerfFramebufferState(const char* phase, const Framebuffer& frameb
 		phase, slot, (unsigned)framebuffer.Width(), (unsigned)framebuffer.Height(),
 		(unsigned)framebuffer.RequestedSamples(), (unsigned)framebuffer.Samples(),
 		ssaa_factor);
+	PerfMarkersRecordDuration(marker, PerfMarkersNow(), 0.0);
+}
+
+static void GL4PerfFramebufferResourceState(const char* phase, const Framebuffer& framebuffer,
+	int preferred_samples, int target_samples, int ssaa_factor, GLuint post_mask_texture,
+	uint32_t post_mask_samples, bool post_mask_renderbuffer_storage, GLuint resolved_framebuffer,
+	GLuint downscale_framebuffer, GLuint post_present_framebuffer)
+{
+	if (!Perf_markers_enabled)
+		return;
+
+	char marker[96];
+	snprintf(marker, sizeof(marker), "State.GLFB.%s pref=%d target=%d req=%u act=%u %ux%u ssaa=%d",
+		phase, preferred_samples, target_samples,
+		(unsigned)framebuffer.RequestedSamples(), (unsigned)framebuffer.Samples(),
+		(unsigned)framebuffer.Width(), (unsigned)framebuffer.Height(), ssaa_factor);
+	PerfMarkersRecordDuration(marker, PerfMarkersNow(), 0.0);
+
+	snprintf(marker, sizeof(marker), "State.GLObj.%s f=%u c=%u d=%u mask=%u/%u res=%u down=%u post=%u",
+		phase, (unsigned)framebuffer.Handle(), (unsigned)framebuffer.ColorTextureRaw(),
+		(unsigned)framebuffer.DepthTextureRaw(), (unsigned)post_mask_texture,
+		(unsigned)post_mask_samples, (unsigned)resolved_framebuffer,
+		(unsigned)downscale_framebuffer, (unsigned)post_present_framebuffer);
+	PerfMarkersRecordDuration(marker, PerfMarkersNow(), 0.0);
+
+	snprintf(marker, sizeof(marker), "State.GLStore.%s scene_rb=%d mask_rb=%d",
+		phase, framebuffer.UsesMsaaRenderbufferStorage() ? 1 : 0,
+		post_mask_renderbuffer_storage ? 1 : 0);
+	PerfMarkersRecordDuration(marker, PerfMarkersNow(), 0.0);
+}
+
+static void GL4PerfRenderState(const char* phase)
+{
+	if (!Perf_markers_enabled)
+		return;
+
+	GLint draw_framebuffer = 0;
+	GLint read_framebuffer = 0;
+	GLint draw_buffer0 = 0;
+	GLint draw_buffer1 = 0;
+	GLint draw_buffer2 = 0;
+	GLint read_buffer = 0;
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_framebuffer);
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_framebuffer);
+	glGetIntegerv(GL_DRAW_BUFFER0, &draw_buffer0);
+	glGetIntegerv(GL_DRAW_BUFFER1, &draw_buffer1);
+	glGetIntegerv(GL_DRAW_BUFFER2, &draw_buffer2);
+	glGetIntegerv(GL_READ_BUFFER, &read_buffer);
+
+	GLboolean multisample_enabled = glIsEnabled(GL_MULTISAMPLE);
+	GLboolean blend_enabled = glIsEnabled(GL_BLEND);
+	GLboolean blend2_enabled = GL_FALSE;
+	if (glIsEnabledi != nullptr)
+		blend2_enabled = glIsEnabledi(GL_BLEND, 2);
+
+	char marker[96];
+	snprintf(marker, sizeof(marker), "State.GLState.%s draw=%d read=%d db=%x/%x/%x rb=%x ms=%d bl=%d/%d",
+		phase, draw_framebuffer, read_framebuffer, draw_buffer0, draw_buffer1, draw_buffer2,
+		read_buffer, multisample_enabled ? 1 : 0, blend_enabled ? 1 : 0,
+		blend2_enabled ? 1 : 0);
 	PerfMarkersRecordDuration(marker, PerfMarkersNow(), 0.0);
 }
 
@@ -303,10 +806,8 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 	renderer_preferred_state old_state = OpenGL_preferred_state;
 	int old_msaa_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(old_state));
 	int new_msaa_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(*pref_state));
-	const bool staged_msaa_transition =
-		old_msaa_samples != 0 && new_msaa_samples != 0 && old_msaa_samples != new_msaa_samples;
-	const bool keep_deferred_msaa_transition =
-		msaa_deferred_preferred_state_valid && msaa_downshift_release_frames > 0 && new_msaa_samples != 0;
+	const bool staged_msaa_transition = false;
+	const bool keep_deferred_msaa_transition = false;
 	renderer_preferred_state applied_state = *pref_state;
 	if (staged_msaa_transition || keep_deferred_msaa_transition)
 	{
@@ -318,6 +819,10 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 	else
 	{
 		msaa_deferred_preferred_state_valid = false;
+		msaa_deferred_apply_pending = false;
+		msaa_downshift_release_frames = 0;
+		msaa_forced_off_target_samples = 0;
+		msaa_forced_off_scene_presented = false;
 	}
 
 	OpenGL_preferred_state = applied_state;
@@ -408,6 +913,23 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 
 void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 {
+	if (msaa_deferred_apply_pending && framebuffer_ok)
+	{
+		PERF_MARKER_SCOPE("Renderer.StartFrame.DeferredMsaaUpdate");
+		msaa_deferred_apply_pending = false;
+		GL4PerfMsaaStageState("ApplyStart", msaa_downshift_release_frames,
+			msaa_forced_off_target_samples);
+		if (msaa_deferred_preferred_state_valid)
+		{
+			OpenGL_preferred_state = msaa_deferred_preferred_state;
+			msaa_deferred_preferred_state_valid = false;
+		}
+		UpdateWindow();
+		SetViewport();
+		UpdateFramebuffer();
+		ApplySwapInterval();
+	}
+
 	if (post_present_pending_swap)
 	{
 		StartPostPresentFrame(x1, y1, x2, y2, clear_flags);
@@ -419,7 +941,10 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		framebuffers[framebuffer_current_draw].MarkAllDirty();
 		GL4PerfFramebufferState("StartFrame", framebuffers[framebuffer_current_draw],
 			framebuffer_current_draw, SupersamplingFactor());
-		if (msaa_downshift_release_frames > 0 &&
+		GL4PerfGpuFrameBegin(framebuffers[framebuffer_current_draw], SupersamplingFactor());
+		GL4PerfGpuSplitBegin(framebuffers[framebuffer_current_draw], SupersamplingFactor());
+		if (RendererShouldCountMsaaTransitionFrame() &&
+			msaa_downshift_release_frames > 0 &&
 			framebuffers[framebuffer_current_draw].RequestedSamples() == 0)
 		{
 			msaa_forced_off_scene_presented = true;
@@ -461,6 +986,19 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		glEnable(GL_MULTISAMPLE);
 	else
 		glDisable(GL_MULTISAMPLE);
+	if (framebuffer_state_snapshot_pending && framebuffer_ok)
+	{
+		framebuffer_state_snapshot_pending = false;
+		const Framebuffer& framebuffer = framebuffers[framebuffer_current_draw];
+		const int preferred_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(OpenGL_preferred_state));
+		const int target_samples = (int)framebuffer.RequestedSamples();
+		GL4PerfFramebufferResourceState("StartAfterUpdate", framebuffer, preferred_samples,
+			target_samples, SupersamplingFactor(), post_protection_mask.mask_texture,
+			post_protection_mask.samples, post_protection_mask.msaa_renderbuffer_storage,
+			resolved_framebuffer.Handle(),
+			downscale_framebuffer.Handle(), post_present_framebuffer.Handle());
+		GL4PerfRenderState("StartAfterUpdate");
+	}
 
 	OpenGL_state.clip_x1 = x1;
 	OpenGL_state.clip_y1 = y1;
@@ -524,6 +1062,8 @@ bool GL4Renderer::BeginPostPresentFrame()
 	OpenGL_verts_processed = 0;
 	RefreshViewSize();
 	UpdatePresentRect();
+
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_BEFORE_POST);
 
 	Framebuffer* present_framebuffer = &framebuffers[framebuffer_current_draw];
 	int supersampling_factor = SupersamplingFactor();
@@ -597,6 +1137,8 @@ bool GL4Renderer::BeginPostPresentFrame()
 	GLuint protection_mask_texture = post_protection_mask_dirty ?
 		post_protection_mask.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
 
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_AFTER_PREP);
+
 	if (ao_enabled)
 	{
 		float near_z = last_nearz;
@@ -654,6 +1196,8 @@ bool GL4Renderer::BeginPostPresentFrame()
 		}
 	}
 
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_AFTER_GTAO);
+
 	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_enabled ? present_framebuffer : nullptr,
 		OpenGL_preferred_state, OpenGL_state, display_gamma,
 		late_post_enabled ? present_framebuffer->DepthTextureForRead() : 0, protection_mask_texture);
@@ -686,6 +1230,8 @@ bool GL4Renderer::BeginPostPresentFrame()
 		GL4PerfGpuDrain("GPU.PostPresentBlit");
 	}
 	ShaderProgram::ClearBinding();
+
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_AFTER_BLOOM);
 
 	if (framebuffer_ok && have_current_view_projection)
 	{
@@ -759,6 +1305,9 @@ void GL4Renderer::EndPostPresentFrame()
 		ShaderProgram::ClearBinding();
 	}
 
+	GL4PerfGpuSplitEndBeforeSwap();
+	GL4PerfGpuFrameEndBeforeSwap();
+
 #if defined(SDL3)
 	{
 		PERF_MARKER_SCOPE("Renderer.Flip.SwapBuffers");
@@ -802,13 +1351,9 @@ void GL4Renderer::EndPostPresentFrame()
 				msaa_forced_off_target_samples);
 			if (msaa_downshift_release_frames == 0 && framebuffer_ok)
 			{
-				PERF_MARKER_SCOPE("Renderer.Flip.DeferredMsaaUpdate");
-				if (msaa_deferred_preferred_state_valid)
-				{
-					OpenGL_preferred_state = msaa_deferred_preferred_state;
-					msaa_deferred_preferred_state_valid = false;
-				}
-				UpdateFramebuffer();
+				msaa_deferred_apply_pending = true;
+				GL4PerfMsaaStageState("ApplyQueued", msaa_downshift_release_frames,
+					msaa_forced_off_target_samples);
 			}
 		}
 	}
@@ -911,6 +1456,13 @@ void GL4Renderer::CaptureBloomSource()
 	}
 
 	rend_RestoreLegacy();
+}
+
+void GL4Renderer::PerfGpuSceneMark(renderer_gpu_scene_mark mark)
+{
+	GL4GpuSplitPoint split_point = GL4GpuSplitPointFromSceneMark(mark);
+	if (split_point != GL4_GPU_SPLIT_COUNT)
+		GL4PerfGpuSplitMark(split_point);
 }
 
 // returns true if the passed in extension name is supported
@@ -1685,19 +2237,11 @@ void GL4Renderer::UpdateFramebuffer(void)
 			msaa_forced_off_scene_presented = false;
 		}
 	}
-	else if (msaa_downshift_release_frames > 0)
-		target_samples = 0;
-	else if (msaa_forced_off_target_samples != 0)
+	else if (msaa_forced_off_target_samples != 0 || msaa_downshift_release_frames != 0)
 	{
+		msaa_downshift_release_frames = 0;
 		msaa_forced_off_target_samples = 0;
 		msaa_forced_off_scene_presented = false;
-	}
-	else if (framebuffers[0].Handle() != 0 && current_samples != 0 && current_samples != (uint32_t)preferred_samples)
-	{
-		msaa_downshift_release_frames = MSAA_DOWNSHIFT_RELEASE_FRAMES;
-		msaa_forced_off_target_samples = preferred_samples;
-		msaa_forced_off_scene_presented = false;
-		target_samples = 0;
 	}
 	int target_width = FramebufferWidth();
 	int target_height = FramebufferHeight();
@@ -1721,8 +2265,7 @@ void GL4Renderer::UpdateFramebuffer(void)
 		glDisable(GL_MULTISAMPLE);
 		glFinish();
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
-		rend_ClearBoundTextures();
+		GL_UnbindFramebufferTextures();
 		for (int i = 0; i < NUM_GL4_FBOS; i++)
 			framebuffers[i].Destroy();
 		resolved_framebuffer.Destroy();
@@ -1736,6 +2279,7 @@ void GL4Renderer::UpdateFramebuffer(void)
 		post_present_framebuffer.Destroy();
 		motion_vectors.Destroy();
 		post_protection_mask.Destroy();
+		GL_UnbindFramebufferTextures();
 		glFinish();
 	}
 	gtao.DestroyFramebuffers();
@@ -1775,19 +2319,26 @@ void GL4Renderer::UpdateFramebuffer(void)
 		glDisable(GL_MULTISAMPLE);
 	//Unbind the read framebuffer so that OBS can capture the window properly
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-	mprintf((0, "GL4 UpdateFramebuffer end: scene0 fbo=%u req=%u actual=%u scene1 fbo=%u req=%u actual=%u resolved=%u downscale=%u post=%u postmask=%u/%u motion=%u/%u.\n",
+	mprintf((0, "GL4 UpdateFramebuffer end: scene fbo=%u req=%u actual=%u resolved=%u downscale=%u post=%u postmask=%u/%u motion=%u/%u.\n",
 		(unsigned)framebuffers[0].Handle(), (unsigned)framebuffers[0].RequestedSamples(), (unsigned)framebuffers[0].Samples(),
-		(unsigned)framebuffers[1].Handle(), (unsigned)framebuffers[1].RequestedSamples(), (unsigned)framebuffers[1].Samples(),
 		(unsigned)resolved_framebuffer.Handle(), (unsigned)downscale_framebuffer.Handle(),
 		(unsigned)post_present_framebuffer.Handle(),
 		(unsigned)post_protection_mask.mask_texture, (unsigned)post_protection_mask.samples,
 		(unsigned)motion_vectors.velocity_texture, (unsigned)motion_vectors.samples));
+	GL4PerfFramebufferResourceState("UpdateEnd", framebuffers[0], preferred_samples,
+		target_samples, supersampling_factor, post_protection_mask.mask_texture,
+		post_protection_mask.samples, post_protection_mask.msaa_renderbuffer_storage,
+		resolved_framebuffer.Handle(), downscale_framebuffer.Handle(), post_present_framebuffer.Handle());
+	GL4PerfRenderState("UpdateEnd");
+	framebuffer_state_snapshot_pending = true;
 
 	GL_InitFramebufferVAO();
 }
 
 void GL4Renderer::CloseFramebuffer(void)
 {
+	GL4PerfGpuSplitShutdown();
+	GL4PerfGpuFrameShutdown();
 	for (int i = 0; i < NUM_GL4_FBOS; i++)
 	{
 		framebuffers[i].Destroy();

@@ -46,12 +46,14 @@ extern bool Skip_render_game_frame;				// skips rendering the game frame if set.
 
 extern bool Perf_markers_enabled;
 void PerfMarkersSetEnabled(bool enabled);
+void PerfMarkersCaptureNextFrames(int frame_count, const char* reason);
 void PerfMarkersBeginFrame();
 void PerfMarkersEndFrame();
 void PerfMarkersBegin(const char* marker_name);
 void PerfMarkersEnd(const char* marker_name);
 double PerfMarkersNow();
 void PerfMarkersRecordDuration(const char* marker_name, double start_time, double duration);
+bool RendererShouldCountMsaaTransitionFrame();
 
 class PerfMarkerScope
 {

@@ -98,6 +98,34 @@ void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 }
 
+void GL_UnbindFramebufferTextures()
+{
+	GLint old_active_texture = GL_TEXTURE0;
+	GLint max_units = 1;
+	glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active_texture);
+	glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &max_units);
+	if (max_units < 1)
+		max_units = 1;
+	if (max_units > 32)
+		max_units = 32;
+
+	for (int unit = 0; unit < max_units; unit++)
+	{
+		if (OpenGLProfile == GLPROFILE_COMPAT)
+			glClientActiveTextureARB(GL_TEXTURE0 + unit);
+		glActiveTexture(GL_TEXTURE0 + unit);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		if (glTexImage2DMultisample != nullptr)
+			glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
+	}
+
+	if (OpenGLProfile == GLPROFILE_COMPAT)
+		glClientActiveTextureARB(old_active_texture);
+	glActiveTexture(old_active_texture);
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+	rend_ClearBoundTextures();
+}
+
 static void GL_SetEnabledState(GLenum cap, GLboolean enabled)
 {
 	if (enabled)
@@ -222,8 +250,8 @@ void ColorFramebuffer::Update(int width, int height, GLint internal_format, GLen
 
 void ColorFramebuffer::Destroy()
 {
-	glDeleteTextures(1, &m_colorname);
 	glDeleteFramebuffers(1, &m_name);
+	glDeleteTextures(1, &m_colorname);
 	m_colorname = 0;
 	m_name = 0;
 	m_width = 0;
@@ -236,6 +264,7 @@ Framebuffer::Framebuffer()
 	m_name = m_subname = m_colorname = m_subcolorname = m_depthname = m_subdepthname = 0;
 	m_samples = 0;
 	m_requested_samples = 0;
+	m_msaa_renderbuffer_storage = false;
 	m_subcolor_dirty = true;
 	m_subdepth_dirty = true;
 }
@@ -333,24 +362,24 @@ bool Framebuffer::Allocate(int width, int height, int msaa_samples)
 	m_height = height;
 	m_samples = msaa_samples;
 
-	glActiveTexture(GL_TEXTURE0);
-	glGenTextures(1, &m_colorname);
-	glGenTextures(1, &m_depthname);
 	glGenFramebuffers(1, &m_name);
 
 	GLenum textureType = msaa ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D;
+	m_msaa_renderbuffer_storage = msaa;
 
 	if (msaa)
 	{
+		glGenRenderbuffers(1, &m_colorname);
+		glGenRenderbuffers(1, &m_depthname);
 		glGenTextures(1, &m_subcolorname);
 		glGenTextures(1, &m_subdepthname);
 		glGenFramebuffers(1, &m_subname);
 
-		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, m_colorname);
-		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, msaa_samples, GL_RGBA8, width, height, GL_TRUE);
+		glBindRenderbuffer(GL_RENDERBUFFER, m_colorname);
+		glRenderbufferStorageMultisample(GL_RENDERBUFFER, msaa_samples, GL_RGBA8, width, height);
 
-		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, m_depthname);
-		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, msaa_samples, GL_DEPTH_COMPONENT32F, width, height, GL_TRUE);
+		glBindRenderbuffer(GL_RENDERBUFFER, m_depthname);
+		glRenderbufferStorageMultisample(GL_RENDERBUFFER, msaa_samples, GL_DEPTH_COMPONENT32F, width, height);
 
 		glBindTexture(GL_TEXTURE_2D, m_subcolorname);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -379,6 +408,10 @@ bool Framebuffer::Allocate(int width, int height, int msaa_samples)
 	}
 	else
 	{
+		glActiveTexture(GL_TEXTURE0);
+		glGenTextures(1, &m_colorname);
+		glGenTextures(1, &m_depthname);
+
 		glBindTexture(GL_TEXTURE_2D, m_colorname);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -393,10 +426,19 @@ bool Framebuffer::Allocate(int width, int height, int msaa_samples)
 	}
 
 	rend_ClearBoundTextures();
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, m_name);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, textureType, m_colorname, 0);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, textureType, m_depthname, 0);
+	if (msaa)
+	{
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, m_colorname);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depthname);
+	}
+	else
+	{
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, textureType, m_colorname, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, textureType, m_depthname, 0);
+	}
 	GLenum fbstatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 	if (fbstatus != GL_FRAMEBUFFER_COMPLETE)
 	{
@@ -444,18 +486,26 @@ void Framebuffer::ClearAlphaToZero()
 
 void Framebuffer::Destroy()
 {
-	glDeleteTextures(1, &m_colorname);
-	glDeleteTextures(1, &m_depthname);
 	glDeleteFramebuffers(1, &m_name);
-	m_name = m_colorname = m_depthname = 0;
-
 	glDeleteFramebuffers(1, &m_subname);
+	if (m_msaa_renderbuffer_storage)
+	{
+		glDeleteRenderbuffers(1, &m_colorname);
+		glDeleteRenderbuffers(1, &m_depthname);
+	}
+	else
+	{
+		glDeleteTextures(1, &m_colorname);
+		glDeleteTextures(1, &m_depthname);
+	}
 	glDeleteTextures(1, &m_subcolorname);
 	glDeleteTextures(1, &m_subdepthname);
+	m_name = m_colorname = m_depthname = 0;
 	m_subname = m_subcolorname = m_subdepthname = 0;
 	m_width = m_height = 0;
 	m_samples = 0;
 	m_requested_samples = 0;
+	m_msaa_renderbuffer_storage = false;
 	m_subcolor_dirty = true;
 	m_subdepth_dirty = true;
 }
@@ -733,13 +783,14 @@ void MotionVectorResources::Update(uint32_t new_width, uint32_t new_height, uint
 	}
 
 	rend_ClearBoundTextures();
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
 }
 
 void MotionVectorResources::Destroy()
 {
+	glDeleteFramebuffers(1, &resolve_framebuffer);
 	glDeleteTextures(1, &velocity_texture);
 	glDeleteTextures(1, &resolved_texture);
-	glDeleteFramebuffers(1, &resolve_framebuffer);
 	velocity_texture = 0;
 	resolved_texture = 0;
 	resolve_framebuffer = 0;
@@ -828,15 +879,17 @@ void PostProtectionMaskResources::Update(uint32_t new_width, uint32_t new_height
 	width = new_width;
 	height = new_height;
 	samples = msaa_samples;
+	msaa_renderbuffer_storage = samples >= 2;
 
-	glGenTextures(1, &mask_texture);
 	if (samples >= 2)
 	{
-		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, mask_texture);
-		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, samples, GL_RG8, width, height, GL_TRUE);
+		glGenRenderbuffers(1, &mask_texture);
+		glBindRenderbuffer(GL_RENDERBUFFER, mask_texture);
+		glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RG8, width, height);
 	}
 	else
 	{
+		glGenTextures(1, &mask_texture);
 		glBindTexture(GL_TEXTURE_2D, mask_texture);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, width, height, 0, GL_RG, GL_UNSIGNED_BYTE, nullptr);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -867,13 +920,17 @@ void PostProtectionMaskResources::Update(uint32_t new_width, uint32_t new_height
 
 void PostProtectionMaskResources::Destroy()
 {
-	glDeleteTextures(1, &mask_texture);
-	glDeleteTextures(1, &resolved_texture);
 	glDeleteFramebuffers(1, &resolve_framebuffer);
+	if (msaa_renderbuffer_storage)
+		glDeleteRenderbuffers(1, &mask_texture);
+	else
+		glDeleteTextures(1, &mask_texture);
+	glDeleteTextures(1, &resolved_texture);
 	mask_texture = 0;
 	resolved_texture = 0;
 	resolve_framebuffer = 0;
 	width = height = samples = 0;
+	msaa_renderbuffer_storage = false;
 }
 
 void PostProtectionMaskResources::AttachToFramebuffer(GLuint framebuffer)
@@ -881,9 +938,11 @@ void PostProtectionMaskResources::AttachToFramebuffer(GLuint framebuffer)
 	if (mask_texture == 0)
 		return;
 
-	GLenum texture_type = samples >= 2 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D;
 	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, texture_type, mask_texture, 0);
+	if (msaa_renderbuffer_storage)
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_RENDERBUFFER, mask_texture);
+	else
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, mask_texture, 0);
 	UseSceneDrawBuffers(framebuffer);
 
 	GLenum fbstatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
@@ -891,7 +950,10 @@ void PostProtectionMaskResources::AttachToFramebuffer(GLuint framebuffer)
 	{
 		mprintf((0, "PostProtectionMaskResources::AttachToFramebuffer: disabling post protection mask, framebuffer status 0x%x.\n",
 			fbstatus));
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, texture_type, 0, 0);
+		if (msaa_renderbuffer_storage)
+			glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_RENDERBUFFER, 0);
+		else
+			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, 0, 0);
 		Destroy();
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		glReadBuffer(GL_COLOR_ATTACHMENT0);

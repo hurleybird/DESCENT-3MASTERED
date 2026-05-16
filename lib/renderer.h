@@ -305,6 +305,25 @@ struct renderer_poly_batch_item
 	int nv;
 };
 
+enum renderer_gpu_scene_mark
+{
+	RENDERER_GPU_SCENE_AFTER_MAIN_WORLD = 0,
+	RENDERER_GPU_SCENE_AFTER_WORLD_START,
+	RENDERER_GPU_SCENE_AFTER_WORLD_GEOMETRY,
+	RENDERER_GPU_SCENE_AFTER_WORLD_POSTRENDER,
+	RENDERER_GPU_SCENE_AFTER_WORLD_END,
+	RENDERER_GPU_SCENE_AFTER_ROOM_CHANGE,
+	RENDERER_GPU_SCENE_AFTER_MATCENS,
+	RENDERER_GPU_SCENE_AFTER_RENDER_EVENTS,
+	RENDERER_GPU_SCENE_AFTER_CAPTURE_BLOOM,
+	RENDERER_GPU_SCENE_AFTER_MAIN_VIEW,
+	RENDERER_GPU_SCENE_AFTER_SMALL_VIEWS,
+	RENDERER_GPU_SCENE_AFTER_HUD,
+	RENDERER_GPU_SCENE_AFTER_CINEMATIC,
+	RENDERER_GPU_SCENE_AFTER_DEBUG,
+	RENDERER_GPU_SCENE_AFTER_UI,
+};
+
 // returns rendering statistics for the frame
 void rend_GetStatistics(tRendererStats *stats);
 
@@ -348,6 +367,8 @@ void rend_EndFrame();
 
 // Captures the current scene buffer as the source for frame-level bloom.
 void rend_CaptureBloomSource();
+
+void rend_PerfGpuSceneMark(renderer_gpu_scene_mark mark);
 
 bool rend_BeginPostPresentFrame();
 bool rend_IsPostPresentFramePending();

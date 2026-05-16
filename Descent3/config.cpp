@@ -1239,7 +1239,10 @@ struct video_menu
 		}
 
 		if (changed)
+		{
+			PerfMarkersCaptureNextFrames(4, "VideoSettingsChanged");
 			rend_SetPreferredState(&Render_preferred_state);
+		}
 
 		bool display_applied = apply_display_settings(display_changed);
 		if (changed || fov_changed || display_applied || ui_changed)
@@ -2213,13 +2216,16 @@ void OptionsMenu()
 			// run menu
 			do
 			{
+				PerfMarkersBeginFrame();
 				res = menu.DoUI();
 
 				// immediate checking of any option ids.
 				if (res == UID_CANCEL || res == NEWUIRES_FORCEQUIT) {
+					PerfMarkersEndFrame();
 					state = 2;	break;				// next pass will quit
 				}
 				else if (res == IDV_CCONFIG) {
+					PerfMarkersEndFrame();
 					state = 1;	break;				// next pass will enter controller menu
 				}
 
@@ -2242,6 +2248,7 @@ void OptionsMenu()
 					hud.process(res);
 					break;
 				}
+				PerfMarkersEndFrame();
 			} while (1);
 
 			// get settings

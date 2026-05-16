@@ -140,6 +140,11 @@ bool Rendering_main_view = false;
 bool Skip_render_game_frame = false;
 bool Menu_interface_mode = false;
 
+bool RendererShouldCountMsaaTransitionFrame()
+{
+	return Game_interface_mode == GAME_INTERFACE && !Menu_interface_mode;
+}
+
 const int PERF_MARKER_NAME_LEN = 96;
 
 struct PerfMarkerRecord
@@ -161,18 +166,28 @@ bool Perf_markers_enabled = false;
 static FILE* Perf_marker_file = nullptr;
 static bool Perf_marker_frame_active = false;
 static int Perf_marker_frame_number = 0;
+static int Perf_marker_forced_frames = 0;
 static double Perf_marker_capture_start = 0.0;
 static double Perf_marker_frame_start = 0.0;
+static bool Perf_marker_current_frame_forced = false;
+static bool Perf_marker_current_frame_requested = false;
+static char Perf_marker_force_reason[PERF_MARKER_NAME_LEN] = {};
 static std::vector<PerfMarkerRecord> Perf_marker_records;
 static std::vector<PerfMarkerStackEntry> Perf_marker_stack;
 
-static bool PerfMarkersShouldCaptureGameplayFrame()
+static bool PerfMarkersShouldCaptureFrame()
 {
-	return !Dedicated_server &&
+	const bool gameplay_frame = !Dedicated_server &&
 		!Skip_render_game_frame &&
 		!Game_paused &&
 		!Menu_interface_mode &&
 		Game_interface_mode == GAME_INTERFACE;
+	if (gameplay_frame)
+		return true;
+
+	return !Dedicated_server &&
+		!Skip_render_game_frame &&
+		Perf_marker_forced_frames > 0;
 }
 
 static void PerfMarkersCopyName(char* dest, const char* source)
@@ -223,23 +238,40 @@ void PerfMarkersSetEnabled(bool enabled)
 	Perf_marker_stack.reserve(32);
 	Perf_marker_frame_active = false;
 	Perf_marker_frame_number = 0;
+	Perf_marker_forced_frames = 0;
 	Perf_marker_capture_start = timer_GetTime64();
 	Perf_marker_frame_start = 0.0;
+	Perf_marker_current_frame_forced = false;
+	Perf_marker_current_frame_requested = false;
+	Perf_marker_force_reason[0] = '\0';
 	Perf_markers_enabled = true;
 
 	fprintf(Perf_marker_file, "# PiccuEngine perf markers\n");
 	fprintf(Perf_marker_file, "# frame\tstart_ms\tduration_ms\tdepth\tmarker\n");
 }
 
+void PerfMarkersCaptureNextFrames(int frame_count, const char* reason)
+{
+	if (!Perf_markers_enabled || frame_count <= 0)
+		return;
+
+	if (Perf_marker_forced_frames < frame_count)
+		Perf_marker_forced_frames = frame_count;
+	PerfMarkersCopyName(Perf_marker_force_reason, reason ? reason : "forced");
+}
+
 void PerfMarkersBeginFrame()
 {
 	if (!Perf_markers_enabled || !Perf_marker_file)
 		return;
-	if (!PerfMarkersShouldCaptureGameplayFrame())
+	if (!PerfMarkersShouldCaptureFrame())
 		return;
 
 	Perf_marker_frame_active = true;
 	Perf_marker_frame_start = timer_GetTime64();
+	Perf_marker_current_frame_requested = Perf_marker_forced_frames > 0;
+	Perf_marker_current_frame_forced = Perf_marker_current_frame_requested &&
+		(Game_interface_mode != GAME_INTERFACE || Menu_interface_mode || Game_paused);
 	Perf_marker_records.clear();
 	Perf_marker_stack.clear();
 	PolymodelPerfReset();
@@ -253,23 +285,30 @@ void PerfMarkersEndFrame()
 		return;
 
 	const double frame_end = timer_GetTime64();
-	if (!PerfMarkersShouldCaptureGameplayFrame())
+	if (!PerfMarkersShouldCaptureFrame())
 	{
 		Perf_marker_records.clear();
 		Perf_marker_stack.clear();
 		Perf_marker_frame_active = false;
+		Perf_marker_current_frame_forced = false;
+		Perf_marker_current_frame_requested = false;
 		return;
 	}
 
 	PolymodelPerfFlush();
 	RenderObjectPerfFlush();
-	fprintf(Perf_marker_file, "FRAME\t%d\t%.3f\t%.3f\t%.3f\tgametime=%.3f\tframetime=%.3f\n",
+	fprintf(Perf_marker_file,
+		"FRAME\t%d\t%.3f\t%.3f\t%.3f\tgametime=%.3f\tframetime=%.3f\tcapture=%s\treason=%s\tgame_if=%d\tmenu_if=%d\n",
 		Perf_marker_frame_number,
 		(Perf_marker_frame_start - Perf_marker_capture_start) * 1000.0,
 		(frame_end - Perf_marker_frame_start) * 1000.0,
 		0.0,
 		Gametime,
-		Frametime);
+		Frametime,
+		Perf_marker_current_frame_forced ? "forced" : "gameplay",
+		Perf_marker_current_frame_requested ? Perf_marker_force_reason : "",
+		Game_interface_mode,
+		Menu_interface_mode ? 1 : 0);
 
 	for (const PerfMarkerRecord& record : Perf_marker_records)
 	{
@@ -284,7 +323,11 @@ void PerfMarkersEndFrame()
 	if ((Perf_marker_frame_number % 120) == 0)
 		fflush(Perf_marker_file);
 
+	if (Perf_marker_current_frame_requested && Perf_marker_forced_frames > 0)
+		Perf_marker_forced_frames--;
 	Perf_marker_frame_active = false;
+	Perf_marker_current_frame_forced = false;
+	Perf_marker_current_frame_requested = false;
 }
 
 void PerfMarkersBegin(const char* marker_name)
@@ -2038,6 +2081,7 @@ void GameRenderWorld(object* viewer, vector* viewer_eye, int viewer_roomnum, mat
 		PERF_MARKER_SCOPE("g3_StartFrame.World");
 		g3_StartFrame(viewer_eye, viewer_orient, zoom);
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_WORLD_START);
 
 	// Reset fog,zbuffer
 	Num_fogged_rooms_this_frame = 0;
@@ -2063,16 +2107,19 @@ void GameRenderWorld(object* viewer, vector* viewer_eye, int viewer_roomnum, mat
 #endif
 
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_WORLD_GEOMETRY);
 
 	//Done with 3D
 	{
 		PERF_MARKER_SCOPE("PostRender.World");
 		PostRender(viewer_roomnum);
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_WORLD_POSTRENDER);
 	{
 		PERF_MARKER_SCOPE("g3_EndFrame.World");
 		g3_EndFrame();
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_WORLD_END);
 
 	// Restore viewer orientation
 	if (rear_view)
@@ -2112,6 +2159,7 @@ void GameDrawMainView()
 		PERF_MARKER_SCOPE("GameRenderWorld.MainView");
 		GameRenderWorld(Viewer_object, &Viewer_object->pos, Viewer_object->roomnum, &Viewer_object->orient, Render_zoom, rear_view);
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_MAIN_WORLD);
 	Rendering_main_view = false;
 
 	// Restore viewer object if guided
@@ -2123,23 +2171,27 @@ void GameDrawMainView()
 		PERF_MARKER_SCOPE("DoRoomChangeFrame");
 		DoRoomChangeFrame();
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_ROOM_CHANGE);
 
 	// Draw Matcen Effects
 	{
 		PERF_MARKER_SCOPE("DoMatcensRenderFrame");
 		DoMatcensRenderFrame();
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_MATCENS);
 
 	// Draw any render events
 	{
 		PERF_MARKER_SCOPE("ProcessRenderEvents");
 		ProcessRenderEvents();
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_RENDER_EVENTS);
 
 	{
 		PERF_MARKER_SCOPE("CaptureBloomSource.MainView");
 		rend_CaptureBloomSource();
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_CAPTURE_BLOOM);
 
 	//We're done with this window
 	{
@@ -2282,12 +2334,14 @@ void GameRenderFrame(void)
 			PERF_MARKER_SCOPE("GameDrawMainView.Total");
 			GameDrawMainView();
 		}
+		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_MAIN_VIEW);
 
 		//Do the small views.  These should be before GameDrawHUD() for the small windows
 		{
 			PERF_MARKER_SCOPE("DrawSmallViews");
 			DrawSmallViews();
 		}
+		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_SMALL_VIEWS);
 
 		// Do Cockpit/Hud
 		if (!HUD_disabled)
@@ -2295,12 +2349,14 @@ void GameRenderFrame(void)
 			PERF_MARKER_SCOPE("GameDrawHud.Total");
 			GameDrawHud();
 		}
+		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_HUD);
 
 		// Render Ingame Cinematics
 		{
 			PERF_MARKER_SCOPE("Cinematic_RenderFrame");
 			Cinematic_RenderFrame();
 		}
+		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_CINEMATIC);
 
 		// Process the debug visual graph
 		{
@@ -2333,6 +2389,7 @@ void GameRenderFrame(void)
 			grtext_Flush();
 			EndFrame();
 		}
+		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_DEBUG);
 	}
 
 	//Do UI Frame
@@ -2342,6 +2399,7 @@ void GameRenderFrame(void)
 		DoUIFrameWithoutInput();
 		//rend_Flip();
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_UI);
 
 	//Restore normal view
 	if (!Game_paused)

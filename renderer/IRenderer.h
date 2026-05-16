@@ -160,6 +160,8 @@ public:
 	// Captures the current scene buffer as the source for frame-level bloom.
 	virtual void CaptureBloomSource() = 0;
 
+	virtual void PerfGpuSceneMark(renderer_gpu_scene_mark mark) {}
+
 	// Captures the bloom source used by late post-processing.
 
 	// Clears the display to a specified color
