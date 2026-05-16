@@ -175,6 +175,14 @@ void rend_SetHBAOSuppression(float value)
 	renderer_inst->SetHBAOSuppression(value);
 }
 
+void rend_SetBloomSuppression(float value)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->SetBloomSuppression(value);
+}
+
 void rend_SetMipState(sbyte state)
 {
 	if (!Renderer_initted)

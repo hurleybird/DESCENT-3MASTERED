@@ -26,6 +26,10 @@ uniform vec3 dynamic_light_directions[8];
 uniform float dynamic_light_dot_ranges[8];
 uniform int dynamic_light_directional[8];
 uniform float hbao_suppression;
+uniform float bloom_suppression;
+uniform int post_mask_enabled;
+uniform int post_mask_scale;
+layout(binding = 0, r8) uniform image2D post_mask;
 
 in vec4 outcolor;
 in vec4 outnormal;
@@ -110,6 +114,14 @@ void main()
 	#endif
 	float suppression_alpha = clamp(color.a, 0.0, 1.0);
 	suppression = clamp(hbao_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
+	float bloom_mask = clamp(bloom_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
+	if (post_mask_enabled != 0 && bloom_mask > 0.001)
+	{
+		ivec2 mask_size = imageSize(post_mask);
+		ivec2 native_px = ivec2(gl_FragCoord.xy) / max(post_mask_scale, 1);
+		native_px = clamp(native_px, ivec2(0), mask_size - ivec2(1));
+		imageStore(post_mask, native_px, vec4(1.0, 0.0, 0.0, 1.0));
+	}
 	
 	#if defined(USE_FOG)
 		float fog_start = clamp(1.0 - (1.0 / max(fog.start_dist, 0.0001)), 0.0, 1.0);

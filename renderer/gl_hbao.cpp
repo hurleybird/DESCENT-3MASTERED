@@ -321,7 +321,6 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	const float* previous_view_projection,
 	bool has_previous_view_projection)
 {
-	(void)render_state;
 	if (!source || !pref_state.hbao_enabled)
 	{
 		if (HasFramebuffers())
@@ -346,9 +345,17 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	if (source_width <= 0 || source_height <= 0)
 		return;
 
-	int ao_scale = HBAOResolutionScale(pref_state, source_width, source_height);
-	int ao_width = (source_width + ao_scale - 1) / ao_scale;
-	int ao_height = (source_height + ao_scale - 1) / ao_scale;
+	int ao_base_width = render_state.screen_width > 0 ? render_state.screen_width : source_width;
+	int ao_base_height = render_state.screen_height > 0 ? render_state.screen_height : source_height;
+	if (ao_base_width <= 0 || ao_base_height <= 0)
+	{
+		ao_base_width = source_width;
+		ao_base_height = source_height;
+	}
+
+	int ao_scale = HBAOResolutionScale(pref_state, ao_base_width, ao_base_height);
+	int ao_width = (ao_base_width + ao_scale - 1) / ao_scale;
+	int ao_height = (ao_base_height + ao_scale - 1) / ao_scale;
 	if (ao_width <= 0) ao_width = 1;
 	if (ao_height <= 0) ao_height = 1;
 
@@ -364,6 +371,8 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	}
 
 	//Run AO at an internal resolution decoupled from SSAA/MSAA source size.
+	//The source may be supersampled; AO quality settings are defined relative
+	//to the display resolution so High does not become 4xSSAA-resolution AO.
 	//Depth is first reduced to this resolution so MSAA resolves are paid once
 	//per AO pixel instead of inside every horizon sample.
 	ao_depth_framebuffer.Update(ao_width, ao_height, GL_R32F, GL_RED, GL_FLOAT);

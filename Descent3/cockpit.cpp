@@ -35,6 +35,7 @@
 #include "sounds.h"
 #include "config.h"
 #include "gametexture.h"
+#include "renderer.h"
 #include <string.h>
 #include <math.h>
 #include <algorithm>
@@ -620,7 +621,9 @@ void RenderCockpit()
 	//	draws lower z cockpit, and monitor glares after gauge renderering
 	rend_SetZBufferState(0);
 	DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r, light_scalar_g, light_scalar_b, Cockpit_info.nonlayered_mask, 0, 1);
+	rend_SetBloomSuppression(1.0f);
 	RenderGauges(&view_pos, &view_tmat, normalized_time, (Cockpit_info.animating || Cockpit_info.resized), gauge_reset);
+	rend_SetBloomSuppression(0.0f);
 	rend_SetZBufferState(0);
 	DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r, light_scalar_g, light_scalar_b, Cockpit_info.layered_mask, 0, 1);
 

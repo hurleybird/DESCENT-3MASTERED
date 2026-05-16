@@ -240,6 +240,19 @@ struct HBAOMaskResources
 	GLuint TextureForRead(GLuint source_framebuffer);
 };
 
+struct NativePostMaskResources
+{
+	GLuint mask_texture = 0;
+	uint32_t width = 0;
+	uint32_t height = 0;
+
+	void Update(uint32_t width, uint32_t height);
+	void Clear();
+	void Destroy();
+	GLuint TextureForRead() const { return mask_texture; }
+	GLuint ImageTextureForWrite() const { return mask_texture; }
+};
+
 void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter);
 void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
 void GL_DrawFramebufferQuadNoClear(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
@@ -259,16 +272,18 @@ struct BloomResources
 	GLint threshold_gamma = -1;
 	GLint threshold_value = -1;
 	GLint threshold_use_depth_mask = -1;
+	GLint threshold_use_protection_mask = -1;
 	GLint merge_spread = -1;
 	GLint composite_gamma = -1;
 	GLint composite_intensity = -1;
 	GLint composite_use_alpha_mask = -1;
+	GLint composite_use_protection_mask = -1;
 
 	void InitShaders();
 	void DestroyShaders();
 	void DestroyFramebuffers();
 	Framebuffer* Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
-		const rendering_state& render_state, float display_gamma, GLuint depth_texture);
+		const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture);
 };
 
 //Horizon-Based Ambient Occlusion. Renders depth-driven AO based on the NVIDIA

@@ -343,6 +343,7 @@ void rend_BeginMotionObject(int object_handle, float screen_x, float screen_y);
 void rend_EndMotionObject();
 bool rend_ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y);
 void rend_SetHBAOSuppression(float value);
+void rend_SetBloomSuppression(float value);
 
 // Tells the software renderer whether or not to use mipping
 void rend_SetMipState (sbyte state);

@@ -418,6 +418,9 @@ void GL3Renderer::SetDrawDefaults()
 		drawshader_dynamic_dot_ranges_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_dot_ranges[0]");
 		drawshader_dynamic_directional_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_directional[0]");
 		drawshader_hbao_suppression_uniforms[i] = drawshaders[i].FindUniform("hbao_suppression");
+		drawshader_bloom_suppression_uniforms[i] = drawshaders[i].FindUniform("bloom_suppression");
+		drawshader_post_mask_enabled_uniforms[i] = drawshaders[i].FindUniform("post_mask_enabled");
+		drawshader_post_mask_scale_uniforms[i] = drawshaders[i].FindUniform("post_mask_scale");
 	}
 
 	lastdrawshader = -1;
@@ -507,6 +510,13 @@ void GL3Renderer::SelectDrawShader()
 
 	if (drawshader_hbao_suppression_uniforms[shader_index] != -1)
 		glUniform1f(drawshader_hbao_suppression_uniforms[shader_index], hbao_suppression_draw_value);
+	if (drawshader_bloom_suppression_uniforms[shader_index] != -1)
+		glUniform1f(drawshader_bloom_suppression_uniforms[shader_index], bloom_suppression_draw_value);
+	if (drawshader_post_mask_enabled_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_post_mask_enabled_uniforms[shader_index],
+			post_mask.TextureForRead() != 0 ? 1 : 0);
+	if (drawshader_post_mask_scale_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_post_mask_scale_uniforms[shader_index], SupersamplingFactor());
 
 	const bool phong_enabled = OpenGL_state.cur_light_state == LS_PHONG;
 	if (drawshader_phong_enabled_uniforms[shader_index] != -1)
@@ -1059,7 +1069,10 @@ void GL3Renderer::DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y
 	pnts[3].p3_sy = y2;
 	pnts[3].p3_u = u;
 	pnts[3].p3_v = v + h;
+	float old_bloom_suppression = bloom_suppression_draw_value;
+	SetBloomSuppression(1.0f);
 	DrawPolygon2D(bm_handle, ptr_pnts, 4);
+	SetBloomSuppression(old_bloom_suppression);
 }
 
 // Draws a line

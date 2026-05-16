@@ -90,7 +90,7 @@ static void GL_SetEnabledState(GLenum cap, GLboolean enabled)
 
 static void GL_RestoreFramebufferTextureState()
 {
-	for (int unit = 2; unit >= 1; unit--)
+	for (int unit = 3; unit >= 1; unit--)
 	{
 		if (OpenGLProfile == GLPROFILE_COMPAT)
 			glClientActiveTextureARB(GL_TEXTURE0 + unit);
@@ -923,6 +923,50 @@ GLuint HBAOMaskResources::TextureForRead(GLuint source_framebuffer)
 	return resolved_texture;
 }
 
+void NativePostMaskResources::Update(uint32_t new_width, uint32_t new_height)
+{
+	if (new_width == 0 || new_height == 0)
+	{
+		Destroy();
+		return;
+	}
+
+	if (width == new_width && height == new_height && mask_texture != 0)
+		return;
+
+	Destroy();
+
+	width = new_width;
+	height = new_height;
+
+	glGenTextures(1, &mask_texture);
+	glBindTexture(GL_TEXTURE_2D, mask_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	Clear();
+	rend_ClearBoundTextures();
+}
+
+void NativePostMaskResources::Clear()
+{
+	if (mask_texture == 0)
+		return;
+
+	const GLubyte zero = 0;
+	glClearTexImage(mask_texture, 0, GL_RED, GL_UNSIGNED_BYTE, &zero);
+}
+
+void NativePostMaskResources::Destroy()
+{
+	glDeleteTextures(1, &mask_texture);
+	mask_texture = 0;
+	width = 0;
+	height = 0;
+}
+
 void Framebuffer::BindForRead()
 {
 	if (m_samples >= 2)
@@ -979,14 +1023,19 @@ void BloomResources::InitShaders()
 	thresholdshader.Use();
 	GLint threshold_source = thresholdshader.FindUniform("heh");
 	GLint threshold_depth = thresholdshader.FindUniform("depth_source");
+	GLint threshold_protection_mask = thresholdshader.FindUniform("protection_mask");
 	if (threshold_source != -1)
 		glUniform1i(threshold_source, 0);
 	if (threshold_depth != -1)
 		glUniform1i(threshold_depth, 2);
+	if (threshold_protection_mask != -1)
+		glUniform1i(threshold_protection_mask, 3);
 	threshold_gamma = thresholdshader.FindUniform("gamma");
 	threshold_value = thresholdshader.FindUniform("bloom_threshold");
 	threshold_use_depth_mask = thresholdshader.FindUniform("use_depth_mask");
-	if (threshold_gamma == -1 || threshold_value == -1 || threshold_use_depth_mask == -1)
+	threshold_use_protection_mask = thresholdshader.FindUniform("use_protection_mask");
+	if (threshold_gamma == -1 || threshold_value == -1 || threshold_use_depth_mask == -1 ||
+		threshold_use_protection_mask == -1)
 		Error("BloomResources::InitShaders: Failed to find threshold uniforms!");
 
 	downsampleshader.AttachSource(blitVertexSrc, bloomDownsampleFragmentSrc);
@@ -1012,16 +1061,21 @@ void BloomResources::InitShaders()
 	GLint composite_source = compositeshader.FindUniform("heh");
 	GLint composite_bloom = compositeshader.FindUniform("bloom");
 	GLint composite_scene_source = compositeshader.FindUniform("scene_source");
+	GLint composite_protection_mask = compositeshader.FindUniform("protection_mask");
 	if (composite_source != -1)
 		glUniform1i(composite_source, 0);
 	if (composite_bloom != -1)
 		glUniform1i(composite_bloom, 1);
 	if (composite_scene_source != -1)
 		glUniform1i(composite_scene_source, 2);
+	if (composite_protection_mask != -1)
+		glUniform1i(composite_protection_mask, 3);
 	composite_gamma = compositeshader.FindUniform("gamma");
 	composite_intensity = compositeshader.FindUniform("bloom_intensity");
 	composite_use_alpha_mask = compositeshader.FindUniform("use_alpha_mask");
-	if (composite_gamma == -1 || composite_intensity == -1 || composite_use_alpha_mask == -1)
+	composite_use_protection_mask = compositeshader.FindUniform("use_protection_mask");
+	if (composite_gamma == -1 || composite_intensity == -1 || composite_use_alpha_mask == -1 ||
+		composite_use_protection_mask == -1)
 		Error("BloomResources::InitShaders: Failed to find composite uniforms!");
 
 	ShaderProgram::ClearBinding();
@@ -1042,7 +1096,7 @@ void BloomResources::DestroyFramebuffers()
 }
 
 Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
-	const rendering_state& render_state, float display_gamma, GLuint depth_texture)
+	const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture)
 {
 	if (!pref_state.bloom_enabled || source == nullptr)
 		return nullptr;
@@ -1093,10 +1147,13 @@ Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred
 	glUniform1f(threshold_gamma, display_gamma);
 	glUniform1f(threshold_value, ClampBloomSetting(pref_state.bloom_threshold));
 	glUniform1i(threshold_use_depth_mask, depth_texture != 0);
+	glUniform1i(threshold_use_protection_mask, protection_mask_texture != 0);
 	rend_ClearBoundTextures();
 	GL_BindFramebufferTexture(source->ColorTextureForRead(), 0, GL_LINEAR);
 	if (depth_texture != 0)
 		GL_BindFramebufferTexture(depth_texture, 2, GL_NEAREST);
+	if (protection_mask_texture != 0)
+		GL_BindFramebufferTexture(protection_mask_texture, 3, GL_NEAREST);
 	{
 		PERF_MARKER_SCOPE("Bloom.Threshold");
 		GL_DrawFramebufferQuadNoClear(framebuffers[0].Handle(), 0, 0, widths[0], heights[0]);

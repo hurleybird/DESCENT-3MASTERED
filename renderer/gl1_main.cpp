@@ -365,13 +365,14 @@ void GLCompatibilityRenderer::Flip(void)
 	}
 
 	GLuint bloom_depth = bloom_source_valid ? bloom_source_framebuffer.DepthTextureForRead() : 0;
-	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_effect_source, OpenGL_preferred_state, OpenGL_state, display_gamma, bloom_depth);
+	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_effect_source, OpenGL_preferred_state, OpenGL_state, display_gamma, bloom_depth, 0);
 	if (bloom_framebuffer)
 	{
 		bloom.compositeshader.Use();
 		glUniform1f(bloom.composite_gamma, display_gamma);
 		glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
 		glUniform1i(bloom.composite_use_alpha_mask, 0);
+		glUniform1i(bloom.composite_use_protection_mask, 0);
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
 		GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);
@@ -478,7 +479,7 @@ void GLCompatibilityRenderer::CaptureBloomSource()
 
 	GLuint bloom_depth = bloom_source_framebuffer.DepthTextureForRead();
 	Framebuffer* bloom_framebuffer = bloom.Apply(&bloom_source_framebuffer, OpenGL_preferred_state,
-		OpenGL_state, display_gamma, bloom_depth);
+		OpenGL_state, display_gamma, bloom_depth, 0);
 	if (bloom_framebuffer)
 	{
 		bloom_source_resolved_framebuffer.Update(framebuffers[framebuffer_current_draw].Width(),
@@ -490,6 +491,7 @@ void GLCompatibilityRenderer::CaptureBloomSource()
 		glUniform1f(bloom.composite_gamma, display_gamma);
 		glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
 		glUniform1i(bloom.composite_use_alpha_mask, 0);
+		glUniform1i(bloom.composite_use_protection_mask, 0);
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(bloom_source_resolved_framebuffer.ColorTextureForRead(), 0, GL_NEAREST);
 		GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);
