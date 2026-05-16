@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <algorithm>
+#include <cmath>
 #include <vector>
 #include "descent.h"
 #include "3d.h"
@@ -157,7 +158,6 @@ ushort Scorches_to_render[MAX_FACES_PER_ROOM];
 int Num_scorches_to_render = 0;
 
 // For rendering volumetric fog
-constexpr int MAX_FOGGED_ROOMS_PER_FRAME = 8;
 fog_portal_data Fog_portal_data[MAX_FOGGED_ROOMS_PER_FRAME];
 int Num_fogged_rooms_this_frame = 0;
 float Room_light_val = 0;
@@ -855,10 +855,11 @@ void CheckFogPortalExtents(int roomnum, int portalnum)
 
 	// calculate the distance from the camera to the portal
 	distance = vm_DotProduct(&fp->normal, &Viewer_eye) + distance;
-	if (distance < Fog_portal_data[found_room].close_dist)
+	float compare_distance = std::fabs(distance);
+	if (compare_distance < Fog_portal_data[found_room].close_dist)
 	{
 		// this portal is closer to the camera than the previous
-		Fog_portal_data[found_room].close_dist = distance;
+		Fog_portal_data[found_room].close_dist = compare_distance;
 		Fog_portal_data[found_room].close_face = fp;
 	}
 }

@@ -175,6 +175,7 @@ class RenderList
 	void AddRoom(RenderListEntry& entry, Frustum& frustum);
 
 	void PreDraw();
+	void SyncLegacyFogPortals() const;
 	void DrawWorld(int passnum);
 	void DrawPostrenders();
 public:

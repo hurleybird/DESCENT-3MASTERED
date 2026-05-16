@@ -18,6 +18,7 @@
 
 #include <stdlib.h>
 #include <algorithm>
+#include <cmath>
 #include "descent.h"
 #include "game.h"
 #include "newrender.h"
@@ -997,9 +998,10 @@ void RenderList::MaybeUpdateFogPortal(int roomnum, int portalnum)
 
 	float distance = -vm_DotProduct(&fp.normal, &rp.verts[fp.face_verts[0]]);
 	distance = vm_DotProduct(&fp.normal, &EyePos) + distance;
-	if (distance < fogdata->close_dist)
+	float compare_distance = std::fabs(distance);
+	if (compare_distance < fogdata->close_dist)
 	{
-		fogdata->close_dist = distance;
+		fogdata->close_dist = compare_distance;
 		fogdata->close_face = &fp;
 	}
 }
@@ -1108,6 +1110,17 @@ void RenderList::PreDraw()
 	}
 
 	rend_UpdateFogBrightness(roomblocks, renderrooms);
+}
+
+void RenderList::SyncLegacyFogPortals() const
+{
+	Num_fogged_rooms_this_frame = std::min(MAX_FOGGED_ROOMS_PER_FRAME, (int)FogPortals.size());
+	for (int i = 0; i < Num_fogged_rooms_this_frame; i++)
+	{
+		Fog_portal_data[i].roomnum = (short)FogPortals[i].roomnum;
+		Fog_portal_data[i].close_dist = FogPortals[i].close_dist;
+		Fog_portal_data[i].close_face = FogPortals[i].close_face;
+	}
 }
 
 void RenderList::DrawWorld(int passnum)
@@ -1290,6 +1303,7 @@ void RenderList::Draw()
 	Room_IndexBuffer.Bind();
 
 	PreDraw();
+	SyncLegacyFogPortals();
 	rend_SetAlphaType(AT_ALWAYS);
 	DrawWorld(0);
 	rend_SetAlphaType(AT_SPECULAR);

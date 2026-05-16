@@ -85,7 +85,7 @@ void ResetPostrenderList()
 void SortPostrenders()
 {
 	if (Num_postrenders > 0)
-		std::sort(&Postrender_list[0], &Postrender_list[Num_postrenders - 1]);
+		std::sort(&Postrender_list[0], &Postrender_list[Num_postrenders]);
 }
 
 

@@ -80,6 +80,7 @@ struct fog_portal_data
 	face *close_face;
 };
 
+constexpr int MAX_FOGGED_ROOMS_PER_FRAME = 64;
 extern fog_portal_data Fog_portal_data[];
 
 extern int Num_fogged_rooms_this_frame;

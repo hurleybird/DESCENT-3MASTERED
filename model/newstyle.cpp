@@ -53,7 +53,7 @@ static int Multicolor_texture=-1;
 
 static vector Fog_plane;
 static float Fog_distance,Fog_eye_distance;
-static vector Fog_view_pos,Specular_view_pos,Bump_view_pos;
+static vector Specular_view_pos,Bump_view_pos;
 static matrix Unscaled_bumpmap_matrix;
 
 static double Polymodel_perf_first_time = 0.0;
@@ -1003,6 +1003,43 @@ inline void RenderSubmodelLightmapFace (poly_model *pm,bsp_info *sm,int facenum)
 	PolymodelPerfAdd(Polymodel_perf_lightmap_face_time, face_start_time);
 }
 
+static void SetupPolymodelFogViewPlane()
+{
+	g3Point portal_point;
+	g3_RotatePoint(&portal_point, &Polymodel_fog_portal_vert);
+
+	g3_RotateDeltaVec(&Fog_plane, &Polymodel_fog_plane);
+	if (vm_NormalizeVector(&Fog_plane) <= 0.0001f)
+	{
+		Fog_distance = 0.0f;
+		Fog_eye_distance = 0.0f;
+		return;
+	}
+
+	Fog_distance = -(Fog_plane * portal_point.p3_vec);
+	Fog_eye_distance = Fog_distance;
+}
+
+static float GetPolymodelFogMagnitude(g3Point *point)
+{
+	if (Polymodel_effect.fog_plane_check == 1)
+		return point->p3_z;
+
+	float dist = (point->p3_vec * Fog_plane) + Fog_distance;
+	if (Fog_eye_distance == 0.0f || dist == 0.0f ||
+		((Fog_eye_distance > 0.0f) == (dist > 0.0f)))
+		return 0.0f;
+
+	float denom = Fog_eye_distance - dist;
+	if (denom > -0.0001f && denom < 0.0001f)
+		return 0.0f;
+
+	float t = Fog_eye_distance / denom;
+	vector portal_point = t * point->p3_vec;
+	float mag = point->p3_z - portal_point.z;
+	return mag > 0.0f ? mag : 0.0f;
+}
+
 inline void RenderSubmodelFaceFogged (poly_model *pm,bsp_info *sm,int facenum)
 {
 	double face_start_time = PolymodelPerfNow();
@@ -1020,29 +1057,7 @@ inline void RenderSubmodelFaceFogged (poly_model *pm,bsp_info *sm,int facenum)
 		g3Point *p = &Robot_points[fp->vertnums[t]];
 		pointlist[t] = p;
 
-		float mag;
-
-		if (Polymodel_effect.fog_plane_check==1)
-		{
-			mag = vm_DotProduct(&Fog_plane,&sm->verts[fp->vertnums[t]])+Fog_distance;
-		}
-		else
-		{
-			vector *vec=&sm->verts[fp->vertnums[t]];
-
-			// Now we must generate the split point. This is simply
-			// an equation in the form Origin + t*Direction
-						
-			float dist = (*vec*Polymodel_fog_plane)+ Fog_distance;
-	
-			vector subvec=*vec-Fog_view_pos;
-
-			float	t = Fog_eye_distance / (Fog_eye_distance - dist);
-			vector portal_point=Fog_view_pos+(t*subvec);
-							
-			float eye_distance=-(vm_DotProduct (&Fog_plane,&portal_point));
-			mag = vm_DotProduct(&Fog_plane,vec)+eye_distance;
-		}
+		float mag = GetPolymodelFogMagnitude(p);
 
 		float scalar=mag/Polymodel_effect.fog_depth;
 
@@ -1434,19 +1449,9 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 	if (Polymodel_use_effect && Polymodel_effect.type & PEF_FOGGED_MODEL)
 	{
 		double fog_start_time = PolymodelPerfNow();
-		matrix mat;
 
-		g3_GetUnscaledMatrix (&mat);
-		g3_GetViewPosition (&Fog_view_pos);
-		Fog_plane=mat.fvec;
-
-		if (Polymodel_effect.fog_plane_check==1)
-			Fog_distance=-(vm_DotProduct (&Fog_plane,&Fog_view_pos));
-		else
-		{
-			Fog_distance=-(vm_DotProduct (&Polymodel_fog_plane,&Polymodel_fog_portal_vert));
-			Fog_eye_distance = (Fog_view_pos*Polymodel_fog_plane)+ Fog_distance;
-		}
+		if (Polymodel_effect.fog_plane_check!=1)
+			SetupPolymodelFogViewPlane();
 
 		rend_SetOverlayType (OT_NONE);
 		rend_SetTextureType (TT_FLAT);
