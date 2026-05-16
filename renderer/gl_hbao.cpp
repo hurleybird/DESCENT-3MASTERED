@@ -32,26 +32,47 @@ namespace
 		0.437980f, 0.620309f, 0.062196f, 0.119485f, 0.235646f, 0.795892f, 0.044437f, 0.617311f,
 	};
 
-	int QualityDirections(int q)
+	int ClampHBAOSampleCount(int samples)
 	{
-		switch (q)
-		{
-		case HBAO_QUALITY_LOW: return 4;
-		case HBAO_QUALITY_HIGH: return 8;
-		case HBAO_QUALITY_MEDIUM:
-		default: return 6;
-		}
+		if (samples < HBAO_MIN_SAMPLES)
+			return HBAO_DEFAULT_SAMPLES;
+		if (samples > HBAO_MAX_SAMPLES)
+			return HBAO_MAX_SAMPLES;
+		return samples;
 	}
 
-	int QualitySteps(int q)
+	void HBAOSamplePattern(int samples, int* directions_out, int* steps_out)
 	{
-		switch (q)
+		samples = ClampHBAOSampleCount(samples);
+
+		int directions;
+		if (samples <= 12)
 		{
-		case HBAO_QUALITY_LOW: return 3;
-		case HBAO_QUALITY_HIGH: return 4;
-		case HBAO_QUALITY_MEDIUM:
-		default: return 4;
+			directions = samples < 4 ? samples : 4;
 		}
+		else if (samples <= 24)
+		{
+			directions = 6;
+		}
+		else if (samples <= 32)
+		{
+			directions = 8;
+		}
+		else
+		{
+			directions = (int)(sqrtf((float)samples * 2.0f) + 0.5f);
+			if (directions < 8)
+				directions = 8;
+			if (directions > 32)
+				directions = 32;
+		}
+
+		int steps = (samples + directions - 1) / directions;
+		if (steps < 1)
+			steps = 1;
+
+		*directions_out = directions;
+		*steps_out = steps;
 	}
 
 	int BlurKernelRadius(int b)
@@ -121,6 +142,15 @@ namespace
 			(framebuffer.Width() > (uint32_t)width || framebuffer.Height() > (uint32_t)height);
 	}
 
+	int ClampHBAONoiseMode(int noise_mode)
+	{
+		if (noise_mode < HBAO_NOISE_REFERENCE)
+			return HBAO_NOISE_REFERENCE;
+		if (noise_mode > HBAO_NOISE_IGN)
+			return HBAO_NOISE_IGN;
+		return noise_mode;
+	}
+
 	void HBAODrawFullscreen(GLuint framebuffer, int width, int height)
 	{
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
@@ -176,6 +206,7 @@ void HBAOResources::InitShaders()
 	ao_screen_size = ao_shader.FindUniform("screen_size");
 	ao_temporal = ao_shader.FindUniform("temporal");
 	ao_noise_scale = ao_shader.FindUniform("noise_scale");
+	ao_noise_mode = ao_shader.FindUniform("noise_mode");
 	ao_directions = ao_shader.FindUniform("directions");
 	ao_steps = ao_shader.FindUniform("steps");
 
@@ -375,8 +406,8 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	}
 
 	//Run AO at an internal resolution decoupled from SSAA/MSAA source size.
-	//The source may be supersampled; AO quality settings are defined relative
-	//to the display resolution so High does not become 4xSSAA-resolution AO.
+	//The source may be supersampled; AO sample counts are defined relative
+	//to the display resolution so they do not become 4xSSAA-resolution AO.
 	//Depth is first reduced to this resolution so MSAA resolves are paid once
 	//per AO pixel instead of inside every horizon sample.
 	ao_depth_framebuffer.Update(ao_width, ao_height, GL_R32F, GL_RED, GL_FLOAT);
@@ -430,11 +461,11 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	if (fabsf(m11) < 1e-6f) m11 = 1.0f;
 
 	//Sanitize prefs into shader-friendly numbers.
-	int quality = pref_state.hbao_quality;
-	if (quality < 0) quality = 0;
-	if (quality > HBAO_QUALITY_HIGH) quality = HBAO_QUALITY_HIGH;
-	int directions = QualityDirections(quality);
-	int steps = QualitySteps(quality);
+	int samples = ClampHBAOSampleCount(pref_state.hbao_samples);
+	int directions = 0;
+	int steps = 0;
+	HBAOSamplePattern(samples, &directions, &steps);
+	int noise_mode = ClampHBAONoiseMode(pref_state.hbao_noise);
 
 	float radius = pref_state.hbao_radius;
 	if (radius < 0.5f) radius = 0.5f;
@@ -451,7 +482,8 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	int blur = pref_state.hbao_blur;
 	if (!temporal_settings_valid ||
 		temporal_enabled != pref_state.hbao_temporal ||
-		temporal_quality != quality ||
+		temporal_samples != samples ||
+		temporal_noise != noise_mode ||
 		temporal_resolution != pref_state.hbao_resolution ||
 		temporal_blur != blur ||
 		temporal_radius != radius ||
@@ -461,7 +493,8 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		temporal_valid = false;
 		temporal_settings_valid = true;
 		temporal_enabled = pref_state.hbao_temporal;
-		temporal_quality = quality;
+		temporal_samples = samples;
+		temporal_noise = noise_mode;
 		temporal_resolution = pref_state.hbao_resolution;
 		temporal_blur = blur;
 		temporal_radius = radius;
@@ -559,6 +592,8 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		glUniform2f(ao_screen_size, (float)ao_width, (float)ao_height);
 		glUniform2f(ao_temporal, rotation, jitter);
 		glUniform2f(ao_noise_scale, (float)ao_width / 4.0f, (float)ao_height / 4.0f);
+		if (ao_noise_mode != -1)
+			glUniform1i(ao_noise_mode, noise_mode);
 		glUniform1i(ao_directions, directions);
 		glUniform1i(ao_steps, steps);
 

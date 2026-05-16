@@ -307,7 +307,8 @@ struct HBAOResources
 	bool temporal_valid = false;
 	bool temporal_settings_valid = false;
 	bool temporal_enabled = true;
-	int temporal_quality = -1;
+	int temporal_samples = -1;
+	int temporal_noise = -1;
 	int temporal_resolution = -1;
 	int temporal_blur = -1;
 	float temporal_radius = -1.0f;
@@ -348,6 +349,7 @@ struct HBAOResources
 	GLint ao_screen_size = -1;      //width, height
 	GLint ao_temporal = -1;         //(rotation, jitter offset)
 	GLint ao_noise_scale = -1;      //(width/4, height/4)
+	GLint ao_noise_mode = -1;
 	GLint ao_directions = -1;
 	GLint ao_steps = -1;
 
