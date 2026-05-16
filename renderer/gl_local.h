@@ -166,6 +166,7 @@ class GL3Renderer : public IRenderer
 	GLint drawshader_dynamic_directional_uniforms[8] = {};
 	GLint drawshader_ao_suppression_uniforms[8] = {};
 	GLint drawshader_bloom_suppression_uniforms[8] = {};
+	GLint drawshader_post_mask_luminance_uniforms[8] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
 	float ao_suppression_draw_value = 0.0f;

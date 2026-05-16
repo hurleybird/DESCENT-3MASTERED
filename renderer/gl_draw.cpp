@@ -419,6 +419,7 @@ void GL3Renderer::SetDrawDefaults()
 		drawshader_dynamic_directional_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_directional[0]");
 		drawshader_ao_suppression_uniforms[i] = drawshaders[i].FindUniform("ao_suppression");
 		drawshader_bloom_suppression_uniforms[i] = drawshaders[i].FindUniform("bloom_suppression");
+		drawshader_post_mask_luminance_uniforms[i] = drawshaders[i].FindUniform("post_mask_use_luminance");
 	}
 
 	lastdrawshader = -1;
@@ -511,6 +512,16 @@ void GL3Renderer::SelectDrawShader()
 		glUniform1f(drawshader_ao_suppression_uniforms[shader_index], ao_suppression_draw_value);
 	if (drawshader_bloom_suppression_uniforms[shader_index] != -1)
 		glUniform1f(drawshader_bloom_suppression_uniforms[shader_index], bloom_suppression_draw_value);
+	if (drawshader_post_mask_luminance_uniforms[shader_index] != -1)
+	{
+		bool use_luminance =
+			OpenGL_state.cur_alpha_type == AT_SATURATE_TEXTURE ||
+			OpenGL_state.cur_alpha_type == AT_SATURATE_VERTEX ||
+			OpenGL_state.cur_alpha_type == AT_SATURATE_CONSTANT_VERTEX ||
+			OpenGL_state.cur_alpha_type == AT_SATURATE_TEXTURE_VERTEX ||
+			OpenGL_state.cur_alpha_type == AT_LIGHTMAP_BLEND_SATURATE;
+		glUniform1i(drawshader_post_mask_luminance_uniforms[shader_index], use_luminance ? 1 : 0);
+	}
 
 	const bool phong_enabled = OpenGL_state.cur_light_state == LS_PHONG;
 	if (drawshader_phong_enabled_uniforms[shader_index] != -1)

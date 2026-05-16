@@ -27,6 +27,7 @@ uniform float dynamic_light_dot_ranges[8];
 uniform int dynamic_light_directional[8];
 uniform float ao_suppression;
 uniform float bloom_suppression;
+uniform int post_mask_use_luminance;
 
 in vec4 outcolor;
 in vec4 outnormal;
@@ -111,6 +112,11 @@ void main()
 		color = vertex_color;
 	#endif
 	float suppression_alpha = clamp(color.a, 0.0, 1.0);
+	if (post_mask_use_luminance != 0)
+	{
+		float visible = max(max(color.r, color.g), color.b);
+		suppression_alpha *= clamp(visible, 0.0, 1.0);
+	}
 	ao_mask = clamp(ao_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
 	bloom_mask = clamp(bloom_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
 	

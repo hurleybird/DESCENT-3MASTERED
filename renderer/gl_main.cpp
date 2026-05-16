@@ -1205,6 +1205,7 @@ void GL3Renderer::SetAlphaType(sbyte atype)
 		break;
 	}
 	OpenGL_state.cur_alpha_type = atype;
+	legacy_draw_uniforms_dirty = true;
 	Alpha_multiplier = GetAlphaMultiplier();
 	GL_ConfigurePostMaskBlend();
 	CHECK_ERROR(15);
