@@ -629,7 +629,7 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		if (temporal_has_motion != -1)
 			glUniform1i(temporal_has_motion, motion_texture != 0 ? 1 : 0);
 		if (temporal_history_weight != -1)
-			glUniform1f(temporal_history_weight, 0.96f);
+			glUniform1f(temporal_history_weight, 0.90f);
 		if (temporal_motion_samples != -1)
 			glUniform1i(temporal_motion_samples, input_samples);
 		if (temporal_input_screen_size != -1)
