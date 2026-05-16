@@ -283,6 +283,7 @@ struct renderer_preferred_state
 	float gtao_radius;
 	float gtao_intensity;
 	float gtao_bias;
+	bool gtao_debug_preview;
 };
 
 struct renderer_lfb

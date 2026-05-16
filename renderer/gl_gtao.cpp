@@ -17,6 +17,7 @@
 */
 #include "gl_local.h"
 #include "gameloop.h"
+#include "game.h"
 #include <math.h>
 #include <stdint.h>
 
@@ -560,18 +561,26 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	//-------------------------------------------------------------------------
 	{
 		PERF_MARKER_SCOPE("GTAO.Composite");
+		const bool debug_display_ao_only = pref_state.gtao_debug_preview && Game_mode != GM_NONE;
 		apply_shader.Use();
-		glUniform1f(apply_intensity, intensity);
+		glUniform1f(apply_intensity, debug_display_ao_only ? 1.0f : intensity);
 		if (apply_has_mask != -1)
-			glUniform1i(apply_has_mask, final_suppression_mask != 0 ? 1 : 0);
+			glUniform1i(apply_has_mask, !debug_display_ao_only && final_suppression_mask != 0 ? 1 : 0);
 
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target->Handle());
 		GLenum draw_buffer = GL_COLOR_ATTACHMENT0;
 		glDrawBuffers(1, &draw_buffer);
 		glViewport(0, 0, target_width, target_height);
 
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_DST_COLOR, GL_ZERO);
+		if (debug_display_ao_only)
+		{
+			glDisable(GL_BLEND);
+		}
+		else
+		{
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_DST_COLOR, GL_ZERO);
+		}
 		glDisable(GL_DEPTH_TEST);
 		glDisable(GL_CULL_FACE);
 		glDepthMask(GL_FALSE);
@@ -585,8 +594,8 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		AODrawFullscreen(target->Handle(), target_width, target_height);
 	}
 
-	//Pass 5 multiplied AO into the target color attachment; any cached
-	//single-sample resolve from earlier in this frame no longer matches.
+	//Pass 5 changed the target color attachment; any cached single-sample
+	//resolve from earlier in this frame no longer matches.
 	target->MarkColorDirty();
 
 	//Restore prior GL state.

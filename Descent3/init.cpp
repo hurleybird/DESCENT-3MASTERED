@@ -384,6 +384,7 @@ void SaveGameSettings()
 	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
 	Database->write("RS_gtao_enabled", Render_preferred_state.gtao_enabled);
 	Database->write("RS_gtao_resolution", Render_preferred_state.gtao_resolution);
+	Database->write("RS_gtao_debug_preview", Render_preferred_state.gtao_debug_preview);
 
 	Database->write("Dynamic_Lighting",Detail_settings.Dynamic_lighting);
 
@@ -548,8 +549,9 @@ void LoadGameSettings()
 	Render_preferred_state.gtao_sample_count = 128;
 	Render_preferred_state.gtao_blur_radius = 6;
 	Render_preferred_state.gtao_radius = 4.0f;
-	Render_preferred_state.gtao_intensity = 2.0f;
+	Render_preferred_state.gtao_intensity = 2.5f;
 	Render_preferred_state.gtao_bias = 0.25f;
+	Render_preferred_state.gtao_debug_preview = false;
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
 	Terrain_renderer_mode = TERRAIN_RENDERER_COMPUTE;
@@ -727,6 +729,7 @@ void LoadGameSettings()
 	Render_preferred_state.gtao_resolution = (ubyte)tempint;
 	if (Render_preferred_state.gtao_resolution == GTAO_RESOLUTION_AUTO)
 		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
+	Database->read("RS_gtao_debug_preview", &Render_preferred_state.gtao_debug_preview);
 	// force feedback stuff
 	Database->read("EnableJoystickFF",&D3Use_force_feedback);
 	Database->read("ForceFeedbackAutoCenter",&D3Force_auto_center);

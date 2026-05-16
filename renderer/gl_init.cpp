@@ -46,7 +46,7 @@ constexpr int GL_CORE_MAJOR_VERSION = 4;
 constexpr int GL_CORE_MINOR_VERSION = 5;
 
 // Sets default states for our renderer
-void GL3Renderer::SetDefaults()
+void GL4Renderer::SetDefaults()
 {
 	mprintf((0, "Setting states\n"));
 
@@ -121,7 +121,7 @@ static GLADapiproc opengl_GLADLoad(const char* name)
 	return (GLADapiproc)ptr;
 }
 
-int GL3Renderer::Setup(SDL_Window* window)
+int GL4Renderer::Setup(SDL_Window* window)
 {
 	//Ideally this will set attribute flags here, but SDL wants those to be set before window creation.
 	//It might make more sense to delay window creation to when the graphics library initializes when in game mode.
@@ -136,7 +136,7 @@ int GL3Renderer::Setup(SDL_Window* window)
 	SDL_GLContext context = SDL_GL_CreateContext(window);
 	if (context == nullptr)
 	{
-		Error("GL3Renderer::Setup: SDL_GL_CreateContext failed!\n%s", SDL_GetError());
+		Error("GL4Renderer::Setup: SDL_GL_CreateContext failed!\n%s", SDL_GetError());
 		return 0;
 	}
 	GLContext = context;
@@ -343,7 +343,7 @@ die:
 }
 
 // Check for OpenGL support, and start er up
-int GL3Renderer::Setup(HDC glhdc)
+int GL4Renderer::Setup(HDC glhdc)
 {
 	if (!GL_GetWGLExtensionProcs())
 	{
@@ -458,7 +458,7 @@ int GL3Renderer::Setup(HDC glhdc)
 }
 #endif
 
-void GL3Renderer::ApplySwapInterval(bool enabled)
+void GL4Renderer::ApplySwapInterval(bool enabled)
 {
 	const int interval = enabled ? 1 : 0;
 
@@ -490,7 +490,7 @@ void GL3Renderer::ApplySwapInterval(bool enabled)
 }
 
 // Gets some specific information about this particular flavor of opengl
-void GL3Renderer::GetInformation()
+void GL4Renderer::GetInformation()
 {
 	const char* version = (const char*)glGetString(GL_VERSION);
 	glGetIntegerv(GL_MAJOR_VERSION, &RendererOpenGLMajorVersion);
@@ -516,7 +516,7 @@ void APIENTRY GL_LogDebugMsg(GLenum source, GLenum type, GLuint id, GLenum sever
 
 // Sets up our OpenGL rendering context
 // Returns 1 if ok, 0 if something bad
-int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
+int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 {
 	//int width,height;
 	int retval = 1;
@@ -553,7 +553,7 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	}
 	else
 	{
-		Error("GL3Renderer::Init: Can't get app ptr");
+		Error("GL4Renderer::Init: Can't get app ptr");
 	}
 #elif defined(WIN32)
 	/***********************************************************
@@ -734,7 +734,7 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 }
 
 // Releases the rendering context
-void GL3Renderer::Close()
+void GL4Renderer::Close()
 {
 	CHECK_ERROR(5);
 

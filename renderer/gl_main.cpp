@@ -66,37 +66,37 @@ static float mat4_identity[16] =
 static float OpenGL_terrain_fog_start = 0.0f;
 static float OpenGL_terrain_fog_end = 1.0f;
 
-int GL3Renderer::SupersamplingFactor() const
+int GL4Renderer::SupersamplingFactor() const
 {
 	return RendererSupersamplingFactor(OpenGL_preferred_state);
 }
 
-int GL3Renderer::FramebufferWidth() const
+int GL4Renderer::FramebufferWidth() const
 {
 	return OpenGL_state.screen_width * SupersamplingFactor();
 }
 
-int GL3Renderer::FramebufferHeight() const
+int GL4Renderer::FramebufferHeight() const
 {
 	return OpenGL_state.screen_height * SupersamplingFactor();
 }
 
-int GL3Renderer::ScaledX(int x) const
+int GL4Renderer::ScaledX(int x) const
 {
 	return x * SupersamplingFactor();
 }
 
-int GL3Renderer::ScaledY(int y) const
+int GL4Renderer::ScaledY(int y) const
 {
 	return y * SupersamplingFactor();
 }
 
-int GL3Renderer::ScaledW(int w) const
+int GL4Renderer::ScaledW(int w) const
 {
 	return w * SupersamplingFactor();
 }
 
-int GL3Renderer::ScaledH(int h) const
+int GL4Renderer::ScaledH(int h) const
 {
 	return h * SupersamplingFactor();
 }
@@ -114,7 +114,7 @@ void GL_Ortho(float* mat, float left, float right, float bottom, float top, floa
 	mat[15] = 1;
 }
 
-void GL3Renderer::RefreshViewSize()
+void GL4Renderer::RefreshViewSize()
 {
 	int view_width = 0;
 	int view_height = 0;
@@ -143,7 +143,7 @@ void GL3Renderer::RefreshViewSize()
 	OpenGL_state.view_height = view_height;
 }
 
-void GL3Renderer::UpdatePresentRect()
+void GL4Renderer::UpdatePresentRect()
 {
 	int width = OpenGL_preferred_state.width;
 	int height = OpenGL_preferred_state.height;
@@ -204,7 +204,7 @@ void GL3Renderer::UpdatePresentRect()
 	}
 }
 
-void GL3Renderer::UpdateWindow()
+void GL4Renderer::UpdateWindow()
 {
 	int width, height;
 	if (!OpenGL_preferred_state.fullscreen)
@@ -253,7 +253,7 @@ void GL3Renderer::UpdateWindow()
 	UpdatePresentRect();
 }
 
-void GL3Renderer::SetViewport()
+void GL4Renderer::SetViewport()
 {
 	//[ISB] the hardware t&l code is AWFUL and the software t&l code won't compile.
 	// Reverting it back to only ever using passthrough.
@@ -282,7 +282,7 @@ void GL3Renderer::SetViewport()
 }
 
 // Sets some global preferences for the renderer
-int GL3Renderer::SetPreferredState(renderer_preferred_state* pref_state)
+int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 {
 	int retval = 1;
 	renderer_preferred_state old_state = OpenGL_preferred_state;
@@ -353,7 +353,7 @@ int GL3Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 	return retval;
 }
 
-void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
+void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 {
 	if (post_present_pending_swap)
 	{
@@ -415,7 +415,7 @@ void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 }
 
 // Flips the screen
-void GL3Renderer::Flip()
+void GL4Renderer::Flip()
 {
 	if (post_present_pending_swap)
 	{
@@ -427,7 +427,7 @@ void GL3Renderer::Flip()
 		EndPostPresentFrame();
 }
 
-bool GL3Renderer::BeginPostPresentFrame()
+bool GL4Renderer::BeginPostPresentFrame()
 {
 	if (post_present_pending_swap)
 		return true;
@@ -629,12 +629,12 @@ bool GL3Renderer::BeginPostPresentFrame()
 	return true;
 }
 
-bool GL3Renderer::IsPostPresentFramePending() const
+bool GL4Renderer::IsPostPresentFramePending() const
 {
 	return post_present_pending_swap;
 }
 
-void GL3Renderer::StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags)
+void GL4Renderer::StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags)
 {
 	post_present_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, post_present_framebuffer.Handle());
@@ -664,7 +664,7 @@ void GL3Renderer::StartPostPresentFrame(int x1, int y1, int x2, int y2, int clea
 	glViewport(x1, OpenGL_state.screen_height - y2, x2 - x1, y2 - y1);
 }
 
-void GL3Renderer::EndPostPresentFrame()
+void GL4Renderer::EndPostPresentFrame()
 {
 	if (post_present_pending_swap)
 	{
@@ -686,7 +686,7 @@ void GL3Renderer::EndPostPresentFrame()
 	SDL_GL_SwapBuffers();
 #endif
 
-	framebuffer_current_draw = (framebuffer_current_draw + 1) % NUM_GL3_FBOS;
+	framebuffer_current_draw = (framebuffer_current_draw + 1) % NUM_GL4_FBOS;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
 	//Scene rendering is about to write to this framebuffer's MSAA attachments,
 	//so any cached resolve from the previous time we used this slot is stale.
@@ -713,11 +713,11 @@ void GL3Renderer::EndPostPresentFrame()
 #endif
 }
 
-void GL3Renderer::EndFrame(void)
+void GL4Renderer::EndFrame(void)
 {
 }
 
-void GL3Renderer::CaptureBloomSource()
+void GL4Renderer::CaptureBloomSource()
 {
 	bloom_source_valid = false;
 	ao_scene_valid = false;
@@ -784,7 +784,7 @@ void GL3Renderer::CaptureBloomSource()
 }
 
 // returns true if the passed in extension name is supported
-bool GL3Renderer::CheckExtension(char* extName)
+bool GL4Renderer::CheckExtension(char* extName)
 {
 	GLint extcount;
 	glGetIntegerv(GL_NUM_EXTENSIONS, &extcount);
@@ -798,20 +798,20 @@ bool GL3Renderer::CheckExtension(char* extName)
 	return false;
 }
 
-void GL3Renderer::SetGammaValue(float val)
+void GL4Renderer::SetGammaValue(float val)
 {
 	blitshader.Use();
 
 	glUniform1f(blitshader_gamma, 1.f / val);
 }
 
-void GL3Renderer::SetFlatColor(ddgr_color color)
+void GL4Renderer::SetFlatColor(ddgr_color color)
 {
 	OpenGL_state.cur_color = color;
 }
 
 // Sets the fog state to TRUE or FALSE
-void GL3Renderer::SetFogState(sbyte state)
+void GL4Renderer::SetFogState(sbyte state)
 {
 	if (state)
 		post_protection_mask_dirty = true;
@@ -823,7 +823,7 @@ void GL3Renderer::SetFogState(sbyte state)
 }
 
 // Sets the near and far plane of fog
-void GL3Renderer::SetFogBorders(float nearz, float farz)
+void GL4Renderer::SetFogBorders(float nearz, float farz)
 {
 	// Sets the near and far plane of fog
 	float fog_start = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / nearz)));
@@ -837,7 +837,7 @@ void GL3Renderer::SetFogBorders(float nearz, float farz)
 }
 
 // Sets the color of fog
-void GL3Renderer::SetFogColor(ddgr_color color)
+void GL4Renderer::SetFogColor(ddgr_color color)
 {
 	float fc[4];
 	fc[0] = GR_COLOR_RED(color);
@@ -852,7 +852,7 @@ void GL3Renderer::SetFogColor(ddgr_color color)
 	UpdateTerrainFog(fc, OpenGL_terrain_fog_start, OpenGL_terrain_fog_end);
 }
 
-void GL3Renderer::SetLighting(light_state state)
+void GL4Renderer::SetLighting(light_state state)
 {
 	if (state == LS_PHONG && !OpenGL_preferred_state.per_pixel_lighting)
 		state = LS_GOURAUD;
@@ -890,7 +890,7 @@ void GL3Renderer::SetLighting(light_state state)
 	CHECK_ERROR(13);
 }
 
-void GL3Renderer::SetPerPixelLightingDirection(const vector *lightdir)
+void GL4Renderer::SetPerPixelLightingDirection(const vector *lightdir)
 {
 	if (lightdir)
 	{
@@ -915,7 +915,7 @@ static void UpdateCurrentDynamicLightingUniforms(int count, const vector &face_n
 	}
 }
 
-void GL3Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int count,
+void GL4Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int count,
 	const renderer_per_pixel_light *lights)
 {
 	if (!OpenGL_preferred_state.per_pixel_lighting || count <= 0 || lights == nullptr || face_normal == nullptr)
@@ -957,7 +957,7 @@ void GL3Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int coun
 		per_pixel_dynamic_directions, per_pixel_dynamic_dot_ranges, per_pixel_dynamic_directional);
 }
 
-void GL3Renderer::SetColorModel(color_model state)
+void GL4Renderer::SetColorModel(color_model state)
 {
 	switch (state)
 	{
@@ -973,7 +973,7 @@ void GL3Renderer::SetColorModel(color_model state)
 	}
 }
 
-void GL3Renderer::SetTextureType(texture_type state)
+void GL4Renderer::SetTextureType(texture_type state)
 {
 	if (state == OpenGL_state.cur_texture_type)
 		return;	// No redundant state setting
@@ -1005,13 +1005,13 @@ void GL3Renderer::SetTextureType(texture_type state)
 }
 
 // Sets the state of bilinear filtering for our textures
-void GL3Renderer::SetFiltering(sbyte state)
+void GL4Renderer::SetFiltering(sbyte state)
 {
 	OpenGL_state.cur_bilinear_state = state;
 }
 
 // Sets the state of z-buffering to on or off
-void GL3Renderer::SetZBufferState(sbyte state)
+void GL4Renderer::SetZBufferState(sbyte state)
 {
 	if (state == OpenGL_state.cur_zbuffer_state)
 		return;	// No redundant state setting
@@ -1035,7 +1035,7 @@ void GL3Renderer::SetZBufferState(sbyte state)
 }
 
 // Sets the near and far planes for z buffer
-void GL3Renderer::SetZValues(float nearz, float farz)
+void GL4Renderer::SetZValues(float nearz, float farz)
 {
 	OpenGL_state.cur_near_z = nearz;
 	OpenGL_state.cur_far_z = farz;
@@ -1044,18 +1044,18 @@ void GL3Renderer::SetZValues(float nearz, float farz)
 
 // Sets a bitmap as a overlay map to rendered on top of the next texture map
 // a -1 value indicates no overlay map
-void GL3Renderer::SetOverlayMap(int handle)
+void GL4Renderer::SetOverlayMap(int handle)
 {
 	Overlay_map = handle;
 }
 
-void GL3Renderer::SetOverlayType(ubyte type)
+void GL4Renderer::SetOverlayType(ubyte type)
 {
 	Overlay_type = type;
 }
 
 // Clears the display to a specified color
-void GL3Renderer::ClearScreen(ddgr_color color)
+void GL4Renderer::ClearScreen(ddgr_color color)
 {
 	int r = (color >> 16 & 0xFF);
 	int g = (color >> 8 & 0xFF);
@@ -1067,13 +1067,13 @@ void GL3Renderer::ClearScreen(ddgr_color color)
 }
 
 // Clears the zbuffer for the screen
-void GL3Renderer::ClearZBuffer(void)
+void GL4Renderer::ClearZBuffer(void)
 {
 	glClear(GL_DEPTH_BUFFER_BIT);
 }
 
 // returns the alpha that we should use
-float GL3Renderer::GetAlphaMultiplier()
+float GL4Renderer::GetAlphaMultiplier()
 {
 	switch (OpenGL_state.cur_alpha_type)
 	{
@@ -1112,7 +1112,7 @@ float GL3Renderer::GetAlphaMultiplier()
 }
 
 
-void GL3Renderer::SetAlwaysAlpha(bool state)
+void GL4Renderer::SetAlwaysAlpha(bool state)
 {
 	if (state && OpenGL_blending_on)
 	{
@@ -1128,7 +1128,7 @@ void GL3Renderer::SetAlwaysAlpha(bool state)
 	}
 }
 
-void GL3Renderer::SetAlphaType(sbyte atype)
+void GL4Renderer::SetAlphaType(sbyte atype)
 {
 	if (atype == OpenGL_state.cur_alpha_type)
 		return;		// don't set it redundantly
@@ -1212,13 +1212,13 @@ void GL3Renderer::SetAlphaType(sbyte atype)
 }
 
 // Sets the alpha value for constant alpha
-void GL3Renderer::SetAlphaValue(ubyte val)
+void GL4Renderer::SetAlphaValue(ubyte val)
 {
 	OpenGL_state.cur_alpha = val;
 	Alpha_multiplier = GetAlphaMultiplier();
 }
 
-void GL3Renderer::SetAOSuppression(float value)
+void GL4Renderer::SetAOSuppression(float value)
 {
 	float clamped_value = std::max(0.0f, std::min(value, 1.0f));
 	if (clamped_value != ao_suppression_draw_value)
@@ -1230,7 +1230,7 @@ void GL3Renderer::SetAOSuppression(float value)
 	}
 }
 
-void GL3Renderer::SetBloomSuppression(float value)
+void GL4Renderer::SetBloomSuppression(float value)
 {
 	float clamped_value = std::max(0.0f, std::min(value, 1.0f));
 	if (clamped_value != bloom_suppression_draw_value)
@@ -1242,7 +1242,7 @@ void GL3Renderer::SetBloomSuppression(float value)
 
 // Sets the overall alpha scale factor (all alpha values are scaled by this value)
 // usefull for motion blur effect
-void GL3Renderer::SetAlphaFactor(float val)
+void GL4Renderer::SetAlphaFactor(float val)
 {
 	if (val < 0.0f) val = 0.0f;
 	if (val > 1.0f) val = 1.0f;
@@ -1250,18 +1250,18 @@ void GL3Renderer::SetAlphaFactor(float val)
 }
 
 // Returns the current Alpha factor
-float GL3Renderer::GetAlphaFactor(void)
+float GL4Renderer::GetAlphaFactor(void)
 {
 	return OpenGL_Alpha_factor;
 }
 
 // Sets the texture wrapping type
-void GL3Renderer::SetWrapType(wrap_type val)
+void GL4Renderer::SetWrapType(wrap_type val)
 {
 	OpenGL_state.cur_wrap_type = val;
 }
 
-void GL3Renderer::SetZBias(float z_bias)
+void GL4Renderer::SetZBias(float z_bias)
 {
 	if (Z_bias != z_bias)
 	{
@@ -1270,7 +1270,7 @@ void GL3Renderer::SetZBias(float z_bias)
 }
 
 // Enables/disables writes the depth buffer
-void GL3Renderer::SetZBufferWriteMask(int state)
+void GL4Renderer::SetZBufferWriteMask(int state)
 {
 	OpenGL_sets_this_frame[5]++;
 	if (state)
@@ -1284,13 +1284,13 @@ void GL3Renderer::SetZBufferWriteMask(int state)
 }
 
 // Returns the aspect ratio of the physical screen
-void GL3Renderer::GetProjectionParameters(int* width, int* height)
+void GL4Renderer::GetProjectionParameters(int* width, int* height)
 {
 	*width = OpenGL_state.clip_x2 - OpenGL_state.clip_x1;
 	*height = OpenGL_state.clip_y2 - OpenGL_state.clip_y1;
 }
 
-void GL3Renderer::GetProjectionScreenParameters(int& screenLX, int& screenTY, int& screenW, int& screenH)
+void GL4Renderer::GetProjectionScreenParameters(int& screenLX, int& screenTY, int& screenW, int& screenH)
 {
 	screenLX = OpenGL_state.clip_x1;
 	screenTY = OpenGL_state.clip_y1;
@@ -1299,7 +1299,7 @@ void GL3Renderer::GetProjectionScreenParameters(int& screenLX, int& screenTY, in
 }
 
 // Returns the aspect ratio of the physical screen
-float GL3Renderer::GetAspectRatio()
+float GL4Renderer::GetAspectRatio()
 {
 	float aspect_ratio = (float)((3.0f * OpenGL_state.screen_width) / (4.0f * OpenGL_state.screen_height));
 	return aspect_ratio;
@@ -1307,7 +1307,7 @@ float GL3Renderer::GetAspectRatio()
 
 // Sets the hardware bias level for coplanar polygons
 // This helps reduce z buffer artifacts
-void GL3Renderer::SetCoplanarPolygonOffset(float factor)
+void GL4Renderer::SetCoplanarPolygonOffset(float factor)
 {
 	if (factor == 0.0f)
 	{
@@ -1321,34 +1321,34 @@ void GL3Renderer::SetCoplanarPolygonOffset(float factor)
 }
 
 // Preuploads a texture to the video card
-void GL3Renderer::PreUploadTextureToCard(int handle, int map_type)
+void GL4Renderer::PreUploadTextureToCard(int handle, int map_type)
 {
 }
 
 // Frees an uploaded texture from the video card
-void GL3Renderer::FreePreUploadedTexture(int handle, int map_type)
+void GL4Renderer::FreePreUploadedTexture(int handle, int map_type)
 {
 }
 
 // Returns 1 if there is mid video memory, 2 if there is low vid memory, or 0 if there is large vid memory
-int GL3Renderer::LowVidMem()
+int GL4Renderer::LowVidMem()
 {
 	return 0;
 }
 
 // Returns 1 if the renderer supports bumpmapping
-int GL3Renderer::SupportsBumpmapping()
+int GL4Renderer::SupportsBumpmapping()
 {
 	return 0;
 }
 
 // Sets a bumpmap to be rendered, or turns off bumpmapping altogether
-void GL3Renderer::SetBumpmapReadyState(int state, int map)
+void GL4Renderer::SetBumpmapReadyState(int state, int map)
 {
 }
 
 // returns rendering statistics for the frame
-void GL3Renderer::GetStatistics(tRendererStats* stats)
+void GL4Renderer::GetStatistics(tRendererStats* stats)
 {
 	stats->poly_count = OpenGL_last_frame_polys_drawn;
 	stats->vert_count = OpenGL_last_frame_verts_processed;
@@ -1356,18 +1356,18 @@ void GL3Renderer::GetStatistics(tRendererStats* stats)
 }
 
 // Tells the software renderer whether or not to use mipping
-void GL3Renderer::SetMipState(sbyte mipstate)
+void GL4Renderer::SetMipState(sbyte mipstate)
 {
 	OpenGL_state.cur_mip_state = mipstate;
 }
 
 // Fills in the passed in pointer with the current rendering state
-void GL3Renderer::GetRenderState(rendering_state* rstate)
+void GL4Renderer::GetRenderState(rendering_state* rstate)
 {
 	memcpy(rstate, &OpenGL_state, sizeof(rendering_state));
 }
 
-void GL3Renderer::DLLGetRenderState(DLLrendering_state* rstate)
+void GL4Renderer::DLLGetRenderState(DLLrendering_state* rstate)
 {
 #define COPY_ELEMENT(element) rstate->element = OpenGL_state.element;
 	COPY_ELEMENT(initted);
@@ -1399,7 +1399,7 @@ void GL3Renderer::DLLGetRenderState(DLLrendering_state* rstate)
 }
 
 // Takes a screenshot of the current frame and puts it into the handle passed
-void GL3Renderer::Screenshot(int bm_handle)
+void GL4Renderer::Screenshot(int bm_handle)
 {
 	ushort* dest_data;
 	uint* temp_data;
@@ -1466,7 +1466,7 @@ void GL3Renderer::Screenshot(int bm_handle)
 	mem_free(temp_data);
 }
 
-int GL3Renderer::SaveScreenshotPNG(const char* filename)
+int GL4Renderer::SaveScreenshotPNG(const char* filename)
 {
 	int w = OpenGL_state.screen_width;
 	int h = OpenGL_state.screen_height;
@@ -1541,7 +1541,7 @@ int GL3Renderer::SaveScreenshotPNG(const char* filename)
 	return saved;
 }
 
-void GL3Renderer::UpdateFramebuffer(void)
+void GL4Renderer::UpdateFramebuffer(void)
 {
 	int target_samples = RendererMsaaSamples(OpenGL_preferred_state);
 	int target_width = FramebufferWidth();
@@ -1569,7 +1569,7 @@ void GL3Renderer::UpdateFramebuffer(void)
 	}
 	gtao.DestroyFramebuffers();
 
-	for (int i = 0; i < NUM_GL3_FBOS; i++)
+	for (int i = 0; i < NUM_GL4_FBOS; i++)
 	{
 		framebuffers[i].Update(target_width, target_height, target_samples);
 		motion_vectors.Update(target_width, target_height, framebuffers[i].Samples());
@@ -1609,9 +1609,9 @@ void GL3Renderer::UpdateFramebuffer(void)
 	GL_InitFramebufferVAO();
 }
 
-void GL3Renderer::CloseFramebuffer(void)
+void GL4Renderer::CloseFramebuffer(void)
 {
-	for (int i = 0; i < NUM_GL3_FBOS; i++)
+	for (int i = 0; i < NUM_GL4_FBOS; i++)
 	{
 		framebuffers[i].Destroy();
 	}
@@ -1636,17 +1636,17 @@ void GL3Renderer::CloseFramebuffer(void)
 }
 
 //shader test
-void GL3Renderer::UseShaderTest(void)
+void GL4Renderer::UseShaderTest(void)
 {
 	testshader.Use();
 }
 
-void GL3Renderer::EndShaderTest(void)
+void GL4Renderer::EndShaderTest(void)
 {
 	//glUseProgram(0);
 }
 
-void GL3Renderer::SetCullFace(bool state)
+void GL4Renderer::SetCullFace(bool state)
 {
 	if (state)
 		glEnable(GL_CULL_FACE);
@@ -1654,13 +1654,13 @@ void GL3Renderer::SetCullFace(bool state)
 		glDisable(GL_CULL_FACE);
 }
 
-void GL3Renderer::GetScreenSize(int& screen_width, int& screen_height)
+void GL4Renderer::GetScreenSize(int& screen_width, int& screen_height)
 {
 	screen_width = OpenGL_state.screen_width;
 	screen_height = OpenGL_state.screen_height;
 }
 
-double GL3Renderer::GetDisplayRefreshRate()
+double GL4Renderer::GetDisplayRefreshRate()
 {
 #if defined(SDL3)
 	if (GLWindow)
@@ -1692,6 +1692,6 @@ double GL3Renderer::GetDisplayRefreshRate()
 	return 0.0;
 }
 
-GL3Renderer::GL3Renderer()
+GL4Renderer::GL4Renderer()
 {
 }

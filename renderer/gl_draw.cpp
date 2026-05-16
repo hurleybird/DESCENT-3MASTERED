@@ -25,17 +25,17 @@ constexpr int NUM_LEGACY_VERTEX_ATTRIBS = 5;
 //The count of vertices that each buffer will store
 constexpr int NUM_VERTS_PER_BUFFER = 640000;
 
-void GL3Renderer::UseDrawVAO()
+void GL4Renderer::UseDrawVAO()
 {
 	glBindVertexArray(drawvao);
 }
 
-void GL3Renderer::RestoreLegacy()
+void GL4Renderer::RestoreLegacy()
 {
 	glBindVertexArray(drawvao);
 }
 
-void GL3Renderer::InitPersistentDrawBuffer(size_t size)
+void GL4Renderer::InitPersistentDrawBuffer(size_t size)
 {
 	//Due to names becoming immutable when using buffer storage,
 	//need to recycle buffers by explicitly deleting the old one. OpenGL maintains its lifetime until it is done
@@ -93,7 +93,7 @@ void GL3Renderer::InitPersistentDrawBuffer(size_t size)
 #endif
 }
 
-void GL3Renderer::DestroyPersistentDrawBuffer()
+void GL4Renderer::DestroyPersistentDrawBuffer()
 {
 	if (OpenGL_buffer_storage_enabled && drawbuffer)
 	{
@@ -104,7 +104,7 @@ void GL3Renderer::DestroyPersistentDrawBuffer()
 	}
 }
 
-void GL3Renderer::InitMotionVectorDraw()
+void GL4Renderer::InitMotionVectorDraw()
 {
 	if (motionvector_vao != 0)
 		return;
@@ -127,7 +127,7 @@ void GL3Renderer::InitMotionVectorDraw()
 	glBindVertexArray(drawvao);
 }
 
-void GL3Renderer::DestroyMotionVectorDraw()
+void GL4Renderer::DestroyMotionVectorDraw()
 {
 	glDeleteBuffers(1, &motionvector_vbo);
 	glDeleteVertexArrays(1, &motionvector_vao);
@@ -135,7 +135,7 @@ void GL3Renderer::DestroyMotionVectorDraw()
 	motionvector_vao = 0;
 }
 
-void GL3Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
+void GL4Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 {
 	if (!motion_object_active || motionvectorshader.Handle() == 0 ||
 		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || nv <= 0)
@@ -190,7 +190,7 @@ void GL3Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 	UseDrawVAO();
 }
 
-void GL3Renderer::DrawMotionVectorTriangles(const gl_motion_vertex* vertices, int nv)
+void GL4Renderer::DrawMotionVectorTriangles(const gl_motion_vertex* vertices, int nv)
 {
 	if (!motion_object_active || motionvectorshader.Handle() == 0 ||
 		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || !vertices || nv <= 0)
@@ -232,12 +232,12 @@ void GL3Renderer::DrawMotionVectorTriangles(const gl_motion_vertex* vertices, in
 	UseDrawVAO();
 }
 
-int GL3Renderer::CopyVertices(int numvertices)
+int GL4Renderer::CopyVertices(int numvertices)
 {
 	return CopyVertices(GL_vertices, numvertices);
 }
 
-int GL3Renderer::CopyVertices(const gl_vertex* vertices, int numvertices)
+int GL4Renderer::CopyVertices(const gl_vertex* vertices, int numvertices)
 {
 	if (OpenGL_buffer_storage_enabled)
 	{
@@ -279,7 +279,7 @@ int GL3Renderer::CopyVertices(const gl_vertex* vertices, int numvertices)
 	}
 }
 
-void GL3Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xscalar, float yscalar,
+void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xscalar, float yscalar,
 	ubyte fr, ubyte fg, ubyte fb)
 {
 	float alpha = Alpha_multiplier * OpenGL_Alpha_factor;
@@ -362,7 +362,7 @@ void GL3Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 	vert.vert.z = -z;
 }
 
-void GL3Renderer::SetDrawDefaults()
+void GL4Renderer::SetDrawDefaults()
 {
 	//Init shaders
 	CFILE* cf = cfopen("generic.vert", "rb");
@@ -469,7 +469,7 @@ void GL3Renderer::SetDrawDefaults()
 	InitMotionVectorDraw();
 }
 
-void GL3Renderer::SelectDrawShader()
+void GL4Renderer::SelectDrawShader()
 {
 	int shader_index = 0;
 
@@ -542,7 +542,7 @@ void GL3Renderer::SelectDrawShader()
 
 // Takes nv vertices and draws the 3D polygon defined by those vertices.
 // Uses bitmap "handle" as a texture
-void GL3Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
+void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 {
 	g3Point* pnt;
 	int i;
@@ -691,7 +691,7 @@ void GL3Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 	CHECK_ERROR(10);
 }
 
-void GL3Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, int count, int map_type)
+void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, int count, int map_type)
 {
 	if (!items || count <= 0)
 		return;
@@ -817,7 +817,7 @@ void GL3Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 
 // Takes nv vertices and draws the 2D polygon defined by those vertices.
 // Uses bitmap "handle" as a texture
-void GL3Renderer::DrawPolygon2D(int handle, g3Point** p, int nv)
+void GL4Renderer::DrawPolygon2D(int handle, g3Point** p, int nv)
 {
 	ASSERT(nv < 100);
 	ASSERT(Overlay_type == OT_NONE);
@@ -825,17 +825,17 @@ void GL3Renderer::DrawPolygon2D(int handle, g3Point** p, int nv)
 	DrawPolygon3D(handle, p, nv, MAP_TYPE_BITMAP);
 }
 
-void GL3Renderer::BeginMotionObject(int object_handle, float screen_x, float screen_y)
+void GL4Renderer::BeginMotionObject(int object_handle, float screen_x, float screen_y)
 {
 	motion_object_active = object_handle >= 0 && framebuffer_ok && motion_vectors.velocity_texture != 0;
 }
 
-void GL3Renderer::EndMotionObject()
+void GL4Renderer::EndMotionObject()
 {
 	motion_object_active = false;
 }
 
-bool GL3Renderer::ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y)
+bool GL4Renderer::ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y)
 {
 	if (!world_pos || !screen_x || !screen_y || !have_previous_view_projection)
 		return false;
@@ -860,7 +860,7 @@ bool GL3Renderer::ProjectPreviousFramePoint(const vector *world_pos, float *scre
 }
 
 // draws a scaled 2d bitmap to our buffer
-void GL3Renderer::DrawScaledBitmap(int x1, int y1, int x2, int y2,
+void GL4Renderer::DrawScaledBitmap(int x1, int y1, int x2, int y2,
 	int bm, float u0, float v0, float u1, float v1, int color, float* alphas)
 {
 	g3Point* ptr_pnts[4];
@@ -915,7 +915,7 @@ void GL3Renderer::DrawScaledBitmap(int x1, int y1, int x2, int y2,
 	DrawPolygon2D(bm, ptr_pnts, 4);
 }
 
-void GL3Renderer::DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
+void GL4Renderer::DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
 	int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas)
 {
 	g3Point* ptr_pnts[4];
@@ -981,7 +981,7 @@ void GL3Renderer::DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
 }
 
 // Fills a rectangle on the display
-void GL3Renderer::FillRect(ddgr_color color, int x1, int y1, int x2, int y2)
+void GL4Renderer::FillRect(ddgr_color color, int x1, int y1, int x2, int y2)
 {
 	int r = GR_COLOR_RED(color);
 	int g = GR_COLOR_GREEN(color);
@@ -1006,7 +1006,7 @@ void GL3Renderer::FillRect(ddgr_color color, int x1, int y1, int x2, int y2)
 }
 
 // Sets a pixel on the display
-void GL3Renderer::SetPixel(ddgr_color color, int x, int y)
+void GL4Renderer::SetPixel(ddgr_color color, int x, int y)
 {
 	ubyte r = (color >> 16 & 0xFF);
 	ubyte g = (color >> 8 & 0xFF);
@@ -1032,23 +1032,23 @@ void GL3Renderer::SetPixel(ddgr_color color, int x, int y)
 }
 
 // Sets a pixel on the display
-ddgr_color GL3Renderer::GetPixel(int x, int y)
+ddgr_color GL4Renderer::GetPixel(int x, int y)
 {
 	ddgr_color color[4];
 	glReadPixels(ScaledX(x), FramebufferHeight() - 1 - ScaledY(y), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, (GLvoid*)color);
 	return color[0];
 }
 
-void GL3Renderer::FillCircle(ddgr_color col, int x, int y, int rad)
+void GL4Renderer::FillCircle(ddgr_color col, int x, int y, int rad)
 {
 }
 
-void GL3Renderer::DrawCircle(int x, int y, int rad)
+void GL4Renderer::DrawCircle(int x, int y, int rad)
 {
 }
 
 // Sets up a font character to draw.  We draw our fonts as pieces of textures
-void GL3Renderer::DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y2, float u, float v, float w, float h)
+void GL4Renderer::DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y2, float u, float v, float w, float h)
 {
 	g3Point* ptr_pnts[4];
 	g3Point pnts[4];
@@ -1084,7 +1084,7 @@ void GL3Renderer::DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y
 }
 
 // Draws a line
-void GL3Renderer::DrawLine(int x1, int y1, int x2, int y2)
+void GL4Renderer::DrawLine(int x1, int y1, int x2, int y2)
 {
 	sbyte atype;
 	light_state ltype;
@@ -1132,7 +1132,7 @@ void GL3Renderer::DrawLine(int x1, int y1, int x2, int y2)
 
 
 // Sets the argb characteristics of the font characters.  color1 is the upper left and proceeds clockwise
-void GL3Renderer::SetCharacterParameters(ddgr_color color1, ddgr_color color2, ddgr_color color3, ddgr_color color4)
+void GL4Renderer::SetCharacterParameters(ddgr_color color1, ddgr_color color2, ddgr_color color3, ddgr_color color4)
 {
 	rend_FontRed[0] = (float)(GR_COLOR_RED(color1) / 255.0f);
 	rend_FontRed[1] = (float)(GR_COLOR_RED(color2) / 255.0f);
@@ -1153,7 +1153,7 @@ void GL3Renderer::SetCharacterParameters(ddgr_color color1, ddgr_color color2, d
 }
 
 // Turns on/off multitexture blending
-void GL3Renderer::SetMultitextureBlendMode(bool state)
+void GL4Renderer::SetMultitextureBlendMode(bool state)
 {
 	if (OpenGL_multitexture_state == state)
 		return;
@@ -1169,7 +1169,7 @@ void GL3Renderer::SetMultitextureBlendMode(bool state)
 }
 
 // Draws a line using the states of the renderer
-void GL3Renderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
+void GL4Renderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 {
 	ubyte fr, fg, fb, alpha;
 	int i;
@@ -1236,7 +1236,7 @@ void GL3Renderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 }
 
 //	given a chunked bitmap, renders it.
-void GL3Renderer::DrawChunkedBitmap(chunked_bitmap* chunk, int x, int y, ubyte alpha)
+void GL4Renderer::DrawChunkedBitmap(chunked_bitmap* chunk, int x, int y, ubyte alpha)
 {
 	int* bm_array = chunk->bm_array;
 	int w = chunk->w;
@@ -1272,7 +1272,7 @@ void GL3Renderer::DrawChunkedBitmap(chunked_bitmap* chunk, int x, int y, ubyte a
 }
 
 //	given a chunked bitmap, renders it.scaled
-void GL3Renderer::DrawScaledChunkedBitmap(chunked_bitmap* chunk, int x, int y, int neww, int newh, ubyte alpha)
+void GL4Renderer::DrawScaledChunkedBitmap(chunked_bitmap* chunk, int x, int y, int neww, int newh, ubyte alpha)
 {
 	int* bm_array = chunk->bm_array;
 	int w = chunk->w;
@@ -1322,7 +1322,7 @@ void GL3Renderer::DrawScaledChunkedBitmap(chunked_bitmap* chunk, int x, int y, i
 }
 
 // Draws a simple bitmap at the specified x,y location
-void GL3Renderer::DrawSimpleBitmap(int bm_handle, int x, int y)
+void GL4Renderer::DrawSimpleBitmap(int bm_handle, int x, int y)
 {
 	SetAlphaType(AT_CONSTANT_TEXTURE);
 	SetAlphaValue(255);

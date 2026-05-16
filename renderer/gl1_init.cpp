@@ -138,7 +138,7 @@ int GLCompatibilityRenderer::Setup(SDL_Window* window)
 	SDL_GLContext context = SDL_GL_CreateContext(window);
 	if (context == nullptr)
 	{
-		Error("GL3Renderer::Setup: SDL_GL_CreateContext failed!\n%s", SDL_GetError());
+		Error("GLCompatibilityRenderer::Setup: SDL_GL_CreateContext failed!\n%s", SDL_GetError());
 		return 0;
 	}
 
@@ -305,7 +305,7 @@ int GLCompatibilityRenderer::Init(oeApplication* app, renderer_preferred_state* 
 	}
 	else
 	{
-		Error("GL3Renderer::Init: Can't get app ptr");
+		Error("GLCompatibilityRenderer::Init: Can't get app ptr");
 	}
 #elif defined(WIN32)
 	/***********************************************************

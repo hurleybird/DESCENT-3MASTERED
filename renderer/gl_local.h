@@ -73,8 +73,8 @@ struct gl_motion_vertex
 	float velocity_x, velocity_y;
 };
 
-constexpr int NUM_GL3_FBOS = 2;
-class GL3Renderer : public IRenderer
+constexpr int NUM_GL4_FBOS = 2;
+class GL4Renderer : public IRenderer
 {
 	//MAIN
 	oeApplication* ParentApplication = nullptr;
@@ -83,7 +83,7 @@ class GL3Renderer : public IRenderer
 	bool OpenGL_packed_pixels = false;
 	bool Fast_test_render = false;
 
-	Framebuffer framebuffers[NUM_GL3_FBOS];
+	Framebuffer framebuffers[NUM_GL4_FBOS];
 	Framebuffer resolved_framebuffer;
 	Framebuffer downscale_framebuffer;
 	Framebuffer bloom_source_framebuffer;
@@ -234,7 +234,7 @@ class GL3Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.0f, 0.25f };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, false };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -322,7 +322,7 @@ private:
 	void UpdateLegacyBlock(float* projection, float* modelview);
 
 public:
-	GL3Renderer();
+	GL4Renderer();
 
 	//INITIALIZATION
 

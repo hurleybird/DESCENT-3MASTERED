@@ -65,7 +65,7 @@ int rend_Init(renderer_type state, oeApplication* app, renderer_preferred_state*
 	switch (OpenGLProfile)
 	{
 	case GLPROFILE_CORE:
-		renderer_inst = new GL3Renderer();
+		renderer_inst = new GL4Renderer();
 		break;
 	case GLPROFILE_COMPAT:
 		renderer_inst = new GLCompatibilityRenderer();

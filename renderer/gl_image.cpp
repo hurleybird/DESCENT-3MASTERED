@@ -52,14 +52,14 @@ int OpenGL_uploads;
 
 bool OpenGL_cache_initted;
 
-void GL3Renderer::InitImages()
+void GL4Renderer::InitImages()
 {
 	memset(texture_name_list, 0, sizeof(texture_name_list));
 	Cur_texture_object_num = 1;
 	Last_texel_unit_set = -1;
 }
 
-void GL3Renderer::FreeImages()
+void GL4Renderer::FreeImages()
 {
 	uint* delete_list = (uint*)mem_malloc(Cur_texture_object_num * sizeof(int));
 	ASSERT(delete_list);
@@ -72,7 +72,7 @@ void GL3Renderer::FreeImages()
 	mem_free(delete_list);
 }
 
-int GL3Renderer::MakeTextureObject(int tn, bool wrap)
+int GL4Renderer::MakeTextureObject(int tn, bool wrap)
 {
 	int num = Cur_texture_object_num;
 
@@ -111,7 +111,7 @@ int GL3Renderer::MakeTextureObject(int tn, bool wrap)
 extern bool Force_one_texture;
 
 // Utilizes a LRU cacheing scheme to select/upload textures the opengl driver
-int GL3Renderer::MakeBitmapCurrent(int handle, int map_type, int tn)
+int GL4Renderer::MakeBitmapCurrent(int handle, int map_type, int tn)
 {
 	int w, h;
 	int texnum;
@@ -189,7 +189,7 @@ int GL3Renderer::MakeBitmapCurrent(int handle, int map_type, int tn)
 }
 
 // Sets up an appropriate wrap type for the current bound texture
-void GL3Renderer::MakeWrapTypeCurrent(int handle, int map_type, int tn)
+void GL4Renderer::MakeWrapTypeCurrent(int handle, int map_type, int tn)
 {
 	int uwrap;
 	wrap_type dest_wrap;
@@ -245,7 +245,7 @@ void GL3Renderer::MakeWrapTypeCurrent(int handle, int map_type, int tn)
 }
 
 // Chooses the correct filter type for the currently bound texture
-void GL3Renderer::MakeFilterTypeCurrent(int handle, int map_type, int tn)
+void GL4Renderer::MakeFilterTypeCurrent(int handle, int map_type, int tn)
 {
 	int magf, mmip;
 	sbyte dest_filter, dest_mip;
@@ -310,7 +310,7 @@ void GL3Renderer::MakeFilterTypeCurrent(int handle, int map_type, int tn)
 	CHECK_ERROR(9);
 }
 
-int GL3Renderer::InitCache()
+int GL4Renderer::InitCache()
 {
 	OpenGL_bitmap_remap = (ushort*)mem_malloc(MAX_BITMAPS * 2);
 	ASSERT(OpenGL_bitmap_remap);
@@ -355,7 +355,7 @@ int GL3Renderer::InitCache()
 	return 1;
 }
 
-void GL3Renderer::FreeCache()
+void GL4Renderer::FreeCache()
 {
 	if (OpenGL_cache_initted)
 	{
@@ -368,7 +368,7 @@ void GL3Renderer::FreeCache()
 }
 
 // Resets the texture cache
-void GL3Renderer::ResetCache()
+void GL4Renderer::ResetCache()
 {
 	if (OpenGL_cache_initted)
 	{
@@ -382,7 +382,7 @@ void GL3Renderer::ResetCache()
 	InitCache();
 }
 
-void GL3Renderer::FreeUploadBuffers()
+void GL4Renderer::FreeUploadBuffers()
 {
 	if (OpenGL_packed_pixels)
 	{
@@ -417,7 +417,7 @@ void GL3Renderer::FreeUploadBuffers()
 	opengl_last_upload_res = 0;
 }
 
-void GL3Renderer::SetUploadBufferSize(int width, int height)
+void GL4Renderer::SetUploadBufferSize(int width, int height)
 {
 	if ((width * height) <= opengl_last_upload_res)
 		return;
@@ -547,7 +547,7 @@ void GL3Renderer::SetUploadBufferSize(int width, int height)
 }
 
 // Takes our 16bit format and converts it into the memory scheme that OpenGL wants
-void GL3Renderer::TranslateBitmapToOpenGL(int texnum, int bm_handle, int map_type, int replace, int tn)
+void GL4Renderer::TranslateBitmapToOpenGL(int texnum, int bm_handle, int map_type, int replace, int tn)
 {
 	ushort* bm_ptr;
 
@@ -777,7 +777,7 @@ void GL3Renderer::TranslateBitmapToOpenGL(int texnum, int bm_handle, int map_typ
 	OpenGL_uploads++;
 }
 
-void GL3Renderer::ChangeChunkedBitmap(int bm_handle, chunked_bitmap* chunk)
+void GL4Renderer::ChangeChunkedBitmap(int bm_handle, chunked_bitmap* chunk)
 {
 	int bw = bm_w(bm_handle, 0);
 	int bh = bm_h(bm_handle, 0);
@@ -879,7 +879,7 @@ void GL3Renderer::ChangeChunkedBitmap(int bm_handle, chunked_bitmap* chunk)
 
 // Takes a bitmap and blits it to the screen using linear frame buffer stuff
 // X and Y are the destination X,Y
-void GL3Renderer::CopyBitmapToFramebuffer(int bm_handle, int x, int y)
+void GL4Renderer::CopyBitmapToFramebuffer(int bm_handle, int x, int y)
 {
 	ASSERT(opengl_Framebuffer_ready);
 
@@ -897,7 +897,7 @@ void GL3Renderer::CopyBitmapToFramebuffer(int bm_handle, int x, int y)
 }
 
 // Gets a renderer ready for a framebuffer copy, or stops a framebuffer copy
-void GL3Renderer::SetFrameBufferCopyState(bool state)
+void GL4Renderer::SetFrameBufferCopyState(bool state)
 {
 	if (state)
 	{
@@ -917,21 +917,21 @@ void GL3Renderer::SetFrameBufferCopyState(bool state)
 	}
 }
 
-void GL3Renderer::BindBitmap(int handle)
+void GL4Renderer::BindBitmap(int handle)
 {
 	MakeBitmapCurrent(handle, MAP_TYPE_BITMAP, 0);
 	MakeWrapTypeCurrent(handle, MAP_TYPE_BITMAP, 0);
 	MakeFilterTypeCurrent(handle, MAP_TYPE_BITMAP, 0);
 }
 
-void GL3Renderer::BindLightmap(int handle)
+void GL4Renderer::BindLightmap(int handle)
 {
 	MakeBitmapCurrent(handle, MAP_TYPE_LIGHTMAP, 1);
 	MakeWrapTypeCurrent(handle, MAP_TYPE_LIGHTMAP, 1);
 	MakeFilterTypeCurrent(handle, MAP_TYPE_LIGHTMAP, 1);
 }
 
-void GL3Renderer::ClearBoundTextures()
+void GL4Renderer::ClearBoundTextures()
 {
 	OpenGL_last_bound[0] = -1;
 	OpenGL_last_bound[1] = -1;
