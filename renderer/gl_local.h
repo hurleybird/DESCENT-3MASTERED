@@ -92,6 +92,7 @@ class GL3Renderer : public IRenderer
 	Framebuffer hbao_depth_overlay_framebuffer;
 	Framebuffer hbao_scene_framebuffer;
 	Framebuffer hbao_composite_framebuffer;
+	Framebuffer post_present_framebuffer;
 	MotionVectorResources motion_vectors;
 	HBAOMaskResources hbao_mask;
 	int framebuffer_current_draw = 0;

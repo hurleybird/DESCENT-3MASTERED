@@ -464,6 +464,7 @@ bool GL3Renderer::BeginPostPresentFrame()
 	const bool hbao_enabled = OpenGL_preferred_state.hbao_enabled && framebuffer_ok;
 	const bool bloom_enabled = OpenGL_preferred_state.bloom_enabled;
 	const bool late_post_enabled = hbao_enabled || bloom_enabled;
+	post_present_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
 	if (supersampling_factor >= 4)
 	{
 		downsampleshader.Use();
@@ -571,14 +572,16 @@ bool GL3Renderer::BeginPostPresentFrame()
 			GL_BindFramebufferTexture(post_protection_mask, 3, GL_NEAREST);
 		{
 			PERF_MARKER_SCOPE("Bloom.Composite");
-			GL_DrawFramebufferQuad(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h);
+			GL_DrawFramebufferQuad(post_present_framebuffer.Handle(), 0, 0,
+				post_present_framebuffer.Width(), post_present_framebuffer.Height());
 		}
 	}
 	else
 	{
 		blitshader.Use();
 		glUniform1f(blitshader_gamma, display_gamma);
-		present_framebuffer->BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
+		present_framebuffer->BlitTo(post_present_framebuffer.Handle(), 0, 0,
+			post_present_framebuffer.Width(), post_present_framebuffer.Height(), false);
 	}
 	ShaderProgram::ClearBinding();
 
@@ -605,11 +608,10 @@ bool GL3Renderer::BeginPostPresentFrame()
 
 void GL3Renderer::StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags)
 {
-	UpdatePresentRect();
-
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	post_present_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, post_present_framebuffer.Handle());
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-	glDrawBuffer(GL_BACK);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
 	GLenum glclearflags = 0;
 	if (clear_flags & RF_CLEAR_ZBUFFER)
@@ -631,23 +633,21 @@ void GL3Renderer::StartPostPresentFrame(int x1, int y1, int x2, int y2, int clea
 	float projection[16];
 	GL_Ortho(projection, 0, x2 - x1, y2 - y1, 0, 0, 1);
 	UpdateLegacyBlock(projection, mat4_identity);
-
-	const int game_width = OpenGL_state.screen_width > 0 ? OpenGL_state.screen_width : (x2 - x1);
-	const int game_height = OpenGL_state.screen_height > 0 ? OpenGL_state.screen_height : (y2 - y1);
-	const float scale_x = game_width > 0 ? (float)framebuffer_blit_w / (float)game_width : 1.0f;
-	const float scale_y = game_height > 0 ? (float)framebuffer_blit_h / (float)game_height : 1.0f;
-	const int phys_x1 = (int)floorf((float)x1 * scale_x + 0.5f);
-	const int phys_x2 = (int)floorf((float)x2 * scale_x + 0.5f);
-	const int phys_y1 = (int)floorf((float)y1 * scale_y + 0.5f);
-	const int phys_y2 = (int)floorf((float)y2 * scale_y + 0.5f);
-	glViewport((GLint)framebuffer_blit_x + phys_x1,
-		(GLint)framebuffer_blit_y + (GLint)framebuffer_blit_h - phys_y2,
-		std::max(1, phys_x2 - phys_x1),
-		std::max(1, phys_y2 - phys_y1));
+	glViewport(x1, OpenGL_state.screen_height - y2, x2 - x1, y2 - y1);
 }
 
 void GL3Renderer::EndPostPresentFrame()
 {
+	if (post_present_pending_swap)
+	{
+		UpdatePresentRect();
+		blitshader.Use();
+		glUniform1f(blitshader_gamma, 1.0f);
+		post_present_framebuffer.BlitTo(0, framebuffer_blit_x, framebuffer_blit_y,
+			framebuffer_blit_w, framebuffer_blit_h, false);
+		ShaderProgram::ClearBinding();
+	}
+
 #if defined(SDL3)
 	SDL_GL_SwapWindow(GLWindow);
 #elif defined(WIN32)
@@ -1456,6 +1456,7 @@ void GL3Renderer::UpdateFramebuffer(void)
 		hbao_depth_overlay_framebuffer.Destroy();
 		hbao_scene_framebuffer.Destroy();
 		hbao_composite_framebuffer.Destroy();
+		post_present_framebuffer.Destroy();
 		motion_vectors.Destroy();
 		hbao_mask.Destroy();
 	}
@@ -1480,6 +1481,7 @@ void GL3Renderer::UpdateFramebuffer(void)
 		downscale_framebuffer.Update(OpenGL_state.screen_width * 2, OpenGL_state.screen_height * 2, 0);
 	else
 		downscale_framebuffer.Destroy();
+	post_present_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
 
 	bloom_source_valid = false;
 	hbao_depth_overlay_valid = false;
@@ -1515,6 +1517,7 @@ void GL3Renderer::CloseFramebuffer(void)
 	hbao_depth_overlay_framebuffer.Destroy();
 	hbao_scene_framebuffer.Destroy();
 	hbao_composite_framebuffer.Destroy();
+	post_present_framebuffer.Destroy();
 	bloom_source_valid = false;
 	hbao_depth_overlay_valid = false;
 	hbao_scene_valid = false;
