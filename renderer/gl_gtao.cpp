@@ -476,7 +476,7 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	//-------------------------------------------------------------------------
 	// Pass 3: Optional separable bilateral blur (X then Y).
 	//-------------------------------------------------------------------------
-	int blur_radius = ClampInt((int)pref_state.gtao_blur_radius, 0, 8);
+	int blur_radius = ClampInt((int)pref_state.gtao_blur_radius, 0, 20);
 	ColorFramebuffer* blurred = &ao_framebuffer;
 
 	if (blur_radius > 0)

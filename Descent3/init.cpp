@@ -743,7 +743,7 @@ void LoadGameSettings()
 	tempint = Render_preferred_state.gtao_blur_radius;
 	Database->read_int("RS_gtao_blur_radius", &tempint);
 	if (tempint < 0) tempint = 0;
-	if (tempint > 8) tempint = 8;
+	if (tempint > 20) tempint = 20;
 	Render_preferred_state.gtao_blur_radius = (ubyte)tempint;
 	READ_FLOAT_SETTING("RS_gtao_radius", Render_preferred_state.gtao_radius);
 	if (Render_preferred_state.gtao_radius < 0.1f) Render_preferred_state.gtao_radius = 0.1f;

@@ -193,8 +193,8 @@ static int ConfigNormalizeGTAOBlurRadius(int radius)
 {
 	if (radius < 0)
 		return 0;
-	if (radius > 8)
-		return 8;
+	if (radius > 20)
+		return 20;
 	return radius;
 }
 
@@ -1189,7 +1189,7 @@ struct video_menu
 		Render_preferred_state.gtao_sample_count = (ushort)ConfigNormalizeGTAOSampleCount(
 			CALC_SLIDER_INT_VALUE(*samples, 1, 1024, 1023));
 		Render_preferred_state.gtao_blur_radius = (ubyte)ConfigNormalizeGTAOBlurRadius(
-			CALC_SLIDER_INT_VALUE(*blur, 0, 8, 8));
+			CALC_SLIDER_INT_VALUE(*blur, 0, 20, 20));
 		Render_preferred_state.gtao_radius = ConfigNormalizeGTAORadius(
 			CALC_SLIDER_FLOAT_VALUE(*radius, 0.1f, 12.0f, 119));
 		Render_preferred_state.gtao_intensity = ConfigNormalizeGTAOIntensity(
@@ -1229,10 +1229,10 @@ struct video_menu
 			&settings);
 
 		settings.min_val.i = 0;
-		settings.max_val.i = 8;
+		settings.max_val.i = 20;
 		settings.type = SLIDER_UNITS_INT;
-		blur = tuning_sheet->AddSlider("Blur radius", 8,
-			CALC_SLIDER_POS_INT(ConfigNormalizeGTAOBlurRadius(Render_preferred_state.gtao_blur_radius), &settings, 8),
+		blur = tuning_sheet->AddSlider("Blur radius", 20,
+			CALC_SLIDER_POS_INT(ConfigNormalizeGTAOBlurRadius(Render_preferred_state.gtao_blur_radius), &settings, 20),
 			&settings);
 
 		settings.min_val.f = 0.1f;
