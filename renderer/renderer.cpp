@@ -253,6 +253,14 @@ bool rend_BeginPostPresentFrame()
 	return renderer_inst->BeginPostPresentFrame();
 }
 
+bool rend_IsPostPresentFramePending()
+{
+	if (!Renderer_initted)
+		return false;
+
+	return renderer_inst->IsPostPresentFramePending();
+}
+
 void rend_StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags)
 {
 	if (!Renderer_initted)

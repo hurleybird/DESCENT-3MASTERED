@@ -54,6 +54,7 @@
 #include "TelCom.h"
 #include "scorch.h"
 #include "render.h"
+#include "renderer.h"
 #include "stringtable.h"
 #include "ddio_common.h"
 #include "gamesave.h"
@@ -1122,7 +1123,8 @@ void SetNextLevel()
 
 void GameFrameUI()
 {
-	GameFrame();
+	if (!rend_IsPostPresentFramePending())
+		GameFrame();
 	Last_game_state = Game_state;
 }
 

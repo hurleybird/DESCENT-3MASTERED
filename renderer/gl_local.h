@@ -518,6 +518,7 @@ public:
 	// Flips the surface
 	void Flip() override;
 	bool BeginPostPresentFrame() override;
+	bool IsPostPresentFramePending() const override;
 	void StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags = RF_CLEAR_ZBUFFER) override;
 	void EndPostPresentFrame() override;
 

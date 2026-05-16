@@ -345,6 +345,7 @@ void rend_EndFrame();
 void rend_CaptureBloomSource();
 
 bool rend_BeginPostPresentFrame();
+bool rend_IsPostPresentFramePending();
 void rend_StartPostPresentFrame(int x1,int y1,int x2,int y2,int clear_flags=RF_CLEAR_ZBUFFER);
 void rend_EndPostPresentFrame();
 

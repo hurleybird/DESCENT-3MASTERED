@@ -629,6 +629,11 @@ bool GL3Renderer::BeginPostPresentFrame()
 	return true;
 }
 
+bool GL3Renderer::IsPostPresentFramePending() const
+{
+	return post_present_pending_swap;
+}
+
 void GL3Renderer::StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags)
 {
 	post_present_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);

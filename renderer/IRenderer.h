@@ -229,6 +229,7 @@ public:
 	// Flips the surface
 	virtual void Flip() = 0;
 	virtual bool BeginPostPresentFrame() { return false; }
+	virtual bool IsPostPresentFramePending() const { return false; }
 	virtual void StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags = RF_CLEAR_ZBUFFER) {}
 	virtual void EndPostPresentFrame() {}
 
