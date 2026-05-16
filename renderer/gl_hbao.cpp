@@ -22,8 +22,8 @@
 
 namespace
 {
-	//Mersenne-Twister-derived noise values (lifted from the bundled HBAO
-	//Unity reference). Two channels: (cos-of-angle-ish, jitter).
+	//Mersenne-Twister-derived noise values. Two channels:
+	//(cos-of-angle-ish, jitter).
 	const float kMtNoise[32] =
 	{
 		0.556725f, 0.005520f, 0.708315f, 0.583199f, 0.236644f, 0.992380f, 0.981091f, 0.119804f,
@@ -142,15 +142,6 @@ namespace
 			(framebuffer.Width() > (uint32_t)width || framebuffer.Height() > (uint32_t)height);
 	}
 
-	int ClampHBAONoiseMode(int noise_mode)
-	{
-		if (noise_mode < HBAO_NOISE_REFERENCE)
-			return HBAO_NOISE_REFERENCE;
-		if (noise_mode > HBAO_NOISE_IGN)
-			return HBAO_NOISE_IGN;
-		return noise_mode;
-	}
-
 	void HBAODrawFullscreen(GLuint framebuffer, int width, int height)
 	{
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
@@ -169,7 +160,6 @@ void HBAOResources::InitShaders()
 	extern const char* hbaoDepthFragmentSrc;
 	extern const char* hbaoAOFragmentSrc;
 	extern const char* hbaoBlurFragmentSrc;
-	extern const char* hbaoTemporalFragmentSrc;
 	extern const char* hbaoSuppressionFragmentSrc;
 	extern const char* hbaoApplyFragmentSrc;
 
@@ -204,9 +194,6 @@ void HBAOResources::InitShaders()
 	ao_inv_screen_size = ao_shader.FindUniform("inv_screen_size");
 	ao_ao_inv_screen_size = ao_shader.FindUniform("ao_inv_screen_size");
 	ao_screen_size = ao_shader.FindUniform("screen_size");
-	ao_temporal = ao_shader.FindUniform("temporal");
-	ao_noise_scale = ao_shader.FindUniform("noise_scale");
-	ao_noise_mode = ao_shader.FindUniform("noise_mode");
 	ao_directions = ao_shader.FindUniform("directions");
 	ao_steps = ao_shader.FindUniform("steps");
 
@@ -225,27 +212,6 @@ void HBAOResources::InitShaders()
 	blur_y_delta = blur_y_shader.FindUniform("blur_delta");
 	blur_y_sharpness = blur_y_shader.FindUniform("sharpness");
 	blur_y_radius = blur_y_shader.FindUniform("kernel_radius");
-
-	temporal_shader.AttachSource(blitVertexSrc, hbaoTemporalFragmentSrc);
-	temporal_shader.Use();
-	temporal_current_ao = temporal_shader.FindUniform("current_ao_tex");
-	temporal_history = temporal_shader.FindUniform("history_tex");
-	temporal_depth = temporal_shader.FindUniform("depth_tex");
-	temporal_motion = temporal_shader.FindUniform("motion_tex");
-	temporal_motion_ms = temporal_shader.FindUniform("motion_ms_tex");
-	if (temporal_current_ao != -1) glUniform1i(temporal_current_ao, 0);
-	if (temporal_history != -1) glUniform1i(temporal_history, 1);
-	if (temporal_depth != -1) glUniform1i(temporal_depth, 2);
-	if (temporal_motion != -1) glUniform1i(temporal_motion, 3);
-	if (temporal_motion_ms != -1) glUniform1i(temporal_motion_ms, 4);
-	temporal_motion_samples = temporal_shader.FindUniform("motion_samples");
-	temporal_input_screen_size = temporal_shader.FindUniform("input_screen_size");
-	temporal_ao_screen_size = temporal_shader.FindUniform("ao_screen_size");
-	temporal_current_inv_view_projection = temporal_shader.FindUniform("current_inv_view_projection");
-	temporal_previous_view_projection = temporal_shader.FindUniform("previous_view_projection");
-	temporal_has_history = temporal_shader.FindUniform("has_history");
-	temporal_has_motion = temporal_shader.FindUniform("has_motion");
-	temporal_history_weight = temporal_shader.FindUniform("history_weight");
 
 	suppression_shader.AttachSource(blitVertexSrc, hbaoSuppressionFragmentSrc);
 	suppression_shader.Use();
@@ -305,7 +271,6 @@ void HBAOResources::DestroyShaders()
 	ao_shader.Destroy();
 	blur_x_shader.Destroy();
 	blur_y_shader.Destroy();
-	temporal_shader.Destroy();
 	suppression_shader.Destroy();
 	apply_shader.Destroy();
 	if (noise_texture)
@@ -320,8 +285,6 @@ bool HBAOResources::HasFramebuffers() const
 	return ao_depth_framebuffer.Handle() != 0 ||
 		ao_framebuffer.Handle() != 0 ||
 		ao_blur_framebuffer.Handle() != 0 ||
-		temporal_framebuffers[0].Handle() != 0 ||
-		temporal_framebuffers[1].Handle() != 0 ||
 		suppression_framebuffer.Handle() != 0;
 }
 
@@ -330,10 +293,7 @@ void HBAOResources::DestroyFramebuffers()
 	ao_depth_framebuffer.Destroy();
 	ao_framebuffer.Destroy();
 	ao_blur_framebuffer.Destroy();
-	temporal_framebuffers[0].Destroy();
-	temporal_framebuffers[1].Destroy();
 	suppression_framebuffer.Destroy();
-	InvalidateHistory();
 }
 
 void HBAOResources::Destroy()
@@ -342,19 +302,10 @@ void HBAOResources::Destroy()
 	DestroyShaders();
 }
 
-void HBAOResources::InvalidateHistory()
-{
-	temporal_valid = false;
-	temporal_settings_valid = false;
-}
-
 void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const renderer_preferred_state& pref_state,
 	const rendering_state& render_state, const float* projection,
-	float nearz, float farz, GLuint motion_texture, GLuint suppression_mask_texture,
-	GLuint depth_overlay_texture,
-	const float* current_inv_view_projection,
-	const float* previous_view_projection,
-	bool has_previous_view_projection)
+	float nearz, float farz, GLuint suppression_mask_texture,
+	GLuint depth_overlay_texture)
 {
 	if (!source || !pref_state.hbao_enabled)
 	{
@@ -362,10 +313,6 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		{
 			glFinish();
 			DestroyFramebuffers();
-		}
-		else
-		{
-			InvalidateHistory();
 		}
 		return;
 	}
@@ -397,8 +344,6 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	if (FramebufferLargerThan(ao_depth_framebuffer, ao_width, ao_height) ||
 		FramebufferLargerThan(ao_framebuffer, ao_width, ao_height) ||
 		FramebufferLargerThan(ao_blur_framebuffer, ao_width, ao_height) ||
-		FramebufferLargerThan(temporal_framebuffers[0], ao_width, ao_height) ||
-		FramebufferLargerThan(temporal_framebuffers[1], ao_width, ao_height) ||
 		FramebufferLargerThan(suppression_framebuffer, ao_width, ao_height))
 	{
 		glFinish();
@@ -412,7 +357,7 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	//per AO pixel instead of inside every horizon sample.
 	ao_depth_framebuffer.Update(ao_width, ao_height, GL_R32F, GL_RED, GL_FLOAT);
 	//These buffers store AO plus linear depth; half-float depth avoids
-	//depth-edge ghosts from 8-bit quantization in blur and temporal rejection.
+	//depth-edge ghosts from 8-bit quantization in the bilateral blur.
 	ao_framebuffer.Update(ao_width, ao_height, GL_RG16F, GL_RG, GL_FLOAT);
 	ao_blur_framebuffer.Update(ao_width, ao_height, GL_RG16F, GL_RG, GL_FLOAT);
 
@@ -465,7 +410,6 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	int directions = 0;
 	int steps = 0;
 	HBAOSamplePattern(samples, &directions, &steps);
-	int noise_mode = ClampHBAONoiseMode(pref_state.hbao_noise);
 
 	float radius = pref_state.hbao_radius;
 	if (radius < 0.5f) radius = 0.5f;
@@ -480,31 +424,10 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	if (intensity > 4.0f) intensity = 4.0f;
 
 	int blur = pref_state.hbao_blur;
-	if (!temporal_settings_valid ||
-		temporal_enabled != pref_state.hbao_temporal ||
-		temporal_samples != samples ||
-		temporal_noise != noise_mode ||
-		temporal_resolution != pref_state.hbao_resolution ||
-		temporal_blur != blur ||
-		temporal_radius != radius ||
-		temporal_intensity != intensity ||
-		temporal_bias != bias)
-	{
-		temporal_valid = false;
-		temporal_settings_valid = true;
-		temporal_enabled = pref_state.hbao_temporal;
-		temporal_samples = samples;
-		temporal_noise = noise_mode;
-		temporal_resolution = pref_state.hbao_resolution;
-		temporal_blur = blur;
-		temporal_radius = radius;
-		temporal_intensity = intensity;
-		temporal_bias = bias;
-	}
 
 	//Convert world-space radius to a pixel-space scale at depth==1. The shader
 	//then divides by per-pixel depth to get the on-screen step size. This is
-	//equivalent to the Unity reference: r_pixels = radius * 0.5 * (h / tan(fov/2)).
+	//Equivalent to: r_pixels = radius * 0.5 * (h / tan(fov/2)).
 	//Since m11 = 1 / tan(half_y_fov_with_aspect_compensation), pixel size is:
 	float radius_pixels = radius * 0.5f * (float)ao_height * m11;
 	float max_radius_pixels = 128.0f * sqrtf((float)(ao_width * ao_height) / (1080.0f * 1920.0f));
@@ -512,30 +435,6 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 
 	float neg_inv_r2 = -1.0f / (radius * radius);
 	float multiplier = (2.0f * (1.0f / (1.0f - bias))) / (float)(steps * directions);
-
-	static const float kTemporalRotations[8] =
-	{
-		0.0f / 8.0f, 5.0f / 8.0f, 3.0f / 8.0f, 7.0f / 8.0f,
-		1.0f / 8.0f, 4.0f / 8.0f, 2.0f / 8.0f, 6.0f / 8.0f,
-	};
-	static const float kTemporalJitters[8] =
-	{
-		0.5f / 8.0f, 4.5f / 8.0f, 2.5f / 8.0f, 6.5f / 8.0f,
-		1.5f / 8.0f, 5.5f / 8.0f, 3.5f / 8.0f, 7.5f / 8.0f,
-	};
-	int temporal_phase = frame_counter & 7;
-	float rotation = kTemporalRotations[temporal_phase];
-	float jitter = kTemporalJitters[temporal_phase];
-	if (!pref_state.hbao_temporal)
-	{
-		rotation = 0.0f;
-		jitter = 0.5f;
-		temporal_valid = false;
-	}
-	else
-	{
-		frame_counter++;
-	}
 
 	glDisable(GL_BLEND);
 	glDisable(GL_DEPTH_TEST);
@@ -590,10 +489,6 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		if (ao_ao_inv_screen_size != -1)
 			glUniform2f(ao_ao_inv_screen_size, 1.0f / (float)ao_width, 1.0f / (float)ao_height);
 		glUniform2f(ao_screen_size, (float)ao_width, (float)ao_height);
-		glUniform2f(ao_temporal, rotation, jitter);
-		glUniform2f(ao_noise_scale, (float)ao_width / 4.0f, (float)ao_height / 4.0f);
-		if (ao_noise_mode != -1)
-			glUniform1i(ao_noise_mode, noise_mode);
 		glUniform1i(ao_directions, directions);
 		glUniform1i(ao_steps, steps);
 
@@ -606,7 +501,7 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	//-------------------------------------------------------------------------
 	// Pass 3: Optional separable bilateral blur (X then Y).
 	//-------------------------------------------------------------------------
-	int blur_radius = BlurKernelRadius(pref_state.hbao_blur);
+	int blur_radius = BlurKernelRadius(blur);
 	ColorFramebuffer* blurred = &ao_framebuffer;
 
 	if (blur_radius > 0)
@@ -644,71 +539,10 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		blurred = &ao_framebuffer;
 	}
 
-	//-------------------------------------------------------------------------
-	// Pass 4: Reproject and accumulate AO history.
-	//-------------------------------------------------------------------------
 	ColorFramebuffer* apply_source = blurred;
-	bool temporal_ready = pref_state.hbao_temporal &&
-		current_inv_view_projection != nullptr &&
-		previous_view_projection != nullptr &&
-		has_previous_view_projection &&
-		temporal_shader.Handle() != 0;
-	if (temporal_ready)
-	{
-		PERF_MARKER_SCOPE("HBAO.Temporal");
-
-		if (temporal_framebuffers[0].Width() != (uint32_t)ao_width ||
-			temporal_framebuffers[0].Height() != (uint32_t)ao_height ||
-			temporal_framebuffers[1].Width() != (uint32_t)ao_width ||
-			temporal_framebuffers[1].Height() != (uint32_t)ao_height)
-		{
-			temporal_valid = false;
-		}
-
-		temporal_framebuffers[0].Update(ao_width, ao_height, GL_RG16F, GL_RG, GL_FLOAT);
-		temporal_framebuffers[1].Update(ao_width, ao_height, GL_RG16F, GL_RG, GL_FLOAT);
-
-		uint32_t write_index = temporal_index & 1;
-		uint32_t read_index = (temporal_index + 1) & 1;
-
-		temporal_shader.Use();
-		if (temporal_current_inv_view_projection != -1)
-			glUniformMatrix4fv(temporal_current_inv_view_projection, 1, GL_FALSE, current_inv_view_projection);
-		if (temporal_previous_view_projection != -1)
-			glUniformMatrix4fv(temporal_previous_view_projection, 1, GL_FALSE, previous_view_projection);
-		if (temporal_has_history != -1)
-			glUniform1i(temporal_has_history, temporal_valid ? 1 : 0);
-		if (temporal_has_motion != -1)
-			glUniform1i(temporal_has_motion, motion_texture != 0 ? 1 : 0);
-		if (temporal_history_weight != -1)
-			glUniform1f(temporal_history_weight, 0.90f);
-		if (temporal_motion_samples != -1)
-			glUniform1i(temporal_motion_samples, input_samples);
-		if (temporal_input_screen_size != -1)
-			glUniform2f(temporal_input_screen_size, (float)source_width, (float)source_height);
-		if (temporal_ao_screen_size != -1)
-			glUniform2f(temporal_ao_screen_size, (float)ao_width, (float)ao_height);
-
-		rend_ClearBoundTextures();
-		GL_BindFramebufferTexture(blurred->ColorTextureForRead(), 0, GL_NEAREST);
-		GL_BindFramebufferTexture(temporal_framebuffers[read_index].ColorTextureForRead(), 1, GL_NEAREST);
-		GL_BindFramebufferTexture(ao_depth_framebuffer.ColorTextureForRead(), 2, GL_NEAREST);
-		if (motion_texture != 0)
-			GL_BindFramebufferTexture(motion_texture, 3, GL_NEAREST);
-
-		HBAODrawFullscreen(temporal_framebuffers[write_index].Handle(), ao_width, ao_height);
-
-		apply_source = &temporal_framebuffers[write_index];
-		temporal_index = read_index;
-		temporal_valid = true;
-	}
-	else
-	{
-		temporal_valid = false;
-	}
 
 	//-------------------------------------------------------------------------
-	// Pass 5: Build the final HBAO suppression mask.
+	// Pass 4: Build the final HBAO suppression mask.
 	//-------------------------------------------------------------------------
 	GLuint final_suppression_mask = 0;
 	bool bloom_mask_enabled = pref_state.bloom_enabled && scene_color_texture != 0;
@@ -743,7 +577,7 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	}
 
 	//-------------------------------------------------------------------------
-	// Pass 6: Modulate target scene color in-place.
+	// Pass 5: Modulate target scene color in-place.
 	//
 	// Draw a fullscreen quad to the target framebuffer with blend mode
 	// (DST_COLOR, ZERO) so the destination is multiplied by our AO factor.
@@ -775,7 +609,7 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		HBAODrawFullscreen(target->Handle(), target_width, target_height);
 	}
 
-	//Pass 6 multiplied AO into the target color attachment; any cached
+	//Pass 5 multiplied AO into the target color attachment; any cached
 	//single-sample resolve from earlier in this frame no longer matches.
 	target->MarkColorDirty();
 

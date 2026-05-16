@@ -256,12 +256,6 @@ enum hbao_quality
 #define HBAO_DEFAULT_SAMPLES 32
 #define HBAO_MAX_SAMPLES 1024
 
-enum hbao_noise
-{
-	HBAO_NOISE_REFERENCE = 0, //4x4 reference noise texture
-	HBAO_NOISE_IGN = 1,       //Interleaved Gradient Noise
-};
-
 //HBAO blur kernel width.
 enum hbao_blur
 {
@@ -304,10 +298,8 @@ struct renderer_preferred_state
 	float bloom_spread;
 
 	bool hbao_enabled;       //Master HBAO on/off
-	bool hbao_temporal;      //Use per-frame jitter plus temporal accumulation
 	ubyte hbao_quality;      //Legacy hbao_quality bucket derived from sample count
 	ushort hbao_samples;     //Total AO samples per pixel
-	ubyte hbao_noise;        //hbao_noise enum
 	ubyte hbao_resolution;   //hbao_resolution enum
 	ubyte hbao_blur;         //hbao_blur enum
 	float hbao_radius;       //World-space sample radius in map units (1..16-ish)

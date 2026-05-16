@@ -536,23 +536,11 @@ bool GL3Renderer::BeginPostPresentFrame()
 			if (far_z <= near_z) far_z = near_z * 1000.0f;
 		}
 
-		const bool motion_matches_present =
-			framebuffers[framebuffer_current_draw].Width() == present_framebuffer->Width() &&
-			framebuffers[framebuffer_current_draw].Height() == present_framebuffer->Height();
-		GLuint motion_texture = motion_vectors_dirty && motion_matches_present ?
-			motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
 		GLuint hbao_depth_overlay_texture = hbao_depth_overlay_valid ?
 			hbao_depth_overlay_framebuffer.DepthTextureRaw() : 0;
 		hbao.Apply(present_framebuffer, present_framebuffer, OpenGL_preferred_state,
-			OpenGL_state, last_projection, near_z, far_z, motion_texture, post_protection_mask,
-			hbao_depth_overlay_texture,
-			have_current_inverse_view_projection ? current_inverse_view_projection : nullptr,
-			previous_view_projection,
-			have_current_inverse_view_projection && have_previous_view_projection);
-	}
-	else
-	{
-		hbao.InvalidateHistory();
+			OpenGL_state, last_projection, near_z, far_z, post_protection_mask,
+			hbao_depth_overlay_texture);
 	}
 
 	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_enabled ? present_framebuffer : nullptr,
@@ -698,9 +686,6 @@ void GL3Renderer::CaptureBloomSource()
 	const bool hbao_enabled = OpenGL_preferred_state.hbao_enabled && framebuffer_ok;
 	const bool bloom_enabled = OpenGL_preferred_state.bloom_enabled;
 	const bool late_post_enabled = hbao_enabled || bloom_enabled;
-
-	if (!hbao_enabled)
-		hbao.InvalidateHistory();
 
 	if (framebuffer_ok)
 	{

@@ -300,20 +300,7 @@ struct HBAOResources
 	ColorFramebuffer ao_framebuffer;
 	//Scratch used as ping-pong for the separable bilateral blur.
 	ColorFramebuffer ao_blur_framebuffer;
-	ColorFramebuffer temporal_framebuffers[2];
 	ColorFramebuffer suppression_framebuffer;
-	uint32_t frame_counter = 0;
-	uint32_t temporal_index = 0;
-	bool temporal_valid = false;
-	bool temporal_settings_valid = false;
-	bool temporal_enabled = true;
-	int temporal_samples = -1;
-	int temporal_noise = -1;
-	int temporal_resolution = -1;
-	int temporal_blur = -1;
-	float temporal_radius = -1.0f;
-	float temporal_intensity = -1.0f;
-	float temporal_bias = -1.0f;
 
 	GLuint noise_texture = 0;
 
@@ -321,7 +308,6 @@ struct HBAOResources
 	ShaderProgram ao_shader;
 	ShaderProgram blur_x_shader;
 	ShaderProgram blur_y_shader;
-	ShaderProgram temporal_shader;
 	ShaderProgram suppression_shader;
 	ShaderProgram apply_shader;
 
@@ -347,9 +333,6 @@ struct HBAOResources
 	GLint ao_inv_screen_size = -1;  //1/width, 1/height
 	GLint ao_ao_inv_screen_size = -1;
 	GLint ao_screen_size = -1;      //width, height
-	GLint ao_temporal = -1;         //(rotation, jitter offset)
-	GLint ao_noise_scale = -1;      //(width/4, height/4)
-	GLint ao_noise_mode = -1;
 	GLint ao_directions = -1;
 	GLint ao_steps = -1;
 
@@ -360,21 +343,6 @@ struct HBAOResources
 	GLint blur_y_delta = -1;
 	GLint blur_y_sharpness = -1;
 	GLint blur_y_radius = -1;
-
-	//Temporal accumulation shader uniforms.
-	GLint temporal_current_ao = -1;
-	GLint temporal_history = -1;
-	GLint temporal_depth = -1;
-	GLint temporal_motion = -1;
-	GLint temporal_motion_ms = -1;
-	GLint temporal_motion_samples = -1;
-	GLint temporal_input_screen_size = -1;
-	GLint temporal_ao_screen_size = -1;
-	GLint temporal_current_inv_view_projection = -1;
-	GLint temporal_previous_view_projection = -1;
-	GLint temporal_has_history = -1;
-	GLint temporal_has_motion = -1;
-	GLint temporal_history_weight = -1;
 
 	//Suppression mask shader uniforms.
 	GLint suppression_existing_mask = -1;
@@ -398,17 +366,13 @@ struct HBAOResources
 	bool HasFramebuffers() const;
 	void DestroyFramebuffers();
 	void Destroy();
-	void InvalidateHistory();
 	//Computes AO for the supplied source framebuffer (which must have valid
 	//color + depth). Modulates target->color, or source->color when target is
 	//null, by sampling pref_state and projection info.
 	void Apply(Framebuffer* source, Framebuffer* target, const renderer_preferred_state& pref_state,
 		const rendering_state& render_state, const float* projection,
-		float nearz, float farz, GLuint motion_texture, GLuint suppression_mask_texture,
-		GLuint depth_overlay_texture,
-		const float* current_inv_view_projection,
-		const float* previous_view_projection,
-		bool has_previous_view_projection);
+		float nearz, float farz, GLuint suppression_mask_texture,
+		GLuint depth_overlay_texture);
 };
 
 inline int RendererSupersamplingFactor(const renderer_preferred_state& state)

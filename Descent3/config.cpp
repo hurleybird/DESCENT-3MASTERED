@@ -898,10 +898,8 @@ void ConfigValidateGameWindowSize()
 
 static void ConfigApplyFixedHBAOSettings()
 {
-	Render_preferred_state.hbao_temporal = true;
 	Render_preferred_state.hbao_quality = HBAO_QUALITY_HIGH;
 	Render_preferred_state.hbao_samples = HBAO_DEFAULT_SAMPLES;
-	Render_preferred_state.hbao_noise = HBAO_NOISE_REFERENCE;
 	Render_preferred_state.hbao_blur = HBAO_BLUR_WIDE;
 	Render_preferred_state.hbao_radius = 3.0f;
 	Render_preferred_state.hbao_intensity = 1.25f;
@@ -959,15 +957,6 @@ static int ConfigNormalizeHBAOBlur(int blur)
 	return blur;
 }
 
-static int ConfigNormalizeHBAONoise(int noise)
-{
-	if (noise < HBAO_NOISE_REFERENCE)
-		return HBAO_NOISE_REFERENCE;
-	if (noise > HBAO_NOISE_IGN)
-		return HBAO_NOISE_IGN;
-	return noise;
-}
-
 static float ConfigClampFloat(float value, float min_value, float max_value)
 {
 	if (value < min_value)
@@ -985,7 +974,6 @@ static void ConfigNormalizeHBAOSettings()
 		samples = HBAOQualityToSamples(quality);
 	Render_preferred_state.hbao_samples = (ushort)ConfigNormalizeHBAOSamples(samples);
 	Render_preferred_state.hbao_quality = (ubyte)HBAOSamplesToQuality(Render_preferred_state.hbao_samples);
-	Render_preferred_state.hbao_noise = (ubyte)ConfigNormalizeHBAONoise(Render_preferred_state.hbao_noise);
 	Render_preferred_state.hbao_resolution = (ubyte)ConfigNormalizeHBAOResolution(Render_preferred_state.hbao_resolution);
 	if (Render_preferred_state.hbao_resolution == HBAO_RESOLUTION_AUTO)
 		Render_preferred_state.hbao_resolution = HBAO_RESOLUTION_HALF;
@@ -1279,7 +1267,7 @@ struct video_menu
 			sheet->UpdateChanges();
 	}
 
-	bool apply_hbao_tuning_controls(bool* enabled, bool* temporal, short* samples, int* noise, int* resolution, int* blur,
+	bool apply_hbao_tuning_controls(bool* enabled, short* samples, int* resolution, int* blur,
 		short* radius, short* intensity, short* bias,
 		const tSliderSettings& sample_settings,
 		const tSliderSettings& radius_settings, const tSliderSettings& intensity_settings,
@@ -1287,12 +1275,10 @@ struct video_menu
 	{
 		bool changed = false;
 		const bool new_enabled = ConfigCanUseHBAO() && enabled && *enabled;
-		const bool new_temporal = temporal && *temporal;
 		const ushort new_samples = (ushort)ConfigNormalizeHBAOSamples(samples ?
 			CALC_SLIDER_INT_VALUE(*samples, sample_settings.min_val.i, sample_settings.max_val.i, HBAO_SAMPLE_SLIDER_UNITS) :
 			Render_preferred_state.hbao_samples);
 		const ubyte new_quality = (ubyte)HBAOSamplesToQuality(new_samples);
-		const ubyte new_noise = (ubyte)ConfigNormalizeHBAONoise(noise ? *noise : Render_preferred_state.hbao_noise);
 		const ubyte new_resolution = (ubyte)HBAOTuningIndexToResolution(resolution ? *resolution :
 			HBAOResolutionToTuningIndex(Render_preferred_state.hbao_resolution));
 		const ubyte new_blur = (ubyte)ConfigNormalizeHBAOBlur(blur ? *blur : Render_preferred_state.hbao_blur);
@@ -1311,11 +1297,6 @@ struct video_menu
 			Render_preferred_state.hbao_enabled = new_enabled;
 			changed = true;
 		}
-		if (Render_preferred_state.hbao_temporal != new_temporal)
-		{
-			Render_preferred_state.hbao_temporal = new_temporal;
-			changed = true;
-		}
 		if (Render_preferred_state.hbao_quality != new_quality)
 		{
 			Render_preferred_state.hbao_quality = new_quality;
@@ -1324,11 +1305,6 @@ struct video_menu
 		if (Render_preferred_state.hbao_samples != new_samples)
 		{
 			Render_preferred_state.hbao_samples = new_samples;
-			changed = true;
-		}
-		if (Render_preferred_state.hbao_noise != new_noise)
-		{
-			Render_preferred_state.hbao_noise = new_noise;
 			changed = true;
 		}
 		if (Render_preferred_state.hbao_resolution != new_resolution)
@@ -1360,7 +1336,7 @@ struct video_menu
 		return changed;
 	}
 
-	void refresh_hbao_tuning_controls(newuiSheet* tuning_sheet, bool* enabled, bool* temporal, short* samples, int* noise,
+	void refresh_hbao_tuning_controls(newuiSheet* tuning_sheet, bool* enabled, short* samples,
 		int* resolution, int* blur, short* radius, short* intensity, short* bias,
 		const tSliderSettings& sample_settings,
 		const tSliderSettings& radius_settings, const tSliderSettings& intensity_settings,
@@ -1368,12 +1344,8 @@ struct video_menu
 	{
 		if (enabled)
 			*enabled = Render_preferred_state.hbao_enabled;
-		if (temporal)
-			*temporal = Render_preferred_state.hbao_temporal;
 		if (samples)
 			*samples = CALC_SLIDER_POS_INT(Render_preferred_state.hbao_samples, &sample_settings, HBAO_SAMPLE_SLIDER_UNITS);
-		if (noise)
-			*noise = ConfigNormalizeHBAONoise(Render_preferred_state.hbao_noise);
 		if (resolution)
 			*resolution = HBAOResolutionToTuningIndex(Render_preferred_state.hbao_resolution);
 		if (blur)
@@ -1402,9 +1374,7 @@ struct video_menu
 		newuiTiledWindow menu;
 		newuiSheet* tuning_sheet;
 		bool* enabled;
-		bool* temporal;
 		short* samples;
-		int* noise;
 		int* resolution;
 		int* blur;
 		short* radius;
@@ -1436,12 +1406,6 @@ struct video_menu
 
 		tuning_sheet->NewGroup("General", 0, 0);
 		enabled = tuning_sheet->AddLongCheckBox("Enabled", Render_preferred_state.hbao_enabled);
-		temporal = tuning_sheet->AddLongCheckBox("Temporal filter", Render_preferred_state.hbao_temporal);
-
-		tuning_sheet->NewGroup("Noise", 214, 0);
-		noise = tuning_sheet->AddFirstLongRadioButton("Reference");
-		tuning_sheet->AddLongRadioButton("IGN");
-		*noise = ConfigNormalizeHBAONoise(Render_preferred_state.hbao_noise);
 
 		tuning_sheet->NewGroup("Samples", 0, 70);
 		samples = tuning_sheet->AddSlider("Count", HBAO_SAMPLE_SLIDER_UNITS,
@@ -1489,17 +1453,17 @@ struct video_menu
 			{
 				ConfigApplyFixedHBAOSettings();
 				ConfigNormalizeHBAOSettings();
-				refresh_hbao_tuning_controls(tuning_sheet, enabled, temporal, samples, noise, resolution, blur,
+				refresh_hbao_tuning_controls(tuning_sheet, enabled, samples, resolution, blur,
 					radius, intensity, bias, sample_settings, radius_settings, intensity_settings, bias_settings);
 				changed = true;
 			}
-			else if (tuning_sheet->HasChanged(enabled) || tuning_sheet->HasChanged(temporal) ||
-				tuning_sheet->HasChanged(samples) || tuning_sheet->HasChanged(noise) ||
+			else if (tuning_sheet->HasChanged(enabled) ||
+				tuning_sheet->HasChanged(samples) ||
 				tuning_sheet->HasChanged(resolution) ||
 				tuning_sheet->HasChanged(blur) || tuning_sheet->HasChanged(radius) ||
 				tuning_sheet->HasChanged(intensity) || tuning_sheet->HasChanged(bias))
 			{
-				changed = apply_hbao_tuning_controls(enabled, temporal, samples, noise, resolution, blur,
+				changed = apply_hbao_tuning_controls(enabled, samples, resolution, blur,
 					radius, intensity, bias, sample_settings, radius_settings, intensity_settings, bias_settings);
 			}
 
@@ -1513,7 +1477,7 @@ struct video_menu
 		bool accepted = result == UID_OK;
 		if (accepted)
 		{
-			if (apply_hbao_tuning_controls(enabled, temporal, samples, noise, resolution, blur,
+			if (apply_hbao_tuning_controls(enabled, samples, resolution, blur,
 				radius, intensity, bias, sample_settings, radius_settings, intensity_settings, bias_settings))
 			{
 				rend_SetPreferredState(&Render_preferred_state);

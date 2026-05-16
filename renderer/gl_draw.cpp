@@ -1062,10 +1062,13 @@ void GL3Renderer::DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y
 	pnts[3].p3_sy = y2;
 	pnts[3].p3_u = u;
 	pnts[3].p3_v = v + h;
+	float old_hbao_suppression = hbao_suppression_draw_value;
 	float old_bloom_suppression = bloom_suppression_draw_value;
+	SetHBAOSuppression(1.0f);
 	SetBloomSuppression(1.0f);
 	DrawPolygon2D(bm_handle, ptr_pnts, 4);
 	SetBloomSuppression(old_bloom_suppression);
+	SetHBAOSuppression(old_hbao_suppression);
 }
 
 // Draws a line

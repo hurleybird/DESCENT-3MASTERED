@@ -156,10 +156,8 @@ bool Mouse_limitpolling = false;
 
 static void ApplyFixedHBAOSettings()
 {
-	Render_preferred_state.hbao_temporal = true;
 	Render_preferred_state.hbao_quality = HBAO_QUALITY_HIGH;
 	Render_preferred_state.hbao_samples = HBAO_DEFAULT_SAMPLES;
-	Render_preferred_state.hbao_noise = HBAO_NOISE_REFERENCE;
 	Render_preferred_state.hbao_blur = HBAO_BLUR_WIDE;
 	Render_preferred_state.hbao_radius = 3.0f;
 	Render_preferred_state.hbao_intensity = 1.25f;
@@ -197,15 +195,6 @@ static int HBAOSamplesToQuality(int samples)
 	if (samples <= 24)
 		return HBAO_QUALITY_MEDIUM;
 	return HBAO_QUALITY_HIGH;
-}
-
-static int NormalizeHBAONoise(int noise)
-{
-	if (noise < HBAO_NOISE_REFERENCE)
-		return HBAO_NOISE_REFERENCE;
-	if (noise > HBAO_NOISE_IGN)
-		return HBAO_NOISE_IGN;
-	return noise;
 }
 
 int IsLocalOk(void)
@@ -437,10 +426,8 @@ void SaveGameSettings()
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_spread);
 	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
 	Database->write("RS_hbao_enabled", Render_preferred_state.hbao_enabled);
-	Database->write("RS_hbao_temporal", Render_preferred_state.hbao_temporal);
 	Database->write("RS_hbao_quality", Render_preferred_state.hbao_quality);
 	Database->write("RS_hbao_samples", Render_preferred_state.hbao_samples);
-	Database->write("RS_hbao_noise", Render_preferred_state.hbao_noise);
 	Database->write("RS_hbao_resolution", Render_preferred_state.hbao_resolution);
 	Database->write("RS_hbao_blur", Render_preferred_state.hbao_blur);
 	sprintf(tempbuffer, "%f", Render_preferred_state.hbao_radius);
@@ -784,7 +771,6 @@ void LoadGameSettings()
 		Render_preferred_state.bloom_intensity = ConfigNormalizeBloomIntensity((float)strtod(bloom_intensity_value, &stoptemp));
 
 	Database->read("RS_hbao_enabled", &Render_preferred_state.hbao_enabled);
-	Database->read("RS_hbao_temporal", &Render_preferred_state.hbao_temporal);
 	tempint = Render_preferred_state.hbao_quality;
 	Database->read_int("RS_hbao_quality", &tempint);
 	if (tempint < 0) tempint = 0;
@@ -795,9 +781,6 @@ void LoadGameSettings()
 	tempint = NormalizeHBAOSamples(tempint);
 	Render_preferred_state.hbao_samples = (ushort)tempint;
 	Render_preferred_state.hbao_quality = (ubyte)HBAOSamplesToQuality(tempint);
-	tempint = Render_preferred_state.hbao_noise;
-	Database->read_int("RS_hbao_noise", &tempint);
-	Render_preferred_state.hbao_noise = (ubyte)NormalizeHBAONoise(tempint);
 	tempint = Render_preferred_state.hbao_resolution;
 	Database->read_int("RS_hbao_resolution", &tempint);
 	if (tempint < HBAO_RESOLUTION_AUTO) tempint = HBAO_RESOLUTION_AUTO;
