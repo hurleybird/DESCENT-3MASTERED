@@ -17,6 +17,7 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "gl_local.h"
+#include "gameloop.h"
 #include "rtperformance.h"
 #include <math.h>
 
@@ -439,21 +440,30 @@ void GL3Renderer::Flip()
 	if (supersampling_factor >= 4)
 	{
 		downsampleshader.Use();
-		framebuffers[framebuffer_current_draw].DownsampleTo(downscale_framebuffer.Handle(), 0, 0,
-			downscale_framebuffer.Width(), downscale_framebuffer.Height(), downsampleshader_gamma, display_gamma,
-			downsampleshader_dest_origin);
+		{
+			PERF_MARKER_SCOPE("Post.PresentDownsample.4xTo2x");
+			framebuffers[framebuffer_current_draw].DownsampleTo(downscale_framebuffer.Handle(), 0, 0,
+				downscale_framebuffer.Width(), downscale_framebuffer.Height(), downsampleshader_gamma, display_gamma,
+				downsampleshader_dest_origin);
+		}
 		downsampleshader.Use();
-		downscale_framebuffer.DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
-			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
-			downsampleshader_dest_origin);
+		{
+			PERF_MARKER_SCOPE("Post.PresentDownsample.2xTo1x");
+			downscale_framebuffer.DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
+				resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
+				downsampleshader_dest_origin);
+		}
 		present_framebuffer = &resolved_framebuffer;
 	}
 	else if (supersampling_factor >= 2)
 	{
 		downsampleshader.Use();
-		framebuffers[framebuffer_current_draw].DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
-			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
-			downsampleshader_dest_origin);
+		{
+			PERF_MARKER_SCOPE("Post.PresentDownsample.2xTo1x");
+			framebuffers[framebuffer_current_draw].DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
+				resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
+				downsampleshader_dest_origin);
+		}
 		present_framebuffer = &resolved_framebuffer;
 	}
 
@@ -465,8 +475,11 @@ void GL3Renderer::Flip()
 		GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
 		GL_BindFramebufferTexture(hbao_scene_framebuffer.ColorTextureForRead(), 1, GL_NEAREST);
 		GL_BindFramebufferTexture(bloom_source_framebuffer.ColorTextureForRead(), 2, GL_NEAREST);
-		GL_DrawFramebufferQuad(hbao_composite_framebuffer.Handle(), 0, 0,
-			hbao_composite_framebuffer.Width(), hbao_composite_framebuffer.Height());
+		{
+			PERF_MARKER_SCOPE("HBAO.DeferredComposite");
+			GL_DrawFramebufferQuad(hbao_composite_framebuffer.Handle(), 0, 0,
+				hbao_composite_framebuffer.Width(), hbao_composite_framebuffer.Height());
+		}
 		present_framebuffer = &hbao_composite_framebuffer;
 	}
 
@@ -485,7 +498,10 @@ void GL3Renderer::Flip()
 		GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
 		GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);
 		GL_BindFramebufferTexture(bloom_scene_source->ColorTextureForRead(), 2, GL_NEAREST);
-		GL_DrawFramebufferQuad(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h);
+		{
+			PERF_MARKER_SCOPE("Bloom.Composite");
+			GL_DrawFramebufferQuad(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h);
+		}
 	}
 	else
 	{
@@ -583,29 +599,42 @@ void GL3Renderer::CaptureBloomSource()
 	{
 		bloom_source_downscale_framebuffer.Update(width * 2, height * 2, 0);
 		downsampleshader.Use();
-		framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_downscale_framebuffer.Handle(), 0, 0,
-			bloom_source_downscale_framebuffer.Width(), bloom_source_downscale_framebuffer.Height(),
-			downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+		{
+			PERF_MARKER_SCOPE("Post.CaptureDownsample.4xTo2x");
+			framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_downscale_framebuffer.Handle(), 0, 0,
+				bloom_source_downscale_framebuffer.Width(), bloom_source_downscale_framebuffer.Height(),
+				downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+		}
 		downsampleshader.Use();
-		bloom_source_downscale_framebuffer.DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
-			bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
-			downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+		{
+			PERF_MARKER_SCOPE("Post.CaptureDownsample.2xTo1x");
+			bloom_source_downscale_framebuffer.DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
+				bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
+				downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+		}
 	}
 	else if (supersampling_factor >= 2)
 	{
 		downsampleshader.Use();
-		framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
-			bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
-			downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+		{
+			PERF_MARKER_SCOPE("Post.CaptureDownsample.2xTo1x");
+			framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
+				bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
+				downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+		}
 	}
 	else
 	{
-		framebuffers[framebuffer_current_draw].BlitToRaw(bloom_source_framebuffer.Handle(), 0, 0,
-			bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(), GL_NEAREST);
+		{
+			PERF_MARKER_SCOPE("Post.CaptureBlit");
+			framebuffers[framebuffer_current_draw].BlitToRaw(bloom_source_framebuffer.Handle(), 0, 0,
+				bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(), GL_NEAREST);
+		}
 	}
 
 	if (bloom_enabled)
 	{
+		PERF_MARKER_SCOPE("Post.CaptureDepth");
 		framebuffers[framebuffer_current_draw].BlitDepthTo(bloom_source_framebuffer.Handle(), 0, 0,
 			bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height());
 	}
@@ -613,8 +642,11 @@ void GL3Renderer::CaptureBloomSource()
 	if (hbao_enabled)
 	{
 		hbao_scene_framebuffer.Update(width, height, 0);
-		bloom_source_framebuffer.BlitToRaw(hbao_scene_framebuffer.Handle(), 0, 0,
-			hbao_scene_framebuffer.Width(), hbao_scene_framebuffer.Height(), GL_NEAREST);
+		{
+			PERF_MARKER_SCOPE("HBAO.SceneCopy");
+			bloom_source_framebuffer.BlitToRaw(hbao_scene_framebuffer.Handle(), 0, 0,
+				hbao_scene_framebuffer.Width(), hbao_scene_framebuffer.Height(), GL_NEAREST);
+		}
 
 		float near_z = last_nearz;
 		float far_z = last_farz;

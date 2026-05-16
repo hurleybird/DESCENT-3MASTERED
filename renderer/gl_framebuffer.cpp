@@ -16,6 +16,7 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "gl_local.h"
+#include "gameloop.h"
 
 static GLuint fbVAOName;
 static GLuint fbVBOName;
@@ -578,6 +579,7 @@ void Framebuffer::BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned
 void Framebuffer::DownsampleTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h,
 	GLint gamma_uniform, float gamma, GLint dest_origin_uniform)
 {
+	PERF_MARKER_SCOPE("Post.DownsampleTo");
 	SubFramebufferBlit(GL_COLOR_BUFFER_BIT);
 
 #ifdef _DEBUG
@@ -1095,14 +1097,20 @@ Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred
 	GL_BindFramebufferTexture(source->ColorTextureForRead(), 0, GL_LINEAR);
 	if (depth_texture != 0)
 		GL_BindFramebufferTexture(depth_texture, 2, GL_NEAREST);
-	GL_DrawFramebufferQuadNoClear(framebuffers[0].Handle(), 0, 0, widths[0], heights[0]);
+	{
+		PERF_MARKER_SCOPE("Bloom.Threshold");
+		GL_DrawFramebufferQuadNoClear(framebuffers[0].Handle(), 0, 0, widths[0], heights[0]);
+	}
 
 	downsampleshader.Use();
 	for (int i = 1; i < downsample_count; i++)
 	{
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(framebuffers[i - 1].ColorTextureForRead(), 0, GL_LINEAR);
-		GL_DrawFramebufferQuadNoClear(framebuffers[i].Handle(), 0, 0, widths[i], heights[i]);
+		{
+			PERF_MARKER_SCOPE("Bloom.Downsample");
+			GL_DrawFramebufferQuadNoClear(framebuffers[i].Handle(), 0, 0, widths[i], heights[i]);
+		}
 		downsampleshader.Use();
 	}
 
@@ -1116,7 +1124,10 @@ Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(framebuffers[level].ColorTextureForRead(), 0, GL_LINEAR);
 		GL_BindFramebufferTexture(framebuffers[previous_index].ColorTextureForRead(), 1, GL_LINEAR);
-		GL_DrawFramebufferQuadNoClear(framebuffers[output_index].Handle(), 0, 0, widths[level], heights[level]);
+		{
+			PERF_MARKER_SCOPE("Bloom.Merge");
+			GL_DrawFramebufferQuadNoClear(framebuffers[output_index].Handle(), 0, 0, widths[level], heights[level]);
+		}
 		previous_index = output_index;
 		output_index++;
 	}

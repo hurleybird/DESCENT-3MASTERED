@@ -166,6 +166,15 @@ static double Perf_marker_frame_start = 0.0;
 static std::vector<PerfMarkerRecord> Perf_marker_records;
 static std::vector<PerfMarkerStackEntry> Perf_marker_stack;
 
+static bool PerfMarkersShouldCaptureGameplayFrame()
+{
+	return !Dedicated_server &&
+		!Skip_render_game_frame &&
+		!Game_paused &&
+		!Menu_interface_mode &&
+		Game_interface_mode == GAME_INTERFACE;
+}
+
 static void PerfMarkersCopyName(char* dest, const char* source)
 {
 	if (!source)
@@ -226,6 +235,8 @@ void PerfMarkersBeginFrame()
 {
 	if (!Perf_markers_enabled || !Perf_marker_file)
 		return;
+	if (!PerfMarkersShouldCaptureGameplayFrame())
+		return;
 
 	Perf_marker_frame_active = true;
 	Perf_marker_frame_start = timer_GetTime64();
@@ -242,6 +253,14 @@ void PerfMarkersEndFrame()
 		return;
 
 	const double frame_end = timer_GetTime64();
+	if (!PerfMarkersShouldCaptureGameplayFrame())
+	{
+		Perf_marker_records.clear();
+		Perf_marker_stack.clear();
+		Perf_marker_frame_active = false;
+		return;
+	}
+
 	PolymodelPerfFlush();
 	RenderObjectPerfFlush();
 	fprintf(Perf_marker_file, "FRAME\t%d\t%.3f\t%.3f\t%.3f\tgametime=%.3f\tframetime=%.3f\n",
@@ -2405,7 +2424,6 @@ void GameRenderFrame(void)
 		Last_powerup_sparkle_time -= POWERUP_SPARKLE_INTERVAL;
 	}
 
-	PerfMarkersEndFrame();
 }
 
 void GameProcessMusic()
@@ -2898,8 +2916,12 @@ void GameFrame(void)
 		if (!Skip_render_game_frame && !Dedicated_server)
 		{
 			if (Game_interface_mode == GAME_INTERFACE && !Menu_interface_mode)
+			{
+				PERF_MARKER_SCOPE("Renderer.Flip");
 				rend_Flip();
+			}
 		}
+		PerfMarkersEndFrame();
 
 		//float start_delay = timer_GetTime();
 		//Slow down the game if the user asked us to
@@ -2952,6 +2974,10 @@ void GameFrame(void)
 
 		//Update Gametime
 		Gametime += Frametime;
+	}
+	else
+	{
+		PerfMarkersEndFrame();
 	}
 
 
