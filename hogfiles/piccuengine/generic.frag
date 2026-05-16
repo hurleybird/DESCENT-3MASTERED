@@ -29,7 +29,8 @@ uniform float hbao_suppression;
 uniform float bloom_suppression;
 uniform int post_mask_enabled;
 uniform int post_mask_scale;
-layout(binding = 0, r8) uniform image2D post_mask;
+layout(binding = 0, r8) uniform image2D post_hbao_mask;
+layout(binding = 1, r8) uniform image2D post_bloom_mask;
 
 in vec4 outcolor;
 in vec4 outnormal;
@@ -115,13 +116,6 @@ void main()
 	float suppression_alpha = clamp(color.a, 0.0, 1.0);
 	suppression = clamp(hbao_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
 	float bloom_mask = clamp(bloom_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
-	if (post_mask_enabled != 0 && bloom_mask > 0.001)
-	{
-		ivec2 mask_size = imageSize(post_mask);
-		ivec2 native_px = ivec2(gl_FragCoord.xy) / max(post_mask_scale, 1);
-		native_px = clamp(native_px, ivec2(0), mask_size - ivec2(1));
-		imageStore(post_mask, native_px, vec4(1.0, 0.0, 0.0, 1.0));
-	}
 	
 	#if defined(USE_FOG)
 		float fog_start = clamp(1.0 - (1.0 / max(fog.start_dist, 0.0001)), 0.0, 1.0);
@@ -131,5 +125,15 @@ void main()
 		color = vec4(mix(color.rgb, fog.color.rgb, mag), color.a);
 		suppression = max(suppression, 1.0 - pow(1.0 - mag, 3.0));
 	#endif
+	if (post_mask_enabled != 0 && (suppression > 0.001 || bloom_mask > 0.001))
+	{
+		ivec2 mask_size = imageSize(post_hbao_mask);
+		ivec2 native_px = ivec2(gl_FragCoord.xy) / max(post_mask_scale, 1);
+		native_px = clamp(native_px, ivec2(0), mask_size - ivec2(1));
+		if (suppression > 0.001)
+			imageStore(post_hbao_mask, native_px, vec4(1.0, 0.0, 0.0, 1.0));
+		if (bloom_mask > 0.001)
+			imageStore(post_bloom_mask, native_px, vec4(1.0, 0.0, 0.0, 1.0));
+	}
 	hbao_mask = vec4(suppression, 0.0, 0.0, 1.0);
 }

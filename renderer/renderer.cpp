@@ -245,6 +245,14 @@ void rend_CaptureBloomSource()
 	renderer_inst->CaptureBloomSource();
 }
 
+void rend_CaptureHBAODepthOverlay()
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->CaptureHBAODepthOverlay();
+}
+
 // Draws a scaled 2d bitmap to our buffer
 // NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color
 void rend_DrawScaledBitmap(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, int color, float* alphas)

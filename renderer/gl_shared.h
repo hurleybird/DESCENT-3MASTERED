@@ -242,15 +242,18 @@ struct HBAOMaskResources
 
 struct NativePostMaskResources
 {
-	GLuint mask_texture = 0;
+	GLuint hbao_mask_texture = 0;
+	GLuint bloom_mask_texture = 0;
 	uint32_t width = 0;
 	uint32_t height = 0;
 
 	void Update(uint32_t width, uint32_t height);
 	void Clear();
 	void Destroy();
-	GLuint TextureForRead() const { return mask_texture; }
-	GLuint ImageTextureForWrite() const { return mask_texture; }
+	GLuint HBAOTextureForRead() const { return hbao_mask_texture; }
+	GLuint BloomTextureForRead() const { return bloom_mask_texture; }
+	GLuint HBAOImageTextureForWrite() const { return hbao_mask_texture; }
+	GLuint BloomImageTextureForWrite() const { return bloom_mask_texture; }
 };
 
 void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter);
@@ -324,7 +327,9 @@ struct HBAOResources
 	//Depth downsample/resolve shader uniforms.
 	GLint depth_source = -1;
 	GLint depth_source_ms = -1;
+	GLint depth_overlay_source = -1;
 	GLint depth_samples = -1;
+	GLint depth_has_overlay = -1;
 	GLint depth_input_screen_size = -1;
 	GLint depth_ao_screen_size = -1;
 
@@ -398,6 +403,7 @@ struct HBAOResources
 	void Apply(Framebuffer* source, Framebuffer* target, const renderer_preferred_state& pref_state,
 		const rendering_state& render_state, const float* projection,
 		float nearz, float farz, GLuint motion_texture, GLuint suppression_mask_texture,
+		GLuint depth_overlay_texture,
 		const float* current_inv_view_projection,
 		const float* previous_view_projection,
 		bool has_previous_view_projection);

@@ -923,6 +923,17 @@ GLuint HBAOMaskResources::TextureForRead(GLuint source_framebuffer)
 	return resolved_texture;
 }
 
+static void AllocateNativePostMaskTexture(GLuint& texture, uint32_t width, uint32_t height)
+{
+	glGenTextures(1, &texture);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+}
+
 void NativePostMaskResources::Update(uint32_t new_width, uint32_t new_height)
 {
 	if (new_width == 0 || new_height == 0)
@@ -931,7 +942,7 @@ void NativePostMaskResources::Update(uint32_t new_width, uint32_t new_height)
 		return;
 	}
 
-	if (width == new_width && height == new_height && mask_texture != 0)
+	if (width == new_width && height == new_height && hbao_mask_texture != 0 && bloom_mask_texture != 0)
 		return;
 
 	Destroy();
@@ -939,30 +950,27 @@ void NativePostMaskResources::Update(uint32_t new_width, uint32_t new_height)
 	width = new_width;
 	height = new_height;
 
-	glGenTextures(1, &mask_texture);
-	glBindTexture(GL_TEXTURE_2D, mask_texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	AllocateNativePostMaskTexture(hbao_mask_texture, width, height);
+	AllocateNativePostMaskTexture(bloom_mask_texture, width, height);
 	Clear();
 	rend_ClearBoundTextures();
 }
 
 void NativePostMaskResources::Clear()
 {
-	if (mask_texture == 0)
-		return;
-
 	const GLubyte zero = 0;
-	glClearTexImage(mask_texture, 0, GL_RED, GL_UNSIGNED_BYTE, &zero);
+	if (hbao_mask_texture != 0)
+		glClearTexImage(hbao_mask_texture, 0, GL_RED, GL_UNSIGNED_BYTE, &zero);
+	if (bloom_mask_texture != 0)
+		glClearTexImage(bloom_mask_texture, 0, GL_RED, GL_UNSIGNED_BYTE, &zero);
 }
 
 void NativePostMaskResources::Destroy()
 {
-	glDeleteTextures(1, &mask_texture);
-	mask_texture = 0;
+	glDeleteTextures(1, &hbao_mask_texture);
+	glDeleteTextures(1, &bloom_mask_texture);
+	hbao_mask_texture = 0;
+	bloom_mask_texture = 0;
 	width = 0;
 	height = 0;
 }

@@ -514,7 +514,7 @@ void GL3Renderer::SelectDrawShader()
 		glUniform1f(drawshader_bloom_suppression_uniforms[shader_index], bloom_suppression_draw_value);
 	if (drawshader_post_mask_enabled_uniforms[shader_index] != -1)
 		glUniform1i(drawshader_post_mask_enabled_uniforms[shader_index],
-			post_mask.TextureForRead() != 0 ? 1 : 0);
+			(post_mask.HBAOTextureForRead() != 0 && post_mask.BloomTextureForRead() != 0) ? 1 : 0);
 	if (drawshader_post_mask_scale_uniforms[shader_index] != -1)
 		glUniform1i(drawshader_post_mask_scale_uniforms[shader_index], SupersamplingFactor());
 

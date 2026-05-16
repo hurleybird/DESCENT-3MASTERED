@@ -147,9 +147,12 @@ void HBAOResources::InitShaders()
 	depth_shader.Use();
 	depth_source = depth_shader.FindUniform("depth_tex");
 	depth_source_ms = depth_shader.FindUniform("depth_ms_tex");
+	depth_overlay_source = depth_shader.FindUniform("depth_overlay_tex");
 	if (depth_source != -1) glUniform1i(depth_source, 0);
 	if (depth_source_ms != -1) glUniform1i(depth_source_ms, 1);
+	if (depth_overlay_source != -1) glUniform1i(depth_overlay_source, 2);
 	depth_samples = depth_shader.FindUniform("depth_samples");
+	depth_has_overlay = depth_shader.FindUniform("has_depth_overlay");
 	depth_input_screen_size = depth_shader.FindUniform("input_screen_size");
 	depth_ao_screen_size = depth_shader.FindUniform("ao_screen_size");
 
@@ -317,6 +320,7 @@ void HBAOResources::InvalidateHistory()
 void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const renderer_preferred_state& pref_state,
 	const rendering_state& render_state, const float* projection,
 	float nearz, float farz, GLuint motion_texture, GLuint suppression_mask_texture,
+	GLuint depth_overlay_texture,
 	const float* current_inv_view_projection,
 	const float* previous_view_projection,
 	bool has_previous_view_projection)
@@ -516,6 +520,8 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		depth_shader.Use();
 		if (depth_samples != -1)
 			glUniform1i(depth_samples, input_samples);
+		if (depth_has_overlay != -1)
+			glUniform1i(depth_has_overlay, depth_overlay_texture != 0 ? 1 : 0);
 		if (depth_input_screen_size != -1)
 			glUniform2f(depth_input_screen_size, (float)source_width, (float)source_height);
 		if (depth_ao_screen_size != -1)
@@ -523,6 +529,8 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(depth_texture, 0, GL_NEAREST);
+		if (depth_overlay_texture != 0)
+			GL_BindFramebufferTexture(depth_overlay_texture, 2, GL_NEAREST);
 		HBAODrawFullscreen(ao_depth_framebuffer.Handle(), ao_width, ao_height);
 	}
 

@@ -367,6 +367,9 @@ void rend_EndFrame();
 // Captures the current scene buffer as the source for frame-level bloom.
 void rend_CaptureBloomSource();
 
+// Captures an overlay depth buffer that HBAO can merge into its scene depth source.
+void rend_CaptureHBAODepthOverlay();
+
 // Init our renderer, pass the application object also.
 int rend_Init (renderer_type state, oeApplication *app,renderer_preferred_state *pref_state);
 

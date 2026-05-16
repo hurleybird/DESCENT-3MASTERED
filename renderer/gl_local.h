@@ -89,6 +89,7 @@ class GL3Renderer : public IRenderer
 	Framebuffer bloom_source_framebuffer;
 	Framebuffer bloom_source_resolved_framebuffer;
 	Framebuffer bloom_source_downscale_framebuffer;
+	Framebuffer hbao_depth_overlay_framebuffer;
 	Framebuffer hbao_scene_framebuffer;
 	Framebuffer hbao_composite_framebuffer;
 	MotionVectorResources motion_vectors;
@@ -96,6 +97,7 @@ class GL3Renderer : public IRenderer
 	NativePostMaskResources post_mask;
 	int framebuffer_current_draw = 0;
 	bool bloom_source_valid = false;
+	bool hbao_depth_overlay_valid = false;
 	bool hbao_scene_valid = false;
 	bool post_mask_cleared_this_frame = false;
 
@@ -173,7 +175,8 @@ class GL3Renderer : public IRenderer
 	float hbao_suppression_draw_value = 0.0f;
 	float bloom_suppression_draw_value = 0.0f;
 	bool hbao_mask_dirty = false;
-	bool post_mask_dirty = false;
+	bool post_hbao_mask_dirty = false;
+	bool post_bloom_mask_dirty = false;
 	vector per_pixel_light_direction = { 0, 0, -1 };
 	vector per_pixel_dynamic_face_normal = { 0, 0, 1 };
 	int per_pixel_dynamic_light_count = 0;
@@ -457,6 +460,7 @@ public:
 	void EndFrame() override;
 
 	void CaptureBloomSource() override;
+	void CaptureHBAODepthOverlay() override;
 
 	// Clears the display to a specified color
 	void ClearScreen(ddgr_color color) override;
