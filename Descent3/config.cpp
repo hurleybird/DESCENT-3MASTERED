@@ -898,12 +898,22 @@ void ConfigValidateGameWindowSize()
 
 static void ConfigApplyFixedHBAOSettings()
 {
+	Render_preferred_state.hbao_algorithm = HBAO_ALGORITHM_GTAO;
 	Render_preferred_state.hbao_quality = HBAO_QUALITY_HIGH;
 	Render_preferred_state.hbao_samples = HBAO_DEFAULT_SAMPLES;
 	Render_preferred_state.hbao_blur = HBAO_BLUR_WIDE;
 	Render_preferred_state.hbao_radius = 3.0f;
 	Render_preferred_state.hbao_intensity = 1.25f;
 	Render_preferred_state.hbao_bias = 0.2f;
+}
+
+static int ConfigNormalizeHBAOAlgorithm(int algorithm)
+{
+	if (algorithm < HBAO_ALGORITHM_HBAO)
+		return HBAO_ALGORITHM_HBAO;
+	if (algorithm > HBAO_ALGORITHM_GTAO)
+		return HBAO_ALGORITHM_GTAO;
+	return algorithm;
 }
 
 static int ConfigNormalizeHBAOQuality(int quality)
@@ -968,6 +978,7 @@ static float ConfigClampFloat(float value, float min_value, float max_value)
 
 static void ConfigNormalizeHBAOSettings()
 {
+	Render_preferred_state.hbao_algorithm = (ubyte)ConfigNormalizeHBAOAlgorithm(Render_preferred_state.hbao_algorithm);
 	int quality = ConfigNormalizeHBAOQuality(Render_preferred_state.hbao_quality);
 	int samples = Render_preferred_state.hbao_samples;
 	if (samples < HBAO_MIN_SAMPLES)
@@ -1267,7 +1278,7 @@ struct video_menu
 			sheet->UpdateChanges();
 	}
 
-	bool apply_hbao_tuning_controls(bool* enabled, short* samples, int* resolution, int* blur,
+	bool apply_hbao_tuning_controls(bool* enabled, int* algorithm, short* samples, int* resolution, int* blur,
 		short* radius, short* intensity, short* bias,
 		const tSliderSettings& sample_settings,
 		const tSliderSettings& radius_settings, const tSliderSettings& intensity_settings,
@@ -1275,6 +1286,7 @@ struct video_menu
 	{
 		bool changed = false;
 		const bool new_enabled = ConfigCanUseHBAO() && enabled && *enabled;
+		const ubyte new_algorithm = (ubyte)ConfigNormalizeHBAOAlgorithm(algorithm ? *algorithm : Render_preferred_state.hbao_algorithm);
 		const ushort new_samples = (ushort)ConfigNormalizeHBAOSamples(samples ?
 			CALC_SLIDER_INT_VALUE(*samples, sample_settings.min_val.i, sample_settings.max_val.i, HBAO_SAMPLE_SLIDER_UNITS) :
 			Render_preferred_state.hbao_samples);
@@ -1295,6 +1307,11 @@ struct video_menu
 		if (Render_preferred_state.hbao_enabled != new_enabled)
 		{
 			Render_preferred_state.hbao_enabled = new_enabled;
+			changed = true;
+		}
+		if (Render_preferred_state.hbao_algorithm != new_algorithm)
+		{
+			Render_preferred_state.hbao_algorithm = new_algorithm;
 			changed = true;
 		}
 		if (Render_preferred_state.hbao_quality != new_quality)
@@ -1336,7 +1353,7 @@ struct video_menu
 		return changed;
 	}
 
-	void refresh_hbao_tuning_controls(newuiSheet* tuning_sheet, bool* enabled, short* samples,
+	void refresh_hbao_tuning_controls(newuiSheet* tuning_sheet, bool* enabled, int* algorithm, short* samples,
 		int* resolution, int* blur, short* radius, short* intensity, short* bias,
 		const tSliderSettings& sample_settings,
 		const tSliderSettings& radius_settings, const tSliderSettings& intensity_settings,
@@ -1344,6 +1361,8 @@ struct video_menu
 	{
 		if (enabled)
 			*enabled = Render_preferred_state.hbao_enabled;
+		if (algorithm)
+			*algorithm = ConfigNormalizeHBAOAlgorithm(Render_preferred_state.hbao_algorithm);
 		if (samples)
 			*samples = CALC_SLIDER_POS_INT(Render_preferred_state.hbao_samples, &sample_settings, HBAO_SAMPLE_SLIDER_UNITS);
 		if (resolution)
@@ -1364,7 +1383,7 @@ struct video_menu
 	{
 		if (!ConfigCanUseHBAO())
 		{
-			DoMessageBox(TXT_WARNING, "HBAO requires the OpenGL Core profile.", MSGBOX_OK);
+			DoMessageBox(TXT_WARNING, "Ambient occlusion requires the OpenGL Core profile.", MSGBOX_OK);
 			return false;
 		}
 
@@ -1374,6 +1393,7 @@ struct video_menu
 		newuiTiledWindow menu;
 		newuiSheet* tuning_sheet;
 		bool* enabled;
+		int* algorithm;
 		short* samples;
 		int* resolution;
 		int* blur;
@@ -1401,11 +1421,16 @@ struct video_menu
 		bias_settings.max_val.f = 0.5f;
 		bias_settings.type = SLIDER_UNITS_FLOAT;
 
-		menu.Create("HBAO tuning", 0, 0, 448, 384);
+		menu.Create("AO tuning", 0, 0, 448, 384);
 		tuning_sheet = menu.GetSheet();
 
 		tuning_sheet->NewGroup("General", 0, 0);
 		enabled = tuning_sheet->AddLongCheckBox("Enabled", Render_preferred_state.hbao_enabled);
+
+		tuning_sheet->NewGroup("Algorithm", 214, 0);
+		algorithm = tuning_sheet->AddFirstLongRadioButton("HBAO");
+		tuning_sheet->AddLongRadioButton("GTAO");
+		*algorithm = ConfigNormalizeHBAOAlgorithm(Render_preferred_state.hbao_algorithm);
 
 		tuning_sheet->NewGroup("Samples", 0, 70);
 		samples = tuning_sheet->AddSlider("Count", HBAO_SAMPLE_SLIDER_UNITS,
@@ -1453,17 +1478,17 @@ struct video_menu
 			{
 				ConfigApplyFixedHBAOSettings();
 				ConfigNormalizeHBAOSettings();
-				refresh_hbao_tuning_controls(tuning_sheet, enabled, samples, resolution, blur,
+				refresh_hbao_tuning_controls(tuning_sheet, enabled, algorithm, samples, resolution, blur,
 					radius, intensity, bias, sample_settings, radius_settings, intensity_settings, bias_settings);
 				changed = true;
 			}
-			else if (tuning_sheet->HasChanged(enabled) ||
+			else if (tuning_sheet->HasChanged(enabled) || tuning_sheet->HasChanged(algorithm) ||
 				tuning_sheet->HasChanged(samples) ||
 				tuning_sheet->HasChanged(resolution) ||
 				tuning_sheet->HasChanged(blur) || tuning_sheet->HasChanged(radius) ||
 				tuning_sheet->HasChanged(intensity) || tuning_sheet->HasChanged(bias))
 			{
-				changed = apply_hbao_tuning_controls(enabled, samples, resolution, blur,
+				changed = apply_hbao_tuning_controls(enabled, algorithm, samples, resolution, blur,
 					radius, intensity, bias, sample_settings, radius_settings, intensity_settings, bias_settings);
 			}
 
@@ -1477,7 +1502,7 @@ struct video_menu
 		bool accepted = result == UID_OK;
 		if (accepted)
 		{
-			if (apply_hbao_tuning_controls(enabled, samples, resolution, blur,
+			if (apply_hbao_tuning_controls(enabled, algorithm, samples, resolution, blur,
 				radius, intensity, bias, sample_settings, radius_settings, intensity_settings, bias_settings))
 			{
 				rend_SetPreferredState(&Render_preferred_state);
@@ -1578,14 +1603,14 @@ struct video_menu
 		sheet->AddRadioButton("4x");
 		*supersampling = SupersamplingFactorToIndex(Render_preferred_state.supersampling_factor);
 
-		sheet->NewGroup("HBAO", 184, 162);
+		sheet->NewGroup("AO", 184, 162);
 		hbao = sheet->AddFirstRadioButton(TXT_OFF);
 		sheet->AddRadioButton(TXT_LOW);
 		sheet->AddRadioButton(TXT_CFG_MEDIUM);
 		sheet->AddRadioButton(TXT_CFG_HIGH);
 		*hbao = ConfigCanUseHBAO() ?
 			HBAOPresetToIndex(Render_preferred_state.hbao_enabled, Render_preferred_state.hbao_resolution) : 0;
-		sheet->AddLongButton("HBAO tuning...", IDV_HBAOTUNING);
+		sheet->AddLongButton("AO tuning...", IDV_HBAOTUNING);
 
 		sheet->NewGroup(NULL, 0, 252);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);

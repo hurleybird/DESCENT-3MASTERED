@@ -194,6 +194,7 @@ void HBAOResources::InitShaders()
 	ao_inv_screen_size = ao_shader.FindUniform("inv_screen_size");
 	ao_ao_inv_screen_size = ao_shader.FindUniform("ao_inv_screen_size");
 	ao_screen_size = ao_shader.FindUniform("screen_size");
+	ao_algorithm = ao_shader.FindUniform("algorithm");
 	ao_directions = ao_shader.FindUniform("directions");
 	ao_steps = ao_shader.FindUniform("steps");
 
@@ -423,6 +424,10 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	if (intensity < 0.0f) intensity = 0.0f;
 	if (intensity > 4.0f) intensity = 4.0f;
 
+	int algorithm = pref_state.hbao_algorithm;
+	if (algorithm < HBAO_ALGORITHM_HBAO || algorithm > HBAO_ALGORITHM_GTAO)
+		algorithm = HBAO_ALGORITHM_GTAO;
+
 	int blur = pref_state.hbao_blur;
 
 	//Convert world-space radius to a pixel-space scale at depth==1. The shader
@@ -489,6 +494,8 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		if (ao_ao_inv_screen_size != -1)
 			glUniform2f(ao_ao_inv_screen_size, 1.0f / (float)ao_width, 1.0f / (float)ao_height);
 		glUniform2f(ao_screen_size, (float)ao_width, (float)ao_height);
+		if (ao_algorithm != -1)
+			glUniform1i(ao_algorithm, algorithm);
 		glUniform1i(ao_directions, directions);
 		glUniform1i(ao_steps, steps);
 

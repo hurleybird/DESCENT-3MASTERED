@@ -333,6 +333,7 @@ struct HBAOResources
 	GLint ao_inv_screen_size = -1;  //1/width, 1/height
 	GLint ao_ao_inv_screen_size = -1;
 	GLint ao_screen_size = -1;      //width, height
+	GLint ao_algorithm = -1;
 	GLint ao_directions = -1;
 	GLint ao_steps = -1;
 

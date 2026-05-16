@@ -256,6 +256,13 @@ enum hbao_quality
 #define HBAO_DEFAULT_SAMPLES 32
 #define HBAO_MAX_SAMPLES 1024
 
+//Ambient occlusion algorithm used by the HBAO/GTAO post pass.
+enum hbao_algorithm
+{
+	HBAO_ALGORITHM_HBAO = 0,
+	HBAO_ALGORITHM_GTAO = 1,
+};
+
 //HBAO blur kernel width.
 enum hbao_blur
 {
@@ -298,6 +305,7 @@ struct renderer_preferred_state
 	float bloom_spread;
 
 	bool hbao_enabled;       //Master HBAO on/off
+	ubyte hbao_algorithm;    //hbao_algorithm enum
 	ubyte hbao_quality;      //Legacy hbao_quality bucket derived from sample count
 	ushort hbao_samples;     //Total AO samples per pixel
 	ubyte hbao_resolution;   //hbao_resolution enum
