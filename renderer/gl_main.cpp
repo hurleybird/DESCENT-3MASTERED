@@ -2290,6 +2290,11 @@ void GL4Renderer::UpdateFramebuffer(void)
 		framebuffers[i].Update(target_width, target_height, target_samples);
 		post_protection_mask.Update(target_width, target_height, framebuffers[i].Samples());
 		post_protection_mask.AttachToFramebuffer(framebuffers[i].Handle());
+		if (framebuffer_state_changed)
+		{
+			framebuffers[i].ClearAll();
+			post_protection_mask.ClearAttached(framebuffers[i].Handle());
+		}
 		post_protection_mask.UseSceneDrawBuffers(framebuffers[i].Handle());
 	}
 	int supersampling_factor = SupersamplingFactor();
@@ -2317,6 +2322,8 @@ void GL4Renderer::UpdateFramebuffer(void)
 		glEnable(GL_MULTISAMPLE);
 	else
 		glDisable(GL_MULTISAMPLE);
+	if (framebuffer_state_changed)
+		glFinish();
 	//Unbind the read framebuffer so that OBS can capture the window properly
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 	mprintf((0, "GL4 UpdateFramebuffer end: scene fbo=%u req=%u actual=%u resolved=%u downscale=%u post=%u postmask=%u/%u motion=%u/%u.\n",

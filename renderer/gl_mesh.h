@@ -68,6 +68,7 @@ public:
 	void DrawIndexed(PrimitiveType mode, ElementRange range) const override;
 
 	void Destroy() override;
+	void Invalidate();
 };
 
 class IndexBuffer : public IIndexBuffer
@@ -87,6 +88,7 @@ public:
 	void Bind() const override;
 
 	void Destroy() override;
+	void Invalidate();
 };
 
 

@@ -1449,6 +1449,8 @@ void GLCompatibilityRenderer::UpdateFramebuffer(void)
 	for (int i = 0; i < NUM_GL1_FBOS; i++)
 	{
 		framebuffers[i].Update(target_width, target_height, target_samples);
+		if (framebuffer_state_changed)
+			framebuffers[i].ClearAll();
 	}
 	int supersampling_factor = SupersamplingFactor();
 	if (supersampling_factor >= 2)
@@ -1469,6 +1471,8 @@ void GLCompatibilityRenderer::UpdateFramebuffer(void)
 		glEnable(GL_MULTISAMPLE);
 	else
 		glDisable(GL_MULTISAMPLE);
+	if (framebuffer_state_changed)
+		glFinish();
 	//Unbind the read framebuffer so that OBS can capture the window properly
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 

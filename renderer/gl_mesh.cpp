@@ -171,6 +171,15 @@ void VertexBuffer::Destroy()
 	m_size = m_vertexcount = 0;
 }
 
+void VertexBuffer::Invalidate()
+{
+	m_name = 0;
+	m_vaoname = 0;
+	m_size = 0;
+	m_vertexcount = 0;
+	m_appendcounter = 0;
+}
+
 IndexBuffer::IndexBuffer() : IndexBuffer(true, false)
 {
 }
@@ -228,6 +237,12 @@ void IndexBuffer::Destroy()
 		glDeleteBuffers(1, &m_name);
 		m_name = 0;
 	}
+}
+
+void IndexBuffer::Invalidate()
+{
+	m_name = 0;
+	m_size = 0;
 }
 
 void rendTEMP_UnbindVertexBuffer()

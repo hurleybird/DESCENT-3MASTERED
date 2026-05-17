@@ -25,6 +25,8 @@
 class IRenderer
 {
 public:
+	virtual ~IRenderer() = default;
+
 	//INITIALIZATION
 
 	// Init our renderer, pass the application object also.

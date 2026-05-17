@@ -729,10 +729,36 @@ uint32_t lightmap_room_specular_fog_handle = 0xFFFFFFFFu;
 uint32_t unlit_room_handle = 0xFFFFFFFFu;
 uint32_t unlit_room_fog_handle = 0xFFFFFFFFu;
 uint32_t fog_portal_handle = 0xFFFFFFFFu;
+static uint32_t NewRender_renderer_generation = 0;
 
-//Called during LoadLevel, builds meshes for every room. 
+static void ResetNewRenderPipelineHandles()
+{
+	lightmap_room_handle = 0xFFFFFFFFu;
+	lightmap_specular_handle = 0xFFFFFFFFu;
+	lightmap_room_fog_handle = 0xFFFFFFFFu;
+	lightmap_room_specular_fog_handle = 0xFFFFFFFFu;
+	unlit_room_handle = 0xFFFFFFFFu;
+	unlit_room_fog_handle = 0xFFFFFFFFu;
+	fog_portal_handle = 0xFFFFFFFFu;
+}
+
+static void InvalidateNewRenderRendererCacheIfNeeded()
+{
+	uint32_t generation = rend_GetGeneration();
+	if (NewRender_renderer_generation == generation)
+		return;
+
+	Room_VertexBuffer.Invalidate();
+	Room_IndexBuffer.Invalidate();
+	ResetNewRenderPipelineHandles();
+	NewRender_renderer_generation = generation;
+}
+
+//Called during LoadLevel, builds meshes for every room.
 void MeshRooms()
 {
+	InvalidateNewRenderRendererCacheIfNeeded();
+
 	if (lightmap_specular_handle == 0xFFFFFFFFu)
 	{
 		lightmap_specular_handle = rend_GetPipelineByName("lightmapped_specular");
@@ -842,6 +868,9 @@ void NewRender_Render(vector& vieweye, matrix& vieworientation, int roomnum)
 {
 	if (!rend_CanUseNewrender())
 		return;
+
+	if (NewRender_renderer_generation != rend_GetGeneration())
+		MeshRooms();
 
 	gRenderList.GatherVisible(vieweye, vieworientation, roomnum);
 	gRenderList.Draw();

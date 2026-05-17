@@ -172,8 +172,8 @@ class GLCompatibilityRenderer : public IRenderer
 	bool OpenGL_buffer_storage_enabled = false;
 
 #if defined(SDL3)
-	SDL_GLContext GLContext;
-	SDL_Window* GLWindow;
+	SDL_GLContext GLContext = nullptr;
+	SDL_Window* GLWindow = nullptr;
 #elif defined(WIN32)
 	//	Moved from DDGR library
 	HWND hOpenGLWnd = nullptr;

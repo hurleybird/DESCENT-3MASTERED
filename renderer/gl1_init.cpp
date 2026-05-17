@@ -141,6 +141,13 @@ int GLCompatibilityRenderer::Setup(SDL_Window* window)
 		Error("GLCompatibilityRenderer::Setup: SDL_GL_CreateContext failed!\n%s", SDL_GetError());
 		return 0;
 	}
+	if (!SDL_GL_MakeCurrent(window, context))
+	{
+		Error("GLCompatibilityRenderer::Setup: SDL_GL_MakeCurrent failed!\n%s", SDL_GetError());
+		SDL_GL_DestroyContext(context);
+		return 0;
+	}
+	GLContext = context;
 
 	if (!Already_loaded)
 	{
@@ -484,7 +491,13 @@ int GLCompatibilityRenderer::Init(oeApplication* app, renderer_preferred_state* 
 // Releases the rendering context
 void GLCompatibilityRenderer::Close()
 {
+#if defined(SDL3)
+	if (GLWindow && GLContext)
+		SDL_GL_MakeCurrent(GLWindow, GLContext);
+#endif
+
 	CHECK_ERROR(5);
+	glFinish();
 
 	blitshader.Destroy();
 	downsampleshader.Destroy();
@@ -492,9 +505,16 @@ void GLCompatibilityRenderer::Close()
 	FreeImages();
 	if (framebuffer_ok)
 		CloseFramebuffer();
+	glFinish();
 
 #if defined(SDL3)
-	SDL_GL_DestroyContext(GLContext);
+	if (GLContext)
+	{
+		SDL_GL_MakeCurrent(GLWindow, nullptr);
+		SDL_GL_DestroyContext(GLContext);
+		GLContext = nullptr;
+	}
+	GLWindow = nullptr;
 #elif defined(WIN32)
 	wglMakeCurrent(NULL, NULL);
 

@@ -201,6 +201,49 @@ static uint32_t Terrain_compute_lightmap_checksums[4] = { 0, 0, 0, 0 };
 static constexpr int TERRAIN_COMPUTE_VERTS_PER_TRIANGLE = 18;
 static constexpr int TERRAIN_COMPUTE_VERTS_PER_CELL = TERRAIN_COMPUTE_VERTS_PER_TRIANGLE * 2;
 static constexpr int TERRAIN_COMPUTE_LIGHTMAP_LAYERS = 4;
+static uint32_t Terrain_compute_renderer_generation = 0;
+
+static void InvalidateTerrainComputeRendererCache()
+{
+	Terrain_legacy_compute_handle = 0xFFFFFFFFu;
+	Terrain_legacy_compute_fog_handle = 0xFFFFFFFFu;
+	Terrain_compute_program = 0;
+	Terrain_compute_input_buffer = 0;
+	Terrain_compute_vertex_buffer = 0;
+	Terrain_compute_indirect_buffer = 0;
+	Terrain_compute_vertex_array = 0;
+	Terrain_compute_base_texture_array = 0;
+	Terrain_compute_lightmap_array = 0;
+	Terrain_compute_cell_count_uniform = -1;
+	Terrain_compute_row0_uniform = -1;
+	Terrain_compute_xstep_uniform = -1;
+	Terrain_compute_zstep_uniform = -1;
+	Terrain_compute_ystep_uniform = -1;
+	Terrain_compute_ready = false;
+	Terrain_compute_unavailable = false;
+	Terrain_compute_vertex_capacity = 0;
+	Terrain_compute_input_uploaded = false;
+	Terrain_compute_base_texture_array_width = 0;
+	Terrain_compute_base_texture_array_height = 0;
+	Terrain_compute_base_texture_handles.clear();
+	Terrain_compute_base_texture_checksums.clear();
+	Terrain_compute_lightmap_array_size = 0;
+	for (int i = 0; i < TERRAIN_COMPUTE_LIGHTMAP_LAYERS; i++)
+	{
+		Terrain_compute_lightmap_array_handles[i] = -1;
+		Terrain_compute_lightmap_checksums[i] = 0;
+	}
+}
+
+static void EnsureTerrainComputeRendererGeneration()
+{
+	uint32_t generation = rend_GetGeneration();
+	if (Terrain_compute_renderer_generation == generation)
+		return;
+
+	Terrain_compute_renderer_generation = generation;
+	InvalidateTerrainComputeRendererCache();
+}
 
 static void SetTerrainComputeStatus(const char* status)
 {
@@ -1371,6 +1414,7 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 	PERF_MARKER_SCOPE("DisplayTerrainListCompute");
 	(void)cellcount;
 	bool draw_lightmap = !StateLimited || UseMultitexture;
+	EnsureTerrainComputeRendererGeneration();
 
 	if (!TerrainComputeCanRender(from_automap, draw_lightmap))
 		return false;

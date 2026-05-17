@@ -484,6 +484,47 @@ void Framebuffer::ClearAlphaToZero()
 	MarkColorDirty();
 }
 
+void Framebuffer::ClearAll()
+{
+	if (m_name == 0)
+		return;
+
+	GLboolean color_mask[4];
+	GLboolean depth_mask;
+	GLboolean scissor_enabled = glIsEnabled(GL_SCISSOR_TEST);
+	GLfloat clear_color[4];
+	GLdouble clear_depth = 1.0;
+	GLint old_draw = 0;
+	GLint old_draw_buffer = 0;
+	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+	glGetFloatv(GL_COLOR_CLEAR_VALUE, clear_color);
+	glGetDoublev(GL_DEPTH_CLEAR_VALUE, &clear_depth);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+	glGetIntegerv(GL_DRAW_BUFFER, &old_draw_buffer);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_name);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	if (scissor_enabled)
+		glDisable(GL_SCISSOR_TEST);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_TRUE);
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	glClearDepth(1.0);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+	glDepthMask(depth_mask);
+	glClearColor(clear_color[0], clear_color[1], clear_color[2], clear_color[3]);
+	glClearDepth(clear_depth);
+	if (scissor_enabled)
+		glEnable(GL_SCISSOR_TEST);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	if ((GLuint)old_draw != m_name)
+		glDrawBuffer(old_draw_buffer);
+	MarkAllDirty();
+}
+
 void Framebuffer::Destroy()
 {
 	glDeleteFramebuffers(1, &m_name);

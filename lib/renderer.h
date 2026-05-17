@@ -380,6 +380,7 @@ int rend_Init (renderer_type state, oeApplication *app,renderer_preferred_state 
 
 // de-init the renderer
 void rend_Close ();
+uint32_t rend_GetGeneration();
 
 // Draws a scaled 2d bitmap to our buffer
 // NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color
