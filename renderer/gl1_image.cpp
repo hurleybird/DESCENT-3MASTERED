@@ -167,7 +167,9 @@ void GLCompatibilityRenderer::MakeWrapTypeCurrent(int handle, int map_type, int 
 	int uwrap;
 	wrap_type dest_wrap;
 
-	if (tn == 1)
+	if (map_type == MAP_TYPE_LIGHTMAP && (GameLightmaps[handle].flags & LF_WRAP))
+		dest_wrap = WT_WRAP;
+	else if (tn == 1)
 		dest_wrap = WT_CLAMP;
 	else
 		dest_wrap = OpenGL_state.cur_wrap_type;
@@ -188,13 +190,13 @@ void GLCompatibilityRenderer::MakeWrapTypeCurrent(int handle, int map_type, int 
 
 	OpenGL_sets_this_frame[1]++;
 
-	if (OpenGL_state.cur_wrap_type == WT_CLAMP)
+	if (dest_wrap == WT_CLAMP)
 	{
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 
 	}
-	else if (OpenGL_state.cur_wrap_type == WT_WRAP_V)
+	else if (dest_wrap == WT_WRAP_V)
 	{
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
