@@ -609,7 +609,11 @@ void DrawVisFadingLine(vis_effect* vis)
 
 	pnts[1].p3_a = 0.0;
 
+	rend_SetZBufferWriteMask(0);
+	rend_SetAOSuppression(1.0f);
 	g3_DrawSpecialLine(&pnts[0], &pnts[1]);
+	rend_SetAOSuppression(0.0f);
+	rend_SetZBufferWriteMask(1);
 
 }
 
@@ -657,6 +661,7 @@ void DrawVisBlastRing(vis_effect* vis)
 	rend_SetLighting(LS_NONE);
 	rend_SetZBias(-1.0);
 	rend_SetZBufferWriteMask(0);
+	rend_SetAOSuppression(1.0f);
 
 	ring_angle = 0;
 
@@ -706,6 +711,7 @@ void DrawVisBlastRing(vis_effect* vis)
 		g3_DrawPoly(4, pntlist, vis->custom_handle);
 	}
 
+	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBias(0);
 }
@@ -871,6 +877,7 @@ void DrawVisLightningBolt(vis_effect* vis)
 	rend_SetAlphaType(AT_SATURATE_VERTEX);
 	rend_SetLighting(LS_NONE);
 	rend_SetZBufferWriteMask(0);
+	rend_SetAOSuppression(1.0f);
 
 	if (vis->id == GRAY_LIGHTNING_BOLT_INDEX)
 	{
@@ -902,6 +909,7 @@ void DrawVisLightningBolt(vis_effect* vis)
 		g3_DrawSpecialLine(&pnt1, &pnt2);
 	}
 
+	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 }
 
@@ -947,6 +955,7 @@ void DrawVisSineWave(vis_effect* vis)
 	rend_SetLighting(LS_NONE);
 	rend_SetZBufferWriteMask(0);
 	rend_SetFlatColor(GR_RGB(10, 60, 200));
+	rend_SetAOSuppression(1.0f);
 	int cur_sin = (vis - VisEffects) * 5000;
 
 	cur_sin += (FrameCount * 2000);
@@ -975,6 +984,7 @@ void DrawVisSineWave(vis_effect* vis)
 		cur_sin += 4000;
 	}
 
+	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 }
 
@@ -1066,6 +1076,7 @@ void DrawVisThickLightning(vis_effect* vis)
 	rend_SetFlatColor(GR_16_TO_COLOR(vis->lighting_color));
 	rend_SetAlphaValue(255 * alpha_norm);
 	rend_SetZBufferWriteMask(0);
+	rend_SetAOSuppression(1.0f);
 
 	for (i = 0, codes_and = 0xff; i < 4; i++)
 	{
@@ -1113,6 +1124,7 @@ void DrawVisThickLightning(vis_effect* vis)
 		g3_DrawPoly(4, pntlist, bm_handle);
 	}
 
+	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 }
 
@@ -1200,6 +1212,7 @@ void DrawVisAxisBillboard(vis_effect* vis)
 	rend_SetOverlayType(OT_NONE);
 
 	rend_SetZBufferWriteMask(0);
+	rend_SetAOSuppression(1.0f);
 
 	if (uchange == 0 && vchange == 0)
 		rend_SetWrapType(WT_CLAMP);
@@ -1230,6 +1243,7 @@ void DrawVisAxisBillboard(vis_effect* vis)
 
 	g3_DrawPoly(4, pntlist, bm_handle);
 
+	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 
 	rend_SetWrapType(WT_WRAP);
@@ -1300,6 +1314,7 @@ void DrawVisBillboardSmoketrail(vis_effect* vis)
 	rend_SetOverlayType(OT_NONE);
 
 	rend_SetZBufferWriteMask(0);
+	rend_SetAOSuppression(1.0f);
 
 	rend_SetFlatColor(GR_16_TO_COLOR(vis->lighting_color));
 	rend_SetColorModel(CM_MONO);
@@ -1320,6 +1335,7 @@ void DrawVisBillboardSmoketrail(vis_effect* vis)
 
 	g3_DrawPoly(4, pntlist, bm_handle);
 
+	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 }
 
@@ -1363,6 +1379,7 @@ void DrawVisMassDriverEffect(vis_effect* vis, bool f_boss)
 	rend_SetTextureType(TT_LINEAR);
 	rend_SetLighting(LS_FLAT_GOURAUD);
 	rend_SetZBufferWriteMask(0);
+	rend_SetAOSuppression(1.0f);
 	if (f_boss)
 		rend_SetFlatColor(GR_RGB(255, 170, 170));
 	else
@@ -1448,7 +1465,11 @@ void DrawVisMassDriverEffect(vis_effect* vis, bool f_boss)
 		pntlist[3] = &arc_points[t + next];
 
 		if (!g3_DrawPoly(4, pntlist, bm_handle))
+		{
+			rend_SetAOSuppression(0.0f);
+			rend_SetZBufferWriteMask(1);
 			return;
+		}
 	}
 
 	// Now draw some rings
@@ -1483,6 +1504,7 @@ void DrawVisMassDriverEffect(vis_effect* vis, bool f_boss)
 			g3_DrawPlanarRotatedBitmap(&pos, &dir_norm, rot_angle, new_size, (new_size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle);
 		}
 	}
+	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 
 }

@@ -54,6 +54,7 @@
 #include "psrand.h"
 #include "BOA.h"
 #include "vibeinterface.h"
+#include "renderer.h"
 
 bool AreObjectsAttached(const object* obj1, const object* obj2)
 {
@@ -1448,6 +1449,7 @@ void DrawElectricalWeapon(object* obj)
 		sat = false;
 
 	// Form our vectors into points and draw!
+	rend_SetAOSuppression(1.0f);
 	for (t = (num_segments - 1) * circle_pieces, i = num_segments - 1; i >= 1; i--, t -= circle_pieces)
 	{
 		rend_SetTextureType(TT_LINEAR);
@@ -1498,6 +1500,7 @@ void DrawElectricalWeapon(object* obj)
 		}
 	}
 
+	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 
 	// Kill it!
@@ -1777,7 +1780,11 @@ void DrawWeaponStreamer(object* obj)
 	pnts[0].p3_a = (1.0 - norm_time) * .3f;
 	pnts[1].p3_a = 0;
 
+	rend_SetZBufferWriteMask(0);
+	rend_SetAOSuppression(1.0f);
 	g3_DrawSpecialLine(&pnts[0], &pnts[1]);
+	rend_SetAOSuppression(0.0f);
+	rend_SetZBufferWriteMask(1);
 }
 
 void DrawBlobbyWeaponRing(object* obj)
@@ -1813,6 +1820,8 @@ void DrawBlobbyWeaponRing(object* obj)
 	ring_angle = 0;
 	float blob_size = (obj->size / 4);
 
+	rend_SetZBufferWriteMask(0);
+	rend_SetAOSuppression(1.0f);
 	for (i = 0; i < num_segments; i++, ring_angle += ring_increment)
 	{
 		float ring_sin = FixSin(ring_angle);
@@ -1826,6 +1835,8 @@ void DrawBlobbyWeaponRing(object* obj)
 
 		g3_DrawRotatedBitmap(&vecs[i], ring_angle, blob_size, (blob_size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle);
 	}
+	rend_SetAOSuppression(0.0f);
+	rend_SetZBufferWriteMask(1);
 }
 
 void DrawPolygonalWeaponRing(object* obj)
@@ -1851,6 +1862,8 @@ void DrawPolygonalWeaponRing(object* obj)
 	rend_SetColorModel(CM_RGB);
 	rend_SetLighting(LS_GOURAUD);
 	rend_SetAlphaType(AT_SATURATE_VERTEX);
+	rend_SetZBufferWriteMask(0);
+	rend_SetAOSuppression(1.0f);
 
 	for (i = 0; i < num_segments; i++, ring_angle += ring_increment)
 	{
@@ -1900,6 +1913,8 @@ void DrawPolygonalWeaponRing(object* obj)
 		g3_DrawPoly(4, pntlist, 0);
 	}
 
+	rend_SetAOSuppression(0.0f);
+	rend_SetZBufferWriteMask(1);
 }
 
 // Draws a ring for the weapon
@@ -1952,6 +1967,8 @@ void DrawWeaponObject(object* obj)
 			rend_SetAlphaValue(Weapons[obj->id].alpha * 255);
 			rend_SetOverlayType(OT_NONE);
 			rend_SetLighting(LS_NONE);
+			rend_SetZBufferWriteMask(0);
+			rend_SetAOSuppression(1.0f);
 
 			if (Weapons[obj->id].flags & WF_PLANAR)
 			{
@@ -1961,6 +1978,9 @@ void DrawWeaponObject(object* obj)
 			}
 			else
 				g3_DrawRotatedBitmap(&obj->pos, rot_angle, obj->size, (obj->size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle);
+
+			rend_SetAOSuppression(0.0f);
+			rend_SetZBufferWriteMask(1);
 		}
 		else
 		{
