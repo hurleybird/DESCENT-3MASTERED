@@ -152,8 +152,41 @@ void ResetSmallViews()
 //How long the static is visbile
 #define STATIC_TIME 0.25f
 
+static void SuppressAOForSmallWindow(int width, int height)
+{
+	g3Point pnts[4];
+	g3Point* pntlist[4];
+
+	for (int i = 0; i < 4; i++)
+	{
+		pnts[i].p3_z = 1.0f;
+		pnts[i].p3_flags = PF_PROJECTED;
+		pntlist[i] = &pnts[i];
+	}
+
+	pnts[0].p3_sx = 0.0f;
+	pnts[0].p3_sy = 0.0f;
+	pnts[1].p3_sx = (float)(width - 1);
+	pnts[1].p3_sy = 0.0f;
+	pnts[2].p3_sx = (float)(width - 1);
+	pnts[2].p3_sy = (float)(height - 1);
+	pnts[3].p3_sx = 0.0f;
+	pnts[3].p3_sy = (float)(height - 1);
+
+	rend_SetPostMaskOnly(1);
+	rend_SetAOSuppression(1.0f);
+	rend_SetTextureType(TT_FLAT);
+	rend_SetLighting(LS_NONE);
+	rend_SetColorModel(CM_MONO);
+	rend_SetAlphaType(AT_ALWAYS);
+	rend_SetFlatColor(GR_BLACK);
+	rend_DrawPolygon2D(0, pntlist, 4);
+	rend_SetAOSuppression(0.0f);
+	rend_SetPostMaskOnly(0);
+}
+
 //Render into one of the small windows
-void RenderSmallWindow(int left, int top, int right, int bot, object* viewer, vector* viewer_eye, int viewer_roomnum, matrix* viewer_orient, int flags, float zoom, ddgr_color outline_color, char* label, float timer)
+void RenderSmallWindow(int left, int top, int right, int bot, object* viewer, vector* viewer_eye, int viewer_roomnum, matrix* viewer_orient, int flags, float zoom, ddgr_color outline_color, char* label, float timer, bool suppress_ao)
 {
 	int width = right - left, height = bot - top;
 
@@ -252,6 +285,9 @@ void RenderSmallWindow(int left, int top, int right, int bot, object* viewer, ve
 		rend_DrawLine(cx, cy - line_h, cx, cy + line_h);
 		rend_SetZBufferState(1);
 	}
+
+	if (suppress_ao)
+		SuppressAOForSmallWindow(width, height);
 
 	//Done rendering
 	EndFrame();
@@ -416,7 +452,8 @@ void DrawSmallViews()
 
 		//Let's render
 		Point_visible_last_frame = -1;
-		RenderSmallWindow(left, top, right, bot, viewer, viewer_eye, viewer_roomnum, viewer_orient, flags, svp->zoom, outline_color, svp->label, svp->timer);
+		RenderSmallWindow(left, top, right, bot, viewer, viewer_eye, viewer_roomnum, viewer_orient, flags, svp->zoom, outline_color, svp->label, svp->timer,
+			CockpitState() == COCKPIT_STATE_FUNCTIONAL);
 		Point_visible_last_frame = -1;
 
 		//Update time for this view
