@@ -9,6 +9,8 @@ uniform float dynamic_light_radii[8];
 uniform vec3 dynamic_light_directions[8];
 uniform float dynamic_light_dot_ranges[8];
 uniform int dynamic_light_directional[8];
+uniform float ao_weight_value;
+uniform int ao_capture_weight_mode;
 
 in vec2 outuv;
 in vec2 outuv2;
@@ -59,6 +61,14 @@ vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 
 void main()
 {
+	if (ao_capture_weight_mode != 0)
+	{
+		color = vec4(ao_weight_value, ao_weight_value, ao_weight_value, 1.0);
+		post_mask = vec4(0.0, 0.0, 0.0, 1.0);
+		ao_class = ao_weight_value;
+		return;
+	}
+
 	vec4 basecolor = texture(colortexture, outuv);
 	vec4 lmcolor = texture(lightmaptexture, outuv2);
 	lmcolor.rgb = ApplyDynamicLightmapLighting(lmcolor.rgb);

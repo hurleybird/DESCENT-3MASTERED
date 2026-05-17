@@ -272,6 +272,15 @@ void GL4Renderer::BindPipeline(uint32_t handle)
 		if (strstr(gl_shaderdefs[handle].name, "fog") != nullptr)
 			post_protection_mask_dirty = true;
 		gl_shaderprogs[handle].Use();
+		GLint ao_class_uniform = gl_shaderprogs[handle].FindUniform("ao_class_value");
+		if (ao_class_uniform != -1)
+			glUniform1i(ao_class_uniform, ao_class_draw_value);
+		GLint ao_weight_uniform = gl_shaderprogs[handle].FindUniform("ao_weight_value");
+		if (ao_weight_uniform != -1)
+			glUniform1f(ao_weight_uniform, ao_weight_draw_value);
+		GLint ao_capture_weight_mode_uniform = gl_shaderprogs[handle].FindUniform("ao_capture_weight_mode");
+		if (ao_capture_weight_mode_uniform != -1)
+			glUniform1i(ao_capture_weight_mode_uniform, ao_depth_capture_active ? 1 : 0);
 	}
 }
 

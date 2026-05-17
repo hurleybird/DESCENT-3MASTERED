@@ -321,9 +321,14 @@ struct GTAOResources
 	GLint depth_source_ms = -1;
 	GLint depth_ao_class = -1;
 	GLint depth_has_ao_class = -1;
+	GLint depth_ao_weight_is_direct = -1;
 	GLint depth_samples = -1;
 	GLint depth_input_screen_size = -1;
 	GLint depth_ao_screen_size = -1;
+	GLint depth_terrain_occlusion = -1;
+	GLint depth_polyobject_occlusion = -1;
+	GLint depth_mine_rock_occlusion = -1;
+	GLint depth_mine_occlusion = -1;
 
 	//AO shader uniforms.
 	GLint ao_proj_info = -1;        //(2/proj[0], 2/proj[5], -1/proj[0], -1/proj[5])
@@ -383,7 +388,8 @@ struct GTAOResources
 	//null, by sampling pref_state and projection info.
 	void Apply(Framebuffer* source, Framebuffer* target, const renderer_preferred_state& pref_state,
 		const rendering_state& render_state, const float* projection,
-		float nearz, float farz, GLuint suppression_mask_texture, GLuint ao_class_texture,
+		float nearz, float farz, GLuint suppression_mask_texture, GLuint ao_weight_texture,
+		bool ao_weight_is_direct,
 		int source_visible_x = 0, int source_visible_y = 0,
 		int source_visible_w = 0, int source_visible_h = 0);
 };

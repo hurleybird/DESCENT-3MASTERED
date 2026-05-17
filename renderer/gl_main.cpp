@@ -985,6 +985,7 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 	ao_suppression_draw_value = 0.0f;
 	bloom_suppression_draw_value = 0.0f;
 	ao_class_draw_value = 0;
+	ao_weight_draw_value = 1.0f;
 	if (framebuffer_ok && framebuffers[framebuffer_current_draw].Samples() >= 2)
 		glEnable(GL_MULTISAMPLE);
 	else
@@ -1073,7 +1074,8 @@ bool GL4Renderer::BeginAODepthFrame(int visible_width, int visible_height, float
 	glDisable(GL_MULTISAMPLE);
 	glEnable(GL_DEPTH_TEST);
 	glDepthMask(GL_TRUE);
-	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glClearColor(0.0, 0.0, 0.0, 0.0);
 	glClearDepth(1.0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -1085,6 +1087,7 @@ bool GL4Renderer::BeginAODepthFrame(int visible_width, int visible_height, float
 	GL_Ortho(projection, 0, ao_width, ao_height, 0, 0, 1);
 	UpdateLegacyBlock(projection, mat4_identity);
 	ao_depth_capture_active = true;
+	legacy_draw_uniforms_dirty = true;
 
 	return true;
 }
@@ -1095,6 +1098,7 @@ void GL4Renderer::EndAODepthFrame()
 		return;
 
 	ao_depth_capture_active = false;
+	legacy_draw_uniforms_dirty = true;
 	ao_depth_source_valid = ao_depth_projection_valid && ao_depth_source_framebuffer.Handle() != 0;
 
 	OpenGL_state.clip_x1 = ao_depth_saved_clip_x1;
@@ -1255,7 +1259,10 @@ bool GL4Renderer::BeginPostPresentFrame()
 		const bool use_ao_depth_source = ao_depth_source_valid && ao_depth_projection_valid &&
 			ao_depth_source_framebuffer.Handle() != 0;
 		const float* gtao_projection = use_ao_depth_source ? ao_depth_projection : last_projection;
-		GLuint gtao_ao_class_texture = use_ao_depth_source ? 0 : ao_class_texture;
+		GLuint gtao_ao_weight_texture = use_ao_depth_source ?
+			ao_depth_source_framebuffer.ColorTextureForRead() :
+			ao_class_texture;
+		const bool gtao_ao_weight_is_direct = use_ao_depth_source;
 
 		float near_z = last_nearz;
 		float far_z = last_farz;
@@ -1284,7 +1291,8 @@ bool GL4Renderer::BeginPostPresentFrame()
 			{
 				gtao.Apply(&ao_depth_source_framebuffer, &ao_scene_framebuffer, OpenGL_preferred_state,
 					OpenGL_state, gtao_projection, near_z, far_z, ao_suppression_mask_texture,
-					gtao_ao_class_texture, ao_depth_visible_x, ao_depth_visible_y,
+					gtao_ao_weight_texture, gtao_ao_weight_is_direct,
+					ao_depth_visible_x, ao_depth_visible_y,
 					ao_depth_visible_w, ao_depth_visible_h);
 			}
 			else
@@ -1295,7 +1303,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 
 				gtao.Apply(&ao_scene_framebuffer, &ao_scene_framebuffer, OpenGL_preferred_state,
 					OpenGL_state, gtao_projection, near_z, far_z, ao_suppression_mask_texture,
-					gtao_ao_class_texture);
+					gtao_ao_weight_texture, gtao_ao_weight_is_direct);
 			}
 			GL4PerfGpuDrain("GPU.GTAO.Apply");
 
@@ -1325,14 +1333,15 @@ bool GL4Renderer::BeginPostPresentFrame()
 			{
 				gtao.Apply(&ao_depth_source_framebuffer, present_framebuffer, OpenGL_preferred_state,
 					OpenGL_state, gtao_projection, near_z, far_z, ao_suppression_mask_texture,
-					gtao_ao_class_texture, ao_depth_visible_x, ao_depth_visible_y,
+					gtao_ao_weight_texture, gtao_ao_weight_is_direct,
+					ao_depth_visible_x, ao_depth_visible_y,
 					ao_depth_visible_w, ao_depth_visible_h);
 			}
 			else
 			{
 				gtao.Apply(present_framebuffer, present_framebuffer, OpenGL_preferred_state,
 					OpenGL_state, gtao_projection, near_z, far_z, ao_suppression_mask_texture,
-					gtao_ao_class_texture);
+					gtao_ao_weight_texture, gtao_ao_weight_is_direct);
 			}
 			GL4PerfGpuDrain("GPU.GTAO.Apply");
 		}
@@ -2068,12 +2077,31 @@ void GL4Renderer::SetBloomSuppression(float value)
 		post_protection_mask_dirty = true;
 }
 
+static float GL4AOClassWeight(const renderer_preferred_state& state, int value)
+{
+	switch (value)
+	{
+	case RENDERER_AO_CLASS_TERRAIN:
+		return std::max(0.0f, std::min(state.gtao_terrain_occlusion, 1.0f));
+	case RENDERER_AO_CLASS_POLYOBJECT:
+		return std::max(0.0f, std::min(state.gtao_polyobject_occlusion, 1.0f));
+	case RENDERER_AO_CLASS_MINE_ROCK:
+		return std::max(0.0f, std::min(state.gtao_mine_rock_occlusion, 1.0f));
+	case RENDERER_AO_CLASS_MINE:
+		return std::max(0.0f, std::min(state.gtao_mine_occlusion, 1.0f));
+	default:
+		return 1.0f;
+	}
+}
+
 void GL4Renderer::SetAOClass(int value)
 {
 	int clamped_value = std::max(0, std::min(value, 255));
-	if (clamped_value != ao_class_draw_value)
+	float weight_value = GL4AOClassWeight(OpenGL_preferred_state, clamped_value);
+	if (clamped_value != ao_class_draw_value || weight_value != ao_weight_draw_value)
 		legacy_draw_uniforms_dirty = true;
 	ao_class_draw_value = clamped_value;
+	ao_weight_draw_value = weight_value;
 
 	ShaderProgram* current_shader = ShaderProgram::Current();
 	if (current_shader)
@@ -2081,6 +2109,12 @@ void GL4Renderer::SetAOClass(int value)
 		GLint ao_class_uniform = current_shader->FindUniform("ao_class_value");
 		if (ao_class_uniform != -1)
 			glUniform1i(ao_class_uniform, ao_class_draw_value);
+		GLint ao_weight_uniform = current_shader->FindUniform("ao_weight_value");
+		if (ao_weight_uniform != -1)
+			glUniform1f(ao_weight_uniform, ao_weight_draw_value);
+		GLint ao_capture_weight_mode_uniform = current_shader->FindUniform("ao_capture_weight_mode");
+		if (ao_capture_weight_mode_uniform != -1)
+			glUniform1i(ao_capture_weight_mode_uniform, ao_depth_capture_active ? 1 : 0);
 	}
 }
 

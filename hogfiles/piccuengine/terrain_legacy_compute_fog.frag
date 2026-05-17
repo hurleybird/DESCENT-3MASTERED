@@ -9,6 +9,8 @@ uniform float terrain_dynamic_light_radii[32];
 uniform vec3 terrain_dynamic_light_directions[32];
 uniform float terrain_dynamic_light_dot_ranges[32];
 uniform int terrain_dynamic_light_directional[32];
+uniform float ao_weight_value;
+uniform int ao_capture_weight_mode;
 
 layout(std140) uniform TerrainFogBlock
 {
@@ -85,6 +87,14 @@ vec4 SampleTerrainBaseTexture(vec2 uv, int layer)
 
 void main()
 {
+	if (ao_capture_weight_mode != 0)
+	{
+		color = vec4(ao_weight_value, ao_weight_value, ao_weight_value, 1.0);
+		post_mask = vec4(0.0, 0.0, 0.0, 1.0);
+		ao_class = ao_weight_value;
+		return;
+	}
+
 	vec4 basecolor = SampleTerrainBaseTexture(outuv.xy / outuv.z, outtexpage);
 	vec4 lmcolor = texture(lightmaptexture, vec3(outuv2.xy / outuv2.z, float(clamp(outlmpage, 0, 3))));
 	lmcolor.rgb = ApplyDynamicLightmapLighting(lmcolor.rgb);

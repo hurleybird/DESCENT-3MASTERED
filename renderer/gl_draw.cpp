@@ -442,6 +442,8 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_ao_suppression_uniforms[i] = drawshaders[i].FindUniform("ao_suppression");
 		drawshader_bloom_suppression_uniforms[i] = drawshaders[i].FindUniform("bloom_suppression");
 		drawshader_ao_class_uniforms[i] = drawshaders[i].FindUniform("ao_class_value");
+		drawshader_ao_weight_uniforms[i] = drawshaders[i].FindUniform("ao_weight_value");
+		drawshader_ao_capture_weight_mode_uniforms[i] = drawshaders[i].FindUniform("ao_capture_weight_mode");
 		drawshader_post_mask_luminance_uniforms[i] = drawshaders[i].FindUniform("post_mask_use_luminance");
 	}
 
@@ -537,6 +539,10 @@ void GL4Renderer::SelectDrawShader()
 		glUniform1f(drawshader_bloom_suppression_uniforms[shader_index], bloom_suppression_draw_value);
 	if (drawshader_ao_class_uniforms[shader_index] != -1)
 		glUniform1i(drawshader_ao_class_uniforms[shader_index], ao_class_draw_value);
+	if (drawshader_ao_weight_uniforms[shader_index] != -1)
+		glUniform1f(drawshader_ao_weight_uniforms[shader_index], ao_weight_draw_value);
+	if (drawshader_ao_capture_weight_mode_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_ao_capture_weight_mode_uniforms[shader_index], ao_depth_capture_active ? 1 : 0);
 	if (drawshader_post_mask_luminance_uniforms[shader_index] != -1)
 	{
 		bool use_luminance =

@@ -198,12 +198,15 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_ao_suppression_uniforms[8] = {};
 	GLint drawshader_bloom_suppression_uniforms[8] = {};
 	GLint drawshader_ao_class_uniforms[8] = {};
+	GLint drawshader_ao_weight_uniforms[8] = {};
+	GLint drawshader_ao_capture_weight_mode_uniforms[8] = {};
 	GLint drawshader_post_mask_luminance_uniforms[8] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
 	float ao_suppression_draw_value = 0.0f;
 	float bloom_suppression_draw_value = 0.0f;
 	int ao_class_draw_value = 0;
+	float ao_weight_draw_value = 1.0f;
 	bool post_mask_only_draw = false;
 	bool post_protection_mask_dirty = false;
 	bool post_protection_mask_cleared_this_frame = false;

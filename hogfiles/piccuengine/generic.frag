@@ -28,6 +28,8 @@ uniform int dynamic_light_directional[8];
 uniform float ao_suppression;
 uniform float bloom_suppression;
 uniform int ao_class_value;
+uniform float ao_weight_value;
+uniform int ao_capture_weight_mode;
 uniform int post_mask_use_luminance;
 
 in vec4 outcolor;
@@ -99,6 +101,17 @@ vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 void main()
 {
 	vec4 vertex_color = ApplyPhongLighting(outcolor);
+	if (ao_capture_weight_mode != 0)
+	{
+		float ao_weight = clamp(ao_weight_value * (1.0 - ao_suppression), 0.0, 1.0);
+		if (ao_weight <= 0.0)
+			discard;
+		color = vec4(ao_weight, ao_weight, ao_weight, 1.0);
+		post_mask = vec4(0.0, 0.0, 0.0, 1.0);
+		ao_class = ao_weight;
+		return;
+	}
+
 	float ao_mask = 0.0;
 	float bloom_mask = 0.0;
 
