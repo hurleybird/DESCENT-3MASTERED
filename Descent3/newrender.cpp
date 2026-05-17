@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <algorithm>
 #include <cmath>
+#include <string.h>
 #include "descent.h"
 #include "game.h"
 #include "newrender.h"
@@ -76,6 +77,42 @@ static inline int GetFaceAlpha(face& fp, int bm_handle)
 	return ret;
 }
 
+static bool TextureNameContainsNoCase(const char* name, const char* needle)
+{
+	if (!name || !needle || !needle[0])
+		return false;
+
+	size_t needle_len = strlen(needle);
+	for (const char* p = name; *p; p++)
+	{
+		if (!strnicmp(p, needle, needle_len))
+			return true;
+	}
+
+	return false;
+}
+
+static bool TextureLooksLikeMineRock(int tmap)
+{
+	if (tmap < 0 || tmap >= MAX_TEXTURES || !GameTextures[tmap].used)
+		return false;
+
+	if (GameTextures[tmap].flags & TF_RUBBLE)
+		return true;
+
+	return TextureNameContainsNoCase(GameTextures[tmap].name, "rock") ||
+		TextureNameContainsNoCase(GameTextures[tmap].name, "rubble");
+}
+
+static int RoomFaceAOClass(room& rp, face& fp)
+{
+	if (rp.flags & RF_EXTERNAL)
+		return RENDERER_AO_CLASS_DEFAULT;
+
+	return TextureLooksLikeMineRock(fp.tmap) ?
+		RENDERER_AO_CLASS_MINE_ROCK : RENDERER_AO_CLASS_MINE;
+}
+
 //Changes that can happen to a face to warrant a remesh
 struct FacePrevState
 {
@@ -92,6 +129,7 @@ struct RoomDrawElement
 {
 	int texturenum;
 	int lmhandle;
+	int ao_class;
 	ElementRange range;
 };
 
@@ -100,6 +138,7 @@ struct PostDrawElement
 	int facenum;
 	int texturenum;
 	int lmhandle;
+	int ao_class;
 	vector avg;
 	ElementRange range;
 };
@@ -108,6 +147,7 @@ struct SpecularDrawElement
 {
 	int texturenum;
 	int lmhandle;
+	int ao_class;
 	ElementRange range;
 	special_face* special;
 };
@@ -212,9 +252,11 @@ struct RoomMesh
 		//Bind bitmaps. Temp API, should the bitmap system also handle binding? Or does that go elsewhere?
 		Room_VertexBuffer.BindBitmap(GetTextureBitmap(element.texturenum, 0));
 		Room_VertexBuffer.BindLightmap(element.lmhandle);
+		rend_SetAOClass(element.ao_class);
 
 		//And draw
 		Room_VertexBuffer.DrawIndexed(PrimitiveType::Triangles, element.range);
+		rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
 	}
 
 	void DrawLit()
@@ -224,10 +266,12 @@ struct RoomMesh
 			//Bind bitmaps. Temp API, should the bitmap system also handle binding? Or does that go elsewhere?
 			Room_VertexBuffer.BindBitmap(GetTextureBitmap(element.texturenum, 0));
 			Room_VertexBuffer.BindLightmap(element.lmhandle);
+			rend_SetAOClass(element.ao_class);
 
 			//And draw
 			Room_VertexBuffer.DrawIndexed(PrimitiveType::Triangles, element.range);
 		}
+		rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
 	}
 
 	void DrawUnlit()
@@ -236,10 +280,12 @@ struct RoomMesh
 		{
 			//Bind bitmaps. Temp API, should the bitmap system also handle binding? Or does that go elsewhere?
 			Room_VertexBuffer.BindBitmap(GetTextureBitmap(element.texturenum, 0));
+			rend_SetAOClass(element.ao_class);
 
 			//And draw
 			Room_VertexBuffer.DrawIndexed(PrimitiveType::Triangles, element.range);
 		}
+		rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
 	}
 
 	void DrawMirrorFaces()
@@ -252,10 +298,12 @@ struct RoomMesh
 		for (RoomDrawElement& element : MirrorInteractions)
 		{
 			Room_VertexBuffer.BindLightmap(element.lmhandle);
+			rend_SetAOClass(element.ao_class);
 
 			//And draw
 			Room_VertexBuffer.DrawIndexed(PrimitiveType::Triangles, element.range);
 		}
+		rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
 	}
 
 	void DrawSpecular()
@@ -303,6 +351,7 @@ struct RoomMesh
 				}
 
 				rend_UpdateSpecular(&specblock);
+				rend_SetAOClass(element.ao_class);
 
 				//And draw
 				Room_VertexBuffer.DrawIndexed(PrimitiveType::Triangles, element.range);
@@ -349,11 +398,13 @@ struct RoomMesh
 				}
 
 				rend_UpdateSpecular(&specblock);
+				rend_SetAOClass(element.ao_class);
 
 				//And draw
 				Room_VertexBuffer.DrawIndexed(PrimitiveType::Triangles, element.range);
 			}
 		}
+		rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
 	}
 };
 
@@ -369,6 +420,7 @@ void AddFacesToBuffer(MeshBuilder& mesh, std::vector<SortableElement>& elements,
 
 	int lasttmap = -1;
 	int lastlm = -1;
+	int last_ao_class = RENDERER_AO_CLASS_DEFAULT;
 	bool firsttime = true;
 	int triindices[3];
 	RendVertex vert;
@@ -383,6 +435,7 @@ void AddFacesToBuffer(MeshBuilder& mesh, std::vector<SortableElement>& elements,
 				RoomDrawElement element;
 				element.texturenum = lasttmap;
 				element.lmhandle = lastlm;
+				element.ao_class = last_ao_class;
 				element.range = mesh.EndIndices();
 				element.range.offset += firstIndex;
 				interactions.push_back(element);
@@ -394,6 +447,7 @@ void AddFacesToBuffer(MeshBuilder& mesh, std::vector<SortableElement>& elements,
 			mesh.BeginIndices();
 			lasttmap = element.texturehandle;
 			lastlm = element.lmhandle;
+			last_ao_class = RoomFaceAOClass(rp, rp.faces[element.element]);
 
 			vert.uslide = GameTextures[lasttmap].slide_u;
 			vert.vslide = GameTextures[lasttmap].slide_v;
@@ -431,6 +485,7 @@ void AddFacesToBuffer(MeshBuilder& mesh, std::vector<SortableElement>& elements,
 	RoomDrawElement element;
 	element.texturenum = lasttmap;
 	element.lmhandle = lastlm;
+	element.ao_class = last_ao_class;
 	element.range = mesh.EndIndices();
 	element.range.offset += firstIndex;
 	interactions.push_back(element);
@@ -496,6 +551,7 @@ void AddPostFacesToBuffer(MeshBuilder& mesh, std::vector<SortableElement>& eleme
 		element.facenum = lastfacenum;
 		element.texturenum = lasttmap;
 		element.lmhandle = lastlm;
+		element.ao_class = RoomFaceAOClass(rp, rp.faces[lastfacenum]);
 		element.range = mesh.EndIndices();
 		element.range.offset += firstIndex;
 		element.avg = avg / (float)rp.faces[lastfacenum].num_verts;
@@ -599,6 +655,7 @@ void AddSpecFacesToBuffer(MeshBuilder& mesh, std::vector<SortableElement>& eleme
 		SpecularDrawElement element;
 		element.texturenum = lasttmap;
 		element.lmhandle = lastlm;
+		element.ao_class = RoomFaceAOClass(rp, fp);
 		element.range = mesh.EndIndices();
 		element.range.offset += firstIndex;
 		element.special = &SpecialFaces[fp.special_handle];

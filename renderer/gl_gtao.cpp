@@ -168,8 +168,11 @@ void GTAOResources::InitShaders()
 	depth_shader.Use();
 	depth_source = depth_shader.FindUniform("depth_tex");
 	depth_source_ms = depth_shader.FindUniform("depth_ms_tex");
+	depth_ao_class = depth_shader.FindUniform("ao_class_tex");
 	if (depth_source != -1) glUniform1i(depth_source, 0);
 	if (depth_source_ms != -1) glUniform1i(depth_source_ms, 1);
+	if (depth_ao_class != -1) glUniform1i(depth_ao_class, 2);
+	depth_has_ao_class = depth_shader.FindUniform("has_ao_class");
 	depth_samples = depth_shader.FindUniform("depth_samples");
 	depth_input_screen_size = depth_shader.FindUniform("input_screen_size");
 	depth_ao_screen_size = depth_shader.FindUniform("ao_screen_size");
@@ -192,6 +195,10 @@ void GTAOResources::InitShaders()
 	ao_screen_size = ao_shader.FindUniform("screen_size");
 	ao_directions = ao_shader.FindUniform("directions");
 	ao_steps = ao_shader.FindUniform("steps");
+	ao_terrain_occlusion = ao_shader.FindUniform("terrain_ao_occlusion");
+	ao_polyobject_occlusion = ao_shader.FindUniform("polyobject_ao_occlusion");
+	ao_mine_rock_occlusion = ao_shader.FindUniform("mine_rock_ao_occlusion");
+	ao_mine_occlusion = ao_shader.FindUniform("mine_ao_occlusion");
 
 	blur_x_shader.AttachSource(blitVertexSrc, gtaoBlurFragmentSrc);
 	blur_x_shader.Use();
@@ -300,7 +307,7 @@ void GTAOResources::Destroy()
 
 void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const renderer_preferred_state& pref_state,
 	const rendering_state& render_state, const float* projection,
-	float nearz, float farz, GLuint suppression_mask_texture)
+	float nearz, float farz, GLuint suppression_mask_texture, GLuint ao_class_texture)
 {
 	if (!source || !pref_state.gtao_enabled)
 	{
@@ -350,7 +357,7 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	//to the display resolution so they do not become 4xSSAA-resolution AO.
 	//Depth is first reduced to this resolution so MSAA resolves are paid once
 	//per AO pixel instead of inside every horizon sample.
-	ao_depth_framebuffer.Update(ao_width, ao_height, GL_R32F, GL_RED, GL_FLOAT);
+	ao_depth_framebuffer.Update(ao_width, ao_height, GL_RG32F, GL_RG, GL_FLOAT);
 	//These buffers store AO plus linear depth; half-float depth avoids
 	//depth-edge ghosts from 8-bit quantization in the bilateral blur.
 	ao_framebuffer.Update(ao_width, ao_height, GL_RG16F, GL_RG, GL_FLOAT);
@@ -434,6 +441,8 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		depth_shader.Use();
 		if (depth_samples != -1)
 			glUniform1i(depth_samples, input_samples);
+		if (depth_has_ao_class != -1)
+			glUniform1i(depth_has_ao_class, ao_class_texture != 0 ? 1 : 0);
 		if (depth_input_screen_size != -1)
 			glUniform2f(depth_input_screen_size, (float)source_width, (float)source_height);
 		if (depth_ao_screen_size != -1)
@@ -441,6 +450,8 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(depth_texture, 0, GL_NEAREST);
+		if (ao_class_texture != 0)
+			GL_BindFramebufferTexture(ao_class_texture, 2, GL_NEAREST);
 		AODrawFullscreen(ao_depth_framebuffer.Handle(), ao_width, ao_height);
 	}
 
@@ -467,6 +478,14 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		glUniform2f(ao_screen_size, (float)ao_width, (float)ao_height);
 		glUniform1i(ao_directions, directions);
 		glUniform1i(ao_steps, steps);
+		if (ao_terrain_occlusion != -1)
+			glUniform1f(ao_terrain_occlusion, Clamp01(pref_state.gtao_terrain_occlusion));
+		if (ao_polyobject_occlusion != -1)
+			glUniform1f(ao_polyobject_occlusion, Clamp01(pref_state.gtao_polyobject_occlusion));
+		if (ao_mine_rock_occlusion != -1)
+			glUniform1f(ao_mine_rock_occlusion, Clamp01(pref_state.gtao_mine_rock_occlusion));
+		if (ao_mine_occlusion != -1)
+			glUniform1f(ao_mine_occlusion, Clamp01(pref_state.gtao_mine_occlusion));
 
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(ao_depth_framebuffer.ColorTextureForRead(), 0, GL_NEAREST);

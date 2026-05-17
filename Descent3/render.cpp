@@ -63,6 +63,42 @@
 
 static int Faces_rendered = 0;
 
+static bool TextureNameContainsNoCase(const char* name, const char* needle)
+{
+	if (!name || !needle || !needle[0])
+		return false;
+
+	size_t needle_len = strlen(needle);
+	for (const char* p = name; *p; p++)
+	{
+		if (!strnicmp(p, needle, needle_len))
+			return true;
+	}
+
+	return false;
+}
+
+static bool TextureLooksLikeMineRock(int tmap)
+{
+	if (tmap < 0 || tmap >= MAX_TEXTURES || !GameTextures[tmap].used)
+		return false;
+
+	if (GameTextures[tmap].flags & TF_RUBBLE)
+		return true;
+
+	return TextureNameContainsNoCase(GameTextures[tmap].name, "rock") ||
+		TextureNameContainsNoCase(GameTextures[tmap].name, "rubble");
+}
+
+static int RoomFaceAOClass(room* rp, face* fp)
+{
+	if (!rp || !fp || (rp->flags & RF_EXTERNAL))
+		return RENDERER_AO_CLASS_DEFAULT;
+
+	return TextureLooksLikeMineRock(fp->tmap) ?
+		RENDERER_AO_CLASS_MINE_ROCK : RENDERER_AO_CLASS_MINE;
+}
+
 extern double GetFPS();
 extern ubyte Outline_release_mode;
 //3d point for each vertex for use during rendering a room
@@ -79,7 +115,7 @@ float Fog_zone_start = FLT_MAX, Fog_zone_end = FLT_MAX;
 int Must_render_terrain;
 int Global_buffer_index;
 int No_render_windows_hack = -1;
-constexpr float WALL_PULSE_INCREMENT = .01;
+constexpr float WALL_PULSE_INCREMENT = .01f;
 
 //Variables for various debugging features
 #ifndef _DEBUG
@@ -1770,6 +1806,7 @@ struct RoomBaseFaceBatchKey
 	sbyte alpha_type;
 	ubyte alpha_value;
 	color_model color_model_value;
+	int ao_class;
 
 	bool Equals(const RoomBaseFaceBatchKey& other) const
 	{
@@ -1778,7 +1815,8 @@ struct RoomBaseFaceBatchKey
 			overlay_type == other.overlay_type &&
 			alpha_type == other.alpha_type &&
 			alpha_value == other.alpha_value &&
-			color_model_value == other.color_model_value;
+			color_model_value == other.color_model_value &&
+			ao_class == other.ao_class;
 	}
 };
 
@@ -1827,6 +1865,7 @@ public:
 			if (batch.key.overlay_type != OT_NONE)
 				rend_SetOverlayMap(batch.key.overlay_map);
 			rend_SetTextureType(TT_PERSPECTIVE);
+			rend_SetAOClass(batch.key.ao_class);
 
 			std::vector<renderer_poly_batch_item> items(batch.faces.size());
 			for (size_t face_index = 0; face_index < batch.faces.size(); face_index++)
@@ -1839,6 +1878,7 @@ public:
 			rend_DrawPolygon3DBatch(batch.key.bitmap_handle, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
 		}
 
+		rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
 		m_batches.clear();
 	}
 
@@ -2061,6 +2101,7 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	key.color_model_value = NoLightmaps ? CM_RGB : CM_MONO;
 	key.overlay_type = OT_NONE;
 	key.overlay_map = 0;
+	key.ao_class = RoomFaceAOClass(rp, fp);
 
 	if (fp->flags & FF_LIGHTMAP)
 	{
@@ -2328,7 +2369,9 @@ void RenderFace(room* rp, int facenum)
 			rend_SetPerPixelDynamicLighting(&fp->normal, per_pixel_light_count, per_pixel_lights);
 	}
 
+	rend_SetAOClass(RoomFaceAOClass(rp, fp));
 	drawn = g3_DrawPoly(fp->num_verts, pointlist, bm_handle, MAP_TYPE_BITMAP, &face_cc);
+	rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
 	if (per_pixel_light_count > 0)
 		rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 

@@ -252,6 +252,14 @@ void rend_SetBloomSuppression(float value)
 	renderer_inst->SetBloomSuppression(value);
 }
 
+void rend_SetAOClass(int value)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->SetAOClass(value);
+}
+
 void rend_SetMipState(sbyte state)
 {
 	if (!Renderer_initted)

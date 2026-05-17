@@ -27,6 +27,7 @@ flat in int outtexpage;
 
 layout(location = 0) out vec4 color;
 layout(location = 2) out vec4 post_mask;
+layout(location = 3) out float ao_class;
 
 vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 {
@@ -80,4 +81,5 @@ void main()
 	float fog_amount = clamp((outdepth - fog_start) / max(fog_end - fog_start, 0.0001), 0.0, 1.0);
 	color = vec4(mix(litcolor.rgb, fog.color.rgb, fog_amount), litcolor.a);
 	post_mask = vec4(0.0, fog_amount, 0.0, 1.0);
+	ao_class = 1.0 / 255.0;
 }

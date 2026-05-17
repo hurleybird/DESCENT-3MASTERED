@@ -980,8 +980,11 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		legacy_draw_uniforms_dirty = true;
 	if (bloom_suppression_draw_value != 0.0f)
 		legacy_draw_uniforms_dirty = true;
+	if (ao_class_draw_value != 0)
+		legacy_draw_uniforms_dirty = true;
 	ao_suppression_draw_value = 0.0f;
 	bloom_suppression_draw_value = 0.0f;
+	ao_class_draw_value = 0;
 	if (framebuffer_ok && framebuffers[framebuffer_current_draw].Samples() >= 2)
 		glEnable(GL_MULTISAMPLE);
 	else
@@ -1136,6 +1139,8 @@ bool GL4Renderer::BeginPostPresentFrame()
 
 	GLuint protection_mask_texture = post_protection_mask_dirty ?
 		post_protection_mask.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
+	GLuint ao_class_texture = ao_enabled ?
+		post_protection_mask.AOClassTextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
 
 	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_AFTER_PREP);
 
@@ -1168,7 +1173,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 			GL4PerfGpuDrain("GPU.GTAO.SceneDepthCopy");
 
 			gtao.Apply(&ao_scene_framebuffer, &ao_scene_framebuffer, OpenGL_preferred_state,
-				OpenGL_state, last_projection, near_z, far_z, protection_mask_texture);
+				OpenGL_state, last_projection, near_z, far_z, protection_mask_texture, ao_class_texture);
 			GL4PerfGpuDrain("GPU.GTAO.Apply");
 
 			ao_composite_framebuffer.Update(present_framebuffer->Width(), present_framebuffer->Height(), 0);
@@ -1191,7 +1196,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 		else
 		{
 			gtao.Apply(present_framebuffer, present_framebuffer, OpenGL_preferred_state,
-				OpenGL_state, last_projection, near_z, far_z, protection_mask_texture);
+				OpenGL_state, last_projection, near_z, far_z, protection_mask_texture, ao_class_texture);
 			GL4PerfGpuDrain("GPU.GTAO.Apply");
 		}
 	}
@@ -1920,6 +1925,22 @@ void GL4Renderer::SetBloomSuppression(float value)
 	bloom_suppression_draw_value = clamped_value;
 	if (bloom_suppression_draw_value > 0.0f)
 		post_protection_mask_dirty = true;
+}
+
+void GL4Renderer::SetAOClass(int value)
+{
+	int clamped_value = std::max(0, std::min(value, 255));
+	if (clamped_value != ao_class_draw_value)
+		legacy_draw_uniforms_dirty = true;
+	ao_class_draw_value = clamped_value;
+
+	ShaderProgram* current_shader = ShaderProgram::Current();
+	if (current_shader)
+	{
+		GLint ao_class_uniform = current_shader->FindUniform("ao_class_value");
+		if (ao_class_uniform != -1)
+			glUniform1i(ao_class_uniform, ao_class_draw_value);
+	}
 }
 
 // Sets the overall alpha scale factor (all alpha values are scaled by this value)

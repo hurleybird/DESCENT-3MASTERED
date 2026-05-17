@@ -2,6 +2,7 @@
 
 uniform sampler2D colortexture;
 uniform sampler2D lightmaptexture;
+uniform int ao_class_value;
 
 layout(std140) uniform RoomBlock
 {
@@ -20,6 +21,7 @@ flat in vec4 outplane;
 
 layout(location = 0) out vec4 color;
 layout(location = 2) out vec4 post_mask;
+layout(location = 3) out float ao_class;
 
 void main()
 {
@@ -43,4 +45,5 @@ void main()
 	float fog_amount = clamp(mag / room.fog_distance, 0, 1);
 	color = mix(vec4(basecolor.rgb * lmcolor.rgb, 1.0), vec4(room.fog_color.rgb, 1.0f), fog_amount) * vec4(outlight, outlight, outlight, 1.0);
 	post_mask = vec4(0.0, fog_amount, 0.0, 1.0);
+	ao_class = float(clamp(ao_class_value, 0, 255)) / 255.0;
 }

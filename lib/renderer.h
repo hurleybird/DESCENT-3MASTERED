@@ -283,6 +283,19 @@ struct renderer_preferred_state
 	float gtao_intensity;
 	float gtao_bias;
 	bool gtao_debug_preview;
+	float gtao_terrain_occlusion;
+	float gtao_polyobject_occlusion;
+	float gtao_mine_rock_occlusion;
+	float gtao_mine_occlusion;
+};
+
+enum renderer_ao_class
+{
+	RENDERER_AO_CLASS_DEFAULT = 0,
+	RENDERER_AO_CLASS_TERRAIN = 1,
+	RENDERER_AO_CLASS_POLYOBJECT = 2,
+	RENDERER_AO_CLASS_MINE_ROCK = 3,
+	RENDERER_AO_CLASS_MINE = 4
 };
 
 struct renderer_lfb
@@ -345,6 +358,7 @@ void rend_EndMotionObject();
 bool rend_ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y);
 void rend_SetAOSuppression(float value);
 void rend_SetBloomSuppression(float value);
+void rend_SetAOClass(int value);
 
 // Tells the software renderer whether or not to use mipping
 void rend_SetMipState (sbyte state);

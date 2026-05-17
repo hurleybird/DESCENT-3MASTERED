@@ -241,6 +241,9 @@ struct PostProtectionMaskResources
 	GLuint mask_texture = 0;
 	GLuint resolved_texture = 0;
 	GLuint resolve_framebuffer = 0;
+	GLuint ao_class_texture = 0;
+	GLuint ao_class_resolved_texture = 0;
+	GLuint ao_class_resolve_framebuffer = 0;
 	uint32_t width = 0;
 	uint32_t height = 0;
 	uint32_t samples = 0;
@@ -252,6 +255,7 @@ struct PostProtectionMaskResources
 	void ClearAttached(GLuint framebuffer);
 	void UseSceneDrawBuffers(GLuint framebuffer);
 	GLuint TextureForRead(GLuint source_framebuffer);
+	GLuint AOClassTextureForRead(GLuint source_framebuffer);
 };
 
 void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter);
@@ -315,6 +319,8 @@ struct GTAOResources
 	//Depth downsample/resolve shader uniforms.
 	GLint depth_source = -1;
 	GLint depth_source_ms = -1;
+	GLint depth_ao_class = -1;
+	GLint depth_has_ao_class = -1;
 	GLint depth_samples = -1;
 	GLint depth_input_screen_size = -1;
 	GLint depth_ao_screen_size = -1;
@@ -332,6 +338,10 @@ struct GTAOResources
 	GLint ao_screen_size = -1;      //width, height
 	GLint ao_directions = -1;
 	GLint ao_steps = -1;
+	GLint ao_terrain_occlusion = -1;
+	GLint ao_polyobject_occlusion = -1;
+	GLint ao_mine_rock_occlusion = -1;
+	GLint ao_mine_occlusion = -1;
 
 	//Blur shader uniforms (same for both x and y).
 	GLint blur_x_delta = -1;
@@ -368,7 +378,7 @@ struct GTAOResources
 	//null, by sampling pref_state and projection info.
 	void Apply(Framebuffer* source, Framebuffer* target, const renderer_preferred_state& pref_state,
 		const rendering_state& render_state, const float* projection,
-		float nearz, float farz, GLuint suppression_mask_texture);
+		float nearz, float farz, GLuint suppression_mask_texture, GLuint ao_class_texture);
 };
 
 inline int RendererSupersamplingFactor(const renderer_preferred_state& state)

@@ -2171,6 +2171,7 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 		rend_SetZValues(0, 5000);
 	}
 
+	rend_SetAOClass(RENDERER_AO_CLASS_TERRAIN);
 	if (Terrain_renderer_mode == TERRAIN_RENDERER_COMPUTE)
 	{
 		PERF_MARKER_SCOPE("Terrain.Surface.Compute");
@@ -2214,6 +2215,7 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 			DisplayTerrainList(nt);
 		}
 	}
+	rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
 
 	if (use_compute_no_far_lod)
 		g3_SetFarClipZ(VisibleTerrainZ);

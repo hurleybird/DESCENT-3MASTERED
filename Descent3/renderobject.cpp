@@ -1681,6 +1681,7 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 
 	PolymodelMotionBeginObject(OBJNUM(obj), &obj_pos, &obj->orient);
 	rend_BeginMotionObject(OBJNUM(obj), 0.0f, 0.0f);
+	rend_SetAOClass(RENDERER_AO_CLASS_POLYOBJECT);
 
 	if (RenderObjectType == RO_STATIC)
 	{
@@ -1716,6 +1717,7 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 	else
 		Int3();	// Get Jason
 
+	rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
 	rend_EndMotionObject();
 	PolymodelMotionEndObject();
 }

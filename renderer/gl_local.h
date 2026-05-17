@@ -173,11 +173,13 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_dynamic_directional_uniforms[8] = {};
 	GLint drawshader_ao_suppression_uniforms[8] = {};
 	GLint drawshader_bloom_suppression_uniforms[8] = {};
+	GLint drawshader_ao_class_uniforms[8] = {};
 	GLint drawshader_post_mask_luminance_uniforms[8] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
 	float ao_suppression_draw_value = 0.0f;
 	float bloom_suppression_draw_value = 0.0f;
+	int ao_class_draw_value = 0;
 	bool post_protection_mask_dirty = false;
 	bool post_protection_mask_cleared_this_frame = false;
 	vector per_pixel_light_direction = { 0, 0, -1 };
@@ -484,6 +486,7 @@ public:
 	bool ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y) override;
 	void SetAOSuppression(float value) override;
 	void SetBloomSuppression(float value) override;
+	void SetAOClass(int value) override;
 
 	// Draws a scaled 2d bitmap to our buffer
 	// NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color

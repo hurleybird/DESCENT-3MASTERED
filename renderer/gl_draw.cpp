@@ -25,6 +25,26 @@ constexpr int NUM_LEGACY_VERTEX_ATTRIBS = 5;
 //The count of vertices that each buffer will store
 constexpr int NUM_VERTS_PER_BUFFER = 640000;
 
+static bool GL4DrawTargetIsFramebuffer(GLuint framebuffer)
+{
+	GLint current_draw = 0;
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &current_draw);
+	return (GLuint)current_draw == framebuffer;
+}
+
+static void GL4UseSceneDrawBuffersWithoutAOClass()
+{
+	const GLenum draw_buffers[4] =
+	{
+		GL_COLOR_ATTACHMENT0,
+		GL_NONE,
+		GL_COLOR_ATTACHMENT2,
+		GL_NONE
+	};
+	glDrawBuffers(4, draw_buffers);
+	GL_ConfigurePostMaskBlend();
+}
+
 void GL4Renderer::UseDrawVAO()
 {
 	glBindVertexArray(drawvao);
@@ -419,6 +439,7 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_dynamic_directional_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_directional[0]");
 		drawshader_ao_suppression_uniforms[i] = drawshaders[i].FindUniform("ao_suppression");
 		drawshader_bloom_suppression_uniforms[i] = drawshaders[i].FindUniform("bloom_suppression");
+		drawshader_ao_class_uniforms[i] = drawshaders[i].FindUniform("ao_class_value");
 		drawshader_post_mask_luminance_uniforms[i] = drawshaders[i].FindUniform("post_mask_use_luminance");
 	}
 
@@ -512,6 +533,8 @@ void GL4Renderer::SelectDrawShader()
 		glUniform1f(drawshader_ao_suppression_uniforms[shader_index], ao_suppression_draw_value);
 	if (drawshader_bloom_suppression_uniforms[shader_index] != -1)
 		glUniform1f(drawshader_bloom_suppression_uniforms[shader_index], bloom_suppression_draw_value);
+	if (drawshader_ao_class_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_ao_class_uniforms[shader_index], ao_class_draw_value);
 	if (drawshader_post_mask_luminance_uniforms[shader_index] != -1)
 	{
 		bool use_luminance =
@@ -683,7 +706,14 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 
 	// And draw!
 	int offset = CopyVertices(nv);
+	const bool suppress_ao_class_write = framebuffer_ok &&
+		OpenGL_state.cur_zbuffer_state == 0 &&
+		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
+	if (suppress_ao_class_write)
+		GL4UseSceneDrawBuffersWithoutAOClass();
 	glDrawArrays(GL_TRIANGLE_FAN, offset, nv);
+	if (suppress_ao_class_write)
+		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
 	DrawMotionVectorPolygon(nv, p);
 	OpenGL_polys_drawn++;
 	OpenGL_verts_processed += nv;
@@ -807,7 +837,14 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 		return;
 
 	int offset = CopyVertices(vertices.data(), (int)vertices.size());
+	const bool suppress_ao_class_write = framebuffer_ok &&
+		OpenGL_state.cur_zbuffer_state == 0 &&
+		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
+	if (suppress_ao_class_write)
+		GL4UseSceneDrawBuffersWithoutAOClass();
 	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)vertices.size());
+	if (suppress_ao_class_write)
+		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
 	DrawMotionVectorTriangles(motion_vertices.data(), (int)motion_vertices.size());
 	OpenGL_polys_drawn += polygons_drawn;
 	OpenGL_verts_processed += original_vertices;

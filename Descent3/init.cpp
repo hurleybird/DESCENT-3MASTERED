@@ -559,6 +559,10 @@ void LoadGameSettings()
 	Render_preferred_state.gtao_intensity = 2.5f;
 	Render_preferred_state.gtao_bias = 0.25f;
 	Render_preferred_state.gtao_debug_preview = false;
+	Render_preferred_state.gtao_terrain_occlusion = 0.5f;
+	Render_preferred_state.gtao_polyobject_occlusion = 0.5f;
+	Render_preferred_state.gtao_mine_rock_occlusion = 0.5f;
+	Render_preferred_state.gtao_mine_occlusion = 1.0f;
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
 	Terrain_renderer_mode = TERRAIN_RENDERER_COMPUTE;

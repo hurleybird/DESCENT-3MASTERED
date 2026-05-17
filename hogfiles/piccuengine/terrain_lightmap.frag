@@ -17,6 +17,7 @@ in vec3 outnormal;
 
 layout(location = 0) out vec4 color;
 layout(location = 2) out vec4 post_mask;
+layout(location = 3) out float ao_class;
 
 vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 {
@@ -63,4 +64,5 @@ void main()
 	lmcolor.rgb = ApplyDynamicLightmapLighting(lmcolor.rgb);
 	color = vec4(basecolor.rgb * lmcolor.rgb, basecolor.a);
 	post_mask = vec4(0.0, 0.0, 0.0, 1.0);
+	ao_class = 1.0 / 255.0;
 }

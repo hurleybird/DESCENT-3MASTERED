@@ -27,6 +27,7 @@ uniform float dynamic_light_dot_ranges[8];
 uniform int dynamic_light_directional[8];
 uniform float ao_suppression;
 uniform float bloom_suppression;
+uniform int ao_class_value;
 uniform int post_mask_use_luminance;
 
 in vec4 outcolor;
@@ -43,6 +44,7 @@ in vec3 outpt;
 
 layout(location = 0) out vec4 color;
 layout(location = 2) out vec4 post_mask;
+layout(location = 3) out float ao_class;
 
 vec4 ApplyPhongLighting(vec4 source_color)
 {
@@ -129,4 +131,5 @@ void main()
 		bloom_mask = max(bloom_mask, mag);
 	#endif
 	post_mask = vec4(ao_mask, bloom_mask, 0.0, 1.0);
+	ao_class = float(clamp(ao_class_value, 0, 255)) / 255.0;
 }
