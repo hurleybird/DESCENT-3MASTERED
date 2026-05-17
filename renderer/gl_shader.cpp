@@ -286,10 +286,18 @@ void GL4Renderer::UpdateCommon(float* projection, float* modelview, int depth)
 	//for ambient occlusion (it runs against the main framebuffer only).
 	if (depth == 0)
 	{
-		memcpy(last_projection, projection, sizeof(last_projection));
-		g3_Mat4Multiply(current_view_projection, projection, modelview);
-		have_current_view_projection = true;
-		have_current_inverse_view_projection = InvertMatrix4(current_view_projection, current_inverse_view_projection);
+		if (ao_depth_capture_active)
+		{
+			memcpy(ao_depth_projection, projection, sizeof(ao_depth_projection));
+			ao_depth_projection_valid = true;
+		}
+		else
+		{
+			memcpy(last_projection, projection, sizeof(last_projection));
+			g3_Mat4Multiply(current_view_projection, projection, modelview);
+			have_current_view_projection = true;
+			have_current_inverse_view_projection = InvertMatrix4(current_view_projection, current_inverse_view_projection);
+		}
 	}
 
 	glBindBuffer(GL_COPY_WRITE_BUFFER, commonbuffername);

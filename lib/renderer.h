@@ -356,6 +356,8 @@ void rend_DrawPolygon2D(int handle,g3Point **p,int nv);
 void rend_BeginMotionObject(int object_handle, float screen_x, float screen_y);
 void rend_EndMotionObject();
 bool rend_ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y);
+bool rend_BeginAODepthFrame(int visible_width, int visible_height, float* zoom_scale);
+void rend_EndAODepthFrame();
 void rend_SetAOSuppression(float value);
 void rend_SetBloomSuppression(float value);
 void rend_SetAOClass(int value);

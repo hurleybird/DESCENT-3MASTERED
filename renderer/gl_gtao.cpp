@@ -231,6 +231,9 @@ void GTAOResources::InitShaders()
 	suppression_source_samples = suppression_shader.FindUniform("source_samples");
 	suppression_input_screen_size = suppression_shader.FindUniform("input_screen_size");
 	suppression_ao_screen_size = suppression_shader.FindUniform("ao_screen_size");
+	suppression_source_visible_origin = suppression_shader.FindUniform("source_visible_origin");
+	suppression_source_visible_size = suppression_shader.FindUniform("source_visible_size");
+	suppression_use_source_visible_rect = suppression_shader.FindUniform("use_source_visible_rect");
 	suppression_gamma = suppression_shader.FindUniform("gamma");
 	suppression_bloom_threshold = suppression_shader.FindUniform("bloom_threshold");
 
@@ -242,6 +245,8 @@ void GTAOResources::InitShaders()
 	if (apply_mask != -1) glUniform1i(apply_mask, 1);
 	apply_intensity = apply_shader.FindUniform("intensity");
 	apply_has_mask = apply_shader.FindUniform("has_suppression_mask");
+	apply_ao_uv_origin = apply_shader.FindUniform("ao_uv_origin");
+	apply_ao_uv_scale = apply_shader.FindUniform("ao_uv_scale");
 
 	ShaderProgram::ClearBinding();
 
@@ -307,7 +312,8 @@ void GTAOResources::Destroy()
 
 void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const renderer_preferred_state& pref_state,
 	const rendering_state& render_state, const float* projection,
-	float nearz, float farz, GLuint suppression_mask_texture, GLuint ao_class_texture)
+	float nearz, float farz, GLuint suppression_mask_texture, GLuint ao_class_texture,
+	int source_visible_x, int source_visible_y, int source_visible_w, int source_visible_h)
 {
 	if (!source || !pref_state.gtao_enabled)
 	{
@@ -329,8 +335,27 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	if (source_width <= 0 || source_height <= 0)
 		return;
 
-	int ao_base_width = render_state.screen_width > 0 ? render_state.screen_width : source_width;
-	int ao_base_height = render_state.screen_height > 0 ? render_state.screen_height : source_height;
+	if (source_visible_w <= 0 || source_visible_h <= 0)
+	{
+		source_visible_x = 0;
+		source_visible_y = 0;
+		source_visible_w = source_width;
+		source_visible_h = source_height;
+	}
+	source_visible_x = ClampInt(source_visible_x, 0, source_width - 1);
+	source_visible_y = ClampInt(source_visible_y, 0, source_height - 1);
+	source_visible_w = ClampInt(source_visible_w, 1, source_width - source_visible_x);
+	source_visible_h = ClampInt(source_visible_h, 1, source_height - source_visible_y);
+	const bool use_source_visible_rect =
+		source_visible_x != 0 || source_visible_y != 0 ||
+		source_visible_w != source_width || source_visible_h != source_height;
+
+	int ao_base_width = use_source_visible_rect ?
+		source_width :
+		(render_state.screen_width > 0 ? render_state.screen_width : source_width);
+	int ao_base_height = use_source_visible_rect ?
+		source_height :
+		(render_state.screen_height > 0 ? render_state.screen_height : source_height);
 	if (ao_base_width <= 0 || ao_base_height <= 0)
 	{
 		ao_base_width = source_width;
@@ -396,7 +421,9 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	GLuint depth_texture = msaa_source ? source->DepthTextureForRead() : source->DepthTextureRaw();
 	GLuint scene_color_texture = 0;
 	if (pref_state.bloom_enabled)
-		scene_color_texture = msaa_source ? source->ColorTextureForRead() : source->ColorTextureRaw();
+		scene_color_texture = (source == target) ?
+			(msaa_source ? source->ColorTextureForRead() : source->ColorTextureRaw()) :
+			target->ColorTextureForRead();
 	//GTAO reads resolved 2D inputs. Hardware resolves are much cheaper than
 	//doing source-block * sample-count loops in the AO/suppression shaders.
 	int input_samples = 0;
@@ -558,6 +585,12 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 			glUniform2f(suppression_input_screen_size, (float)source_width, (float)source_height);
 		if (suppression_ao_screen_size != -1)
 			glUniform2f(suppression_ao_screen_size, (float)ao_width, (float)ao_height);
+		if (suppression_source_visible_origin != -1)
+			glUniform2f(suppression_source_visible_origin, (float)source_visible_x, (float)source_visible_y);
+		if (suppression_source_visible_size != -1)
+			glUniform2f(suppression_source_visible_size, (float)source_visible_w, (float)source_visible_h);
+		if (suppression_use_source_visible_rect != -1)
+			glUniform1i(suppression_use_source_visible_rect, use_source_visible_rect ? 1 : 0);
 		float display_gamma = pref_state.gamma != 0.0f ? 1.0f / pref_state.gamma : 1.0f;
 		if (suppression_gamma != -1)
 			glUniform1f(suppression_gamma, display_gamma);
@@ -585,6 +618,14 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		glUniform1f(apply_intensity, debug_display_ao_only ? 1.0f : intensity);
 		if (apply_has_mask != -1)
 			glUniform1i(apply_has_mask, !debug_display_ao_only && final_suppression_mask != 0 ? 1 : 0);
+		if (apply_ao_uv_origin != -1)
+			glUniform2f(apply_ao_uv_origin,
+				(float)source_visible_x / (float)source_width,
+				(float)source_visible_y / (float)source_height);
+		if (apply_ao_uv_scale != -1)
+			glUniform2f(apply_ao_uv_scale,
+				(float)source_visible_w / (float)source_width,
+				(float)source_visible_h / (float)source_height);
 
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target->Handle());
 		GLenum draw_buffer = GL_COLOR_ATTACHMENT0;

@@ -361,12 +361,17 @@ struct GTAOResources
 	GLint suppression_source_samples = -1;
 	GLint suppression_input_screen_size = -1;
 	GLint suppression_ao_screen_size = -1;
+	GLint suppression_source_visible_origin = -1;
+	GLint suppression_source_visible_size = -1;
+	GLint suppression_use_source_visible_rect = -1;
 	GLint suppression_gamma = -1;
 	GLint suppression_bloom_threshold = -1;
 
 	//Apply (composite) shader uniforms.
 	GLint apply_intensity = -1;
 	GLint apply_has_mask = -1;
+	GLint apply_ao_uv_origin = -1;
+	GLint apply_ao_uv_scale = -1;
 
 	void InitShaders();
 	void DestroyShaders();
@@ -378,7 +383,9 @@ struct GTAOResources
 	//null, by sampling pref_state and projection info.
 	void Apply(Framebuffer* source, Framebuffer* target, const renderer_preferred_state& pref_state,
 		const rendering_state& render_state, const float* projection,
-		float nearz, float farz, GLuint suppression_mask_texture, GLuint ao_class_texture);
+		float nearz, float farz, GLuint suppression_mask_texture, GLuint ao_class_texture,
+		int source_visible_x = 0, int source_visible_y = 0,
+		int source_visible_w = 0, int source_visible_h = 0);
 };
 
 inline int RendererSupersamplingFactor(const renderer_preferred_state& state)

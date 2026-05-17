@@ -2176,6 +2176,9 @@ void GameDrawMainView()
 	else if ((Viewer_object == Player_object) && (Players[Player_num].flags & PLAYER_FLAGS_REARVIEW))
 		rear_view = 1;
 
+	object* render_viewer = Viewer_object;
+	bool render_rear_view = rear_view;
+
 	//Draw the world
 	Rendering_main_view = true;
 	{
@@ -2215,6 +2218,20 @@ void GameDrawMainView()
 		rend_CaptureBloomSource();
 	}
 	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_CAPTURE_BLOOM);
+
+	if (render_viewer)
+	{
+		float ao_zoom_scale = 1.0f;
+		if (rend_BeginAODepthFrame(Game_window_w, Game_window_h, &ao_zoom_scale))
+		{
+			PERF_MARKER_SCOPE("GameRenderWorld.AODepth");
+			Rendering_main_view = true;
+			GameRenderWorld(render_viewer, &render_viewer->pos, render_viewer->roomnum,
+				&render_viewer->orient, Render_zoom * ao_zoom_scale, render_rear_view);
+			Rendering_main_view = false;
+			rend_EndAODepthFrame();
+		}
+	}
 
 	//We're done with this window
 	{

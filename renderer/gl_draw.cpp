@@ -158,7 +158,8 @@ void GL4Renderer::DestroyMotionVectorDraw()
 void GL4Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 {
 	if (!motion_object_active || motionvectorshader.Handle() == 0 ||
-		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || nv <= 0)
+		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || nv <= 0 ||
+		ao_depth_capture_active)
 	{
 		return;
 	}
@@ -213,7 +214,8 @@ void GL4Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 void GL4Renderer::DrawMotionVectorTriangles(const gl_motion_vertex* vertices, int nv)
 {
 	if (!motion_object_active || motionvectorshader.Handle() == 0 ||
-		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || !vertices || nv <= 0)
+		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || !vertices || nv <= 0 ||
+		ao_depth_capture_active)
 	{
 		return;
 	}

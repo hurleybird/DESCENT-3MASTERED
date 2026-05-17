@@ -1018,6 +1018,111 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 	glViewport(ScaledX(x1), FramebufferHeight() - ScaledY(y2), ScaledW(x2 - x1), ScaledH(y2 - y1));
 }
 
+bool GL4Renderer::BeginAODepthFrame(int visible_width, int visible_height, float* zoom_scale)
+{
+	if (!framebuffer_ok || !OpenGL_preferred_state.gtao_enabled || ao_depth_capture_active ||
+		visible_width <= 0 || visible_height <= 0)
+	{
+		return false;
+	}
+
+	const int ao_width = (visible_width * 5 + 3) / 4;
+	const int ao_height = (visible_height * 5 + 3) / 4;
+	if (ao_width <= visible_width || ao_height <= visible_height)
+		return false;
+
+	ao_depth_visible_w = visible_width;
+	ao_depth_visible_h = visible_height;
+	ao_depth_visible_x = (ao_width - visible_width) / 2;
+	ao_depth_visible_y = (ao_height - visible_height) / 2;
+	ao_depth_source_valid = false;
+	ao_depth_projection_valid = false;
+
+	if (zoom_scale)
+	{
+		float visible_aspect = (float)visible_width / (float)visible_height;
+		*zoom_scale = visible_aspect <= 1.0f ?
+			(float)ao_width / (float)visible_width :
+			(float)ao_height / (float)visible_height;
+	}
+
+	ao_depth_source_framebuffer.Update(ao_width, ao_height, 0);
+	if (ao_depth_source_framebuffer.Handle() == 0)
+		return false;
+
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &ao_depth_saved_read);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &ao_depth_saved_draw);
+	glGetIntegerv(GL_VIEWPORT, ao_depth_saved_viewport);
+	glGetBooleanv(GL_COLOR_WRITEMASK, ao_depth_saved_color_mask);
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &ao_depth_saved_depth_mask);
+	ao_depth_saved_blend = glIsEnabled(GL_BLEND);
+	ao_depth_saved_cull = glIsEnabled(GL_CULL_FACE);
+	ao_depth_saved_scissor = glIsEnabled(GL_SCISSOR_TEST);
+	ao_depth_saved_multisample = glIsEnabled(GL_MULTISAMPLE);
+	ao_depth_saved_clip_x1 = OpenGL_state.clip_x1;
+	ao_depth_saved_clip_y1 = OpenGL_state.clip_y1;
+	ao_depth_saved_clip_x2 = OpenGL_state.clip_x2;
+	ao_depth_saved_clip_y2 = OpenGL_state.clip_y2;
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, ao_depth_source_framebuffer.Handle());
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	glViewport(0, 0, ao_width, ao_height);
+	glDisable(GL_BLEND);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_SCISSOR_TEST);
+	glDisable(GL_MULTISAMPLE);
+	glEnable(GL_DEPTH_TEST);
+	glDepthMask(GL_TRUE);
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+	glClearDepth(1.0);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	OpenGL_state.clip_x1 = 0;
+	OpenGL_state.clip_y1 = 0;
+	OpenGL_state.clip_x2 = ao_width;
+	OpenGL_state.clip_y2 = ao_height;
+	float projection[16];
+	GL_Ortho(projection, 0, ao_width, ao_height, 0, 0, 1);
+	UpdateLegacyBlock(projection, mat4_identity);
+	ao_depth_capture_active = true;
+
+	return true;
+}
+
+void GL4Renderer::EndAODepthFrame()
+{
+	if (!ao_depth_capture_active)
+		return;
+
+	ao_depth_capture_active = false;
+	ao_depth_source_valid = ao_depth_projection_valid && ao_depth_source_framebuffer.Handle() != 0;
+
+	OpenGL_state.clip_x1 = ao_depth_saved_clip_x1;
+	OpenGL_state.clip_y1 = ao_depth_saved_clip_y1;
+	OpenGL_state.clip_x2 = ao_depth_saved_clip_x2;
+	OpenGL_state.clip_y2 = ao_depth_saved_clip_y2;
+	float projection[16];
+	GL_Ortho(projection, 0, ao_depth_saved_clip_x2 - ao_depth_saved_clip_x1,
+		ao_depth_saved_clip_y2 - ao_depth_saved_clip_y1, 0, 0, 1);
+	UpdateLegacyBlock(projection, mat4_identity);
+
+	glColorMask(ao_depth_saved_color_mask[0], ao_depth_saved_color_mask[1],
+		ao_depth_saved_color_mask[2], ao_depth_saved_color_mask[3]);
+	glDepthMask(ao_depth_saved_depth_mask);
+	if (ao_depth_saved_blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+	if (ao_depth_saved_cull) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+	if (ao_depth_saved_scissor) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+	if (ao_depth_saved_multisample) glEnable(GL_MULTISAMPLE); else glDisable(GL_MULTISAMPLE);
+	glViewport(ao_depth_saved_viewport[0], ao_depth_saved_viewport[1],
+		ao_depth_saved_viewport[2], ao_depth_saved_viewport[3]);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, ao_depth_saved_read);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, ao_depth_saved_draw);
+	if ((GLuint)ao_depth_saved_draw == framebuffers[framebuffer_current_draw].Handle())
+		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+
+	rend_RestoreLegacy();
+}
+
 // Flips the screen
 void GL4Renderer::Flip()
 {
@@ -1147,13 +1252,18 @@ bool GL4Renderer::BeginPostPresentFrame()
 
 	if (ao_enabled)
 	{
+		const bool use_ao_depth_source = ao_depth_source_valid && ao_depth_projection_valid &&
+			ao_depth_source_framebuffer.Handle() != 0;
+		const float* gtao_projection = use_ao_depth_source ? ao_depth_projection : last_projection;
+		GLuint gtao_ao_class_texture = use_ao_depth_source ? 0 : ao_class_texture;
+
 		float near_z = last_nearz;
 		float far_z = last_farz;
-		if (fabsf(last_projection[10] - 1.0f) > 1e-6f &&
-			fabsf(last_projection[10] + 1.0f) > 1e-6f)
+		if (fabsf(gtao_projection[10] - 1.0f) > 1e-6f &&
+			fabsf(gtao_projection[10] + 1.0f) > 1e-6f)
 		{
-			near_z = last_projection[14] / (last_projection[10] - 1.0f);
-			far_z = last_projection[14] / (last_projection[10] + 1.0f);
+			near_z = gtao_projection[14] / (gtao_projection[10] - 1.0f);
+			far_z = gtao_projection[14] / (gtao_projection[10] + 1.0f);
 			if (near_z <= 0.0f) near_z = 1.0f;
 			if (far_z <= near_z) far_z = near_z * 1000.0f;
 		}
@@ -1169,12 +1279,24 @@ bool GL4Renderer::BeginPostPresentFrame()
 			bloom_source_framebuffer.BlitToRaw(ao_scene_framebuffer.Handle(), 0, 0,
 				ao_scene_framebuffer.Width(), ao_scene_framebuffer.Height(), GL_NEAREST);
 			GL4PerfGpuDrain("GPU.GTAO.SceneColorCopy");
-			bloom_source_framebuffer.BlitDepthTo(ao_scene_framebuffer.Handle(), 0, 0,
-				ao_scene_framebuffer.Width(), ao_scene_framebuffer.Height());
-			GL4PerfGpuDrain("GPU.GTAO.SceneDepthCopy");
 
-			gtao.Apply(&ao_scene_framebuffer, &ao_scene_framebuffer, OpenGL_preferred_state,
-				OpenGL_state, last_projection, near_z, far_z, ao_suppression_mask_texture, ao_class_texture);
+			if (use_ao_depth_source)
+			{
+				gtao.Apply(&ao_depth_source_framebuffer, &ao_scene_framebuffer, OpenGL_preferred_state,
+					OpenGL_state, gtao_projection, near_z, far_z, ao_suppression_mask_texture,
+					gtao_ao_class_texture, ao_depth_visible_x, ao_depth_visible_y,
+					ao_depth_visible_w, ao_depth_visible_h);
+			}
+			else
+			{
+				bloom_source_framebuffer.BlitDepthTo(ao_scene_framebuffer.Handle(), 0, 0,
+					ao_scene_framebuffer.Width(), ao_scene_framebuffer.Height());
+				GL4PerfGpuDrain("GPU.GTAO.SceneDepthCopy");
+
+				gtao.Apply(&ao_scene_framebuffer, &ao_scene_framebuffer, OpenGL_preferred_state,
+					OpenGL_state, gtao_projection, near_z, far_z, ao_suppression_mask_texture,
+					gtao_ao_class_texture);
+			}
 			GL4PerfGpuDrain("GPU.GTAO.Apply");
 
 			ao_composite_framebuffer.Update(present_framebuffer->Width(), present_framebuffer->Height(), 0);
@@ -1199,8 +1321,19 @@ bool GL4Renderer::BeginPostPresentFrame()
 		}
 		else
 		{
-			gtao.Apply(present_framebuffer, present_framebuffer, OpenGL_preferred_state,
-				OpenGL_state, last_projection, near_z, far_z, ao_suppression_mask_texture, ao_class_texture);
+			if (use_ao_depth_source)
+			{
+				gtao.Apply(&ao_depth_source_framebuffer, present_framebuffer, OpenGL_preferred_state,
+					OpenGL_state, gtao_projection, near_z, far_z, ao_suppression_mask_texture,
+					gtao_ao_class_texture, ao_depth_visible_x, ao_depth_visible_y,
+					ao_depth_visible_w, ao_depth_visible_h);
+			}
+			else
+			{
+				gtao.Apply(present_framebuffer, present_framebuffer, OpenGL_preferred_state,
+					OpenGL_state, gtao_projection, near_z, far_z, ao_suppression_mask_texture,
+					gtao_ao_class_texture);
+			}
 			GL4PerfGpuDrain("GPU.GTAO.Apply");
 		}
 	}
@@ -1345,6 +1478,8 @@ void GL4Renderer::EndPostPresentFrame()
 		//so any cached resolve from the previous time we used this slot is stale.
 		framebuffers[framebuffer_current_draw].MarkAllDirty();
 		bloom_source_valid = false;
+		ao_depth_source_valid = false;
+		ao_depth_capture_active = false;
 		ao_scene_valid = false;
 		post_protection_mask_dirty = false;
 		post_protection_mask_cleared_this_frame = false;
@@ -1390,6 +1525,7 @@ void GL4Renderer::EndFrame(void)
 void GL4Renderer::CaptureBloomSource()
 {
 	bloom_source_valid = false;
+	ao_depth_source_valid = false;
 	ao_scene_valid = false;
 
 	const bool ao_enabled = OpenGL_preferred_state.gtao_enabled && framebuffer_ok;
@@ -1401,6 +1537,7 @@ void GL4Renderer::CaptureBloomSource()
 		bloom_source_framebuffer.Destroy();
 		bloom_source_resolved_framebuffer.Destroy();
 		bloom_source_downscale_framebuffer.Destroy();
+		ao_depth_source_framebuffer.Destroy();
 		ao_scene_framebuffer.Destroy();
 		ao_composite_framebuffer.Destroy();
 	}
@@ -2322,6 +2459,7 @@ void GL4Renderer::UpdateFramebuffer(void)
 		bloom_source_framebuffer.Destroy();
 		bloom_source_resolved_framebuffer.Destroy();
 		bloom_source_downscale_framebuffer.Destroy();
+		ao_depth_source_framebuffer.Destroy();
 		ao_scene_framebuffer.Destroy();
 		ao_composite_framebuffer.Destroy();
 		post_present_framebuffer.Destroy();
@@ -2358,6 +2496,8 @@ void GL4Renderer::UpdateFramebuffer(void)
 	post_present_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
 
 	bloom_source_valid = false;
+	ao_depth_source_valid = false;
+	ao_depth_capture_active = false;
 	ao_scene_valid = false;
 	legacy_draw_uniforms_dirty = true;
 	post_protection_mask_dirty = false;
@@ -2405,10 +2545,13 @@ void GL4Renderer::CloseFramebuffer(void)
 	bloom_source_framebuffer.Destroy();
 	bloom_source_resolved_framebuffer.Destroy();
 	bloom_source_downscale_framebuffer.Destroy();
+	ao_depth_source_framebuffer.Destroy();
 	ao_scene_framebuffer.Destroy();
 	ao_composite_framebuffer.Destroy();
 	post_present_framebuffer.Destroy();
 	bloom_source_valid = false;
+	ao_depth_source_valid = false;
+	ao_depth_capture_active = false;
 	ao_scene_valid = false;
 	motion_vectors.Destroy();
 	post_protection_mask.Destroy();
