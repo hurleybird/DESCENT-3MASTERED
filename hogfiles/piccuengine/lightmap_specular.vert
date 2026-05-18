@@ -30,17 +30,19 @@ out vec2 outuv;
 out vec2 outuv2;
 out vec3 outpos;
 out vec3 outnormal;
+out vec3 outworld;
 flat out vec3[4] outlightpos;
 
 void main()
 {
 	vec4 temp = commons.modelview * vec4(position, 1.0);
 	gl_Position = commons.projection * temp;
+	outworld = position;
 	outuv = uv;
 	outuv2 = uv2;
 	outpos = -temp.xyz;
 	outnormal = mat3(commons.modelview) * normal;
-	
+
 	//Need to transform the light positions too..
 	for (int i = 0; i < specular_data.num_specular; i++)
 	{

@@ -17,12 +17,13 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "gl_local.h"
+#include "game.h"
 
 #include <cstring>
 #include <vector>
 
 //The number of vertex attributes the legacy code used.
-constexpr int NUM_LEGACY_VERTEX_ATTRIBS = 5;
+constexpr int NUM_LEGACY_VERTEX_ATTRIBS = 7;
 //The count of vertices that each buffer will store
 constexpr int NUM_VERTS_PER_BUFFER = 640000;
 
@@ -33,12 +34,12 @@ static bool GL4DrawTargetIsFramebuffer(GLuint framebuffer)
 	return (GLuint)current_draw == framebuffer;
 }
 
-static void GL4UseSceneDrawBuffersWithoutAOClass()
+static void GL4UseSceneDrawBuffersWithoutAOClass(bool include_motion_vectors)
 {
 	const GLenum draw_buffers[4] =
 	{
 		GL_COLOR_ATTACHMENT0,
-		GL_NONE,
+		static_cast<GLenum>(include_motion_vectors ? GL_COLOR_ATTACHMENT1 : GL_NONE),
 		GL_COLOR_ATTACHMENT2,
 		GL_NONE
 	};
@@ -66,6 +67,43 @@ static float GL4FontBatchIdentity[16] =
 	0, 0, 0, 1
 };
 
+static void GL4WriteMotionVectorDebugPixel(GLuint framebuffer, int x, int y, const float value[4])
+{
+	GLint old_draw = 0;
+	GLint old_draw_buffer = GL_COLOR_ATTACHMENT0;
+	GLboolean scissor_was_enabled = glIsEnabled(GL_SCISSOR_TEST);
+	GLint old_scissor[4];
+	GLboolean color_mask[4];
+	GLboolean blend_enabled = glIsEnabled(GL_BLEND);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+	glGetIntegerv(GL_DRAW_BUFFER, &old_draw_buffer);
+	glGetIntegerv(GL_SCISSOR_BOX, old_scissor);
+	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+	GLenum draw_buffer = GL_COLOR_ATTACHMENT1;
+	glDrawBuffers(1, &draw_buffer);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDisable(GL_BLEND);
+	glEnable(GL_SCISSOR_TEST);
+	glScissor(x, y, 1, 1);
+	glClearBufferfv(GL_COLOR, 0, value);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	glDrawBuffer(old_draw_buffer);
+	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+	if (blend_enabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+	if (scissor_was_enabled)
+	{
+		glEnable(GL_SCISSOR_TEST);
+		glScissor(old_scissor[0], old_scissor[1], old_scissor[2], old_scissor[3]);
+	}
+	else
+	{
+		glDisable(GL_SCISSOR_TEST);
+	}
+}
+
 static int GL4FontBatchIndexForAlpha(int alpha_type)
 {
 	return alpha_type == AT_SATURATE_TEXTURE ? 1 : 0;
@@ -79,6 +117,198 @@ void GL4Renderer::UseDrawVAO()
 void GL4Renderer::RestoreLegacy()
 {
 	glBindVertexArray(drawvao);
+}
+
+bool GL4Renderer::MotionVectorTargetEnabled() const
+{
+	return OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_OFF &&
+		motion_vectors.velocity_texture != 0;
+}
+
+bool GL4Renderer::PixelMotionVectorModeEnabled() const
+{
+	return OpenGL_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_PIXEL &&
+		motion_vectors.velocity_texture != 0;
+}
+
+bool GL4Renderer::MotionVectorWritesEnabled() const
+{
+	return PixelMotionVectorModeEnabled() && !motion_vectors_capture_locked;
+}
+
+void GL4Renderer::DrawMotionVectorDebugPreview(int supersampling_factor)
+{
+	renderer_motion_vector_debug_sample debug_sample = {};
+	debug_sample.mode = OpenGL_preferred_state.motion_vector_mode;
+
+	if (!OpenGL_preferred_state.motion_vector_debug_preview || Game_mode == GM_NONE ||
+		!MotionVectorTargetEnabled() || motionvectordebugshader.Handle() == 0 ||
+		post_present_framebuffer.Handle() == 0)
+	{
+		rend_SetMotionVectorDebugSample(nullptr);
+		return;
+	}
+
+	GLuint velocity_texture = motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
+	if (velocity_texture == 0 || motion_vectors.width == 0 || motion_vectors.height == 0)
+	{
+		rend_SetMotionVectorDebugSample(&debug_sample);
+		return;
+	}
+
+	if (supersampling_factor < 1)
+		supersampling_factor = 1;
+	const int framebuffer_logical_bottom_offset =
+		framebuffer_logical_height - OpenGL_state.screen_height - framebuffer_logical_offset_y;
+	const float source_width = (float)motion_vectors.width;
+	const float source_height = (float)motion_vectors.height;
+	const float uv_origin_x = (float)(framebuffer_logical_offset_x * supersampling_factor) / source_width;
+	const float uv_origin_y = (float)(framebuffer_logical_bottom_offset * supersampling_factor) / source_height;
+	const float uv_scale_x = (float)(OpenGL_state.screen_width * supersampling_factor) / source_width;
+	const float uv_scale_y = (float)(OpenGL_state.screen_height * supersampling_factor) / source_height;
+	const int center_x = std::max(0, std::min((int)motion_vectors.width - 1,
+		(int)((uv_origin_x + uv_scale_x * 0.5f) * source_width)));
+	const int center_y = std::max(0, std::min((int)motion_vectors.height - 1,
+		(int)((uv_origin_y + uv_scale_y * 0.5f) * source_height)));
+
+	GLint old_read = 0;
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
+	GLint old_read_buffer = GL_COLOR_ATTACHMENT0;
+	glGetIntegerv(GL_READ_BUFFER, &old_read_buffer);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, motion_vectors.resolve_framebuffer);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+	float center_velocity[2] = {};
+	glReadPixels(center_x, center_y, 1, 1, GL_RG, GL_FLOAT, center_velocity);
+	float max_velocity[2] = {};
+	float max_mag_squared = 0.0f;
+	int max_x = center_x;
+	int max_y = center_y;
+	const int sample_columns = 9;
+	const int sample_rows = 7;
+	for (int row = 0; row < sample_rows; row++)
+	{
+		for (int column = 0; column < sample_columns; column++)
+		{
+			const float u = ((float)column + 0.5f) / (float)sample_columns;
+			const float v = ((float)row + 0.5f) / (float)sample_rows;
+			const int sample_x = std::max(0, std::min((int)motion_vectors.width - 1,
+				(int)((uv_origin_x + uv_scale_x * u) * source_width)));
+			const int sample_y = std::max(0, std::min((int)motion_vectors.height - 1,
+				(int)((uv_origin_y + uv_scale_y * v) * source_height)));
+			float velocity[2] = {};
+			glReadPixels(sample_x, sample_y, 1, 1, GL_RG, GL_FLOAT, velocity);
+			const float mag_squared = velocity[0] * velocity[0] + velocity[1] * velocity[1];
+			if (mag_squared > max_mag_squared)
+			{
+				max_mag_squared = mag_squared;
+				max_velocity[0] = velocity[0];
+				max_velocity[1] = velocity[1];
+				max_x = sample_x;
+				max_y = sample_y;
+			}
+		}
+	}
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
+	glReadBuffer(old_read_buffer);
+	debug_sample.valid = true;
+	debug_sample.x = center_x;
+	debug_sample.y = center_y;
+	debug_sample.width = (int)motion_vectors.width;
+	debug_sample.height = (int)motion_vectors.height;
+	debug_sample.vx = center_velocity[0];
+	debug_sample.vy = center_velocity[1];
+	debug_sample.max_x = max_x;
+	debug_sample.max_y = max_y;
+	debug_sample.max_vx = max_velocity[0];
+	debug_sample.max_vy = max_velocity[1];
+	debug_sample.max_mag = max_mag_squared;
+
+	const float probe_value[4] = { 0.03125f, -0.0625f, 0.0f, 0.0f };
+	const float restore_value[4] = { center_velocity[0], center_velocity[1], 0.0f, 0.0f };
+	GL4WriteMotionVectorDebugPixel(framebuffers[framebuffer_current_draw].Handle(), center_x, center_y, probe_value);
+	motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
+	glGetIntegerv(GL_READ_BUFFER, &old_read_buffer);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, motion_vectors.resolve_framebuffer);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+	float probe_velocity[2] = {};
+	glReadPixels(center_x, center_y, 1, 1, GL_RG, GL_FLOAT, probe_velocity);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
+	glReadBuffer(old_read_buffer);
+	debug_sample.probe_valid = true;
+	debug_sample.probe_vx = probe_velocity[0];
+	debug_sample.probe_vy = probe_velocity[1];
+	GL4WriteMotionVectorDebugPixel(framebuffers[framebuffer_current_draw].Handle(), center_x, center_y, restore_value);
+	velocity_texture = motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
+	rend_SetMotionVectorDebugSample(&debug_sample);
+
+	motionvectordebugshader.Use();
+	if (motionvectordebug_velocity_source != -1)
+		glUniform1i(motionvectordebug_velocity_source, 0);
+	if (motionvectordebug_uv_origin != -1)
+		glUniform2f(motionvectordebug_uv_origin, uv_origin_x, uv_origin_y);
+	if (motionvectordebug_uv_scale != -1)
+		glUniform2f(motionvectordebug_uv_scale, uv_scale_x, uv_scale_y);
+	if (motionvectordebug_screen_size != -1)
+		glUniform2f(motionvectordebug_screen_size, (float)OpenGL_state.screen_width, (float)OpenGL_state.screen_height);
+
+	rend_ClearBoundTextures();
+	GL_BindFramebufferTexture(velocity_texture, 0, GL_NEAREST);
+
+	const GLboolean blend_was_enabled = glIsEnabled(GL_BLEND);
+	const GLboolean depth_was_enabled = glIsEnabled(GL_DEPTH_TEST);
+	const GLboolean cull_was_enabled = glIsEnabled(GL_CULL_FACE);
+	const GLboolean scissor_was_enabled = glIsEnabled(GL_SCISSOR_TEST);
+	GLboolean color_mask[4];
+	GLboolean depth_mask;
+	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+	GLint old_src_rgb = GL_ONE;
+	GLint old_dst_rgb = GL_ZERO;
+	GLint old_src_alpha = GL_ONE;
+	GLint old_dst_alpha = GL_ZERO;
+	glGetIntegerv(GL_BLEND_SRC_RGB, &old_src_rgb);
+	glGetIntegerv(GL_BLEND_DST_RGB, &old_dst_rgb);
+	glGetIntegerv(GL_BLEND_SRC_ALPHA, &old_src_alpha);
+	glGetIntegerv(GL_BLEND_DST_ALPHA, &old_dst_alpha);
+	GLint old_viewport[4];
+	glGetIntegerv(GL_VIEWPORT, old_viewport);
+	GLint old_draw = 0;
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+
+	glBindVertexArray(GL_GetFramebufferVAO());
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, post_present_framebuffer.Handle());
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+	glViewport(0, 0, post_present_framebuffer.Width(), post_present_framebuffer.Height());
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_SCISSOR_TEST);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_FALSE);
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_POSTPROCESS);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
+	glReadBuffer(old_read_buffer);
+	glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
+	glBlendFuncSeparate(old_src_rgb, old_dst_rgb, old_src_alpha, old_dst_alpha);
+	if (blend_was_enabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+	if (depth_was_enabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+	if (cull_was_enabled) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+	if (scissor_was_enabled) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+	glDepthMask(depth_mask);
+	rend_ClearBoundTextures();
+	RestoreLegacy();
+}
+
+void GL4Renderer::UseSceneDrawBuffers()
+{
+	post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle(),
+		MotionVectorWritesEnabled());
 }
 
 void GL4Renderer::InitPersistentDrawBuffer(size_t size)
@@ -125,6 +355,14 @@ void GL4Renderer::InitPersistentDrawBuffer(size_t size)
 	//attrib 4: per-pixel lighting normal
 	glEnableVertexAttribArray(4);
 	glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, normal));
+
+	//attrib 5: motion vector
+	glEnableVertexAttribArray(5);
+	glVertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_velocity_x));
+
+	//attrib 6: perspective-correct world position for pixel motion vectors
+	glEnableVertexAttribArray(6);
+	glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_world_position));
 #ifdef _DEBUG
 	err = glGetError();
 	if (err != GL_NO_ERROR)
@@ -184,7 +422,9 @@ void GL4Renderer::DestroyMotionVectorDraw()
 void GL4Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 {
 	if (!motion_object_active || motionvectorshader.Handle() == 0 ||
-		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || nv <= 0)
+		OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_VERTEX ||
+		motion_vectors_capture_locked || motionvector_vao == 0 ||
+		motion_vectors.velocity_texture == 0 || nv <= 0)
 	{
 		return;
 	}
@@ -204,6 +444,7 @@ void GL4Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 
 	GLboolean color_mask[4];
 	GLboolean depth_mask;
+	GLboolean blend_enabled = glIsEnabled(GL_BLEND);
 	GLint old_draw = 0;
 	GLint old_draw_buffer = 0;
 	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
@@ -216,6 +457,7 @@ void GL4Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 	glDrawBuffers(1, &draw_buffer);
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	glDepthMask(GL_FALSE);
+	glDisable(GL_BLEND);
 
 	motionvectorshader.Use();
 	if (motionvector_screen_size != -1)
@@ -231,22 +473,26 @@ void GL4Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 	glDrawBuffer(old_draw_buffer);
 	if ((GLuint)old_draw == framebuffers[framebuffer_current_draw].Handle())
-		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+		UseSceneDrawBuffers();
 	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
 	glDepthMask(depth_mask);
+	if (blend_enabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
 	UseDrawVAO();
 }
 
 void GL4Renderer::DrawMotionVectorTriangles(const gl_motion_vertex* vertices, int nv)
 {
 	if (!motion_object_active || motionvectorshader.Handle() == 0 ||
-		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || !vertices || nv <= 0)
+		OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_VERTEX ||
+		motion_vectors_capture_locked || motionvector_vao == 0 ||
+		motion_vectors.velocity_texture == 0 || !vertices || nv <= 0)
 	{
 		return;
 	}
 
 	GLboolean color_mask[4];
 	GLboolean depth_mask;
+	GLboolean blend_enabled = glIsEnabled(GL_BLEND);
 	GLint old_draw = 0;
 	GLint old_draw_buffer = 0;
 	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
@@ -259,6 +505,7 @@ void GL4Renderer::DrawMotionVectorTriangles(const gl_motion_vertex* vertices, in
 	glDrawBuffers(1, &draw_buffer);
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	glDepthMask(GL_FALSE);
+	glDisable(GL_BLEND);
 
 	motionvectorshader.Use();
 	if (motionvector_screen_size != -1)
@@ -274,9 +521,10 @@ void GL4Renderer::DrawMotionVectorTriangles(const gl_motion_vertex* vertices, in
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 	glDrawBuffer(old_draw_buffer);
 	if ((GLuint)old_draw == framebuffers[framebuffer_current_draw].Handle())
-		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+		UseSceneDrawBuffers();
 	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
 	glDepthMask(depth_mask);
+	if (blend_enabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
 	UseDrawVAO();
 }
 
@@ -405,6 +653,27 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 
 	vert.vert.x = pnt->p3_sx;
 	vert.vert.y = pnt->p3_sy;
+	vert.motion_velocity_x = 0.0f;
+	vert.motion_velocity_y = 0.0f;
+	vert.motion_world_position.x = 0.0f;
+	vert.motion_world_position.y = 0.0f;
+	vert.motion_world_position.z = 0.0f;
+	vert.motion_world_position.w = 0.0f;
+	if (motion_object_active && OpenGL_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_PIXEL && pnt->p3_motion_valid)
+	{
+		const float screen_width = OpenGL_state.screen_width > 0 ? (float)OpenGL_state.screen_width : 1.0f;
+		const float screen_height = OpenGL_state.screen_height > 0 ? (float)OpenGL_state.screen_height : 1.0f;
+		vert.motion_velocity_x = (pnt->p3_sx - pnt->p3_prev_sx) / screen_width;
+		vert.motion_velocity_y = -(pnt->p3_sy - pnt->p3_prev_sy) / screen_height;
+	}
+	if (PixelMotionVectorModeEnabled() && OpenGL_state.cur_zbuffer_state != 0)
+	{
+		float payloadw = 1.0f / (pnt->p3_z + Z_bias);
+		vert.motion_world_position.x = pnt->p3_vecPreRot.x * payloadw;
+		vert.motion_world_position.y = pnt->p3_vecPreRot.y * payloadw;
+		vert.motion_world_position.z = pnt->p3_vecPreRot.z * payloadw;
+		vert.motion_world_position.w = payloadw;
+	}
 
 	float z = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / (pnt->p3_z + Z_bias))));
 	vert.vert.z = -z;
@@ -489,11 +758,11 @@ void GL4Renderer::FlushFontBatchVertices(int batch_index)
 		OpenGL_state.cur_zbuffer_state == 0 &&
 		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
 	if (suppress_ao_class_write)
-		GL4UseSceneDrawBuffersWithoutAOClass();
+		GL4UseSceneDrawBuffersWithoutAOClass(false);
 	rend_RecordDrawCall(RENDERER_DRAW_CALL_FONT);
 	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)font_batch_vertices[batch_index].size());
 	if (suppress_ao_class_write)
-		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+		UseSceneDrawBuffers();
 
 	font_batch_vertices[batch_index].clear();
 
@@ -722,6 +991,10 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_cockpit_scanline_spacing_uniforms[i] = drawshaders[i].FindUniform("cockpit_scanline_spacing");
 		drawshader_cockpit_scanline_thickness_uniforms[i] = drawshaders[i].FindUniform("cockpit_scanline_thickness");
 		drawshader_cockpit_scanline_phase_uniforms[i] = drawshaders[i].FindUniform("cockpit_scanline_phase");
+		drawshader_motion_vector_mode_uniforms[i] = drawshaders[i].FindUniform("motion_vector_mode");
+		drawshader_motion_vector_previous_view_projection_uniforms[i] = drawshaders[i].FindUniform("motion_vector_previous_view_projection");
+		drawshader_motion_vector_screen_size_uniforms[i] = drawshaders[i].FindUniform("motion_vector_screen_size");
+		drawshader_motion_vector_has_previous_uniforms[i] = drawshaders[i].FindUniform("motion_vector_has_previous");
 	}
 
 	lastdrawshader = -1;
@@ -764,6 +1037,14 @@ void GL4Renderer::SetDrawDefaults()
 		//attrib 4: per-pixel lighting normal
 		glEnableVertexAttribArray(4);
 		glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, normal));
+
+		//attrib 5: motion vector
+		glEnableVertexAttribArray(5);
+		glVertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_velocity_x));
+
+		//attrib 6: perspective-correct world position for pixel motion vectors
+		glEnableVertexAttribArray(6);
+		glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_world_position));
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -807,7 +1088,7 @@ void GL4Renderer::SelectDrawShader()
 
 	const bool shader_changed = shader_index != lastdrawshader;
 	drawshaders[shader_index].Use();
-	if (!shader_changed && !legacy_draw_uniforms_dirty)
+	if (!shader_changed && !legacy_draw_uniforms_dirty && !PixelMotionVectorModeEnabled())
 		return;
 
 	if (drawshader_ao_suppression_uniforms[shader_index] != -1)
@@ -846,6 +1127,17 @@ void GL4Renderer::SelectDrawShader()
 		glUniform1f(drawshader_cockpit_scanline_thickness_uniforms[shader_index], cockpit_backing_effect.scanline_thickness);
 	if (drawshader_cockpit_scanline_phase_uniforms[shader_index] != -1)
 		glUniform1f(drawshader_cockpit_scanline_phase_uniforms[shader_index], cockpit_backing_effect.scanline_phase);
+	if (drawshader_motion_vector_mode_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_motion_vector_mode_uniforms[shader_index],
+			PixelMotionVectorModeEnabled() ? RENDERER_MOTION_VECTOR_PIXEL : RENDERER_MOTION_VECTOR_OFF);
+	if (drawshader_motion_vector_previous_view_projection_uniforms[shader_index] != -1)
+		glUniformMatrix4fv(drawshader_motion_vector_previous_view_projection_uniforms[shader_index], 1, GL_FALSE, previous_view_projection);
+	if (drawshader_motion_vector_screen_size_uniforms[shader_index] != -1)
+		glUniform2f(drawshader_motion_vector_screen_size_uniforms[shader_index],
+			(float)FramebufferWidth(), (float)FramebufferHeight());
+	if (drawshader_motion_vector_has_previous_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_motion_vector_has_previous_uniforms[shader_index],
+			have_previous_view_projection ? 1 : 0);
 
 	const bool phong_enabled = OpenGL_state.cur_light_state == LS_PHONG;
 	if (drawshader_phong_enabled_uniforms[shader_index] != -1)
@@ -1000,6 +1292,27 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 		// Finally, specify a vertex
 		vertp->vert.x = pnt->p3_sx;
 		vertp->vert.y = pnt->p3_sy;
+		vertp->motion_velocity_x = 0.0f;
+		vertp->motion_velocity_y = 0.0f;
+		vertp->motion_world_position.x = 0.0f;
+		vertp->motion_world_position.y = 0.0f;
+		vertp->motion_world_position.z = 0.0f;
+		vertp->motion_world_position.w = 0.0f;
+		if (motion_object_active && OpenGL_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_PIXEL && pnt->p3_motion_valid)
+		{
+			const float screen_width = OpenGL_state.screen_width > 0 ? (float)OpenGL_state.screen_width : 1.0f;
+			const float screen_height = OpenGL_state.screen_height > 0 ? (float)OpenGL_state.screen_height : 1.0f;
+			vertp->motion_velocity_x = (pnt->p3_sx - pnt->p3_prev_sx) / screen_width;
+			vertp->motion_velocity_y = -(pnt->p3_sy - pnt->p3_prev_sy) / screen_height;
+		}
+		if (PixelMotionVectorModeEnabled() && OpenGL_state.cur_zbuffer_state != 0)
+		{
+			float payloadw = 1.0f / (pnt->p3_z + Z_bias);
+			vertp->motion_world_position.x = pnt->p3_vecPreRot.x * payloadw;
+			vertp->motion_world_position.y = pnt->p3_vecPreRot.y * payloadw;
+			vertp->motion_world_position.z = pnt->p3_vecPreRot.z * payloadw;
+			vertp->motion_world_position.w = payloadw;
+		}
 
 		float z = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / (pnt->p3_z + Z_bias))));
 		vertp->vert.z = -z;
@@ -1011,11 +1324,11 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 		OpenGL_state.cur_zbuffer_state == 0 &&
 		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
 	if (suppress_ao_class_write)
-		GL4UseSceneDrawBuffersWithoutAOClass();
+		GL4UseSceneDrawBuffersWithoutAOClass(false);
 	rend_RecordDrawCall(draw_call_category);
 	glDrawArrays(GL_TRIANGLE_FAN, offset, nv);
 	if (suppress_ao_class_write)
-		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+		UseSceneDrawBuffers();
 	DrawMotionVectorPolygon(nv, p);
 	OpenGL_polys_drawn++;
 	OpenGL_verts_processed += nv;
@@ -1083,6 +1396,7 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 
 	std::vector<gl_motion_vertex> motion_vertices;
 	const bool capture_motion = motion_object_active && motionvectorshader.Handle() != 0 &&
+		OpenGL_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_VERTEX &&
 		motionvector_vao != 0 && motion_vectors.velocity_texture != 0;
 	if (capture_motion)
 		motion_vertices.reserve(triangle_vertices);
@@ -1143,11 +1457,11 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 		OpenGL_state.cur_zbuffer_state == 0 &&
 		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
 	if (suppress_ao_class_write)
-		GL4UseSceneDrawBuffersWithoutAOClass();
+		GL4UseSceneDrawBuffersWithoutAOClass(false);
 	rend_RecordDrawCall(draw_call_category);
 	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)vertices.size());
 	if (suppress_ao_class_write)
-		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+		UseSceneDrawBuffers();
 	DrawMotionVectorTriangles(motion_vertices.data(), (int)motion_vertices.size());
 	OpenGL_polys_drawn += polygons_drawn;
 	OpenGL_verts_processed += original_vertices;
@@ -1171,7 +1485,10 @@ void GL4Renderer::DrawPolygon2D(int handle, g3Point** p, int nv)
 
 void GL4Renderer::BeginMotionObject(int object_handle, float screen_x, float screen_y)
 {
-	motion_object_active = object_handle >= 0 && framebuffer_ok && motion_vectors.velocity_texture != 0;
+	motion_object_active = object_handle >= 0 && framebuffer_ok &&
+		!motion_vectors_capture_locked &&
+		OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_OFF &&
+		motion_vectors.velocity_texture != 0;
 }
 
 void GL4Renderer::EndMotionObject()
@@ -1233,6 +1550,10 @@ void GL4Renderer::DrawScaledBitmap(int x1, int y1, int x2, int y2,
 
 		pnts[i].p3_z = 1.0f;
 		pnts[i].p3_flags = PF_PROJECTED;
+		pnts[i].p3_motion_valid = 0;
+		pnts[i].p3_vecPreRot.x = 0.0f;
+		pnts[i].p3_vecPreRot.y = 0.0f;
+		pnts[i].p3_vecPreRot.z = 0.0f;
 	}
 
 	pnts[0].p3_sx = x1;
@@ -1291,6 +1612,10 @@ void GL4Renderer::DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
 
 		pnts[i].p3_z = zval;
 		pnts[i].p3_flags = PF_PROJECTED;
+		pnts[i].p3_motion_valid = 0;
+		pnts[i].p3_vecPreRot.x = 0.0f;
+		pnts[i].p3_vecPreRot.y = 0.0f;
+		pnts[i].p3_vecPreRot.z = 0.0f;
 	}
 
 
@@ -1366,6 +1691,12 @@ void GL4Renderer::SetPixel(ddgr_color color, int x, int y)
 	GL_vertices[0].vert.x = x;
 	GL_vertices[0].vert.y = y;
 	GL_vertices[0].vert.z = 0;
+	GL_vertices[0].motion_velocity_x = 0.0f;
+	GL_vertices[0].motion_velocity_y = 0.0f;
+	GL_vertices[0].motion_world_position.x = 0.0f;
+	GL_vertices[0].motion_world_position.y = 0.0f;
+	GL_vertices[0].motion_world_position.z = 0.0f;
+	GL_vertices[0].motion_world_position.w = 0.0f;
 
 	//please do not call this function if you can avoid it.
 	int offset = CopyVertices(1);
@@ -1488,6 +1819,18 @@ void GL4Renderer::DrawLine(int x1, int y1, int x2, int y2)
 	GL_vertices[1].vert.x = x2 + 1.f;
 	GL_vertices[1].vert.y = y2 + 1.f;
 	GL_vertices[1].vert.z = 0;
+	GL_vertices[0].motion_velocity_x = 0.0f;
+	GL_vertices[0].motion_velocity_y = 0.0f;
+	GL_vertices[1].motion_velocity_x = 0.0f;
+	GL_vertices[1].motion_velocity_y = 0.0f;
+	GL_vertices[0].motion_world_position.x = 0.0f;
+	GL_vertices[0].motion_world_position.y = 0.0f;
+	GL_vertices[0].motion_world_position.z = 0.0f;
+	GL_vertices[0].motion_world_position.w = 0.0f;
+	GL_vertices[1].motion_world_position.x = 0.0f;
+	GL_vertices[1].motion_world_position.y = 0.0f;
+	GL_vertices[1].motion_world_position.z = 0.0f;
+	GL_vertices[1].motion_world_position.w = 0.0f;
 
 	int offset = CopyVertices(2);
 	GLfloat line_width = std::max(1.0f, std::min((GLfloat)SupersamplingFactor(), max_line_width));
@@ -1595,6 +1938,12 @@ void GL4Renderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 		float z = std::max(0., std::min(1.0, 1.0 - (1.0 / (pnt->p3_z + Z_bias))));
 
 		vertp->vert.x = pnt->p3_sx; vertp->vert.y = pnt->p3_sy; vertp->vert.z = -z;
+		vertp->motion_velocity_x = 0.0f;
+		vertp->motion_velocity_y = 0.0f;
+		vertp->motion_world_position.x = 0.0f;
+		vertp->motion_world_position.y = 0.0f;
+		vertp->motion_world_position.z = 0.0f;
+		vertp->motion_world_position.w = 0.0f;
 		//glVertex3f(pnt->p3_sx + x_add, pnt->p3_sy + y_add, -z);
 	}
 

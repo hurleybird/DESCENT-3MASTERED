@@ -387,6 +387,8 @@ void SaveGameSettings()
 	Database->write("RS_gtao_resolution", Render_preferred_state.gtao_resolution);
 	Database->write("RS_gtao_overscan_percent", Render_preferred_state.gtao_overscan_percent);
 	Database->write("RS_gtao_debug_preview", Render_preferred_state.gtao_debug_preview);
+	Database->write("RS_motion_vector_mode", Render_preferred_state.motion_vector_mode);
+	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
 	tempint = Use_motion_blur ? 1 : 0;
 	Database->write("RS_motion_blur_type", tempint);
 	WRITE_FLOAT_SETTING("RS_legacy_motion_blur_frame_time", Legacy_motion_blur_frame_time);
@@ -565,6 +567,8 @@ void LoadGameSettings()
 	Render_preferred_state.gtao_polyobject_occlusion = 0.5f;
 	Render_preferred_state.gtao_mine_rock_occlusion = 0.5f;
 	Render_preferred_state.gtao_mine_occlusion = 1.0f;
+	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
+	Render_preferred_state.motion_vector_debug_preview = false;
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
 	Terrain_renderer_mode = TERRAIN_RENDERER_COMPUTE;
@@ -751,6 +755,12 @@ void LoadGameSettings()
 	if (tempint > 150) tempint = 150;
 	Render_preferred_state.gtao_overscan_percent = (ushort)tempint;
 	Database->read("RS_gtao_debug_preview", &Render_preferred_state.gtao_debug_preview);
+	tempint = Render_preferred_state.motion_vector_mode;
+	Database->read_int("RS_motion_vector_mode", &tempint);
+	if (tempint < RENDERER_MOTION_VECTOR_OFF || tempint > RENDERER_MOTION_VECTOR_PIXEL)
+		tempint = RENDERER_MOTION_VECTOR_OFF;
+	Render_preferred_state.motion_vector_mode = (ubyte)tempint;
+	Database->read("RS_motion_vector_debug_preview", &Render_preferred_state.motion_vector_debug_preview);
 	saved_motion_blur_type = 0;
 	saved_motion_blur_type_present = Database->read_int("RS_motion_blur_type", &saved_motion_blur_type);
 	if (saved_motion_blur_type < 0) saved_motion_blur_type = 0;

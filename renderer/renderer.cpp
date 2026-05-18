@@ -38,6 +38,7 @@ static uint32_t Renderer_generation = 0;
 static renderer_draw_call_stats Renderer_current_draw_call_stats = {};
 static renderer_draw_call_stats Renderer_last_draw_call_stats = {};
 static renderer_draw_call_3d_category Renderer_current_3d_draw_call_category = RENDERER_DRAW_CALL_3D_OTHER;
+static renderer_motion_vector_debug_sample Renderer_motion_vector_debug_sample = {};
 
 bool Renderer_initted;
 bool Renderer_close_flag;
@@ -215,6 +216,22 @@ renderer_draw_call_3d_category rend_Set3DDrawCallCategory(renderer_draw_call_3d_
 		Renderer_current_3d_draw_call_category = RENDERER_DRAW_CALL_3D_OTHER;
 
 	return old_category;
+}
+
+void rend_SetMotionVectorDebugSample(const renderer_motion_vector_debug_sample *sample)
+{
+	if (sample)
+		Renderer_motion_vector_debug_sample = *sample;
+	else
+		Renderer_motion_vector_debug_sample = {};
+}
+
+void rend_GetMotionVectorDebugSample(renderer_motion_vector_debug_sample *sample)
+{
+	if (!sample)
+		return;
+
+	*sample = Renderer_motion_vector_debug_sample;
 }
 
 static void rend_PublishDrawCallStats()

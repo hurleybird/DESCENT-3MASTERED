@@ -18,6 +18,7 @@
 */
 #include "gl_local.h"
 #include "gameloop.h"
+#include "game.h"
 #include "rtperformance.h"
 #include <math.h>
 #include <cstring>
@@ -871,18 +872,21 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 			|| pref_state->fullscreen != old_state.fullscreen || pref_state->antialised != old_state.antialised
 			|| pref_state->supersampling_factor != old_state.supersampling_factor
 			|| pref_state->msaa_samples != old_state.msaa_samples
-			|| GL4OverscanPercent(*pref_state) != GL4OverscanPercent(old_state);
+			|| GL4OverscanPercent(*pref_state) != GL4OverscanPercent(old_state)
+			|| pref_state->motion_vector_mode != old_state.motion_vector_mode;
 		if (pref_state->msaa_samples != old_state.msaa_samples ||
 			pref_state->supersampling_factor != old_state.supersampling_factor ||
 			pref_state->bloom_enabled != old_state.bloom_enabled ||
-			pref_state->gtao_enabled != old_state.gtao_enabled)
+			pref_state->gtao_enabled != old_state.gtao_enabled ||
+			pref_state->motion_vector_mode != old_state.motion_vector_mode)
 		{
-			mprintf((0, "GL4 SetPreferredState: msaa %u->%u aa %d->%d ssaa %u->%u bloom %d->%d gtao %d->%d.\n",
+			mprintf((0, "GL4 SetPreferredState: msaa %u->%u aa %d->%d ssaa %u->%u bloom %d->%d gtao %d->%d motion %u->%u.\n",
 				(unsigned)old_state.msaa_samples, (unsigned)pref_state->msaa_samples,
 				old_state.antialised ? 1 : 0, pref_state->antialised ? 1 : 0,
 				(unsigned)old_state.supersampling_factor, (unsigned)pref_state->supersampling_factor,
 				old_state.bloom_enabled ? 1 : 0, pref_state->bloom_enabled ? 1 : 0,
-				old_state.gtao_enabled ? 1 : 0, pref_state->gtao_enabled ? 1 : 0));
+				old_state.gtao_enabled ? 1 : 0, pref_state->gtao_enabled ? 1 : 0,
+				(unsigned)old_state.motion_vector_mode, (unsigned)pref_state->motion_vector_mode));
 		}
 		if (staged_msaa_transition)
 		{
@@ -908,6 +912,8 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 				glFinish();
 			gtao.DestroyFramebuffers();
 		}
+		if (old_state.motion_vector_mode != pref_state->motion_vector_mode)
+			legacy_draw_uniforms_dirty = true;
 
 	if (old_state.per_pixel_lighting != pref_state->per_pixel_lighting)
 	{
@@ -994,9 +1000,14 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 			post_protection_mask_dirty = false;
 			post_protection_mask_cleared_this_frame = true;
 		}
-		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+		if (MotionVectorTargetEnabled() && !motion_vectors_cleared_this_frame)
+		{
+			motion_vectors.ClearAttached(framebuffers[framebuffer_current_draw].Handle());
+			motion_vectors_dirty = false;
+			motion_vectors_cleared_this_frame = true;
+		}
+		UseSceneDrawBuffers();
 	}
-	motion_vectors_dirty = false;
 	if (ao_suppression_draw_value != 0.0f)
 		legacy_draw_uniforms_dirty = true;
 	if (bloom_suppression_draw_value != 0.0f)
@@ -1324,6 +1335,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 			glUniform2f(blitshader_uv_scale, 1.0f, 1.0f);
 		GL4PerfGpuDrain("GPU.PostPresentBlit");
 	}
+	DrawMotionVectorDebugPreview(supersampling_factor);
 	ShaderProgram::ClearBinding();
 
 	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_AFTER_BLOOM);
@@ -1442,6 +1454,8 @@ void GL4Renderer::EndPostPresentFrame()
 		ao_scene_valid = false;
 		post_protection_mask_dirty = false;
 		post_protection_mask_cleared_this_frame = false;
+		motion_vectors_cleared_this_frame = false;
+		motion_vectors_capture_locked = false;
 		post_present_pending_swap = false;
 	}
 	if (msaa_downshift_release_frames > 0)
@@ -1572,7 +1586,12 @@ void GL4Renderer::CaptureBloomSource()
 		}
 
 		framebuffers[framebuffer_current_draw].ClearAlphaToZero();
-		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+		UseSceneDrawBuffers();
+		if (MotionVectorTargetEnabled())
+		{
+			motion_vectors_capture_locked = true;
+			UseSceneDrawBuffers();
+		}
 	}
 
 	rend_RestoreLegacy();
@@ -2516,19 +2535,30 @@ void GL4Renderer::UpdateFramebuffer(void)
 		glFinish();
 	}
 	gtao.DestroyFramebuffers();
-	motion_vectors.Destroy();
+	const bool motion_vectors_enabled = OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_OFF;
+	if (!motion_vectors_enabled)
+		motion_vectors.Destroy();
 
 	for (int i = 0; i < NUM_GL4_FBOS; i++)
 	{
 		framebuffers[i].Update(target_width, target_height, target_samples);
+		if (motion_vectors_enabled)
+		{
+			motion_vectors.Update(target_width, target_height, framebuffers[i].Samples());
+			motion_vectors.AttachToFramebuffer(framebuffers[i].Handle());
+		}
 		post_protection_mask.Update(target_width, target_height, framebuffers[i].Samples());
 		post_protection_mask.AttachToFramebuffer(framebuffers[i].Handle());
 		if (framebuffer_state_changed)
 		{
 			framebuffers[i].ClearAll();
+			if (motion_vectors_enabled)
+				motion_vectors.ClearAttached(framebuffers[i].Handle());
 			post_protection_mask.ClearAttached(framebuffers[i].Handle());
 		}
-		post_protection_mask.UseSceneDrawBuffers(framebuffers[i].Handle());
+		post_protection_mask.UseSceneDrawBuffers(framebuffers[i].Handle(),
+			OpenGL_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_PIXEL &&
+			motion_vectors.velocity_texture != 0);
 	}
 	if (supersampling_factor >= 2 || ((OpenGL_preferred_state.bloom_enabled || OpenGL_preferred_state.gtao_enabled) && target_samples >= 2))
 		resolved_framebuffer.Update(framebuffer_logical_width, framebuffer_logical_height, 0);
@@ -2546,10 +2576,12 @@ void GL4Renderer::UpdateFramebuffer(void)
 	legacy_draw_uniforms_dirty = true;
 	post_protection_mask_dirty = false;
 	post_protection_mask_cleared_this_frame = false;
+	motion_vectors_cleared_this_frame = false;
+	motion_vectors_capture_locked = false;
 
 	framebuffer_current_draw = 0;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[0].Handle());
-	post_protection_mask.UseSceneDrawBuffers(framebuffers[0].Handle());
+	UseSceneDrawBuffers();
 	if (framebuffers[0].Samples() >= 2)
 		glEnable(GL_MULTISAMPLE);
 	else

@@ -684,6 +684,7 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	extern const char* fontFragmentSrc;
 	extern const char* motionVectorVertexSrc;
 	extern const char* motionVectorFragmentSrc;
+	extern const char* motionVectorDebugFragmentSrc;
 	extern const char* aoDeferredCompositeFragmentSrc;
 	blitshader.AttachSource(blitVertexSrc, blitFragmentSrc);
 	blitshader.Use();
@@ -733,6 +734,18 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	motionvector_screen_size = motionvectorshader.FindUniform("screen_size");
 	if (motionvector_screen_size == -1)
 		Error("GLRenderer::Init: Failed to find motion-vector screen_size uniform!");
+
+	motionvectordebugshader.AttachSource(blitVertexSrc, motionVectorDebugFragmentSrc);
+	motionvectordebugshader.Use();
+	motionvectordebug_velocity_source = motionvectordebugshader.FindUniform("velocity_source");
+	motionvectordebug_uv_origin = motionvectordebugshader.FindUniform("uv_origin");
+	motionvectordebug_uv_scale = motionvectordebugshader.FindUniform("uv_scale");
+	motionvectordebug_screen_size = motionvectordebugshader.FindUniform("screen_size");
+	if (motionvectordebug_velocity_source != -1)
+		glUniform1i(motionvectordebug_velocity_source, 0);
+	if (motionvectordebug_uv_origin == -1 || motionvectordebug_uv_scale == -1 ||
+		motionvectordebug_screen_size == -1)
+		Error("GLRenderer::Init: Failed to find motion-vector debug uniforms!");
 
 	ao_compositeshader.AttachSource(blitVertexSrc, aoDeferredCompositeFragmentSrc);
 	ao_compositeshader.Use();

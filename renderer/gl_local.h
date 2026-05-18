@@ -59,6 +59,11 @@ struct normal_array
 	float x, y, z, w;
 };
 
+struct vec4_array
+{
+	float x, y, z, w;
+};
+
 struct gl_vertex
 {
 	vector vert;
@@ -66,6 +71,9 @@ struct gl_vertex
 	tex_array tex_coord;
 	tex_array tex_coord2;
 	normal_array normal;
+	float motion_velocity_x;
+	float motion_velocity_y;
+	vec4_array motion_world_position;
 };
 
 struct gl_motion_vertex
@@ -117,6 +125,7 @@ class GL4Renderer : public IRenderer
 	ShaderProgram downsampleshader;
 	ShaderProgram fontshader;
 	ShaderProgram motionvectorshader;
+	ShaderProgram motionvectordebugshader;
 	ShaderProgram ao_compositeshader;
 	BloomResources bloom;
 	GTAOResources gtao;
@@ -144,6 +153,10 @@ class GL4Renderer : public IRenderer
 	GLint downsampleshader_source_visible_size = -1;
 	GLint fontshader_texture = -1;
 	GLint motionvector_screen_size = -1;
+	GLint motionvectordebug_velocity_source = -1;
+	GLint motionvectordebug_uv_origin = -1;
+	GLint motionvectordebug_uv_scale = -1;
+	GLint motionvectordebug_screen_size = -1;
 	GLint ao_composite_final_source = -1;
 	GLint ao_composite_scene_source = -1;
 	GLint ao_composite_ao_scene_source = -1;
@@ -209,6 +222,10 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_cockpit_scanline_spacing_uniforms[8] = {};
 	GLint drawshader_cockpit_scanline_thickness_uniforms[8] = {};
 	GLint drawshader_cockpit_scanline_phase_uniforms[8] = {};
+	GLint drawshader_motion_vector_mode_uniforms[8] = {};
+	GLint drawshader_motion_vector_previous_view_projection_uniforms[8] = {};
+	GLint drawshader_motion_vector_screen_size_uniforms[8] = {};
+	GLint drawshader_motion_vector_has_previous_uniforms[8] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
 	float ao_suppression_draw_value = 0.0f;
@@ -236,6 +253,8 @@ class GL4Renderer : public IRenderer
 	GLuint motionvector_vbo = 0;
 	bool motion_object_active = false;
 	bool motion_vectors_dirty = false;
+	bool motion_vectors_cleared_this_frame = false;
+	bool motion_vectors_capture_locked = false;
 
 	//IMAGE
 	ubyte opengl_Framebuffer_ready = 0;
@@ -281,7 +300,7 @@ class GL4Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.5f, 0.5f, 0.5f, 1.0f };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.5f, 0.5f, 0.5f, 1.0f, RENDERER_MOTION_VECTOR_OFF, false };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -327,6 +346,11 @@ private:
 	void DestroyMotionVectorDraw();
 	void DrawMotionVectorPolygon(int nv, g3Point** p);
 	void DrawMotionVectorTriangles(const gl_motion_vertex* vertices, int nv);
+	bool MotionVectorTargetEnabled() const;
+	bool PixelMotionVectorModeEnabled() const;
+	bool MotionVectorWritesEnabled() const;
+	void DrawMotionVectorDebugPreview(int supersampling_factor);
+	void UseSceneDrawBuffers();
 
 	// Turns on/off multitexture blending
 	void SetMultitextureBlendMode(bool state);

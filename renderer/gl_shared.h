@@ -255,7 +255,7 @@ struct PostProtectionMaskResources
 	void Destroy();
 	void AttachToFramebuffer(GLuint framebuffer);
 	void ClearAttached(GLuint framebuffer);
-	void UseSceneDrawBuffers(GLuint framebuffer);
+	void UseSceneDrawBuffers(GLuint framebuffer, bool include_motion_vectors = false);
 	GLuint TextureForRead(GLuint source_framebuffer);
 	GLuint AOClassTextureForRead(GLuint source_framebuffer);
 };

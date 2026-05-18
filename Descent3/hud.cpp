@@ -1332,6 +1332,44 @@ static void HUDRenderDrawCallStats(const renderer_draw_call_stats& draw_stats)
 	draw_row(y, post, 2);
 }
 
+static void HUDRenderMotionVectorDebugSample()
+{
+	renderer_motion_vector_debug_sample sample = {};
+	rend_GetMotionVectorDebugSample(&sample);
+
+	const char* mode = "Off";
+	if (sample.mode == RENDERER_MOTION_VECTOR_VERTEX)
+		mode = "Vertex";
+	else if (sample.mode == RENDERER_MOTION_VECTOR_PIXEL)
+		mode = "Pixel";
+
+	const int line_height = grtext_GetHeight("X") + 2;
+	const int y = Game_window_y + Game_window_h - line_height - 4;
+	if (sample.valid)
+	{
+		if (sample.probe_valid)
+		{
+			RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+				"MV %s center (%d,%d)/%dx%d: %.6f %.6f  max (%d,%d): %.6f %.6f  probe: %.6f %.6f",
+				mode, sample.x, sample.y, sample.width, sample.height, sample.vx, sample.vy,
+				sample.max_x, sample.max_y, sample.max_vx, sample.max_vy,
+				sample.probe_vx, sample.probe_vy);
+		}
+		else
+		{
+			RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+				"MV %s center (%d,%d)/%dx%d: %.6f %.6f  max (%d,%d): %.6f %.6f",
+				mode, sample.x, sample.y, sample.width, sample.height, sample.vx, sample.vy,
+				sample.max_x, sample.max_y, sample.max_vx, sample.max_vy);
+		}
+	}
+	else
+	{
+		RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+			"MV %s center: no sample", mode);
+	}
+}
+
 #define HUD_KEYS_NEXT_LINE	hudconty += HUDEnabledControlsLineAdvance()
 
 //	iterate through entire hud item list to draw.
@@ -1395,6 +1433,9 @@ void RenderHUDItems(tStatMask stat_mask)
 		rend_GetDrawCallStats(&draw_stats);
 		HUDRenderDrawCallStats(draw_stats);
 	}
+
+	if (Render_preferred_state.motion_vector_debug_preview)
+		HUDRenderMotionVectorDebugSample();
 
 	// show music spew
 

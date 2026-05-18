@@ -39,9 +39,15 @@ uniform float cockpit_scanline_strength;
 uniform float cockpit_scanline_spacing;
 uniform float cockpit_scanline_thickness;
 uniform float cockpit_scanline_phase;
+uniform int motion_vector_mode;
+uniform mat4 motion_vector_previous_view_projection;
+uniform vec2 motion_vector_screen_size;
+uniform int motion_vector_has_previous;
 
 in vec4 outcolor;
 in vec4 outnormal;
+in vec2 out_motion_velocity;
+in vec4 out_motion_world_position;
 #if defined(USE_TEXTURING)
 in vec3 outuv;
 #if defined(USE_LIGHTMAP)
@@ -53,6 +59,7 @@ in vec3 outpt;
 #endif
 
 layout(location = 0) out vec4 color;
+layout(location = 1) out vec2 velocity;
 layout(location = 2) out vec4 post_mask;
 layout(location = 3) out float ao_class;
 
@@ -108,6 +115,25 @@ vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 
 void main()
 {
+	velocity = vec2(0.0);
+	if (motion_vector_mode == 2)
+	{
+		if (motion_vector_has_previous != 0 && abs(out_motion_world_position.w) > 0.00001)
+		{
+			vec3 world_position = out_motion_world_position.xyz / out_motion_world_position.w;
+			vec4 previous_clip = motion_vector_previous_view_projection * vec4(world_position, 1.0);
+			if (previous_clip.w > 0.00001)
+			{
+				vec2 previous_ndc = previous_clip.xy / previous_clip.w;
+				vec2 current_ndc = (gl_FragCoord.xy / max(motion_vector_screen_size, vec2(1.0))) * 2.0 - 1.0;
+				velocity = (current_ndc - previous_ndc) * 0.5;
+			}
+		}
+		else
+		{
+			velocity = out_motion_velocity;
+		}
+	}
 	vec4 vertex_color = ApplyPhongLighting(outcolor);
 	if (ao_capture_weight_mode != 0)
 	{

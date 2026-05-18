@@ -22,11 +22,13 @@ layout(location = 4) in vec2 uv;
 out vec2 outuv;
 out float outlight;
 out float outalpha;
+out vec3 outworld;
 
 void main()
 {
 	vec4 temp = commons.modelview * vec4(position, 1.0);
 	gl_Position = commons.projection * temp;
+	outworld = position;
 	outuv = uv;
 	outlight = room.brightness;
 	outalpha = color.a;

@@ -281,6 +281,20 @@ void GL4Renderer::BindPipeline(uint32_t handle)
 		GLint ao_capture_weight_mode_uniform = gl_shaderprogs[handle].FindUniform("ao_capture_weight_mode");
 		if (ao_capture_weight_mode_uniform != -1)
 			glUniform1i(ao_capture_weight_mode_uniform, 0);
+		GLint motion_vector_mode_uniform = gl_shaderprogs[handle].FindUniform("motion_vector_mode");
+		if (motion_vector_mode_uniform != -1)
+			glUniform1i(motion_vector_mode_uniform,
+				PixelMotionVectorModeEnabled() ? RENDERER_MOTION_VECTOR_PIXEL : RENDERER_MOTION_VECTOR_OFF);
+		GLint motion_vector_previous_view_projection_uniform =
+			gl_shaderprogs[handle].FindUniform("motion_vector_previous_view_projection");
+		if (motion_vector_previous_view_projection_uniform != -1)
+			glUniformMatrix4fv(motion_vector_previous_view_projection_uniform, 1, GL_FALSE, previous_view_projection);
+		GLint motion_vector_screen_size_uniform = gl_shaderprogs[handle].FindUniform("motion_vector_screen_size");
+		if (motion_vector_screen_size_uniform != -1)
+			glUniform2f(motion_vector_screen_size_uniform, (float)FramebufferWidth(), (float)FramebufferHeight());
+		GLint motion_vector_has_previous_uniform = gl_shaderprogs[handle].FindUniform("motion_vector_has_previous");
+		if (motion_vector_has_previous_uniform != -1)
+			glUniform1i(motion_vector_has_previous_uniform, have_previous_view_projection ? 1 : 0);
 	}
 }
 

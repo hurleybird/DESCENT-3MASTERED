@@ -1105,6 +1105,7 @@ struct video_menu
 	bool* perf_markers;
 	bool* show_fps;
 	bool* show_draw_calls;
+	bool* motion_vector_debug;
 
 	short* fov;
 	short* frame_limit;
@@ -1114,6 +1115,7 @@ struct video_menu
 	int* antialiasing;
 	int* supersampling;
 	int* gtao;
+	int* motion_vectors;
 	int* backend;
 
 	int window_width, window_height;
@@ -1251,6 +1253,19 @@ struct video_menu
 			}
 			changed = true;
 		}
+		if (motion_vectors && sheet->HasChanged(motion_vectors))
+		{
+			int mode = *motion_vectors;
+			if (mode < RENDERER_MOTION_VECTOR_OFF || mode > RENDERER_MOTION_VECTOR_PIXEL)
+				mode = RENDERER_MOTION_VECTOR_OFF;
+			Render_preferred_state.motion_vector_mode = (ubyte)mode;
+			changed = true;
+		}
+		if (motion_vector_debug && sheet->HasChanged(motion_vector_debug))
+		{
+			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
+			changed = true;
+		}
 		if (perf_markers && sheet->HasChanged(perf_markers))
 		{
 			PerfMarkersSetEnabled(*perf_markers);
@@ -1327,6 +1342,7 @@ struct video_menu
 		perf_markers = NULL;
 		show_fps = NULL;
 		show_draw_calls = NULL;
+		motion_vector_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
 		buffer = NULL;
@@ -1335,6 +1351,7 @@ struct video_menu
 		antialiasing = NULL;
 		supersampling = NULL;
 		gtao = NULL;
+		motion_vectors = NULL;
 		backend = NULL;
 		window_width = window_height = 0;
 		window_aspect = CONFIG_ASPECT_16_9;
@@ -1390,6 +1407,7 @@ struct video_menu
 		per_pixel_lighting = sheet->AddLongCheckBox("Per-pixel lighting",
 			ConfigCanUsePerPixelLighting() && Render_preferred_state.per_pixel_lighting);
 		bloom_enabled = sheet->AddLongCheckBox("Bloom", Render_preferred_state.bloom_enabled);
+		motion_vector_debug = sheet->AddLongCheckBox("Vector debug", Render_preferred_state.motion_vector_debug_preview);
 
 		sheet->NewGroup("MSAA", 184, 0);
 		int iTemp = MsaaSamplesToIndex(Render_preferred_state.msaa_samples);
@@ -1412,6 +1430,12 @@ struct video_menu
 		sheet->AddRadioButton(TXT_CFG_HIGH);
 		*gtao = ConfigCanUseGTAO() ?
 			GTAOPresetToIndex(Render_preferred_state.gtao_enabled, Render_preferred_state.gtao_resolution) : 0;
+
+		sheet->NewGroup("Motion vectors", 184, 238);
+		motion_vectors = sheet->AddFirstRadioButton(TXT_OFF);
+		sheet->AddRadioButton("Vertex");
+		sheet->AddRadioButton("Pixel");
+		*motion_vectors = Render_preferred_state.motion_vector_mode;
 
 		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
@@ -1439,6 +1463,10 @@ struct video_menu
 			else
 				ApplyGTAOPresetFromIndex(0);
 		}
+		if (motion_vectors)
+			Render_preferred_state.motion_vector_mode = (ubyte)*motion_vectors;
+		if (motion_vector_debug)
+			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
 		if (perf_markers)
 			PerfMarkersSetEnabled(*perf_markers);
 		if (show_fps)

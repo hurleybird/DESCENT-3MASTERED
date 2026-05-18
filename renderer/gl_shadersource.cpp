@@ -81,6 +81,28 @@ const char* motionVectorFragmentSrc =
 "}\n"
 "";
 
+const char* motionVectorDebugFragmentSrc =
+"#version 450 core\n"
+"\n"
+"in vec2 outuv;\n"
+"out vec4 color;\n"
+"\n"
+"uniform sampler2D velocity_source;\n"
+"uniform vec2 uv_origin;\n"
+"uniform vec2 uv_scale;\n"
+"uniform vec2 screen_size;\n"
+"\n"
+"void main()\n"
+"{\n"
+"	vec2 velocity = texture(velocity_source, uv_origin + outuv * uv_scale).xy;\n"
+"	vec2 pixels = velocity * screen_size;\n"
+"	vec2 signed_vis = sign(pixels) * (1.0 - exp(-abs(pixels) * 4.0));\n"
+"	float mag = 1.0 - exp(-length(pixels) * 4.0);\n"
+"	vec3 directional = vec3(max(signed_vis.x, 0.0), max(-signed_vis.x, 0.0), abs(signed_vis.y));\n"
+"	color = vec4(max(directional, vec3(mag * 0.12)), clamp(mag * 0.85, 0.0, 0.85));\n"
+"}\n"
+"";
+
 const char* fontVertexSrc =
 "#version 450 core\n"
 "\n"

@@ -23,19 +23,21 @@ out vec2 outuv;
 out vec3 outpt;
 out float outlight;
 out float outalpha;
+out vec3 outworld;
 flat out vec4 outplane;
 
 void main()
 {
 	vec4 temp = commons.modelview * vec4(position, 1.0);
 	gl_Position = commons.projection * temp;
+	outworld = position;
 	outuv = uv;
 	outpt = temp.xyz;
 	outlight = room.brightness;
 	outalpha = color.a;
-	
+
 	//fog plane nonsense
-	//This will take the room's fog plane and translate it into view space, so that the position doesn't need to be extracted from the modelview matrix.	
+	//This will take the room's fog plane and translate it into view space, so that the position doesn't need to be extracted from the modelview matrix.
 	vec4 fogplane = transpose(inverse(commons.modelview)) * room.fog_plane;
 	float normmag = length(fogplane.xyz);
 	outplane = vec4(normalize(fogplane.xyz), fogplane.w / normmag);

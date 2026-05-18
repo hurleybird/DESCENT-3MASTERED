@@ -830,6 +830,12 @@ void MotionVectorResources::Update(uint32_t new_width, uint32_t new_height, uint
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+		glGenFramebuffers(1, &resolve_framebuffer);
+		glBindFramebuffer(GL_FRAMEBUFFER, resolve_framebuffer);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, velocity_texture, 0);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glReadBuffer(GL_COLOR_ATTACHMENT0);
 	}
 
 	rend_ClearBoundTextures();
@@ -1078,7 +1084,7 @@ void PostProtectionMaskResources::ClearAttached(GLuint framebuffer)
 		glDrawBuffer(old_draw_buffer);
 }
 
-void PostProtectionMaskResources::UseSceneDrawBuffers(GLuint framebuffer)
+void PostProtectionMaskResources::UseSceneDrawBuffers(GLuint framebuffer, bool include_motion_vectors)
 {
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
 	if (mask_texture != 0)
@@ -1086,7 +1092,7 @@ void PostProtectionMaskResources::UseSceneDrawBuffers(GLuint framebuffer)
 		const GLenum draw_buffers[4] =
 		{
 			GL_COLOR_ATTACHMENT0,
-			GL_NONE,
+			static_cast<GLenum>(include_motion_vectors ? GL_COLOR_ATTACHMENT1 : GL_NONE),
 			GL_COLOR_ATTACHMENT2,
 			GL_COLOR_ATTACHMENT3
 		};
@@ -1102,6 +1108,10 @@ void PostProtectionMaskResources::UseSceneDrawBuffers(GLuint framebuffer)
 
 void GL_ConfigurePostMaskBlend()
 {
+	glDisablei(GL_BLEND, 1);
+	glBlendEquationi(1, GL_FUNC_ADD);
+	glBlendFunci(1, GL_ONE, GL_ZERO);
+	glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	glEnablei(GL_BLEND, 2);
 	glBlendEquationi(2, GL_MAX);
 	glBlendFunci(2, GL_ONE, GL_ONE);

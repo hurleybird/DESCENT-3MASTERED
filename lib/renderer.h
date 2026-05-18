@@ -255,6 +255,13 @@ enum gtao_resolution
 	GTAO_RESOLUTION_QUARTER = 3,
 };
 
+enum renderer_motion_vector_mode
+{
+	RENDERER_MOTION_VECTOR_OFF = 0,
+	RENDERER_MOTION_VECTOR_VERTEX = 1,
+	RENDERER_MOTION_VECTOR_PIXEL = 2,
+};
+
 struct renderer_preferred_state
 {
 	ubyte mipping;
@@ -288,6 +295,8 @@ struct renderer_preferred_state
 	float gtao_polyobject_occlusion;
 	float gtao_mine_rock_occlusion;
 	float gtao_mine_occlusion;
+	ubyte motion_vector_mode;
+	bool motion_vector_debug_preview;
 };
 
 enum renderer_ao_class
@@ -344,6 +353,26 @@ struct renderer_draw_call_stats
 	uint32_t category_3d[RENDERER_DRAW_CALL_3D_CATEGORY_COUNT];
 };
 
+struct renderer_motion_vector_debug_sample
+{
+	bool valid;
+	ubyte mode;
+	int x;
+	int y;
+	int width;
+	int height;
+	float vx;
+	float vy;
+	int max_x;
+	int max_y;
+	float max_vx;
+	float max_vy;
+	float max_mag;
+	bool probe_valid;
+	float probe_vx;
+	float probe_vy;
+};
+
 struct renderer_poly_batch_item
 {
 	g3Point **pointlist;
@@ -374,6 +403,8 @@ void rend_GetStatistics(tRendererStats *stats);
 void rend_RecordDrawCall(renderer_draw_call_category category);
 void rend_GetDrawCallStats(renderer_draw_call_stats *stats);
 renderer_draw_call_3d_category rend_Set3DDrawCallCategory(renderer_draw_call_3d_category category);
+void rend_SetMotionVectorDebugSample(const renderer_motion_vector_debug_sample *sample);
+void rend_GetMotionVectorDebugSample(renderer_motion_vector_debug_sample *sample);
 
 #ifdef __cplusplus
 class renderer_3d_draw_call_scope

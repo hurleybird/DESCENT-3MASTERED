@@ -41,25 +41,27 @@ out vec3 outnormal;
 flat out vec4 outplane;
 flat out vec3[4] outlightpos;
 out float outlight;
+out vec3 outworld;
 
 void main()
 {
 	vec4 temp = commons.modelview * vec4(position, 1.0);
 	gl_Position = commons.projection * temp;
+	outworld = position;
 	outuv = uv;
 	outuv2 = uv2;
 	outpt = temp.xyz;
 	outnormal = mat3(commons.modelview) * normal;
 	outlight = room.brightness;
-	
+
 	//Need to transform the light positions too..
 	for (int i = 0; i < specular_data.num_specular; i++)
 	{
 		outlightpos[i] = (commons.modelview * specular_data.speculars[i].bright_center).xyz;
 	}
-	
+
 	//fog plane nonsense
-	//This will take the room's fog plane and translate it into view space, so that the position doesn't need to be extracted from the modelview matrix.	
+	//This will take the room's fog plane and translate it into view space, so that the position doesn't need to be extracted from the modelview matrix.
 	vec4 fogplane = transpose(inverse(commons.modelview)) * room.fog_plane;
 	float normmag = length(fogplane.xyz);
 	outplane = vec4(normalize(fogplane.xyz), fogplane.w / normmag);
