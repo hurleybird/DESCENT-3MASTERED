@@ -135,9 +135,11 @@ class GL4Renderer : public IRenderer
 	//UpdateCommon(depth=0) call so the AO pass uses the main world projection.
 	float last_projection[16] = {};
 	float captured_scene_projection[16] = {};
+	float captured_scene_view_projection[16] = {};
 	float last_nearz = 1.0f;
 	float last_farz = 10000.f;
 	bool captured_scene_projection_valid = false;
+	bool captured_scene_view_projection_valid = false;
 	float current_view_projection[16] = {};
 	float current_inverse_view_projection[16] = {};
 	float previous_view_projection[16] = {};

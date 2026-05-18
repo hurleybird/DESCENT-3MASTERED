@@ -132,9 +132,11 @@ struct g3Point
 	short		p3_pad;				//keep structure longword aligned
 	vector		p3_vec;				//x,y,z of rotated point
 	vector		p3_vecPreRot;		//original XYZ of the point
+	vector		p3_motion_world_pos;	//current world-space position for pixel motion vectors
 	float		p3_prev_sx,p3_prev_sy;	//previous-frame projected position for motion vectors
 	ubyte		p3_motion_valid;
-	ubyte		p3_motion_pad[3];
+	ubyte		p3_motion_world_valid;
+	ubyte		p3_motion_pad[2];
 	g3UVL		p3_uvl;				//uv & lighting values
 };
 

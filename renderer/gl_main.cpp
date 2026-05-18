@@ -1341,7 +1341,12 @@ bool GL4Renderer::BeginPostPresentFrame()
 
 	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_AFTER_BLOOM);
 
-	if (framebuffer_ok && have_current_view_projection)
+	if (framebuffer_ok && captured_scene_view_projection_valid)
+	{
+		memcpy(previous_view_projection, captured_scene_view_projection, sizeof(previous_view_projection));
+		have_previous_view_projection = true;
+	}
+	else if (framebuffer_ok && have_current_view_projection)
 	{
 		memcpy(previous_view_projection, current_view_projection, sizeof(previous_view_projection));
 		have_previous_view_projection = true;
@@ -1503,6 +1508,7 @@ void GL4Renderer::CaptureBloomSource()
 	bloom_source_valid = false;
 	ao_scene_valid = false;
 	captured_scene_projection_valid = false;
+	captured_scene_view_projection_valid = false;
 
 	const bool ao_enabled = OpenGL_preferred_state.gtao_enabled && framebuffer_ok;
 	const bool bloom_enabled = OpenGL_preferred_state.bloom_enabled;
@@ -1519,6 +1525,12 @@ void GL4Renderer::CaptureBloomSource()
 
 	if (framebuffer_ok)
 	{
+		if (have_current_view_projection)
+		{
+			memcpy(captured_scene_view_projection, current_view_projection, sizeof(captured_scene_view_projection));
+			captured_scene_view_projection_valid = true;
+		}
+
 		if (late_post_enabled && OpenGL_state.screen_width > 0 && OpenGL_state.screen_height > 0)
 		{
 			GLint old_read = 0, old_draw = 0;

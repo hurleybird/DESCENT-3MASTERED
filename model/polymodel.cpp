@@ -140,37 +140,60 @@ void PolymodelMotionEndObject()
 	Polymodel_motion_active_history = nullptr;
 }
 
+static bool PolymodelMotionTransformPoint(const PolymodelMotionSnapshot &snapshot, poly_model *pm,
+	int submodel_num, const vector *local_pos, vector *world_pos)
+{
+	if (!pm || !local_pos || !world_pos || snapshot.model_num != (pm - Poly_models) ||
+		submodel_num < 0 || submodel_num >= snapshot.n_models)
+	{
+		return false;
+	}
+
+	vector pnt = *local_pos;
+	int mn = submodel_num;
+	while (mn != -1)
+	{
+		if (mn >= snapshot.n_models)
+			return false;
+
+		matrix m;
+		vm_AnglesToMatrix(&m, snapshot.submodels[mn].angs.p,
+			snapshot.submodels[mn].angs.h, snapshot.submodels[mn].angs.b);
+		vm_TransposeMatrix(&m);
+		pnt = (pnt * m) + pm->submodel[mn].offset + snapshot.submodels[mn].mod_pos;
+		mn = pm->submodel[mn].parent;
+	}
+
+	matrix object_matrix = snapshot.orient;
+	vm_TransposeMatrix(&object_matrix);
+	*world_pos = (pnt * object_matrix) + snapshot.pos;
+	return true;
+}
+
 void PolymodelMotionSetPoint(g3Point *point, poly_model *pm, int submodel_num, const vector *local_pos)
 {
 	if (!point)
 		return;
 
 	point->p3_motion_valid = 0;
-	if (!Polymodel_motion_active || !Polymodel_motion_active_history || !pm || !local_pos)
+	point->p3_motion_world_valid = 0;
+	if (!Polymodel_motion_active_history || !pm || !local_pos)
+		return;
+
+	vector world_pos;
+	const PolymodelMotionSnapshot &current = Polymodel_motion_active_history->current;
+	if (PolymodelMotionTransformPoint(current, pm, submodel_num, local_pos, &world_pos))
+	{
+		point->p3_motion_world_pos = world_pos;
+		point->p3_motion_world_valid = 1;
+	}
+
+	if (!Polymodel_motion_active)
 		return;
 
 	const PolymodelMotionSnapshot &previous = Polymodel_motion_active_history->previous;
-	if (previous.model_num != (pm - Poly_models) || submodel_num < 0 || submodel_num >= previous.n_models)
+	if (!PolymodelMotionTransformPoint(previous, pm, submodel_num, local_pos, &world_pos))
 		return;
-
-	vector pnt = *local_pos;
-	int mn = submodel_num;
-	while (mn != -1)
-	{
-		if (mn >= previous.n_models)
-			return;
-
-		matrix m;
-		vm_AnglesToMatrix(&m, previous.submodels[mn].angs.p,
-			previous.submodels[mn].angs.h, previous.submodels[mn].angs.b);
-		vm_TransposeMatrix(&m);
-		pnt = (pnt * m) + pm->submodel[mn].offset + previous.submodels[mn].mod_pos;
-		mn = pm->submodel[mn].parent;
-	}
-
-	matrix object_matrix = previous.orient;
-	vm_TransposeMatrix(&object_matrix);
-	vector world_pos = (pnt * object_matrix) + previous.pos;
 	float sx = 0.0f, sy = 0.0f;
 	if (rend_ProjectPreviousFramePoint(&world_pos, &sx, &sy))
 	{

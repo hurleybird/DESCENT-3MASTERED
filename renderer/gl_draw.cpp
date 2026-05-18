@@ -759,6 +759,15 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 		vert.motion_world_position.z = pnt->p3_vecPreRot.z * payloadw;
 		vert.motion_world_position.w = payloadw;
 	}
+	else if (CurrentDrawWritesPixelMotionVectors() && motion_object_active &&
+		!pnt->p3_motion_valid && pnt->p3_motion_world_valid)
+	{
+		float payloadw = 1.0f / (pnt->p3_z + Z_bias);
+		vert.motion_world_position.x = pnt->p3_motion_world_pos.x * payloadw;
+		vert.motion_world_position.y = pnt->p3_motion_world_pos.y * payloadw;
+		vert.motion_world_position.z = pnt->p3_motion_world_pos.z * payloadw;
+		vert.motion_world_position.w = payloadw;
+	}
 
 	float z = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / (pnt->p3_z + Z_bias))));
 	vert.vert.z = -z;
@@ -1401,6 +1410,15 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 			vertp->motion_world_position.z = pnt->p3_vecPreRot.z * payloadw;
 			vertp->motion_world_position.w = payloadw;
 		}
+		else if (CurrentDrawWritesPixelMotionVectors() && motion_object_active &&
+			!pnt->p3_motion_valid && pnt->p3_motion_world_valid)
+		{
+			float payloadw = 1.0f / (pnt->p3_z + Z_bias);
+			vertp->motion_world_position.x = pnt->p3_motion_world_pos.x * payloadw;
+			vertp->motion_world_position.y = pnt->p3_motion_world_pos.y * payloadw;
+			vertp->motion_world_position.z = pnt->p3_motion_world_pos.z * payloadw;
+			vertp->motion_world_position.w = payloadw;
+		}
 
 		float z = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / (pnt->p3_z + Z_bias))));
 		vertp->vert.z = -z;
@@ -1645,6 +1663,7 @@ void GL4Renderer::DrawScaledBitmap(int x1, int y1, int x2, int y2,
 		pnts[i].p3_z = 1.0f;
 		pnts[i].p3_flags = PF_PROJECTED;
 		pnts[i].p3_motion_valid = 0;
+		pnts[i].p3_motion_world_valid = 0;
 		pnts[i].p3_vecPreRot.x = 0.0f;
 		pnts[i].p3_vecPreRot.y = 0.0f;
 		pnts[i].p3_vecPreRot.z = 0.0f;
@@ -1707,6 +1726,7 @@ void GL4Renderer::DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
 		pnts[i].p3_z = zval;
 		pnts[i].p3_flags = PF_PROJECTED;
 		pnts[i].p3_motion_valid = 0;
+		pnts[i].p3_motion_world_valid = 0;
 		pnts[i].p3_vecPreRot.x = 0.0f;
 		pnts[i].p3_vecPreRot.y = 0.0f;
 		pnts[i].p3_vecPreRot.z = 0.0f;
