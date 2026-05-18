@@ -1318,15 +1318,23 @@ void DrawAlphaBlendedScreen(float r, float g, float b, float alpha)
 
 	color = GR_RGB(r * 255, g * 255, b * 255);
 
+	int render_width = Game_window_w;
+	int render_height = Game_window_h;
+	rend_GetProjectionParameters(&render_width, &render_height);
+	if (render_width <= 0)
+		render_width = Game_window_w;
+	if (render_height <= 0)
+		render_height = Game_window_h;
+
 	// Set our four corners to cover the screen
 	points[0].p3_sx = 0;
 	points[0].p3_sy = 0;
-	points[1].p3_sx = Game_window_w;
+	points[1].p3_sx = render_width;
 	points[1].p3_sy = 0;
-	points[2].p3_sx = Game_window_w;
-	points[2].p3_sy = Game_window_h;
+	points[2].p3_sx = render_width;
+	points[2].p3_sy = render_height;
 	points[3].p3_sx = 0;
-	points[3].p3_sy = Game_window_h;
+	points[3].p3_sy = render_height;
 
 	for (i = 0; i < 4; i++)
 	{
