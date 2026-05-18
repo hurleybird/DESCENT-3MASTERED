@@ -167,19 +167,6 @@ static bool CockpitSubmodelShouldRenderPostPost(poly_model* pm, int submodel)
 	return CockpitSubmodelUsesTransparentMaterial(pm, submodel);
 }
 
-static bool CockpitUsesOriginalLayout()
-{
-	if (Cockpit_info.ship_index == SHIP_PYRO_ID ||
-		Cockpit_info.ship_index == SHIP_PHOENIX_ID ||
-		Cockpit_info.ship_index == SHIP_MAGNUM_ID)
-	{
-		return true;
-	}
-
-	return Cockpit_info.ship_index >= 0 && Cockpit_info.ship_index < MAX_SHIPS &&
-		!stricmp(Ships[Cockpit_info.ship_index].name, "Black Pyro");
-}
-
 static void CockpitSetTransparentArmFaceFilter(bool enabled)
 {
 	if (!enabled || !Cockpit_alt_mode || Cockpit_info.transparent_arm_mask == 0)
@@ -262,19 +249,16 @@ static void BuildCockpitDisplayAdjustments()
 	}
 
 	Cockpit_info.transparent_arm_mask = 0;
-	if (CockpitUsesOriginalLayout())
+	for (int i = 0; i < std::min(count, 32); i++)
 	{
-		for (int i = 0; i < std::min(count, 32); i++)
-		{
-			if (!display_arm_descendant[i])
-				continue;
-			if (pm->submodel[i].flags & (SOF_VIEWER | SOF_MONITOR_MASK))
-				continue;
-			if (!CockpitSubmodelUsesTransparentMaterial(pm, i))
-				continue;
+		if (!display_arm_descendant[i])
+			continue;
+		if (pm->submodel[i].flags & (SOF_VIEWER | SOF_MONITOR_MASK))
+			continue;
+		if (!CockpitSubmodelUsesTransparentMaterial(pm, i))
+			continue;
 
-			Cockpit_info.transparent_arm_mask |= (1u << i);
-		}
+		Cockpit_info.transparent_arm_mask |= (1u << i);
 	}
 
 	Cockpit_info.display_adjust_count = count;

@@ -192,6 +192,7 @@ public:
 	virtual void SetBloomSuppression(float value) {}
 	virtual void SetAOClass(int value) {}
 	virtual void SetPostMaskOnly(int state) {}
+	virtual void SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect) {}
 
 	// Draws a scaled 2d bitmap to our buffer
 	// NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color

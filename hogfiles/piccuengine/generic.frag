@@ -31,6 +31,14 @@ uniform int ao_class_value;
 uniform float ao_weight_value;
 uniform int ao_capture_weight_mode;
 uniform int post_mask_use_luminance;
+uniform int cockpit_backing_enabled;
+uniform float cockpit_backing_alpha;
+uniform float cockpit_backing_darkness;
+uniform int cockpit_scanlines_enabled;
+uniform float cockpit_scanline_strength;
+uniform float cockpit_scanline_spacing;
+uniform float cockpit_scanline_thickness;
+uniform float cockpit_scanline_phase;
 
 in vec4 outcolor;
 in vec4 outnormal;
@@ -126,6 +134,18 @@ void main()
 	#else
 		color = vertex_color;
 	#endif
+	if (cockpit_backing_enabled != 0)
+	{
+		float darkness = clamp(cockpit_backing_darkness, 0.0, 1.0);
+		if (cockpit_scanlines_enabled != 0 && cockpit_scanline_strength > 0.0)
+		{
+			float spacing = max(cockpit_scanline_spacing, 1.0);
+			float row = mod(floor(gl_FragCoord.y + cockpit_scanline_phase), spacing);
+			float stripe = step(row / spacing, clamp(cockpit_scanline_thickness, 0.0, 1.0));
+			darkness = clamp(darkness + stripe * cockpit_scanline_strength, 0.0, 1.0);
+		}
+		color = vec4(vec3(0.0), clamp(cockpit_backing_alpha, 0.0, 1.0) * darkness);
+	}
 	float suppression_alpha = clamp(color.a, 0.0, 1.0);
 	if (post_mask_use_luminance != 0)
 	{

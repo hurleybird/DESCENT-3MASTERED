@@ -714,6 +714,14 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_ao_weight_uniforms[i] = drawshaders[i].FindUniform("ao_weight_value");
 		drawshader_ao_capture_weight_mode_uniforms[i] = drawshaders[i].FindUniform("ao_capture_weight_mode");
 		drawshader_post_mask_luminance_uniforms[i] = drawshaders[i].FindUniform("post_mask_use_luminance");
+		drawshader_cockpit_backing_enabled_uniforms[i] = drawshaders[i].FindUniform("cockpit_backing_enabled");
+		drawshader_cockpit_backing_alpha_uniforms[i] = drawshaders[i].FindUniform("cockpit_backing_alpha");
+		drawshader_cockpit_backing_darkness_uniforms[i] = drawshaders[i].FindUniform("cockpit_backing_darkness");
+		drawshader_cockpit_scanlines_enabled_uniforms[i] = drawshaders[i].FindUniform("cockpit_scanlines_enabled");
+		drawshader_cockpit_scanline_strength_uniforms[i] = drawshaders[i].FindUniform("cockpit_scanline_strength");
+		drawshader_cockpit_scanline_spacing_uniforms[i] = drawshaders[i].FindUniform("cockpit_scanline_spacing");
+		drawshader_cockpit_scanline_thickness_uniforms[i] = drawshaders[i].FindUniform("cockpit_scanline_thickness");
+		drawshader_cockpit_scanline_phase_uniforms[i] = drawshaders[i].FindUniform("cockpit_scanline_phase");
 	}
 
 	lastdrawshader = -1;
@@ -822,6 +830,22 @@ void GL4Renderer::SelectDrawShader()
 			OpenGL_state.cur_alpha_type == AT_LIGHTMAP_BLEND_SATURATE;
 		glUniform1i(drawshader_post_mask_luminance_uniforms[shader_index], use_luminance ? 1 : 0);
 	}
+	if (drawshader_cockpit_backing_enabled_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_cockpit_backing_enabled_uniforms[shader_index], cockpit_backing_effect.enabled);
+	if (drawshader_cockpit_backing_alpha_uniforms[shader_index] != -1)
+		glUniform1f(drawshader_cockpit_backing_alpha_uniforms[shader_index], cockpit_backing_effect.alpha);
+	if (drawshader_cockpit_backing_darkness_uniforms[shader_index] != -1)
+		glUniform1f(drawshader_cockpit_backing_darkness_uniforms[shader_index], cockpit_backing_effect.darkness);
+	if (drawshader_cockpit_scanlines_enabled_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_cockpit_scanlines_enabled_uniforms[shader_index], cockpit_backing_effect.scanlines_enabled);
+	if (drawshader_cockpit_scanline_strength_uniforms[shader_index] != -1)
+		glUniform1f(drawshader_cockpit_scanline_strength_uniforms[shader_index], cockpit_backing_effect.scanline_strength);
+	if (drawshader_cockpit_scanline_spacing_uniforms[shader_index] != -1)
+		glUniform1f(drawshader_cockpit_scanline_spacing_uniforms[shader_index], cockpit_backing_effect.scanline_spacing);
+	if (drawshader_cockpit_scanline_thickness_uniforms[shader_index] != -1)
+		glUniform1f(drawshader_cockpit_scanline_thickness_uniforms[shader_index], cockpit_backing_effect.scanline_thickness);
+	if (drawshader_cockpit_scanline_phase_uniforms[shader_index] != -1)
+		glUniform1f(drawshader_cockpit_scanline_phase_uniforms[shader_index], cockpit_backing_effect.scanline_phase);
 
 	const bool phong_enabled = OpenGL_state.cur_light_state == LS_PHONG;
 	if (drawshader_phong_enabled_uniforms[shader_index] != -1)

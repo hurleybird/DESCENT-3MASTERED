@@ -107,7 +107,7 @@ bool Game_fullscreen = false;
 int Game_frame_limit_fps = 0;
 float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
-bool Cockpit_alt_mode = false;
+bool Cockpit_alt_mode = true;
 float Render_FOV_desired = 72;
 
 tDetailSettings Detail_settings;
@@ -1105,7 +1105,6 @@ struct video_menu
 	bool* perf_markers;
 	bool* show_fps;
 	bool* show_draw_calls;
-	bool* alt_cockpit;
 
 	short* fov;
 	short* frame_limit;
@@ -1270,11 +1269,6 @@ struct video_menu
 			Render_draw_call_stats = *show_draw_calls;
 			ui_changed = true;
 		}
-		if (alt_cockpit && sheet->HasChanged(alt_cockpit))
-		{
-			Cockpit_alt_mode = *alt_cockpit;
-			ui_changed = true;
-		}
 		if (antialiasing && sheet->HasChanged(antialiasing))
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1333,7 +1327,6 @@ struct video_menu
 		perf_markers = NULL;
 		show_fps = NULL;
 		show_draw_calls = NULL;
-		alt_cockpit = NULL;
 		fov = NULL;
 		frame_limit = NULL;
 		buffer = NULL;
@@ -1424,7 +1417,6 @@ struct video_menu
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
 		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats);
-		alt_cockpit = sheet->AddLongCheckBox("Alt cockpit", Cockpit_alt_mode);
 
 		return sheet;
 	};
@@ -1458,8 +1450,6 @@ struct video_menu
 		}
 		if (show_draw_calls)
 			Render_draw_call_stats = *show_draw_calls;
-		if (alt_cockpit)
-			Cockpit_alt_mode = *alt_cockpit;
 		if (antialiasing)
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -2037,7 +2027,8 @@ struct details_menu
 	int* motion_blur;									// motion blur radio
 	bool* specmap, * headlight, * mirror,				// check boxes
 		* dynamic, * fog, * coronas, * procedurals,
-		* powerup_halo, * scorches, * weapon_coronas;
+		* powerup_halo, * scorches, * weapon_coronas,
+		* cockpit_improvement;
 	short* pixel_err,										// 0-27 (1-28)
 		* rend_dist;											// 0-120 (80-200)
 
@@ -2073,6 +2064,7 @@ struct details_menu
 		powerup_halo = sheet->AddLongCheckBox(TXT_CFG_POWERUPHALOS, Detail_settings.Powerup_halos);
 		scorches = sheet->AddLongCheckBox(TXT_CFG_SCORCHMARKS, Detail_settings.Scorches_enabled);
 		weapon_coronas = sheet->AddLongCheckBox(TXT_CFG_WEAPONEFFECTS, Detail_settings.Weapon_coronas_enabled);
+		cockpit_improvement = sheet->AddLongCheckBox("Cockpit improvement", Cockpit_alt_mode);
 
 		// sliders
 		tSliderSettings slider_set;
@@ -2144,6 +2136,7 @@ struct details_menu
 		if (rend_dist)
 			Detail_settings.Terrain_render_distance = (((*rend_dist) * 2) + MINIMUM_RENDER_DIST) * ((float)TERRAIN_SIZE);
 		Detail_settings.Weapon_coronas_enabled = *weapon_coronas;
+		Cockpit_alt_mode = *cockpit_improvement;
 
 		Default_detail_level = *detail_level;
 		Database->write("PredefDetailSetting", Default_detail_level);
@@ -2157,6 +2150,11 @@ struct details_menu
 		if (motion_blur && sheet->HasChanged(motion_blur))
 		{
 			ApplyMotionBlurPresetFromIndex(*motion_blur);
+		}
+		bool cockpit_improvement_changed = sheet->HasChanged(cockpit_improvement);
+		if (cockpit_improvement_changed)
+		{
+			Cockpit_alt_mode = *cockpit_improvement;
 		}
 
 		// check here if the detail level currently set should be custom
@@ -2187,6 +2185,8 @@ struct details_menu
 				set_preset_details(*detail_level);
 			}
 		}
+		if (cockpit_improvement_changed)
+			sheet->UpdateChanges();
 
 	};
 

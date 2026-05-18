@@ -36,6 +36,7 @@
 #include "weapon.h"
 #include "stringtable.h"
 
+#include <algorithm>
 #include <vector>
 
 //////////////////////////////////////////////////////////////////////////////
@@ -139,6 +140,7 @@ void DrawGaugeQuad(g3Point* pts, int bm, ubyte alpha = 255, bool saturate = fals
 
 //	renders a flat poly onto the screen with given color
 void DrawGaugeQuadFlat(g3Point* pts, float r, float g, float b, ubyte alpha);
+static void DrawGaugeQuadFlatImmediate(g3Point* pts, float r, float g, float b, ubyte alpha);
 
 //	renders a flat poly onto the screen with 4 colors (for each vertex)
 void DrawGaugeQuadFlat(g3Point* pts, float* r, float* g, float* b, ubyte alpha);
@@ -927,7 +929,22 @@ void DrawGaugeMonitorSurface(g3Point* pts)
 {
 	g3Point expanded_pts[4];
 	ExpandGaugeQuad(expanded_pts, pts, 1.10f);
-	DrawGaugeQuadFlat(expanded_pts, 0.0f, 0.0f, 0.0f, 128);
+
+	renderer_cockpit_backing_effect effect = {};
+	effect.enabled = 1;
+	effect.alpha = 0.20f;
+	effect.darkness = 0.0f;
+	effect.scanlines_enabled = 1;
+	effect.scanline_strength = 0.70f;
+	effect.scanline_spacing = 3.0f * (float)ConfigNormalizeSupersamplingFactor(Render_preferred_state.supersampling_factor);
+	effect.scanline_thickness = 0.50f;
+	effect.scanline_phase = Gametime * 14.0f;
+
+	FlushGaugeQuadBatches();
+	rend_SetCockpitBackingEffect(&effect);
+	DrawGaugeQuadFlatImmediate(expanded_pts, 0.0f, 0.0f, 0.0f,
+		(ubyte)(effect.alpha * effect.darkness * 255.0f + 0.5f));
+	rend_SetCockpitBackingEffect(NULL);
 }
 
 
@@ -1049,6 +1066,32 @@ void DrawGaugeQuadFlat(g3Point* pts, float* r, float* g, float* b, ubyte alpha)
 		return;
 
 	FlushGaugeQuadBatches();
+	g3_DrawPoly(4, pntlist, 0);
+}
+
+static void DrawGaugeQuadFlatImmediate(g3Point* pts, float r, float g, float b, ubyte alpha)
+{
+	float ar[4] = { r,r,r,r }, ag[4] = { g,g,g,g }, ab[4] = { b,b,b,b };
+	g3Point* pntlist[4];
+	g3Point pnts[4];
+
+	for (int i = 0; i < 4; i++)
+	{
+		pnts[i] = pts[i];
+		pnts[i].p3_flags = PF_RGBA | (pts[i].p3_flags & PF_ORIGPOINT);
+		pntlist[i] = &pnts[i];
+		pnts[i].p3_r = ar[i];
+		pnts[i].p3_g = ag[i];
+		pnts[i].p3_b = ab[i];
+	}
+
+	rend_SetZBufferState(0);
+	rend_SetLighting(LS_GOURAUD);
+	rend_SetTextureType(TT_FLAT);
+	rend_SetColorModel(CM_RGB);
+	rend_SetAlphaType(AT_CONSTANT);
+	rend_SetAlphaValue(alpha);
+
 	g3_DrawPoly(4, pntlist, 0);
 }
 

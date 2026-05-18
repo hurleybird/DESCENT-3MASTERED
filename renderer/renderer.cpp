@@ -311,6 +311,14 @@ void rend_SetPostMaskOnly(int state)
 	renderer_inst->SetPostMaskOnly(state);
 }
 
+void rend_SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->SetCockpitBackingEffect(effect);
+}
+
 void rend_SetMipState(sbyte state)
 {
 	if (!Renderer_initted)

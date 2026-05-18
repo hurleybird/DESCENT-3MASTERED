@@ -20,6 +20,7 @@
 #include "gameloop.h"
 #include "rtperformance.h"
 #include <math.h>
+#include <cstring>
 
 static float mat4_identity[16] =
 { 1, 0, 0, 0,
@@ -2127,6 +2128,19 @@ void GL4Renderer::SetPostMaskOnly(int state)
 		glColorMaski(2, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 		glColorMaski(3, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	}
+}
+
+void GL4Renderer::SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect)
+{
+	renderer_cockpit_backing_effect next_effect = {};
+	if (effect)
+		next_effect = *effect;
+
+	if (memcmp(&next_effect, &cockpit_backing_effect, sizeof(next_effect)) == 0)
+		return;
+
+	cockpit_backing_effect = next_effect;
+	legacy_draw_uniforms_dirty = true;
 }
 
 // Sets the overall alpha scale factor (all alpha values are scaled by this value)

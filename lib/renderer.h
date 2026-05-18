@@ -415,6 +415,19 @@ void rend_SetBloomSuppression(float value);
 void rend_SetAOClass(int value);
 void rend_SetPostMaskOnly(int state);
 
+struct renderer_cockpit_backing_effect
+{
+	int enabled;
+	float alpha;
+	float darkness;
+	int scanlines_enabled;
+	float scanline_strength;
+	float scanline_spacing;
+	float scanline_thickness;
+	float scanline_phase;
+};
+void rend_SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect);
+
 // Tells the software renderer whether or not to use mipping
 void rend_SetMipState (sbyte state);
 

@@ -201,12 +201,21 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_ao_weight_uniforms[8] = {};
 	GLint drawshader_ao_capture_weight_mode_uniforms[8] = {};
 	GLint drawshader_post_mask_luminance_uniforms[8] = {};
+	GLint drawshader_cockpit_backing_enabled_uniforms[8] = {};
+	GLint drawshader_cockpit_backing_alpha_uniforms[8] = {};
+	GLint drawshader_cockpit_backing_darkness_uniforms[8] = {};
+	GLint drawshader_cockpit_scanlines_enabled_uniforms[8] = {};
+	GLint drawshader_cockpit_scanline_strength_uniforms[8] = {};
+	GLint drawshader_cockpit_scanline_spacing_uniforms[8] = {};
+	GLint drawshader_cockpit_scanline_thickness_uniforms[8] = {};
+	GLint drawshader_cockpit_scanline_phase_uniforms[8] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
 	float ao_suppression_draw_value = 0.0f;
 	float bloom_suppression_draw_value = 0.0f;
 	int ao_class_draw_value = 0;
 	float ao_weight_draw_value = 1.0f;
+	renderer_cockpit_backing_effect cockpit_backing_effect = {};
 	bool post_mask_only_draw = false;
 	bool post_protection_mask_dirty = false;
 	bool post_protection_mask_cleared_this_frame = false;
@@ -526,6 +535,7 @@ public:
 	void SetBloomSuppression(float value) override;
 	void SetAOClass(int value) override;
 	void SetPostMaskOnly(int state) override;
+	void SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect) override;
 
 	// Draws a scaled 2d bitmap to our buffer
 	// NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color

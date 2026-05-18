@@ -33,10 +33,11 @@
 #include "gauges.h"
 #include "cockpit.h"
 #include "player.h"
+#include "renderer.h"
 #include "grtext.h"
 #include "stringtable.h"
 #include "gamefont.h"
-
+#include "3d.h"
 
 //How many small views
 #define NUM_SMALL_VIEWS		3
@@ -152,8 +153,57 @@ void ResetSmallViews()
 //How long the static is visbile
 #define STATIC_TIME 0.25f
 
+static void DrawSmallViewScanlineOverlay(int width, int height, bool cockpit_embedded)
+{
+	if (!cockpit_embedded || !Cockpit_alt_mode || width <= 0 || height <= 0)
+		return;
+
+	renderer_cockpit_backing_effect effect = {};
+	effect.enabled = 1;
+	effect.alpha = 0.20f;
+	effect.darkness = 0.0f;
+	effect.scanlines_enabled = 1;
+	effect.scanline_strength = 0.70f;
+	effect.scanline_spacing = 3.0f *
+		(float)ConfigNormalizeSupersamplingFactor(Render_preferred_state.supersampling_factor);
+	effect.scanline_thickness = 0.50f;
+	effect.scanline_phase = Gametime * 14.0f;
+
+	g3Point pnts[4];
+	g3Point* pntlist[4];
+	for (int i = 0; i < 4; i++)
+	{
+		pnts[i].p3_z = 1.0f;
+		pnts[i].p3_flags = PF_PROJECTED | PF_RGBA;
+		pnts[i].p3_r = 0.0f;
+		pnts[i].p3_g = 0.0f;
+		pnts[i].p3_b = 0.0f;
+		pntlist[i] = &pnts[i];
+	}
+	pnts[0].p3_sx = 0;
+	pnts[0].p3_sy = 0;
+	pnts[1].p3_sx = width - 1;
+	pnts[1].p3_sy = 0;
+	pnts[2].p3_sx = width - 1;
+	pnts[2].p3_sy = height - 1;
+	pnts[3].p3_sx = 0;
+	pnts[3].p3_sy = height - 1;
+
+	rend_SetZBufferState(0);
+	rend_SetLighting(LS_GOURAUD);
+	rend_SetTextureType(TT_FLAT);
+	rend_SetColorModel(CM_RGB);
+	rend_SetAlphaType(AT_CONSTANT);
+	rend_SetAlphaValue((ubyte)(effect.alpha * effect.darkness * 255.0f + 0.5f));
+	rend_SetOverlayType(OT_NONE);
+
+	rend_SetCockpitBackingEffect(&effect);
+	rend_DrawPolygon2D(0, pntlist, 4);
+	rend_SetCockpitBackingEffect(NULL);
+}
+
 //Render into one of the small windows
-void RenderSmallWindow(int left, int top, int right, int bot, object* viewer, vector* viewer_eye, int viewer_roomnum, matrix* viewer_orient, int flags, float zoom, ddgr_color outline_color, char* label, float timer)
+void RenderSmallWindow(int left, int top, int right, int bot, object* viewer, vector* viewer_eye, int viewer_roomnum, matrix* viewer_orient, int flags, float zoom, ddgr_color outline_color, char* label, float timer, bool cockpit_embedded)
 {
 	int width = right - left, height = bot - top;
 
@@ -218,6 +268,8 @@ void RenderSmallWindow(int left, int top, int right, int bot, object* viewer, ve
 		//Restore the viewer
 		Viewer_object = save_viewer_object;
 	}
+
+	DrawSmallViewScanlineOverlay(width, height, cockpit_embedded);
 
 	//Draw window outline
 	if (outline_color != -1)
@@ -339,8 +391,10 @@ void DrawSmallViews()
 		if (CockpitState() == COCKPIT_STATE_QUASI)
 			continue;
 
-		else if (CockpitState() == COCKPIT_STATE_FUNCTIONAL)
+		bool cockpit_embedded = false;
+		if (CockpitState() == COCKPIT_STATE_FUNCTIONAL)
 		{
+			cockpit_embedded = true;
 			//draw on the cockpit
 			if (!GetCockpitWindowCoords((v == SVW_LEFT) ? 0 : 1, &left, &top, &right, &bot))
 				continue;
@@ -416,7 +470,7 @@ void DrawSmallViews()
 
 		//Let's render
 		Point_visible_last_frame = -1;
-		RenderSmallWindow(left, top, right, bot, viewer, viewer_eye, viewer_roomnum, viewer_orient, flags, svp->zoom, outline_color, svp->label, svp->timer);
+		RenderSmallWindow(left, top, right, bot, viewer, viewer_eye, viewer_roomnum, viewer_orient, flags, svp->zoom, outline_color, svp->label, svp->timer, cockpit_embedded);
 		Point_visible_last_frame = -1;
 
 		//Update time for this view
