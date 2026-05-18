@@ -397,12 +397,15 @@ void GL4Renderer::FlushFontBatch()
 	bloom_suppression_draw_value = 1.0f;
 	post_protection_mask_dirty = true;
 
-	SelectDrawShader();
-	if (OpenGL_state.cur_texture_quality != 0 && font_batch_bitmap >= 0)
+	fontshader.Use();
+	if (font_texture_array != 0)
 	{
-		MakeBitmapCurrent(font_batch_bitmap, MAP_TYPE_BITMAP, 0);
-		MakeWrapTypeCurrent(font_batch_bitmap, MAP_TYPE_BITMAP, 0);
-		MakeFilterTypeCurrent(font_batch_bitmap, MAP_TYPE_BITMAP, 0);
+		if (UseMultitexture && Last_texel_unit_set != 0)
+		{
+			glActiveTexture(GL_TEXTURE0);
+			Last_texel_unit_set = 0;
+		}
+		glBindTexture(GL_TEXTURE_2D_ARRAY, font_texture_array);
 	}
 
 	const int offset = CopyVertices(font_batch_vertices.data(), (int)font_batch_vertices.size());
@@ -417,14 +420,125 @@ void GL4Renderer::FlushFontBatch()
 		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
 
 	font_batch_vertices.clear();
-	font_batch_bitmap = -1;
 
 	if (ao_suppression_draw_value != old_ao_suppression || bloom_suppression_draw_value != old_bloom_suppression)
 		legacy_draw_uniforms_dirty = true;
 	ao_suppression_draw_value = old_ao_suppression;
 	bloom_suppression_draw_value = old_bloom_suppression;
+	ShaderProgram::ClearBinding();
 
 	CHECK_ERROR(10);
+}
+
+void GL4Renderer::UploadFontTextureLayer(int layer, int bm_handle)
+{
+	if (layer < 0 || bm_handle < 0)
+		return;
+
+	const int w = bm_w(bm_handle, 0);
+	const int h = bm_h(bm_handle, 0);
+	ushort* bm_ptr = bm_data(bm_handle, 0);
+	if (w <= 0 || h <= 0 || bm_ptr == nullptr)
+		return;
+
+	SetUploadBufferSize(w, h);
+	if (bm_format(bm_handle) == BITMAP_FORMAT_4444)
+	{
+		for (int i = 0; i < w * h; i++)
+			opengl_Upload_data[i] = opengl_4444_translate_table[bm_ptr[i]];
+	}
+	else
+	{
+		for (int i = 0; i < w * h; i++)
+			opengl_Upload_data[i] = opengl_Translate_table[bm_ptr[i]];
+	}
+
+	if (UseMultitexture && Last_texel_unit_set != 0)
+	{
+		glActiveTexture(GL_TEXTURE0);
+		Last_texel_unit_set = 0;
+	}
+	glBindTexture(GL_TEXTURE_2D_ARRAY, font_texture_array);
+	glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, w, h, 1, GL_RGBA, GL_UNSIGNED_BYTE, opengl_Upload_data);
+	GameBitmaps[bm_handle].flags &= ~(BF_CHANGED | BF_BRAND_NEW);
+	OpenGL_uploads++;
+}
+
+int GL4Renderer::GetFontTextureLayer(int bm_handle)
+{
+	if (bm_handle < 0)
+		return -1;
+
+	const int w = bm_w(bm_handle, 0);
+	const int h = bm_h(bm_handle, 0);
+	if (w <= 0 || h <= 0)
+		return -1;
+
+	if (font_texture_array != 0 &&
+		(font_texture_array_width != w || font_texture_array_height != h) &&
+		!font_batch_vertices.empty())
+	{
+		FlushFontBatch();
+	}
+
+	if (font_texture_array == 0 || font_texture_array_width != w || font_texture_array_height != h)
+	{
+		if (font_texture_array != 0)
+			glDeleteTextures(1, &font_texture_array);
+
+		GLint max_layers = 0;
+		glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &max_layers);
+		font_texture_array_layers = std::max(1, std::min(max_layers > 0 ? max_layers : 256, 256));
+		font_texture_array_width = w;
+		font_texture_array_height = h;
+		font_texture_array_handles.assign(font_texture_array_layers, -1);
+
+		glGenTextures(1, &font_texture_array);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, font_texture_array);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_LEVEL, 0);
+		glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA, w, h, font_texture_array_layers, 0,
+			GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	}
+
+	for (int layer = 0; layer < (int)font_texture_array_handles.size(); layer++)
+	{
+		if (font_texture_array_handles[layer] == bm_handle)
+		{
+			if (GameBitmaps[bm_handle].flags & (BF_CHANGED | BF_BRAND_NEW))
+				UploadFontTextureLayer(layer, bm_handle);
+			return layer;
+		}
+	}
+
+	for (int layer = 0; layer < (int)font_texture_array_handles.size(); layer++)
+	{
+		if (font_texture_array_handles[layer] == -1)
+		{
+			font_texture_array_handles[layer] = bm_handle;
+			UploadFontTextureLayer(layer, bm_handle);
+			return layer;
+		}
+	}
+
+	return -1;
+}
+
+void GL4Renderer::DestroyFontBatchResources()
+{
+	font_batch_vertices.clear();
+	font_texture_array_handles.clear();
+	if (font_texture_array != 0)
+	{
+		glDeleteTextures(1, &font_texture_array);
+		font_texture_array = 0;
+	}
+	font_texture_array_width = 0;
+	font_texture_array_height = 0;
+	font_texture_array_layers = 0;
 }
 
 void GL4Renderer::SetDrawDefaults()
@@ -1153,11 +1267,11 @@ void GL4Renderer::DrawCircle(int x, int y, int rad)
 // Sets up a font character to draw.  We draw our fonts as pieces of textures
 void GL4Renderer::DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y2, float u, float v, float w, float h)
 {
-	if (font_batch_bitmap != -1 && font_batch_bitmap != bm_handle)
-		FlushFontBatch();
+	const int texture_layer = GetFontTextureLayer(bm_handle);
+	if (texture_layer < 0)
+		return;
 	if (font_batch_vertices.size() + 6 > 60000)
 		FlushFontBatch();
-	font_batch_bitmap = bm_handle;
 
 	gl_vertex quad[4] = {};
 	const ubyte fr = GR_COLOR_RED(OpenGL_state.cur_color);
@@ -1173,6 +1287,7 @@ void GL4Renderer::DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y
 		quad[i].color.b = fb;
 		quad[i].color.a = (ubyte)alpha;
 		quad[i].tex_coord.w = 1.0f;
+		quad[i].tex_coord2.s = (float)texture_layer;
 		quad[i].vert.z = z;
 	}
 

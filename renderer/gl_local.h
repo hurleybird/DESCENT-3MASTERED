@@ -115,6 +115,7 @@ class GL4Renderer : public IRenderer
 
 	ShaderProgram blitshader;
 	ShaderProgram downsampleshader;
+	ShaderProgram fontshader;
 	ShaderProgram motionvectorshader;
 	ShaderProgram ao_compositeshader;
 	BloomResources bloom;
@@ -141,6 +142,7 @@ class GL4Renderer : public IRenderer
 	GLint downsampleshader_dest_origin = -1;
 	GLint downsampleshader_source_visible_origin = -1;
 	GLint downsampleshader_source_visible_size = -1;
+	GLint fontshader_texture = -1;
 	GLint motionvector_screen_size = -1;
 	GLint ao_composite_final_source = -1;
 	GLint ao_composite_scene_source = -1;
@@ -160,7 +162,11 @@ class GL4Renderer : public IRenderer
 	//DRAW
 	gl_vertex GL_vertices[100];
 	std::vector<gl_vertex> font_batch_vertices;
-	int font_batch_bitmap = -1;
+	GLuint font_texture_array = 0;
+	int font_texture_array_width = 0;
+	int font_texture_array_height = 0;
+	int font_texture_array_layers = 0;
+	std::vector<int> font_texture_array_handles;
 
 	float OpenGL_Alpha_factor = 1.0f;
 	float Alpha_multiplier = 1.0f;
@@ -300,6 +306,9 @@ private:
 	void BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xscalar, float yscalar,
 		ubyte fr, ubyte fg, ubyte fb);
 	void FlushFontBatch();
+	int GetFontTextureLayer(int bm_handle);
+	void UploadFontTextureLayer(int layer, int bm_handle);
+	void DestroyFontBatchResources();
 	void InitMotionVectorDraw();
 	void DestroyMotionVectorDraw();
 	void DrawMotionVectorPolygon(int nv, g3Point** p);

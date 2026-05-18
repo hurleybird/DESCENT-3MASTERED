@@ -680,6 +680,8 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	extern const char* blitVertexSrc;
 	extern const char* blitFragmentSrc;
 	extern const char* downsampleFragmentSrc;
+	extern const char* fontVertexSrc;
+	extern const char* fontFragmentSrc;
 	extern const char* motionVectorVertexSrc;
 	extern const char* motionVectorFragmentSrc;
 	extern const char* aoDeferredCompositeFragmentSrc;
@@ -715,6 +717,16 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 		glUniform2i(downsampleshader_source_visible_origin, 0, 0);
 	if (downsampleshader_source_visible_size != -1)
 		glUniform2i(downsampleshader_source_visible_size, 0, 0);
+
+	fontshader.AttachSource(fontVertexSrc, fontFragmentSrc);
+	fontshader.Use();
+	fontshader_texture = fontshader.FindUniform("fonttexture");
+	if (fontshader_texture == -1)
+		Error("GLRenderer::Init: Failed to find font texture uniform!");
+	glUniform1i(fontshader_texture, 0);
+	GLuint font_common_block = glGetUniformBlockIndex(fontshader.Handle(), "CommonBlock");
+	if (font_common_block != GL_INVALID_INDEX)
+		glUniformBlockBinding(fontshader.Handle(), font_common_block, 1);
 
 	motionvectorshader.AttachSource(motionVectorVertexSrc, motionVectorFragmentSrc);
 	motionvectorshader.Use();
@@ -773,12 +785,14 @@ void GL4Renderer::Close()
 
 	blitshader.Destroy();
 	downsampleshader.Destroy();
+	fontshader.Destroy();
 	motionvectorshader.Destroy();
 	ao_compositeshader.Destroy();
 	bloom.DestroyShaders();
 	gtao.Destroy();
 
 	FreeImages();
+	DestroyFontBatchResources();
 	if (framebuffer_ok)
 		CloseFramebuffer();
 
