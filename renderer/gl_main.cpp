@@ -1669,13 +1669,12 @@ void GL4Renderer::SetFogColor(ddgr_color color)
 
 void GL4Renderer::SetLighting(light_state state)
 {
-	FlushFontBatch();
-
 	if (state == LS_PHONG && !OpenGL_preferred_state.per_pixel_lighting)
 		state = LS_GOURAUD;
 
 	if (state == OpenGL_state.cur_light_state)
 		return;	// No redundant state setting
+	FlushFontBatch();
 	if (UseMultitexture && Last_texel_unit_set != 0)
 	{
 		glActiveTexture(GL_TEXTURE0 + 0);
@@ -1780,6 +1779,8 @@ void GL4Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int coun
 
 void GL4Renderer::SetColorModel(color_model state)
 {
+	if (state == OpenGL_state.cur_color_model)
+		return;
 	FlushFontBatch();
 
 	switch (state)
@@ -1798,10 +1799,9 @@ void GL4Renderer::SetColorModel(color_model state)
 
 void GL4Renderer::SetTextureType(texture_type state)
 {
-	FlushFontBatch();
-
 	if (state == OpenGL_state.cur_texture_type)
 		return;	// No redundant state setting
+	FlushFontBatch();
 	if (UseMultitexture && Last_texel_unit_set != 0)
 	{
 		glActiveTexture(GL_TEXTURE0 + 0);
@@ -1832,6 +1832,8 @@ void GL4Renderer::SetTextureType(texture_type state)
 // Sets the state of bilinear filtering for our textures
 void GL4Renderer::SetFiltering(sbyte state)
 {
+	if (state == OpenGL_state.cur_bilinear_state)
+		return;
 	FlushFontBatch();
 
 	OpenGL_state.cur_bilinear_state = state;
@@ -1840,10 +1842,9 @@ void GL4Renderer::SetFiltering(sbyte state)
 // Sets the state of z-buffering to on or off
 void GL4Renderer::SetZBufferState(sbyte state)
 {
-	FlushFontBatch();
-
 	if (state == OpenGL_state.cur_zbuffer_state)
 		return;	// No redundant state setting
+	FlushFontBatch();
 
 	OpenGL_sets_this_frame[5]++;
 	OpenGL_state.cur_zbuffer_state = state;
@@ -1877,6 +1878,8 @@ void GL4Renderer::SetZValues(float nearz, float farz)
 // a -1 value indicates no overlay map
 void GL4Renderer::SetOverlayMap(int handle)
 {
+	if (handle == Overlay_map)
+		return;
 	FlushFontBatch();
 
 	Overlay_map = handle;
@@ -1884,6 +1887,8 @@ void GL4Renderer::SetOverlayMap(int handle)
 
 void GL4Renderer::SetOverlayType(ubyte type)
 {
+	if (type == Overlay_type)
+		return;
 	FlushFontBatch();
 
 	Overlay_type = type;
@@ -1969,10 +1974,9 @@ void GL4Renderer::SetAlwaysAlpha(bool state)
 
 void GL4Renderer::SetAlphaType(sbyte atype)
 {
-	FlushFontBatch();
-
 	if (atype == OpenGL_state.cur_alpha_type)
 		return;		// don't set it redundantly
+	FlushFontBatch();
 	if (UseMultitexture && Last_texel_unit_set != 0)
 	{
 		glActiveTexture(GL_TEXTURE0 + 0);
@@ -2061,9 +2065,10 @@ void GL4Renderer::SetAlphaValue(ubyte val)
 
 void GL4Renderer::SetAOSuppression(float value)
 {
-	FlushFontBatch();
-
 	float clamped_value = std::max(0.0f, std::min(value, 1.0f));
+	if (clamped_value == ao_suppression_draw_value)
+		return;
+	FlushFontBatch();
 	if (clamped_value != ao_suppression_draw_value)
 		legacy_draw_uniforms_dirty = true;
 	ao_suppression_draw_value = clamped_value;
@@ -2075,9 +2080,10 @@ void GL4Renderer::SetAOSuppression(float value)
 
 void GL4Renderer::SetBloomSuppression(float value)
 {
-	FlushFontBatch();
-
 	float clamped_value = std::max(0.0f, std::min(value, 1.0f));
+	if (clamped_value == bloom_suppression_draw_value)
+		return;
+	FlushFontBatch();
 	if (clamped_value != bloom_suppression_draw_value)
 		legacy_draw_uniforms_dirty = true;
 	bloom_suppression_draw_value = clamped_value;
@@ -2104,10 +2110,11 @@ static float GL4AOClassWeight(const renderer_preferred_state& state, int value)
 
 void GL4Renderer::SetAOClass(int value)
 {
-	FlushFontBatch();
-
 	int clamped_value = std::max(0, std::min(value, 255));
 	float weight_value = GL4AOClassWeight(OpenGL_preferred_state, clamped_value);
+	if (clamped_value == ao_class_draw_value && weight_value == ao_weight_draw_value)
+		return;
+	FlushFontBatch();
 	if (clamped_value != ao_class_draw_value || weight_value != ao_weight_draw_value)
 		legacy_draw_uniforms_dirty = true;
 	ao_class_draw_value = clamped_value;
