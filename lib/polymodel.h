@@ -137,6 +137,7 @@ void PolymodelPerfAddDrawModelSetup(double start_time);
 void PolymodelSetSubmodelOffsetAdjustments(int model_num, const vector *offsets, int count);
 void PolymodelClearSubmodelOffsetAdjustments();
 void PolymodelSetCockpitBatching(bool enabled);
+void PolymodelSetCockpitTransparentFaceFilter(int model_num, uint submodel_mask, bool enabled);
 
 void SetModelAngles (poly_model *po,float *normalized_angles);
 void SetModelInterpPos (poly_model *po,float *normalized_pos);

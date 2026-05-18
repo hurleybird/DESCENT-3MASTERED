@@ -72,6 +72,7 @@ struct tCockpitInfo
 	unsigned nonlayered_mask;				// non layered submodel mask
 	unsigned layered_mask;					// layered submodel mask
 	unsigned post_post_mask;					// transparent canopy/glass rendered after post
+	unsigned transparent_arm_mask;			// side arm submodels with transparent cockpit faces
 	bool animating;							// is cockpit moving?
 	bool resized;								// if cockpit is being resized....
 	vector buffet_vec;						// buffet direction
@@ -166,6 +167,30 @@ static bool CockpitSubmodelShouldRenderPostPost(poly_model* pm, int submodel)
 	return CockpitSubmodelUsesTransparentMaterial(pm, submodel);
 }
 
+static bool CockpitUsesOriginalLayout()
+{
+	if (Cockpit_info.ship_index == SHIP_PYRO_ID ||
+		Cockpit_info.ship_index == SHIP_PHOENIX_ID ||
+		Cockpit_info.ship_index == SHIP_MAGNUM_ID)
+	{
+		return true;
+	}
+
+	return Cockpit_info.ship_index >= 0 && Cockpit_info.ship_index < MAX_SHIPS &&
+		!stricmp(Ships[Cockpit_info.ship_index].name, "Black Pyro");
+}
+
+static void CockpitSetTransparentArmFaceFilter(bool enabled)
+{
+	if (!enabled || !Cockpit_alt_mode || Cockpit_info.transparent_arm_mask == 0)
+	{
+		PolymodelSetCockpitTransparentFaceFilter(-1, 0, false);
+		return;
+	}
+
+	PolymodelSetCockpitTransparentFaceFilter(Cockpit_info.model_num, Cockpit_info.transparent_arm_mask, true);
+}
+
 static void BuildCockpitDisplayAdjustments()
 {
 	poly_model* pm = Cockpit_info.model;
@@ -183,6 +208,8 @@ static void BuildCockpitDisplayAdjustments()
 
 	int count = std::min(pm->n_models, MAX_SUBOBJECTS);
 	int display_sign[MAX_SUBOBJECTS] = {};
+	bool display_arm_branch[MAX_SUBOBJECTS] = {};
+	bool display_arm_descendant[MAX_SUBOBJECTS] = {};
 	float center_x[MAX_SUBOBJECTS] = {};
 
 	float half_width = std::max(fabsf(pm->mins.x), fabsf(pm->maxs.x));
@@ -203,6 +230,27 @@ static void BuildCockpitDisplayAdjustments()
 
 	for (int i = 0; i < count; i++)
 	{
+		if (!(pm->submodel[i].flags & SOF_MONITOR_MASK) || !display_sign[i])
+			continue;
+
+		for (int mn = i; mn >= 0 && mn < count; mn = pm->submodel[mn].parent)
+		{
+			if (display_sign[mn] == display_sign[i])
+				display_arm_branch[mn] = true;
+		}
+	}
+
+	for (int i = 0; i < count; i++)
+	{
+		for (int mn = i; mn >= 0 && mn < count; mn = pm->submodel[mn].parent)
+		{
+			if (display_arm_branch[mn])
+			{
+				display_arm_descendant[i] = true;
+				break;
+			}
+		}
+
 		float desired = (float)display_sign[i];
 		float parent_desired = 0.0f;
 		if (pm->submodel[i].parent >= 0 && pm->submodel[i].parent < count)
@@ -211,6 +259,22 @@ static void BuildCockpitDisplayAdjustments()
 		Cockpit_info.display_adjust_unit[i].x = desired - parent_desired;
 		if (display_sign[i])
 			Cockpit_info.display_adjust_available = true;
+	}
+
+	Cockpit_info.transparent_arm_mask = 0;
+	if (CockpitUsesOriginalLayout())
+	{
+		for (int i = 0; i < std::min(count, 32); i++)
+		{
+			if (!display_arm_descendant[i])
+				continue;
+			if (pm->submodel[i].flags & (SOF_VIEWER | SOF_MONITOR_MASK))
+				continue;
+			if (!CockpitSubmodelUsesTransparentMaterial(pm, i))
+				continue;
+
+			Cockpit_info.transparent_arm_mask |= (1u << i);
+		}
 	}
 
 	Cockpit_info.display_adjust_count = count;
@@ -333,6 +397,7 @@ void InitCockpit(int ship_index)
 	Cockpit_info.layered_mask = 0x00000000;
 	Cockpit_info.nonlayered_mask = 0x00000000;
 	Cockpit_info.post_post_mask = 0x00000000;
+	Cockpit_info.transparent_arm_mask = 0x00000000;
 	Cockpit_post_post_snapshot.valid = false;
 	for (i = 0; i < Cockpit_info.model->n_models; i++)
 	{
@@ -372,6 +437,7 @@ void FreeCockpit()
 	Cockpit_info.display_adjust_count = 0;
 	Cockpit_info.display_adjust_available = false;
 	Cockpit_info.post_post_mask = 0;
+	Cockpit_info.transparent_arm_mask = 0;
 	Cockpit_post_post_snapshot.valid = false;
 	//	free ship specific stuff for hud-cockpit shared.
 	bm_FreeBitmap(HUD_resources.invpulse_bmp);
@@ -665,13 +731,21 @@ void RenderCockpit()
 	Cockpit_post_post_snapshot.display_adjust_active = display_adjust_active;
 	Cockpit_post_post_snapshot.display_spread = display_spread;
 
+	if (Cockpit_alt_mode)
+	{
+		RenderGaugeMonitorSurfaces(&view_pos, &view_tmat, normalized_time,
+			(Cockpit_info.animating || Cockpit_info.resized), gauge_reset);
+	}
+
 	//	draws lower z cockpit, and monitor glares after gauge renderering
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBufferState(1);
 	{
 		renderer_3d_draw_call_scope cockpit_draw_scope(RENDERER_DRAW_CALL_3D_COCKPIT);
 		PolymodelSetCockpitBatching(true);
+		CockpitSetTransparentArmFaceFilter(true);
 		DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r, light_scalar_g, light_scalar_b, Cockpit_info.nonlayered_mask, 0, 1);
+		CockpitSetTransparentArmFaceFilter(false);
 		PolymodelSetCockpitBatching(false);
 	}
 	rend_SetBloomSuppression(1.0f);
@@ -683,7 +757,9 @@ void RenderCockpit()
 	{
 		renderer_3d_draw_call_scope cockpit_draw_scope(RENDERER_DRAW_CALL_3D_COCKPIT);
 		PolymodelSetCockpitBatching(true);
+		CockpitSetTransparentArmFaceFilter(true);
 		DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r, light_scalar_g, light_scalar_b, Cockpit_info.layered_mask, 0, 1);
+		CockpitSetTransparentArmFaceFilter(false);
 		PolymodelSetCockpitBatching(false);
 	}
 	rend_SetZBufferState(0);
@@ -716,6 +792,7 @@ void RenderCockpitPostPost()
 	{
 		renderer_3d_draw_call_scope cockpit_draw_scope(RENDERER_DRAW_CALL_3D_COCKPIT);
 		PolymodelSetCockpitBatching(true);
+		CockpitSetTransparentArmFaceFilter(true);
 		DrawPolygonModel(&Cockpit_post_post_snapshot.view_pos, &Cockpit_post_post_snapshot.view_tmat,
 			Cockpit_info.model_num, Cockpit_post_post_snapshot.normalized_time, 0,
 			&Cockpit_post_post_snapshot.light_vec,
@@ -723,6 +800,7 @@ void RenderCockpitPostPost()
 			Cockpit_post_post_snapshot.light_scalar_g,
 			Cockpit_post_post_snapshot.light_scalar_b,
 			Cockpit_info.post_post_mask, 0, 1);
+		CockpitSetTransparentArmFaceFilter(false);
 		PolymodelSetCockpitBatching(false);
 	}
 	rend_SetZBufferWriteMask(1);

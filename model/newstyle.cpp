@@ -51,6 +51,9 @@ static ubyte triangulated_faces[MAX_FACES_PER_ROOM];
 static ubyte FacingPass=0;
 static int Multicolor_texture=-1;
 static bool Polymodel_cockpit_batching = false;
+static bool Polymodel_cockpit_transparent_face_filter_enabled = false;
+static int Polymodel_cockpit_transparent_face_filter_model = -1;
+static uint Polymodel_cockpit_transparent_face_filter_mask = 0;
 
 static vector Fog_plane;
 static float Fog_distance,Fog_eye_distance;
@@ -236,6 +239,13 @@ void PolymodelPerfAddDrawModelSetup(double start_time)
 void PolymodelSetCockpitBatching(bool enabled)
 {
 	Polymodel_cockpit_batching = enabled;
+}
+
+void PolymodelSetCockpitTransparentFaceFilter(int model_num, uint submodel_mask, bool enabled)
+{
+	Polymodel_cockpit_transparent_face_filter_enabled = enabled;
+	Polymodel_cockpit_transparent_face_filter_model = model_num;
+	Polymodel_cockpit_transparent_face_filter_mask = submodel_mask;
 }
 
 static int ModelFaceSortFunc(const short *a, const short *b)
@@ -479,10 +489,50 @@ static bool PolymodelFaceUsesAlpha(poly_model *pm, bsp_info *sm, int facenum)
 	return false;
 }
 
+static bool PolymodelFaceUsesCockpitTransparentMaterial(poly_model *pm, bsp_info *sm, int facenum)
+{
+	polyface *fp = &sm->faces[facenum];
+	texture *texp = GetPolymodelFaceTexture(pm, sm, fp);
+	if (texp && ((texp->flags & (TF_ALPHA | TF_SATURATE | TF_BREAKABLE)) || texp->alpha < 0.99f))
+		return true;
+
+	if (!sm->alpha)
+		return false;
+
+	for (int i = 0; i < fp->nverts; i++)
+	{
+		if (sm->alpha[fp->vertnums[i]] < 0.99f)
+			return true;
+	}
+
+	return false;
+}
+
+static bool PolymodelShouldSkipTransparentCockpitFace(poly_model *pm, bsp_info *sm, int facenum)
+{
+	if (!Polymodel_cockpit_transparent_face_filter_enabled)
+		return false;
+	if (Polymodel_cockpit_transparent_face_filter_model < 0 ||
+		pm != &Poly_models[Polymodel_cockpit_transparent_face_filter_model])
+	{
+		return false;
+	}
+
+	int submodel_num = sm - pm->submodel;
+	if (submodel_num < 0 || submodel_num >= 32)
+		return false;
+	if (!(Polymodel_cockpit_transparent_face_filter_mask & (1u << submodel_num)))
+		return false;
+
+	return PolymodelFaceUsesCockpitTransparentMaterial(pm, sm, facenum);
+}
+
 static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	PolymodelBaseFaceBatcher& batcher, bool allow_alpha = false)
 {
 	polyface *fp = &sm->faces[facenum];
+	if (PolymodelShouldSkipTransparentCockpitFace(pm, sm, facenum))
+		return true;
 	if (fp->nverts < 3 || fp->nverts >= 100)
 		return false;
 
@@ -641,6 +691,8 @@ inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 {
 	double face_start_time = PolymodelPerfNow();
 	PolymodelPerfTouch(face_start_time);
+	if (PolymodelShouldSkipTransparentCockpitFace(pm, sm, facenum))
+		return;
 	if (Perf_markers_enabled)
 		Polymodel_perf_base_face_count++;
 	
@@ -1087,6 +1139,8 @@ inline void RenderSubmodelFaceFogged (poly_model *pm,bsp_info *sm,int facenum)
 {
 	double face_start_time = PolymodelPerfNow();
 	PolymodelPerfTouch(face_start_time);
+	if (PolymodelShouldSkipTransparentCockpitFace(pm, sm, facenum))
+		return;
 	if (Perf_markers_enabled)
 		Polymodel_perf_fog_face_count++;
 
@@ -1130,6 +1184,8 @@ inline void RenderSubmodelFaceSpecular (poly_model *pm,bsp_info *sm,int facenum)
 {
 	double face_start_time = PolymodelPerfNow();
 	PolymodelPerfTouch(face_start_time);
+	if (PolymodelShouldSkipTransparentCockpitFace(pm, sm, facenum))
+		return;
 	if (Perf_markers_enabled)
 		Polymodel_perf_specular_face_count++;
 
@@ -1330,6 +1386,8 @@ void RenderSubmodelFacesSorted (poly_model *pm,bsp_info *sm)
 	{
 		int facenum=model_render_order[i];
 
+		if (PolymodelShouldSkipTransparentCockpitFace(pm, sm, facenum))
+			continue;
 		RenderSubmodelFace (pm,sm,facenum);
 	}
 	PolymodelPerfAdd(Polymodel_perf_faces_sorted_time, sorted_start_time);
@@ -1372,6 +1430,12 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 		// Check to see if this face even faces us!
 		tempv = view_pos - sm->verts[fp->vertnums[0]];
 		if ((tempv * fp->normal)<0)
+		{
+			PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
+			continue;
+		}
+
+		if (PolymodelShouldSkipTransparentCockpitFace(pm, sm, i))
 		{
 			PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
 			continue;
@@ -1434,6 +1498,8 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 		for (i=rcount-1;i>=0;i--)
 		{
 			int facenum=State_elements[i].facenum;
+			if (PolymodelShouldSkipTransparentCockpitFace(pm, sm, facenum))
+				continue;
 			RenderSubmodelFace (pm,sm,facenum);
 		}
 
@@ -1467,7 +1533,11 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 	if (!Polymodel_active_alpha_batcher)
 	{
 		for (i=0;i<num_alpha_faces;i++)
+		{
+			if (PolymodelShouldSkipTransparentCockpitFace(pm, sm, alpha_faces[i]))
+				continue;
 			RenderSubmodelFace(pm,sm,alpha_faces[i]);
+		}
 	}
 	//rend_SetZBufferWriteMask (1);
 

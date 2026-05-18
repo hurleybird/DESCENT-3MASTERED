@@ -106,6 +106,9 @@ void RotateMonitorPosition(tGauge* gauge);
 //renders the current inventory item name at the x,y position
 void InventoryRenderGauge(int x, int y);
 
+//	returns the cockpit HUD image for the selected weapon slot
+inline int get_weapon_hud_image(int player, int type);
+
 //	renders the primary monitor gauge
 void RenderPrimaryMonitor(tGauge* gauge, bool modified);
 
@@ -126,6 +129,7 @@ void RenderAfterburnMonitor(tGauge* gauge, bool modified);
 
 //	renders a monitor style quad 
 void DrawGaugeMonitor(g3Point* pts, int bm, float brightness, float* alphas);
+void DrawGaugeMonitorSurface(g3Point* pts);
 
 //	renders a square texture onto the screen.
 void DrawGaugeQuad(g3Point* pts, int bm, float u0, float v0, float u1, float v1, ubyte alpha, bool saturate);
@@ -255,6 +259,29 @@ static bool QueueGaugeQuad(const GaugeQuadBatchKey& key, g3Point* pts)
 	return true;
 }
 
+static void ExpandGaugeQuad(g3Point* expanded_pts, g3Point* pts, float scale)
+{
+	vector center = Zero_vector;
+	vector prerot_center = Zero_vector;
+
+	for (int i = 0; i < 4; i++)
+	{
+		center += pts[i].p3_vec;
+		prerot_center += pts[i].p3_vecPreRot;
+	}
+
+	center /= 4.0f;
+	prerot_center /= 4.0f;
+
+	for (int i = 0; i < 4; i++)
+	{
+		expanded_pts[i] = pts[i];
+		expanded_pts[i].p3_vec = center + (pts[i].p3_vec - center) * scale;
+		expanded_pts[i].p3_vecPreRot = prerot_center + (pts[i].p3_vecPreRot - prerot_center) * scale;
+		expanded_pts[i].p3_flags &= ~PF_PROJECTED;
+	}
+}
+
 //	tells what gauge index is the gauge stat item.
 inline int GAUGE_INDEX(tStatMask mask)
 {
@@ -332,6 +359,43 @@ void CloseGauges()
 	Gauge_mask_modified = 0;
 }
 
+
+static void RenderGaugeMonitorSurface(tStatMask mask, int weapon_type)
+{
+	if (!(Gauge_mask & mask))
+		return;
+
+	ASSERT(GAUGE_INDEX(mask) != -1);
+	tGauge* gauge = &Gauge_list[GAUGE_INDEX(mask)];
+	if (!gauge->monitor || !gauge->functional)
+		return;
+	if (weapon_type == PW_PRIMARY && Disable_primary_monitor)
+		return;
+	if (weapon_type == PW_SECONDARY && Disable_secondary_monitor)
+		return;
+
+	float alphas[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	int hud_image = get_weapon_hud_image(Player_num, weapon_type);
+
+	RotateMonitorPosition(gauge);
+	DrawGaugeMonitorSurface(gauge->pts);
+	DrawGaugeMonitor(gauge->pts, hud_image, 0.5f, alphas);
+}
+
+void RenderGaugeMonitorSurfaces(vector* cockpit_pos, matrix* cockpit_mat, float* normalized_time, bool moving, bool reset)
+{
+	renderer_3d_draw_call_scope gauge_draw_scope(RENDERER_DRAW_CALL_3D_GAUGE);
+
+	Render_gauge_pos = cockpit_pos;
+	Render_gauge_matrix = cockpit_mat;
+	Render_normalized_times = normalized_time;
+	Render_gauge_moving = moving;
+	Render_gauge_reset = reset;
+
+	RenderGaugeMonitorSurface(STAT_PRIMARYLOAD, PW_PRIMARY);
+	RenderGaugeMonitorSurface(STAT_SECONDARYLOAD, PW_SECONDARY);
+	FlushGaugeQuadBatches();
+}
 
 //	renders gauges
 void RenderGauges(vector* cockpit_pos, matrix* cockpit_mat, float* normalized_time, bool moving, bool reset)
@@ -499,15 +563,12 @@ void RenderPrimaryMonitor(tGauge* gauge, bool modified)
 
 	if (gauge->functional)
 	{
-		float alphas[4];
-		alphas[0] = 1.0f;
-		alphas[1] = 1.0f;
-		alphas[2] = 1.0f;
-		alphas[3] = 1.0f;
-
-		int hud_image = get_weapon_hud_image(Player_num, PW_PRIMARY);
-
-		DrawGaugeMonitor(gauge->pts, hud_image, 0.5f, alphas);
+		if (!Cockpit_alt_mode)
+		{
+			float alphas[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+			int hud_image = get_weapon_hud_image(Player_num, PW_PRIMARY);
+			DrawGaugeMonitor(gauge->pts, hud_image, 0.5f, alphas);
+		}
 
 		if (!Render_gauge_moving)
 		{
@@ -564,16 +625,12 @@ void RenderSecondaryMonitor(tGauge* gauge, bool modified)
 
 	if (gauge->functional)
 	{
-		float alphas[4];
-
-		alphas[0] = 1.0f;
-		alphas[1] = 1.0f;
-		alphas[2] = 1.0f;
-		alphas[3] = 1.0f;
-
-		int hud_image = get_weapon_hud_image(Player_num, PW_SECONDARY);
-
-		DrawGaugeMonitor(gauge->pts, hud_image, 0.5f, alphas);
+		if (!Cockpit_alt_mode)
+		{
+			float alphas[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+			int hud_image = get_weapon_hud_image(Player_num, PW_SECONDARY);
+			DrawGaugeMonitor(gauge->pts, hud_image, 0.5f, alphas);
+		}
 
 		if (!Render_gauge_moving)
 		{
@@ -864,6 +921,13 @@ void DrawGaugeMonitor(g3Point* pts, int bm, float brightness, float* alphas)
 
 	FlushGaugeQuadBatches();
 	g3_DrawPoly(4, pntlist, bm);
+}
+
+void DrawGaugeMonitorSurface(g3Point* pts)
+{
+	g3Point expanded_pts[4];
+	ExpandGaugeQuad(expanded_pts, pts, 1.10f);
+	DrawGaugeQuadFlat(expanded_pts, 0.0f, 0.0f, 0.0f, 128);
 }
 
 
