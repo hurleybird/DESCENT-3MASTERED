@@ -1274,8 +1274,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 
 	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_enabled ? present_framebuffer : nullptr,
 		OpenGL_preferred_state, OpenGL_state, display_gamma,
-		late_post_enabled ? present_framebuffer->DepthTextureForRead() : 0, protection_mask_texture,
-		post_visible_origin_x, post_visible_origin_y, post_visible_width, post_visible_height);
+		late_post_enabled ? present_framebuffer->DepthTextureForRead() : 0, protection_mask_texture);
 	GL4PerfGpuDrain("GPU.Bloom.Apply");
 	const float post_uv_origin_x = present_framebuffer->Width() > 0 ?
 		(float)framebuffer_logical_offset_x / (float)present_framebuffer->Width() : 0.0f;
@@ -1296,8 +1295,6 @@ bool GL4Renderer::BeginPostPresentFrame()
 			glUniform2f(bloom.composite_uv_origin, post_uv_origin_x, post_uv_origin_y);
 		if (bloom.composite_uv_scale != -1)
 			glUniform2f(bloom.composite_uv_scale, post_uv_scale_x, post_uv_scale_y);
-		if (bloom.composite_source_origin != -1)
-			glUniform2i(bloom.composite_source_origin, post_visible_origin_x, post_visible_origin_y);
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
 		GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);

@@ -1198,15 +1198,6 @@ static float ClampBloomSetting(float value)
 	return value;
 }
 
-static int ClampBloomVisibleRect(int value, int min_value, int max_value)
-{
-	if (value < min_value)
-		return min_value;
-	if (value > max_value)
-		return max_value;
-	return value;
-}
-
 void BloomResources::InitShaders()
 {
 	extern const char* blitVertexSrc;
@@ -1230,15 +1221,8 @@ void BloomResources::InitShaders()
 	threshold_value = thresholdshader.FindUniform("bloom_threshold");
 	threshold_use_depth_mask = thresholdshader.FindUniform("use_depth_mask");
 	threshold_use_protection_mask = thresholdshader.FindUniform("use_protection_mask");
-	threshold_source_origin = thresholdshader.FindUniform("source_origin");
-	threshold_source_visible_size = thresholdshader.FindUniform("source_visible_size");
-	if (threshold_source_origin != -1)
-		glUniform2i(threshold_source_origin, 0, 0);
-	if (threshold_source_visible_size != -1)
-		glUniform2i(threshold_source_visible_size, 1, 1);
 	if (threshold_gamma == -1 || threshold_value == -1 || threshold_use_depth_mask == -1 ||
-		threshold_use_protection_mask == -1 || threshold_source_origin == -1 ||
-		threshold_source_visible_size == -1)
+		threshold_use_protection_mask == -1)
 		Error("BloomResources::InitShaders: Failed to find threshold uniforms!");
 
 	downsampleshader.AttachSource(blitVertexSrc, bloomDownsampleFragmentSrc);
@@ -1279,15 +1263,12 @@ void BloomResources::InitShaders()
 	composite_use_protection_mask = compositeshader.FindUniform("use_protection_mask");
 	composite_uv_origin = compositeshader.FindUniform("uv_origin");
 	composite_uv_scale = compositeshader.FindUniform("uv_scale");
-	composite_source_origin = compositeshader.FindUniform("source_origin");
 	if (composite_uv_origin != -1)
 		glUniform2f(composite_uv_origin, 0.0f, 0.0f);
 	if (composite_uv_scale != -1)
 		glUniform2f(composite_uv_scale, 1.0f, 1.0f);
-	if (composite_source_origin != -1)
-		glUniform2i(composite_source_origin, 0, 0);
 	if (composite_gamma == -1 || composite_intensity == -1 || composite_use_alpha_mask == -1 ||
-		composite_use_protection_mask == -1 || composite_source_origin == -1)
+		composite_use_protection_mask == -1)
 		Error("BloomResources::InitShaders: Failed to find composite uniforms!");
 
 	ShaderProgram::ClearBinding();
@@ -1308,8 +1289,7 @@ void BloomResources::DestroyFramebuffers()
 }
 
 Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
-	const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture,
-	int visible_x, int visible_y, int visible_w, int visible_h)
+	const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture)
 {
 	if (!pref_state.bloom_enabled || source == nullptr)
 	{
@@ -1331,24 +1311,12 @@ Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred
 			DestroyFramebuffers();
 		return nullptr;
 	}
-	if (visible_w <= 0 || visible_h <= 0)
-	{
-		visible_x = 0;
-		visible_y = 0;
-		visible_w = source_width;
-		visible_h = source_height;
-	}
-	visible_x = ClampBloomVisibleRect(visible_x, 0, source_width - 1);
-	visible_y = ClampBloomVisibleRect(visible_y, 0, source_height - 1);
-	visible_w = ClampBloomVisibleRect(visible_w, 1, source_width - visible_x);
-	visible_h = ClampBloomVisibleRect(visible_h, 1, source_height - visible_y);
-
 	const int max_downsample_levels = NUM_BLOOM_FBOS / 2;
 	int widths[max_downsample_levels] = {};
 	int heights[max_downsample_levels] = {};
 	int downsample_count = 0;
-	int width = visible_w / 2;
-	int height = visible_h / 2;
+	int width = source_width / 2;
+	int height = source_height / 2;
 
 	while (downsample_count < max_downsample_levels && width >= 8 && height >= 8)
 	{
@@ -1384,10 +1352,6 @@ Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred
 	glUniform1f(threshold_value, ClampBloomSetting(pref_state.bloom_threshold));
 	glUniform1i(threshold_use_depth_mask, depth_texture != 0);
 	glUniform1i(threshold_use_protection_mask, protection_mask_texture != 0);
-	if (threshold_source_origin != -1)
-		glUniform2i(threshold_source_origin, visible_x, visible_y);
-	if (threshold_source_visible_size != -1)
-		glUniform2i(threshold_source_visible_size, visible_w, visible_h);
 	rend_ClearBoundTextures();
 	GL_BindFramebufferTexture(source->ColorTextureForRead(), 0, GL_LINEAR);
 	if (depth_texture != 0)
