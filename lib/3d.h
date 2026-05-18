@@ -134,11 +134,9 @@ struct g3Point
 	vector		p3_vecPreRot;		//original XYZ of the point
 	vector		p3_motion_world_pos;	//current world-space position for pixel motion vectors
 	vector		p3_motion_prev_world_pos;	//previous world-space position for moving pixel motion vectors
-	float		p3_prev_sx,p3_prev_sy;	//previous-frame projected position for motion vectors
-	ubyte		p3_motion_valid;
 	ubyte		p3_motion_world_valid;
 	ubyte		p3_motion_prev_world_valid;
-	ubyte		p3_motion_pad[1];
+	ubyte		p3_motion_pad[2];
 	g3UVL		p3_uvl;				//uv & lighting values
 };
 

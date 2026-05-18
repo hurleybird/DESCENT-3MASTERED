@@ -481,17 +481,13 @@ void GL4Renderer::InitPersistentDrawBuffer(size_t size)
 	glEnableVertexAttribArray(4);
 	glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, normal));
 
-	//attrib 5: motion vector
+	//attrib 5: perspective-correct world position for pixel motion vectors
 	glEnableVertexAttribArray(5);
-	glVertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_velocity_x));
+	glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_world_position));
 
-	//attrib 6: perspective-correct world position for pixel motion vectors
+	//attrib 6: perspective-correct previous world position for moving pixel motion vectors
 	glEnableVertexAttribArray(6);
-	glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_world_position));
-
-	//attrib 7: perspective-correct previous world position for moving pixel motion vectors
-	glEnableVertexAttribArray(7);
-	glVertexAttribPointer(7, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_previous_world_position));
+	glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_previous_world_position));
 #ifdef _DEBUG
 	err = glGetError();
 	if (err != GL_NO_ERROR)
@@ -515,150 +511,6 @@ void GL4Renderer::DestroyPersistentDrawBuffer()
 		glDeleteBuffers(1, &drawbuffer);
 		drawbuffer = 0;
 	}
-}
-
-void GL4Renderer::InitMotionVectorDraw()
-{
-	if (motionvector_vao != 0)
-		return;
-
-	glGenVertexArrays(1, &motionvector_vao);
-	glGenBuffers(1, &motionvector_vbo);
-
-	glBindVertexArray(motionvector_vao);
-	glBindBuffer(GL_ARRAY_BUFFER, motionvector_vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(gl_motion_vertex) * 100, nullptr, GL_STREAM_DRAW);
-
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(gl_motion_vertex), 0);
-
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(gl_motion_vertex),
-		(const void*)offsetof(gl_motion_vertex, velocity_x));
-
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(drawvao);
-}
-
-void GL4Renderer::DestroyMotionVectorDraw()
-{
-	glDeleteBuffers(1, &motionvector_vbo);
-	glDeleteVertexArrays(1, &motionvector_vao);
-	motionvector_vbo = 0;
-	motionvector_vao = 0;
-}
-
-void GL4Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
-{
-	if (!motion_object_active || motionvectorshader.Handle() == 0 ||
-		OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_VERTEX ||
-		motion_vectors_capture_locked || motionvector_vao == 0 ||
-		motion_vectors.velocity_texture == 0 || nv <= 0)
-	{
-		return;
-	}
-
-	gl_motion_vertex motion_vertices[100];
-	for (int i = 0; i < nv; i++)
-	{
-		if (!p[i]->p3_motion_valid)
-			return;
-
-		motion_vertices[i].x = GL_vertices[i].vert.x;
-		motion_vertices[i].y = GL_vertices[i].vert.y;
-		motion_vertices[i].z = GL_vertices[i].vert.z;
-		motion_vertices[i].velocity_x = p[i]->p3_sx - p[i]->p3_prev_sx;
-		motion_vertices[i].velocity_y = p[i]->p3_sy - p[i]->p3_prev_sy;
-	}
-
-	GLboolean color_mask[4];
-	GLboolean depth_mask;
-	GLboolean blend_enabled = glIsEnabled(GL_BLEND);
-	GLint old_draw = 0;
-	GLint old_draw_buffer = 0;
-	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
-	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
-	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
-	glGetIntegerv(GL_DRAW_BUFFER, &old_draw_buffer);
-
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
-	GLenum draw_buffer = GL_COLOR_ATTACHMENT1;
-	glDrawBuffers(1, &draw_buffer);
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	glDepthMask(GL_FALSE);
-	glDisable(GL_BLEND);
-
-	motionvectorshader.Use();
-	if (motionvector_screen_size != -1)
-		glUniform2f(motionvector_screen_size,
-			(float)(OpenGL_state.clip_x2 - OpenGL_state.clip_x1),
-			(float)(OpenGL_state.clip_y2 - OpenGL_state.clip_y1));
-
-	glBindVertexArray(motionvector_vao);
-	glBindBuffer(GL_ARRAY_BUFFER, motionvector_vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(gl_motion_vertex) * nv, motion_vertices, GL_STREAM_DRAW);
-	rend_RecordDrawCall(RENDERER_DRAW_CALL_MOTION_VECTOR);
-	glDrawArrays(GL_TRIANGLE_FAN, 0, nv);
-	motion_vectors_dirty = true;
-
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
-	glDrawBuffer(old_draw_buffer);
-	if ((GLuint)old_draw == framebuffers[framebuffer_current_draw].Handle())
-		UseSceneDrawBuffers();
-	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
-	glDepthMask(depth_mask);
-	if (blend_enabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
-	UseDrawVAO();
-}
-
-void GL4Renderer::DrawMotionVectorTriangles(const gl_motion_vertex* vertices, int nv)
-{
-	if (!motion_object_active || motionvectorshader.Handle() == 0 ||
-		OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_VERTEX ||
-		motion_vectors_capture_locked || motionvector_vao == 0 ||
-		motion_vectors.velocity_texture == 0 || !vertices || nv <= 0)
-	{
-		return;
-	}
-
-	GLboolean color_mask[4];
-	GLboolean depth_mask;
-	GLboolean blend_enabled = glIsEnabled(GL_BLEND);
-	GLint old_draw = 0;
-	GLint old_draw_buffer = 0;
-	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
-	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
-	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
-	glGetIntegerv(GL_DRAW_BUFFER, &old_draw_buffer);
-
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
-	GLenum draw_buffer = GL_COLOR_ATTACHMENT1;
-	glDrawBuffers(1, &draw_buffer);
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	glDepthMask(GL_FALSE);
-	glDisable(GL_BLEND);
-
-	motionvectorshader.Use();
-	if (motionvector_screen_size != -1)
-		glUniform2f(motionvector_screen_size,
-			(float)(OpenGL_state.clip_x2 - OpenGL_state.clip_x1),
-			(float)(OpenGL_state.clip_y2 - OpenGL_state.clip_y1));
-
-	glBindVertexArray(motionvector_vao);
-	glBindBuffer(GL_ARRAY_BUFFER, motionvector_vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(gl_motion_vertex) * nv, vertices, GL_STREAM_DRAW);
-	rend_RecordDrawCall(RENDERER_DRAW_CALL_MOTION_VECTOR);
-	glDrawArrays(GL_TRIANGLES, 0, nv);
-	motion_vectors_dirty = true;
-
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
-	glDrawBuffer(old_draw_buffer);
-	if ((GLuint)old_draw == framebuffers[framebuffer_current_draw].Handle())
-		UseSceneDrawBuffers();
-	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
-	glDepthMask(depth_mask);
-	if (blend_enabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
-	UseDrawVAO();
 }
 
 int GL4Renderer::CopyVertices(int numvertices)
@@ -786,8 +638,6 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 
 	vert.vert.x = pnt->p3_sx;
 	vert.vert.y = pnt->p3_sy;
-	vert.motion_velocity_x = 0.0f;
-	vert.motion_velocity_y = 0.0f;
 	vert.motion_world_position.x = 0.0f;
 	vert.motion_world_position.y = 0.0f;
 	vert.motion_world_position.z = 0.0f;
@@ -796,14 +646,6 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 	vert.motion_previous_world_position.y = 0.0f;
 	vert.motion_previous_world_position.z = 0.0f;
 	vert.motion_previous_world_position.w = 0.0f;
-	if (motion_object_active && !cockpit_motion_object_active &&
-		OpenGL_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_PIXEL && pnt->p3_motion_valid)
-	{
-		const float screen_width = OpenGL_state.screen_width > 0 ? (float)OpenGL_state.screen_width : 1.0f;
-		const float screen_height = OpenGL_state.screen_height > 0 ? (float)OpenGL_state.screen_height : 1.0f;
-		vert.motion_velocity_x = (pnt->p3_sx - pnt->p3_prev_sx) / screen_width;
-		vert.motion_velocity_y = -(pnt->p3_sy - pnt->p3_prev_sy) / screen_height;
-	}
 	if (CurrentDrawWritesPixelMotionVectors() && !motion_object_active)
 	{
 		float payloadw = 1.0f / (pnt->p3_z + Z_bias);
@@ -1169,7 +1011,6 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_motion_vector_mode_uniforms[i] = drawshaders[i].FindUniform("motion_vector_mode");
 		drawshader_motion_vector_current_view_projection_uniforms[i] = drawshaders[i].FindUniform("motion_vector_current_view_projection");
 		drawshader_motion_vector_previous_view_projection_uniforms[i] = drawshaders[i].FindUniform("motion_vector_previous_view_projection");
-		drawshader_motion_vector_screen_size_uniforms[i] = drawshaders[i].FindUniform("motion_vector_screen_size");
 		drawshader_motion_vector_has_previous_uniforms[i] = drawshaders[i].FindUniform("motion_vector_has_previous");
 		drawshader_motion_vector_payload_type_uniforms[i] = drawshaders[i].FindUniform("motion_vector_payload_type");
 	}
@@ -1215,22 +1056,16 @@ void GL4Renderer::SetDrawDefaults()
 		glEnableVertexAttribArray(4);
 		glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, normal));
 
-		//attrib 5: motion vector
+		//attrib 5: perspective-correct world position for pixel motion vectors
 		glEnableVertexAttribArray(5);
-		glVertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_velocity_x));
+		glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_world_position));
 
-		//attrib 6: perspective-correct world position for pixel motion vectors
+		//attrib 6: perspective-correct previous world position for moving pixel motion vectors
 		glEnableVertexAttribArray(6);
-		glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_world_position));
-
-		//attrib 7: perspective-correct previous world position for moving pixel motion vectors
-		glEnableVertexAttribArray(7);
-		glVertexAttribPointer(7, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_previous_world_position));
+		glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_previous_world_position));
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-	InitMotionVectorDraw();
 }
 
 void GL4Renderer::SelectDrawShader()
@@ -1315,9 +1150,6 @@ void GL4Renderer::SelectDrawShader()
 		glUniformMatrix4fv(drawshader_motion_vector_current_view_projection_uniforms[shader_index], 1, GL_FALSE, current_view_projection);
 	if (drawshader_motion_vector_previous_view_projection_uniforms[shader_index] != -1)
 		glUniformMatrix4fv(drawshader_motion_vector_previous_view_projection_uniforms[shader_index], 1, GL_FALSE, previous_view_projection);
-	if (drawshader_motion_vector_screen_size_uniforms[shader_index] != -1)
-		glUniform2f(drawshader_motion_vector_screen_size_uniforms[shader_index],
-			(float)FramebufferWidth(), (float)FramebufferHeight());
 	const bool motion_has_previous_view_projection = cockpit_motion_object_active ?
 		have_cockpit_previous_view_projection : have_previous_view_projection;
 	if (drawshader_motion_vector_has_previous_uniforms[shader_index] != -1)
@@ -1480,8 +1312,6 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 		// Finally, specify a vertex
 		vertp->vert.x = pnt->p3_sx;
 		vertp->vert.y = pnt->p3_sy;
-		vertp->motion_velocity_x = 0.0f;
-		vertp->motion_velocity_y = 0.0f;
 		vertp->motion_world_position.x = 0.0f;
 		vertp->motion_world_position.y = 0.0f;
 		vertp->motion_world_position.z = 0.0f;
@@ -1490,14 +1320,6 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 		vertp->motion_previous_world_position.y = 0.0f;
 		vertp->motion_previous_world_position.z = 0.0f;
 		vertp->motion_previous_world_position.w = 0.0f;
-		if (motion_object_active && !cockpit_motion_object_active &&
-			OpenGL_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_PIXEL && pnt->p3_motion_valid)
-		{
-			const float screen_width = OpenGL_state.screen_width > 0 ? (float)OpenGL_state.screen_width : 1.0f;
-			const float screen_height = OpenGL_state.screen_height > 0 ? (float)OpenGL_state.screen_height : 1.0f;
-			vertp->motion_velocity_x = (pnt->p3_sx - pnt->p3_prev_sx) / screen_width;
-			vertp->motion_velocity_y = -(pnt->p3_sy - pnt->p3_prev_sy) / screen_height;
-		}
 		if (CurrentDrawWritesPixelMotionVectors() && !motion_object_active)
 		{
 			float payloadw = 1.0f / (pnt->p3_z + Z_bias);
@@ -1566,7 +1388,6 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 		motion_vectors_dirty = true;
 	if (override_draw_buffers)
 		UseSceneDrawBuffers();
-	DrawMotionVectorPolygon(nv, p);
 	OpenGL_polys_drawn++;
 	OpenGL_verts_processed += nv;
 
@@ -1631,13 +1452,6 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 	std::vector<gl_vertex> vertices;
 	vertices.reserve(triangle_vertices);
 
-	std::vector<gl_motion_vertex> motion_vertices;
-	const bool capture_motion = motion_object_active && motionvectorshader.Handle() != 0 &&
-		OpenGL_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_VERTEX &&
-		motionvector_vao != 0 && motion_vectors.velocity_texture != 0;
-	if (capture_motion)
-		motion_vertices.reserve(triangle_vertices);
-
 	int polygons_drawn = 0;
 	for (int i = 0; i < count; i++)
 	{
@@ -1649,39 +1463,11 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 		for (int v = 0; v < item.nv; v++)
 			BuildDrawVertex(face_vertices[v], item.pointlist[v], xscalar, yscalar, fr, fg, fb);
 
-		bool motion_valid = capture_motion;
-		if (motion_valid)
-		{
-			for (int v = 0; v < item.nv; v++)
-			{
-				if (!item.pointlist[v]->p3_motion_valid)
-				{
-					motion_valid = false;
-					break;
-				}
-			}
-		}
-
 		for (int v = 0; v < item.nv - 2; v++)
 		{
 			const int indices[3] = {0, v + 1, v + 2};
 			for (int corner = 0; corner < 3; corner++)
 				vertices.push_back(face_vertices[indices[corner]]);
-
-			if (motion_valid)
-			{
-				for (int corner = 0; corner < 3; corner++)
-				{
-					const int index = indices[corner];
-					gl_motion_vertex motion_vertex;
-					motion_vertex.x = face_vertices[index].vert.x;
-					motion_vertex.y = face_vertices[index].vert.y;
-					motion_vertex.z = face_vertices[index].vert.z;
-					motion_vertex.velocity_x = item.pointlist[index]->p3_sx - item.pointlist[index]->p3_prev_sx;
-					motion_vertex.velocity_y = item.pointlist[index]->p3_sy - item.pointlist[index]->p3_prev_sy;
-					motion_vertices.push_back(motion_vertex);
-				}
-			}
 		}
 		polygons_drawn++;
 	}
@@ -1706,7 +1492,6 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 		motion_vectors_dirty = true;
 	if (override_draw_buffers)
 		UseSceneDrawBuffers();
-	DrawMotionVectorTriangles(motion_vertices.data(), (int)motion_vertices.size());
 	OpenGL_polys_drawn += polygons_drawn;
 	OpenGL_verts_processed += original_vertices;
 
@@ -1727,7 +1512,7 @@ void GL4Renderer::DrawPolygon2D(int handle, g3Point** p, int nv)
 	draw_call_category = old_category;
 }
 
-void GL4Renderer::BeginMotionObject(int object_handle, float screen_x, float screen_y)
+void GL4Renderer::BeginMotionObject(int object_handle)
 {
 	const bool cockpit_draw = rend_Get3DDrawCallCategory() == RENDERER_DRAW_CALL_3D_COCKPIT;
 	cockpit_motion_object_active = false;
@@ -1748,36 +1533,6 @@ void GL4Renderer::EndMotionObject()
 	}
 	motion_object_active = false;
 	cockpit_motion_object_active = false;
-}
-
-bool GL4Renderer::ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y)
-{
-	const bool use_cockpit_previous_view_projection = cockpit_motion_object_active;
-	const float* motion_previous_view_projection = use_cockpit_previous_view_projection ?
-		cockpit_previous_view_projection : previous_view_projection;
-	const bool motion_has_previous_view_projection = use_cockpit_previous_view_projection ?
-		have_cockpit_previous_view_projection : have_previous_view_projection;
-
-	if (!world_pos || !screen_x || !screen_y || !motion_has_previous_view_projection)
-		return false;
-
-	float x = world_pos->x;
-	float y = world_pos->y;
-	float z = world_pos->z;
-	float clip_x = motion_previous_view_projection[0] * x + motion_previous_view_projection[4] * y +
-		motion_previous_view_projection[8] * z + motion_previous_view_projection[12];
-	float clip_y = motion_previous_view_projection[1] * x + motion_previous_view_projection[5] * y +
-		motion_previous_view_projection[9] * z + motion_previous_view_projection[13];
-	float clip_w = motion_previous_view_projection[3] * x + motion_previous_view_projection[7] * y +
-		motion_previous_view_projection[11] * z + motion_previous_view_projection[15];
-	if (clip_w <= 0.00001f)
-		return false;
-
-	float ndc_x = clip_x / clip_w;
-	float ndc_y = clip_y / clip_w;
-	*screen_x = (ndc_x * 0.5f + 0.5f) * (float)OpenGL_state.screen_width;
-	*screen_y = (0.5f - ndc_y * 0.5f) * (float)OpenGL_state.screen_height;
-	return true;
 }
 
 // draws a scaled 2d bitmap to our buffer
@@ -1810,8 +1565,8 @@ void GL4Renderer::DrawScaledBitmap(int x1, int y1, int x2, int y2,
 
 		pnts[i].p3_z = 1.0f;
 		pnts[i].p3_flags = PF_PROJECTED;
-		pnts[i].p3_motion_valid = 0;
 		pnts[i].p3_motion_world_valid = 0;
+		pnts[i].p3_motion_prev_world_valid = 0;
 		pnts[i].p3_vecPreRot.x = 0.0f;
 		pnts[i].p3_vecPreRot.y = 0.0f;
 		pnts[i].p3_vecPreRot.z = 0.0f;
@@ -1873,8 +1628,8 @@ void GL4Renderer::DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
 
 		pnts[i].p3_z = zval;
 		pnts[i].p3_flags = PF_PROJECTED;
-		pnts[i].p3_motion_valid = 0;
 		pnts[i].p3_motion_world_valid = 0;
+		pnts[i].p3_motion_prev_world_valid = 0;
 		pnts[i].p3_vecPreRot.x = 0.0f;
 		pnts[i].p3_vecPreRot.y = 0.0f;
 		pnts[i].p3_vecPreRot.z = 0.0f;
@@ -1953,8 +1708,6 @@ void GL4Renderer::SetPixel(ddgr_color color, int x, int y)
 	GL_vertices[0].vert.x = x;
 	GL_vertices[0].vert.y = y;
 	GL_vertices[0].vert.z = 0;
-	GL_vertices[0].motion_velocity_x = 0.0f;
-	GL_vertices[0].motion_velocity_y = 0.0f;
 	GL_vertices[0].motion_world_position.x = 0.0f;
 	GL_vertices[0].motion_world_position.y = 0.0f;
 	GL_vertices[0].motion_world_position.z = 0.0f;
@@ -2085,10 +1838,6 @@ void GL4Renderer::DrawLine(int x1, int y1, int x2, int y2)
 	GL_vertices[1].vert.x = x2 + 1.f;
 	GL_vertices[1].vert.y = y2 + 1.f;
 	GL_vertices[1].vert.z = 0;
-	GL_vertices[0].motion_velocity_x = 0.0f;
-	GL_vertices[0].motion_velocity_y = 0.0f;
-	GL_vertices[1].motion_velocity_x = 0.0f;
-	GL_vertices[1].motion_velocity_y = 0.0f;
 	GL_vertices[0].motion_world_position.x = 0.0f;
 	GL_vertices[0].motion_world_position.y = 0.0f;
 	GL_vertices[0].motion_world_position.z = 0.0f;
@@ -2212,8 +1961,6 @@ void GL4Renderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 		float z = std::max(0., std::min(1.0, 1.0 - (1.0 / (pnt->p3_z + Z_bias))));
 
 		vertp->vert.x = pnt->p3_sx; vertp->vert.y = pnt->p3_sy; vertp->vert.z = -z;
-		vertp->motion_velocity_x = 0.0f;
-		vertp->motion_velocity_y = 0.0f;
 		vertp->motion_world_position.x = 0.0f;
 		vertp->motion_world_position.y = 0.0f;
 		vertp->motion_world_position.z = 0.0f;

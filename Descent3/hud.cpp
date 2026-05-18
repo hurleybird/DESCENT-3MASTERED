@@ -1320,9 +1320,8 @@ static void HUDRenderDrawCallStats(const renderer_draw_call_stats& draw_stats)
 
 	tDrawCallColumn primitives[] = {
 		{ "Prim: ", draw_stats.category[RENDERER_DRAW_CALL_PRIMITIVE], reserved_value_width },
-		{ "Motion: ", draw_stats.category[RENDERER_DRAW_CALL_MOTION_VECTOR], reserved_value_width },
 	};
-	draw_row(y, primitives, 2);
+	draw_row(y, primitives, 1);
 	y += line_height;
 
 	tDrawCallColumn post[] = {
@@ -1338,9 +1337,7 @@ static void HUDRenderMotionVectorDebugSample()
 	rend_GetMotionVectorDebugSample(&sample);
 
 	const char* mode = "Off";
-	if (sample.mode == RENDERER_MOTION_VECTOR_VERTEX)
-		mode = "Vertex";
-	else if (sample.mode == RENDERER_MOTION_VECTOR_PIXEL)
+	if (sample.mode == RENDERER_MOTION_VECTOR_PIXEL)
 		mode = "Pixel";
 
 	const int line_height = grtext_GetHeight("X") + 2;

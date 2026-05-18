@@ -759,7 +759,7 @@ void LoadGameSettings()
 	Database->read("RS_gtao_debug_preview", &Render_preferred_state.gtao_debug_preview);
 	tempint = Render_preferred_state.motion_vector_mode;
 	Database->read_int("RS_motion_vector_mode", &tempint);
-	if (tempint < RENDERER_MOTION_VECTOR_OFF || tempint > RENDERER_MOTION_VECTOR_PIXEL)
+	if (tempint != RENDERER_MOTION_VECTOR_OFF && tempint != RENDERER_MOTION_VECTOR_PIXEL)
 		tempint = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_mode = (ubyte)tempint;
 	Database->read("RS_motion_vector_debug_preview", &Render_preferred_state.motion_vector_debug_preview);

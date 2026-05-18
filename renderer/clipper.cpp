@@ -103,16 +103,6 @@ g3Point *ClipFarEdge( g3Point *on_pnt, g3Point *off_pnt )
 	tmp->p3_x = on_pnt->p3_x + ((off_pnt->p3_x-on_pnt->p3_x) * k);
 	tmp->p3_y = on_pnt->p3_y + ((off_pnt->p3_y-on_pnt->p3_y) * k);
 	tmp->p3_vecPreRot = on_pnt->p3_vecPreRot + ((off_pnt->p3_vecPreRot-on_pnt->p3_vecPreRot) * k);
-	if (on_pnt->p3_motion_valid && off_pnt->p3_motion_valid)
-	{
-		tmp->p3_prev_sx = on_pnt->p3_prev_sx + ((off_pnt->p3_prev_sx - on_pnt->p3_prev_sx) * k);
-		tmp->p3_prev_sy = on_pnt->p3_prev_sy + ((off_pnt->p3_prev_sy - on_pnt->p3_prev_sy) * k);
-		tmp->p3_motion_valid = 1;
-	}
-	else
-	{
-		tmp->p3_motion_valid = 0;
-	}
 	if (on_pnt->p3_motion_world_valid && off_pnt->p3_motion_world_valid)
 	{
 		tmp->p3_motion_world_pos = on_pnt->p3_motion_world_pos +
@@ -195,16 +185,6 @@ g3Point *ClipCustomEdge( g3Point *on_pnt, g3Point *off_pnt )
 
 	tmp->p3_vec = on_pnt->p3_vec + ((off_pnt->p3_vec-on_pnt->p3_vec) * k);
 	tmp->p3_vecPreRot = on_pnt->p3_vecPreRot + ((off_pnt->p3_vecPreRot-on_pnt->p3_vecPreRot) * k);
-	if (on_pnt->p3_motion_valid && off_pnt->p3_motion_valid)
-	{
-		tmp->p3_prev_sx = on_pnt->p3_prev_sx + ((off_pnt->p3_prev_sx - on_pnt->p3_prev_sx) * k);
-		tmp->p3_prev_sy = on_pnt->p3_prev_sy + ((off_pnt->p3_prev_sy - on_pnt->p3_prev_sy) * k);
-		tmp->p3_motion_valid = 1;
-	}
-	else
-	{
-		tmp->p3_motion_valid = 0;
-	}
 	if (on_pnt->p3_motion_world_valid && off_pnt->p3_motion_world_valid)
 	{
 		tmp->p3_motion_world_pos = on_pnt->p3_motion_world_pos +
@@ -306,16 +286,6 @@ g3Point *ClipEdge( int plane_flag, g3Point *on_pnt, g3Point *off_pnt )
 	tmp->p3_y = on_pnt->p3_y + ((off_pnt->p3_y-on_pnt->p3_y) * k);
 	tmp->p3_z = on_pnt->p3_z + ((off_pnt->p3_z-on_pnt->p3_z) * k);
 	tmp->p3_vecPreRot = on_pnt->p3_vecPreRot + ((off_pnt->p3_vecPreRot-on_pnt->p3_vecPreRot) * k);
-	if (on_pnt->p3_motion_valid && off_pnt->p3_motion_valid)
-	{
-		tmp->p3_prev_sx = on_pnt->p3_prev_sx + ((off_pnt->p3_prev_sx - on_pnt->p3_prev_sx) * k);
-		tmp->p3_prev_sy = on_pnt->p3_prev_sy + ((off_pnt->p3_prev_sy - on_pnt->p3_prev_sy) * k);
-		tmp->p3_motion_valid = 1;
-	}
-	else
-	{
-		tmp->p3_motion_valid = 0;
-	}
 	if (on_pnt->p3_motion_world_valid && off_pnt->p3_motion_world_valid)
 	{
 		tmp->p3_motion_world_pos = on_pnt->p3_motion_world_pos +

@@ -9,7 +9,6 @@ uniform int ao_capture_weight_mode;
 uniform int motion_vector_mode;
 uniform mat4 motion_vector_current_view_projection;
 uniform mat4 motion_vector_previous_view_projection;
-uniform vec2 motion_vector_screen_size;
 uniform int motion_vector_has_previous;
 
 vec2 ComputeMotionVector(vec3 world_position)

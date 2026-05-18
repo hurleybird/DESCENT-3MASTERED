@@ -51,36 +51,6 @@ const char* blitFragmentSrc =
 "}\n"
 "";
 
-const char* motionVectorVertexSrc =
-"#version 450 core\n"
-"\n"
-"layout(location = 0) in vec3 position;\n"
-"layout(location = 1) in vec2 velocity_pixels;\n"
-"\n"
-"uniform vec2 screen_size;\n"
-"out vec2 out_velocity;\n"
-"\n"
-"void main()\n"
-"{\n"
-"	vec2 ndc = vec2((position.x / screen_size.x) * 2.0 - 1.0,\n"
-"		1.0 - (position.y / screen_size.y) * 2.0);\n"
-"	gl_Position = vec4(ndc, -2.0 * position.z - 1.0, 1.0);\n"
-"	out_velocity = vec2(velocity_pixels.x / screen_size.x, -velocity_pixels.y / screen_size.y);\n"
-"}\n"
-"";
-
-const char* motionVectorFragmentSrc =
-"#version 450 core\n"
-"\n"
-"in vec2 out_velocity;\n"
-"layout(location = 0) out vec2 velocity;\n"
-"\n"
-"void main()\n"
-"{\n"
-"	velocity = out_velocity;\n"
-"}\n"
-"";
-
 const char* motionVectorDebugFragmentSrc =
 "#version 450 core\n"
 "\n"

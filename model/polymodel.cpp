@@ -175,7 +175,6 @@ void PolymodelMotionSetPoint(g3Point *point, poly_model *pm, int submodel_num, c
 	if (!point)
 		return;
 
-	point->p3_motion_valid = 0;
 	point->p3_motion_world_valid = 0;
 	point->p3_motion_prev_world_valid = 0;
 	if (!Polymodel_motion_active_history || !pm || !local_pos)
@@ -197,13 +196,6 @@ void PolymodelMotionSetPoint(g3Point *point, poly_model *pm, int submodel_num, c
 		return;
 	point->p3_motion_prev_world_pos = world_pos;
 	point->p3_motion_prev_world_valid = 1;
-	float sx = 0.0f, sy = 0.0f;
-	if (rend_ProjectPreviousFramePoint(&world_pos, &sx, &sy))
-	{
-		point->p3_prev_sx = sx;
-		point->p3_prev_sy = sy;
-		point->p3_motion_valid = 1;
-	}
 }
 
 void PolymodelSetSubmodelOffsetAdjustments(int model_num, const vector *offsets, int count)

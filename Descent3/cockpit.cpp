@@ -125,7 +125,7 @@ static float CockpitSubmodelCenterX(poly_model* pm, int submodel)
 static void BeginCockpitMotionObject(vector* pos, matrix* orient)
 {
 	PolymodelMotionBeginObject(COCKPIT_MOTION_OBJECT_HANDLE, pos, orient);
-	rend_BeginMotionObject(COCKPIT_MOTION_OBJECT_HANDLE, 0.0f, 0.0f);
+	rend_BeginMotionObject(COCKPIT_MOTION_OBJECT_HANDLE);
 }
 
 static void EndCockpitMotionObject()

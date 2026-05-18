@@ -682,8 +682,6 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	extern const char* downsampleFragmentSrc;
 	extern const char* fontVertexSrc;
 	extern const char* fontFragmentSrc;
-	extern const char* motionVectorVertexSrc;
-	extern const char* motionVectorFragmentSrc;
 	extern const char* motionVectorDebugFragmentSrc;
 	extern const char* pixelMotionBlurFragmentSrc;
 	extern const char* aoDeferredCompositeFragmentSrc;
@@ -729,12 +727,6 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	GLuint font_common_block = glGetUniformBlockIndex(fontshader.Handle(), "CommonBlock");
 	if (font_common_block != GL_INVALID_INDEX)
 		glUniformBlockBinding(fontshader.Handle(), font_common_block, 1);
-
-	motionvectorshader.AttachSource(motionVectorVertexSrc, motionVectorFragmentSrc);
-	motionvectorshader.Use();
-	motionvector_screen_size = motionvectorshader.FindUniform("screen_size");
-	if (motionvector_screen_size == -1)
-		Error("GLRenderer::Init: Failed to find motion-vector screen_size uniform!");
 
 	motionvectordebugshader.AttachSource(blitVertexSrc, motionVectorDebugFragmentSrc);
 	motionvectordebugshader.Use();
@@ -821,7 +813,6 @@ void GL4Renderer::Close()
 	blitshader.Destroy();
 	downsampleshader.Destroy();
 	fontshader.Destroy();
-	motionvectorshader.Destroy();
 	motionvectordebugshader.Destroy();
 	motionblurshader.Destroy();
 	ao_compositeshader.Destroy();
@@ -834,7 +825,6 @@ void GL4Renderer::Close()
 		CloseFramebuffer();
 
 	DestroyPersistentDrawBuffer();
-	DestroyMotionVectorDraw();
 	glFinish();
 
 #if defined(SDL3)

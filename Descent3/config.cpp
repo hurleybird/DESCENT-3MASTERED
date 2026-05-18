@@ -1048,6 +1048,21 @@ static float ConfigNormalizePixelMotionBlurStrength(float strength)
 	return strength;
 }
 
+static int ConfigNormalizeMotionVectorMode(int mode)
+{
+	return mode == RENDERER_MOTION_VECTOR_PIXEL ? RENDERER_MOTION_VECTOR_PIXEL : RENDERER_MOTION_VECTOR_OFF;
+}
+
+static int ConfigMotionVectorModeToIndex(int mode)
+{
+	return ConfigNormalizeMotionVectorMode(mode) == RENDERER_MOTION_VECTOR_PIXEL ? 1 : 0;
+}
+
+static int ConfigMotionVectorIndexToMode(int index)
+{
+	return index == 1 ? RENDERER_MOTION_VECTOR_PIXEL : RENDERER_MOTION_VECTOR_OFF;
+}
+
 static bool MotionBlurLegacyMatchesPreset(float copy_density, int max_iterations, float alpha_exponent)
 {
 	return fabs(Legacy_motion_blur_frame_time - (1.0f / 20.0f)) < 0.0001f &&
@@ -1265,10 +1280,7 @@ struct video_menu
 		}
 		if (motion_vectors && sheet->HasChanged(motion_vectors))
 		{
-			int mode = *motion_vectors;
-			if (mode < RENDERER_MOTION_VECTOR_OFF || mode > RENDERER_MOTION_VECTOR_PIXEL)
-				mode = RENDERER_MOTION_VECTOR_OFF;
-			Render_preferred_state.motion_vector_mode = (ubyte)mode;
+			Render_preferred_state.motion_vector_mode = (ubyte)ConfigMotionVectorIndexToMode(*motion_vectors);
 			changed = true;
 		}
 		if (motion_vector_debug && sheet->HasChanged(motion_vector_debug))
@@ -1450,9 +1462,8 @@ struct video_menu
 
 		sheet->NewGroup("Motion vectors", 184, 238);
 		motion_vectors = sheet->AddFirstRadioButton(TXT_OFF);
-		sheet->AddRadioButton("Vertex");
 		sheet->AddRadioButton("Pixel");
-		*motion_vectors = Render_preferred_state.motion_vector_mode;
+		*motion_vectors = ConfigMotionVectorModeToIndex(Render_preferred_state.motion_vector_mode);
 
 		sheet->NewGroup("Pixel blur", 184, 306);
 		tSliderSettings pixel_blur_settings = {};
@@ -1490,7 +1501,7 @@ struct video_menu
 				ApplyGTAOPresetFromIndex(0);
 		}
 		if (motion_vectors)
-			Render_preferred_state.motion_vector_mode = (ubyte)*motion_vectors;
+			Render_preferred_state.motion_vector_mode = (ubyte)ConfigMotionVectorIndexToMode(*motion_vectors);
 		if (motion_vector_debug)
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
 		if (pixel_motion_blur)

@@ -1681,7 +1681,7 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 		SetPolymodelEffect(&pe);
 
 	PolymodelMotionBeginObject(OBJNUM(obj), &obj_pos, &obj->orient);
-	rend_BeginMotionObject(OBJNUM(obj), 0.0f, 0.0f);
+	rend_BeginMotionObject(OBJNUM(obj));
 	rend_SetAOClass(RENDERER_AO_CLASS_POLYOBJECT);
 
 	if (RenderObjectType == RO_STATIC)

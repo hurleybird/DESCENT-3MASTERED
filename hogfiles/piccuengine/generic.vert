@@ -12,15 +12,13 @@ layout(location = 1) in vec4 color;
 layout(location = 2) in vec3 uv;
 layout(location = 3) in vec3 uv2;
 layout(location = 4) in vec4 normal;
-layout(location = 5) in vec2 motion_velocity;
-layout(location = 6) in vec4 motion_world_position;
-layout(location = 7) in vec4 motion_previous_world_position;
+layout(location = 5) in vec4 motion_world_position;
+layout(location = 6) in vec4 motion_previous_world_position;
 
 uniform int phong_enabled;
 
 out vec4 outcolor;
 out vec4 outnormal;
-out vec2 out_motion_velocity;
 out vec4 out_motion_world_position;
 out vec4 out_motion_previous_world_position;
 #if defined(USE_TEXTURING)
@@ -38,7 +36,6 @@ void main()
 	gl_Position = commons.projection * commons.modelview * vec4(position, 1.0);
 	outcolor = color;
 	outnormal = normal;
-	out_motion_velocity = motion_velocity;
 	out_motion_world_position = motion_world_position;
 	out_motion_previous_world_position = motion_previous_world_position;
 	#if defined(USE_TEXTURING)

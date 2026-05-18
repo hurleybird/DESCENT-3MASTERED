@@ -71,16 +71,8 @@ struct gl_vertex
 	tex_array tex_coord;
 	tex_array tex_coord2;
 	normal_array normal;
-	float motion_velocity_x;
-	float motion_velocity_y;
 	vec4_array motion_world_position;
 	vec4_array motion_previous_world_position;
-};
-
-struct gl_motion_vertex
-{
-	float x, y, z;
-	float velocity_x, velocity_y;
 };
 
 constexpr int NUM_GL4_FBOS = 1;
@@ -126,7 +118,6 @@ class GL4Renderer : public IRenderer
 	ShaderProgram blitshader;
 	ShaderProgram downsampleshader;
 	ShaderProgram fontshader;
-	ShaderProgram motionvectorshader;
 	ShaderProgram motionvectordebugshader;
 	ShaderProgram motionblurshader;
 	ShaderProgram ao_compositeshader;
@@ -157,7 +148,6 @@ class GL4Renderer : public IRenderer
 	GLint downsampleshader_source_visible_origin = -1;
 	GLint downsampleshader_source_visible_size = -1;
 	GLint fontshader_texture = -1;
-	GLint motionvector_screen_size = -1;
 	GLint motionvectordebug_velocity_source = -1;
 	GLint motionvectordebug_uv_origin = -1;
 	GLint motionvectordebug_uv_scale = -1;
@@ -237,7 +227,6 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_motion_vector_mode_uniforms[8] = {};
 	GLint drawshader_motion_vector_current_view_projection_uniforms[8] = {};
 	GLint drawshader_motion_vector_previous_view_projection_uniforms[8] = {};
-	GLint drawshader_motion_vector_screen_size_uniforms[8] = {};
 	GLint drawshader_motion_vector_has_previous_uniforms[8] = {};
 	GLint drawshader_motion_vector_payload_type_uniforms[8] = {};
 	int lastdrawshader = -1;
@@ -263,8 +252,6 @@ class GL4Renderer : public IRenderer
 
 	GLuint drawvao = 0;
 	void* drawbuffermap = 0;
-	GLuint motionvector_vao = 0;
-	GLuint motionvector_vbo = 0;
 	bool motion_object_active = false;
 	bool motion_vectors_dirty = false;
 	bool motion_vectors_cleared_this_frame = false;
@@ -359,10 +346,6 @@ private:
 	int GetFontTextureLayer(int bm_handle);
 	void UploadFontTextureLayer(int layer, int bm_handle);
 	void DestroyFontBatchResources();
-	void InitMotionVectorDraw();
-	void DestroyMotionVectorDraw();
-	void DrawMotionVectorPolygon(int nv, g3Point** p);
-	void DrawMotionVectorTriangles(const gl_motion_vertex* vertices, int nv);
 	bool MotionVectorTargetEnabled() const;
 	bool PixelMotionVectorModeEnabled() const;
 	bool MotionVectorWritesEnabled() const;
@@ -573,9 +556,8 @@ public:
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 	void DrawPolygon2D(int handle, g3Point** p, int nv) override;
 
-	void BeginMotionObject(int object_handle, float screen_x, float screen_y) override;
+	void BeginMotionObject(int object_handle) override;
 	void EndMotionObject() override;
-	bool ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y) override;
 	void SetAOSuppression(float value) override;
 	void SetBloomSuppression(float value) override;
 	void SetAOClass(int value) override;

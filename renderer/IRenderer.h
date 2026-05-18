@@ -185,9 +185,8 @@ public:
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 	virtual void DrawPolygon2D(int handle, g3Point** p, int nv) = 0;
 
-	virtual void BeginMotionObject(int object_handle, float screen_x, float screen_y) {}
+	virtual void BeginMotionObject(int object_handle) {}
 	virtual void EndMotionObject() {}
-	virtual bool ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y) { return false; }
 	virtual void SetAOSuppression(float value) {}
 	virtual void SetBloomSuppression(float value) {}
 	virtual void SetAOClass(int value) {}

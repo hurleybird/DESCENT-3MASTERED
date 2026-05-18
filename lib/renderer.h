@@ -258,7 +258,7 @@ enum gtao_resolution
 enum renderer_motion_vector_mode
 {
 	RENDERER_MOTION_VECTOR_OFF = 0,
-	RENDERER_MOTION_VECTOR_VERTEX = 1,
+	// Value 1 was the removed per-vertex motion-vector path.
 	RENDERER_MOTION_VECTOR_PIXEL = 2,
 };
 
@@ -329,7 +329,6 @@ enum renderer_draw_call_category
 	RENDERER_DRAW_CALL_2D,
 	RENDERER_DRAW_CALL_FONT,
 	RENDERER_DRAW_CALL_PRIMITIVE,
-	RENDERER_DRAW_CALL_MOTION_VECTOR,
 	RENDERER_DRAW_CALL_POSTPROCESS,
 	RENDERER_DRAW_CALL_MESH,
 	RENDERER_DRAW_CALL_CATEGORY_COUNT
@@ -439,10 +438,8 @@ void rend_DrawPolygon3DBatch(int handle,const renderer_poly_batch_item *items,in
 void rend_DrawPolygon2D(int handle,g3Point **p,int nv);
 
 // Marks subsequent 3D polygons as belonging to a moving object for motion-vector capture.
-// screen_x/screen_y are the current projected object center, in renderer pixels.
-void rend_BeginMotionObject(int object_handle, float screen_x, float screen_y);
+void rend_BeginMotionObject(int object_handle);
 void rend_EndMotionObject();
-bool rend_ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y);
 void rend_SetAOSuppression(float value);
 void rend_SetBloomSuppression(float value);
 void rend_SetAOClass(int value);
