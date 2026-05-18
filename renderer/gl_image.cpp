@@ -883,6 +883,8 @@ void GL4Renderer::ChangeChunkedBitmap(int bm_handle, chunked_bitmap* chunk)
 // X and Y are the destination X,Y
 void GL4Renderer::CopyBitmapToFramebuffer(int bm_handle, int x, int y)
 {
+	FlushFontBatch();
+
 	ASSERT(opengl_Framebuffer_ready);
 
 	if (opengl_Framebuffer_ready == 1)
@@ -901,6 +903,8 @@ void GL4Renderer::CopyBitmapToFramebuffer(int bm_handle, int x, int y)
 // Gets a renderer ready for a framebuffer copy, or stops a framebuffer copy
 void GL4Renderer::SetFrameBufferCopyState(bool state)
 {
+	FlushFontBatch();
+
 	if (state)
 	{
 		ASSERT(opengl_Framebuffer_ready == 0);
@@ -935,6 +939,8 @@ void GL4Renderer::BindLightmap(int handle)
 
 void GL4Renderer::ClearBoundTextures()
 {
+	FlushFontBatch();
+
 	OpenGL_last_bound[0] = -1;
 	OpenGL_last_bound[1] = -1;
 	Last_texel_unit_set = -1;

@@ -185,6 +185,7 @@ static void GL_DrawFramebufferQuadInternal(GLuint target, unsigned int x, unsign
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	}
 
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_POSTPROCESS);
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 
 	glViewport(oldviewport[0], oldviewport[1], oldviewport[2], oldviewport[3]);
@@ -697,6 +698,7 @@ void Framebuffer::BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned
 	glClearColor(0.0, 0.0, 0.0, 1.0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_POSTPROCESS);
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 	GLFramebufferPerfGpuDrain("GPU.FramebufferBlitTo");
 
@@ -774,6 +776,7 @@ void Framebuffer::DownsampleTo(GLuint target, unsigned int x, unsigned int y, un
 	glClearColor(0.0, 0.0, 0.0, 1.0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_POSTPROCESS);
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 	GLFramebufferPerfGpuDrain("GPU.FramebufferDownsampleTo");
 

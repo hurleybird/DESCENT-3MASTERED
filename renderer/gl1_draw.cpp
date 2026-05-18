@@ -164,6 +164,7 @@ void GLCompatibilityRenderer::DrawPolygon3D(int handle, g3Point** p, int nv, int
 	}
 
 	// And draw!
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_3D);
 	glDrawArrays(GL_POLYGON, 0, nv);
 	OpenGL_polys_drawn++;
 	OpenGL_verts_processed += nv;
@@ -280,6 +281,7 @@ void GLCompatibilityRenderer::DrawPolygon2D(int handle, g3Point** p, int nv)
 	}
 
 	// draw the data in the arrays
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_3D);
 	glDrawArrays(GL_POLYGON, 0, nv);
 
 	if (OpenGL_state.cur_texture_quality == 0)
@@ -694,6 +696,7 @@ void GLCompatibilityRenderer::DrawMultitexturePolygon3D(int handle, g3Point** p,
 	SetMultitextureBlendMode(true);
 
 	// And draw!
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_3D);
 	glDrawArrays(GL_POLYGON, 0, nv);
 	OpenGL_polys_drawn++;
 	OpenGL_verts_processed += nv;

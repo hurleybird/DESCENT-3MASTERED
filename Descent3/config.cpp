@@ -106,6 +106,7 @@ int Game_window_aspect = CONFIG_ASPECT_16_9;
 bool Game_fullscreen = false;
 int Game_frame_limit_fps = 0;
 float Hud_text_scale = 1.0f;
+bool Render_draw_call_stats = false;
 float Render_FOV_desired = 72;
 
 tDetailSettings Detail_settings;
@@ -1102,6 +1103,7 @@ struct video_menu
 	bool* bloom_enabled;
 	bool* perf_markers;
 	bool* show_fps;
+	bool* show_draw_calls;
 
 	short* fov;
 	short* frame_limit;
@@ -1261,6 +1263,11 @@ struct video_menu
 				Hud_stat_mask &= ~STAT_FPS;
 			ui_changed = true;
 		}
+		if (show_draw_calls && sheet->HasChanged(show_draw_calls))
+		{
+			Render_draw_call_stats = *show_draw_calls;
+			ui_changed = true;
+		}
 		if (antialiasing && sheet->HasChanged(antialiasing))
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1318,6 +1325,7 @@ struct video_menu
 		bloom_enabled = NULL;
 		perf_markers = NULL;
 		show_fps = NULL;
+		show_draw_calls = NULL;
 		fov = NULL;
 		frame_limit = NULL;
 		buffer = NULL;
@@ -1407,6 +1415,7 @@ struct video_menu
 		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
+		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats);
 
 		return sheet;
 	};
@@ -1438,6 +1447,8 @@ struct video_menu
 			else
 				Hud_stat_mask &= ~STAT_FPS;
 		}
+		if (show_draw_calls)
+			Render_draw_call_stats = *show_draw_calls;
 		if (antialiasing)
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);

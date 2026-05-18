@@ -26,6 +26,7 @@
 #include <Windows.h>
 #endif
 #include <algorithm>
+#include <vector>
 #include <glad/gl.h>
 #if defined(WIN32) && !defined(SDL3)
 #include "wglext.h"
@@ -158,6 +159,8 @@ class GL4Renderer : public IRenderer
 
 	//DRAW
 	gl_vertex GL_vertices[100];
+	std::vector<gl_vertex> font_batch_vertices;
+	int font_batch_bitmap = -1;
 
 	float OpenGL_Alpha_factor = 1.0f;
 	float Alpha_multiplier = 1.0f;
@@ -201,6 +204,7 @@ class GL4Renderer : public IRenderer
 	bool post_mask_only_draw = false;
 	bool post_protection_mask_dirty = false;
 	bool post_protection_mask_cleared_this_frame = false;
+	renderer_draw_call_category draw_call_category = RENDERER_DRAW_CALL_3D;
 	vector per_pixel_light_direction = { 0, 0, -1 };
 	vector per_pixel_dynamic_face_normal = { 0, 0, 1 };
 	int per_pixel_dynamic_light_count = 0;
@@ -295,6 +299,7 @@ private:
 	void SelectDrawShader();
 	void BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xscalar, float yscalar,
 		ubyte fr, ubyte fg, ubyte fb);
+	void FlushFontBatch();
 	void InitMotionVectorDraw();
 	void DestroyMotionVectorDraw();
 	void DrawMotionVectorPolygon(int nv, g3Point** p);

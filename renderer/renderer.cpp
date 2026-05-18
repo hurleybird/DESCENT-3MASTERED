@@ -35,6 +35,8 @@ static oeApplication* Renderer_app;
 static renderer_preferred_state Renderer_last_preferred_state;
 static bool Renderer_last_preferred_state_valid = false;
 static uint32_t Renderer_generation = 0;
+static renderer_draw_call_stats Renderer_current_draw_call_stats = {};
+static renderer_draw_call_stats Renderer_last_draw_call_stats = {};
 
 bool Renderer_initted;
 bool Renderer_close_flag;
@@ -178,6 +180,29 @@ void rend_GetStatistics(tRendererStats* stats)
 		return;
 
 	renderer_inst->GetStatistics(stats);
+}
+
+void rend_RecordDrawCall(renderer_draw_call_category category)
+{
+	if (category < 0 || category >= RENDERER_DRAW_CALL_CATEGORY_COUNT)
+		return;
+
+	Renderer_current_draw_call_stats.total++;
+	Renderer_current_draw_call_stats.category[category]++;
+}
+
+void rend_GetDrawCallStats(renderer_draw_call_stats* stats)
+{
+	if (!stats)
+		return;
+
+	*stats = Renderer_last_draw_call_stats;
+}
+
+static void rend_PublishDrawCallStats()
+{
+	Renderer_last_draw_call_stats = Renderer_current_draw_call_stats;
+	Renderer_current_draw_call_stats = {};
 }
 
 void rend_SetTextureType(texture_type tt)
@@ -368,6 +393,7 @@ void rend_EndPostPresentFrame()
 		return;
 
 	renderer_inst->EndPostPresentFrame();
+	rend_PublishDrawCallStats();
 }
 
 // Draws a scaled 2d bitmap to our buffer
@@ -512,6 +538,7 @@ void rend_Flip()
 		return;
 
 	renderer_inst->Flip();
+	rend_PublishDrawCallStats();
 }
 
 // Sets the argb characteristics of the font characters.  color1 is the upper left and proceeds clockwise

@@ -1304,6 +1304,33 @@ void RenderHUDItems(tStatMask stat_mask)
 	if (stat_mask & STAT_FPS)
 		RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, 10, "FPS: %.1f", last_avg_fps);
 
+	if (Render_draw_call_stats)
+	{
+		renderer_draw_call_stats draw_stats = {};
+		rend_GetDrawCallStats(&draw_stats);
+		const int line_height = grtext_GetHeight("X") + 2;
+		int y = Game_window_y + (Game_window_h / 2) - (line_height * 4);
+
+		RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+			"Draw calls: %u", draw_stats.total);
+		y += line_height;
+		RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+			"3D: %u  2D: %u  Font: %u",
+			draw_stats.category[RENDERER_DRAW_CALL_3D],
+			draw_stats.category[RENDERER_DRAW_CALL_2D],
+			draw_stats.category[RENDERER_DRAW_CALL_FONT]);
+		y += line_height;
+		RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+			"Prim: %u  Motion: %u",
+			draw_stats.category[RENDERER_DRAW_CALL_PRIMITIVE],
+			draw_stats.category[RENDERER_DRAW_CALL_MOTION_VECTOR]);
+		y += line_height;
+		RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+			"Post: %u  Mesh: %u",
+			draw_stats.category[RENDERER_DRAW_CALL_POSTPROCESS],
+			draw_stats.category[RENDERER_DRAW_CALL_MESH]);
+	}
+
 	// show music spew
 
 #ifdef _DEBUG

@@ -198,6 +198,7 @@ void GL4Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 	glBindVertexArray(motionvector_vao);
 	glBindBuffer(GL_ARRAY_BUFFER, motionvector_vbo);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(gl_motion_vertex) * nv, motion_vertices, GL_STREAM_DRAW);
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_MOTION_VECTOR);
 	glDrawArrays(GL_TRIANGLE_FAN, 0, nv);
 	motion_vectors_dirty = true;
 
@@ -240,6 +241,7 @@ void GL4Renderer::DrawMotionVectorTriangles(const gl_motion_vertex* vertices, in
 	glBindVertexArray(motionvector_vao);
 	glBindBuffer(GL_ARRAY_BUFFER, motionvector_vbo);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(gl_motion_vertex) * nv, vertices, GL_STREAM_DRAW);
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_MOTION_VECTOR);
 	glDrawArrays(GL_TRIANGLES, 0, nv);
 	motion_vectors_dirty = true;
 
@@ -380,6 +382,49 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 
 	float z = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / (pnt->p3_z + Z_bias))));
 	vert.vert.z = -z;
+}
+
+void GL4Renderer::FlushFontBatch()
+{
+	if (font_batch_vertices.empty())
+		return;
+
+	float old_ao_suppression = ao_suppression_draw_value;
+	float old_bloom_suppression = bloom_suppression_draw_value;
+	if (ao_suppression_draw_value != 1.0f || bloom_suppression_draw_value != 1.0f)
+		legacy_draw_uniforms_dirty = true;
+	ao_suppression_draw_value = 1.0f;
+	bloom_suppression_draw_value = 1.0f;
+	post_protection_mask_dirty = true;
+
+	SelectDrawShader();
+	if (OpenGL_state.cur_texture_quality != 0 && font_batch_bitmap >= 0)
+	{
+		MakeBitmapCurrent(font_batch_bitmap, MAP_TYPE_BITMAP, 0);
+		MakeWrapTypeCurrent(font_batch_bitmap, MAP_TYPE_BITMAP, 0);
+		MakeFilterTypeCurrent(font_batch_bitmap, MAP_TYPE_BITMAP, 0);
+	}
+
+	const int offset = CopyVertices(font_batch_vertices.data(), (int)font_batch_vertices.size());
+	const bool suppress_ao_class_write = framebuffer_ok &&
+		OpenGL_state.cur_zbuffer_state == 0 &&
+		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
+	if (suppress_ao_class_write)
+		GL4UseSceneDrawBuffersWithoutAOClass();
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_FONT);
+	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)font_batch_vertices.size());
+	if (suppress_ao_class_write)
+		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+
+	font_batch_vertices.clear();
+	font_batch_bitmap = -1;
+
+	if (ao_suppression_draw_value != old_ao_suppression || bloom_suppression_draw_value != old_bloom_suppression)
+		legacy_draw_uniforms_dirty = true;
+	ao_suppression_draw_value = old_ao_suppression;
+	bloom_suppression_draw_value = old_bloom_suppression;
+
+	CHECK_ERROR(10);
 }
 
 void GL4Renderer::SetDrawDefaults()
@@ -573,6 +618,8 @@ void GL4Renderer::SelectDrawShader()
 // Uses bitmap "handle" as a texture
 void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 {
+	FlushFontBatch();
+
 	g3Point* pnt;
 	int i;
 	ubyte fr, fg, fb;
@@ -717,6 +764,7 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
 	if (suppress_ao_class_write)
 		GL4UseSceneDrawBuffersWithoutAOClass();
+	rend_RecordDrawCall(draw_call_category);
 	glDrawArrays(GL_TRIANGLE_FAN, offset, nv);
 	if (suppress_ao_class_write)
 		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
@@ -729,6 +777,8 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 
 void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, int count, int map_type)
 {
+	FlushFontBatch();
+
 	if (!items || count <= 0)
 		return;
 
@@ -848,6 +898,7 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
 	if (suppress_ao_class_write)
 		GL4UseSceneDrawBuffersWithoutAOClass();
+	rend_RecordDrawCall(draw_call_category);
 	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)vertices.size());
 	if (suppress_ao_class_write)
 		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
@@ -865,7 +916,11 @@ void GL4Renderer::DrawPolygon2D(int handle, g3Point** p, int nv)
 	ASSERT(nv < 100);
 	ASSERT(Overlay_type == OT_NONE);
 
+	renderer_draw_call_category old_category = draw_call_category;
+	if (draw_call_category == RENDERER_DRAW_CALL_3D)
+		draw_call_category = RENDERER_DRAW_CALL_2D;
 	DrawPolygon3D(handle, p, nv, MAP_TYPE_BITMAP);
+	draw_call_category = old_category;
 }
 
 void GL4Renderer::BeginMotionObject(int object_handle, float screen_x, float screen_y)
@@ -1026,6 +1081,8 @@ void GL4Renderer::DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
 // Fills a rectangle on the display
 void GL4Renderer::FillRect(ddgr_color color, int x1, int y1, int x2, int y2)
 {
+	FlushFontBatch();
+
 	int r = GR_COLOR_RED(color);
 	int g = GR_COLOR_GREEN(color);
 	int b = GR_COLOR_BLUE(color);
@@ -1051,6 +1108,8 @@ void GL4Renderer::FillRect(ddgr_color color, int x1, int y1, int x2, int y2)
 // Sets a pixel on the display
 void GL4Renderer::SetPixel(ddgr_color color, int x, int y)
 {
+	FlushFontBatch();
+
 	ubyte r = (color >> 16 & 0xFF);
 	ubyte g = (color >> 8 & 0xFF);
 	ubyte b = (color & 0xFF);
@@ -1070,6 +1129,7 @@ void GL4Renderer::SetPixel(ddgr_color color, int x, int y)
 	int offset = CopyVertices(1);
 	GLfloat point_size = std::max(1.0f, std::min((GLfloat)SupersamplingFactor(), max_point_size));
 	glPointSize(point_size);
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_PRIMITIVE);
 	glDrawArrays(GL_POINTS, offset, 1);
 	glPointSize(1.0f);
 }
@@ -1093,42 +1153,59 @@ void GL4Renderer::DrawCircle(int x, int y, int rad)
 // Sets up a font character to draw.  We draw our fonts as pieces of textures
 void GL4Renderer::DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y2, float u, float v, float w, float h)
 {
-	g3Point* ptr_pnts[4];
-	g3Point pnts[4];
+	if (font_batch_bitmap != -1 && font_batch_bitmap != bm_handle)
+		FlushFontBatch();
+	if (font_batch_vertices.size() + 6 > 60000)
+		FlushFontBatch();
+	font_batch_bitmap = bm_handle;
+
+	gl_vertex quad[4] = {};
+	const ubyte fr = GR_COLOR_RED(OpenGL_state.cur_color);
+	const ubyte fg = GR_COLOR_GREEN(OpenGL_state.cur_color);
+	const ubyte fb = GR_COLOR_BLUE(OpenGL_state.cur_color);
+	const float alpha = Alpha_multiplier * OpenGL_Alpha_factor;
+	const float z = -std::max(0.f, std::min(1.0f, 1.0f - (1.0f / (1.0f + Z_bias))));
+
 	for (int i = 0; i < 4; i++)
 	{
-		pnts[i].p3_z = 1;	// Make REALLY close!
-		pnts[i].p3_flags = PF_PROJECTED;
-		ptr_pnts[i] = &pnts[i];
+		quad[i].color.r = fr;
+		quad[i].color.g = fg;
+		quad[i].color.b = fb;
+		quad[i].color.a = (ubyte)alpha;
+		quad[i].tex_coord.w = 1.0f;
+		quad[i].vert.z = z;
 	}
-	pnts[0].p3_sx = x1;
-	pnts[0].p3_sy = y1;
-	pnts[0].p3_u = u;
-	pnts[0].p3_v = v;
-	pnts[1].p3_sx = x2;
-	pnts[1].p3_sy = y1;
-	pnts[1].p3_u = u + w;
-	pnts[1].p3_v = v;
-	pnts[2].p3_sx = x2;
-	pnts[2].p3_sy = y2;
-	pnts[2].p3_u = u + w;
-	pnts[2].p3_v = v + h;
-	pnts[3].p3_sx = x1;
-	pnts[3].p3_sy = y2;
-	pnts[3].p3_u = u;
-	pnts[3].p3_v = v + h;
-	float old_ao_suppression = ao_suppression_draw_value;
-	float old_bloom_suppression = bloom_suppression_draw_value;
-	SetAOSuppression(1.0f);
-	SetBloomSuppression(1.0f);
-	DrawPolygon2D(bm_handle, ptr_pnts, 4);
-	SetBloomSuppression(old_bloom_suppression);
-	SetAOSuppression(old_ao_suppression);
+
+	quad[0].vert.x = (float)x1;
+	quad[0].vert.y = (float)y1;
+	quad[0].tex_coord.s = u;
+	quad[0].tex_coord.t = v;
+	quad[1].vert.x = (float)x2;
+	quad[1].vert.y = (float)y1;
+	quad[1].tex_coord.s = u + w;
+	quad[1].tex_coord.t = v;
+	quad[2].vert.x = (float)x2;
+	quad[2].vert.y = (float)y2;
+	quad[2].tex_coord.s = u + w;
+	quad[2].tex_coord.t = v + h;
+	quad[3].vert.x = (float)x1;
+	quad[3].vert.y = (float)y2;
+	quad[3].tex_coord.s = u;
+	quad[3].tex_coord.t = v + h;
+
+	font_batch_vertices.push_back(quad[0]);
+	font_batch_vertices.push_back(quad[1]);
+	font_batch_vertices.push_back(quad[2]);
+	font_batch_vertices.push_back(quad[0]);
+	font_batch_vertices.push_back(quad[2]);
+	font_batch_vertices.push_back(quad[3]);
 }
 
 // Draws a line
 void GL4Renderer::DrawLine(int x1, int y1, int x2, int y2)
 {
+	FlushFontBatch();
+
 	sbyte atype;
 	light_state ltype;
 	texture_type ttype;
@@ -1165,6 +1242,7 @@ void GL4Renderer::DrawLine(int x1, int y1, int x2, int y2)
 	int offset = CopyVertices(2);
 	GLfloat line_width = std::max(1.0f, std::min((GLfloat)SupersamplingFactor(), max_line_width));
 	glLineWidth(line_width);
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_PRIMITIVE);
 	glDrawArrays(GL_LINES, offset, 2);
 	glLineWidth(1.0f);
 
@@ -1198,6 +1276,8 @@ void GL4Renderer::SetCharacterParameters(ddgr_color color1, ddgr_color color2, d
 // Turns on/off multitexture blending
 void GL4Renderer::SetMultitextureBlendMode(bool state)
 {
+	FlushFontBatch();
+
 	if (OpenGL_multitexture_state == state)
 		return;
 	OpenGL_multitexture_state = state;
@@ -1214,6 +1294,8 @@ void GL4Renderer::SetMultitextureBlendMode(bool state)
 // Draws a line using the states of the renderer
 void GL4Renderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 {
+	FlushFontBatch();
+
 	ubyte fr, fg, fb, alpha;
 	int i;
 
@@ -1274,6 +1356,7 @@ void GL4Renderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 	int offset = CopyVertices(2);
 	GLfloat line_width = std::max(1.0f, std::min((GLfloat)SupersamplingFactor(), max_line_width));
 	glLineWidth(line_width);
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_PRIMITIVE);
 	glDrawArrays(GL_LINES, offset, 2);
 	glLineWidth(1.0f);
 }

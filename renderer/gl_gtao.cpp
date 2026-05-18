@@ -149,6 +149,7 @@ namespace
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		glViewport(0, 0, width, height);
 		glBindVertexArray(GL_GetFramebufferVAO());
+		rend_RecordDrawCall(RENDERER_DRAW_CALL_POSTPROCESS);
 		glDrawArrays(GL_TRIANGLES, 0, 3);
 		glBindVertexArray(0);
 	}

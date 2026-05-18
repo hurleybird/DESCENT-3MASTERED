@@ -313,6 +313,24 @@ struct tRendererStats
 	int texture_uploads;
 };
 
+enum renderer_draw_call_category
+{
+	RENDERER_DRAW_CALL_3D = 0,
+	RENDERER_DRAW_CALL_2D,
+	RENDERER_DRAW_CALL_FONT,
+	RENDERER_DRAW_CALL_PRIMITIVE,
+	RENDERER_DRAW_CALL_MOTION_VECTOR,
+	RENDERER_DRAW_CALL_POSTPROCESS,
+	RENDERER_DRAW_CALL_MESH,
+	RENDERER_DRAW_CALL_CATEGORY_COUNT
+};
+
+struct renderer_draw_call_stats
+{
+	uint32_t total;
+	uint32_t category[RENDERER_DRAW_CALL_CATEGORY_COUNT];
+};
+
 struct renderer_poly_batch_item
 {
 	g3Point **pointlist;
@@ -340,6 +358,8 @@ enum renderer_gpu_scene_mark
 
 // returns rendering statistics for the frame
 void rend_GetStatistics(tRendererStats *stats);
+void rend_RecordDrawCall(renderer_draw_call_category category);
+void rend_GetDrawCallStats(renderer_draw_call_stats *stats);
 
 void rend_SetTextureType (texture_type tt);
 
