@@ -37,6 +37,7 @@ static bool Renderer_last_preferred_state_valid = false;
 static uint32_t Renderer_generation = 0;
 static renderer_draw_call_stats Renderer_current_draw_call_stats = {};
 static renderer_draw_call_stats Renderer_last_draw_call_stats = {};
+static renderer_draw_call_3d_category Renderer_current_3d_draw_call_category = RENDERER_DRAW_CALL_3D_OTHER;
 
 bool Renderer_initted;
 bool Renderer_close_flag;
@@ -189,6 +190,12 @@ void rend_RecordDrawCall(renderer_draw_call_category category)
 
 	Renderer_current_draw_call_stats.total++;
 	Renderer_current_draw_call_stats.category[category]++;
+	if (category == RENDERER_DRAW_CALL_3D &&
+		Renderer_current_3d_draw_call_category >= 0 &&
+		Renderer_current_3d_draw_call_category < RENDERER_DRAW_CALL_3D_CATEGORY_COUNT)
+	{
+		Renderer_current_draw_call_stats.category_3d[Renderer_current_3d_draw_call_category]++;
+	}
 }
 
 void rend_GetDrawCallStats(renderer_draw_call_stats* stats)
@@ -197,6 +204,17 @@ void rend_GetDrawCallStats(renderer_draw_call_stats* stats)
 		return;
 
 	*stats = Renderer_last_draw_call_stats;
+}
+
+renderer_draw_call_3d_category rend_Set3DDrawCallCategory(renderer_draw_call_3d_category category)
+{
+	renderer_draw_call_3d_category old_category = Renderer_current_3d_draw_call_category;
+	if (category >= 0 && category < RENDERER_DRAW_CALL_3D_CATEGORY_COUNT)
+		Renderer_current_3d_draw_call_category = category;
+	else
+		Renderer_current_3d_draw_call_category = RENDERER_DRAW_CALL_3D_OTHER;
+
+	return old_category;
 }
 
 static void rend_PublishDrawCallStats()

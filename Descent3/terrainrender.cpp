@@ -2050,6 +2050,7 @@ void DrawCloudLayer()
 void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 {
 	PERF_MARKER_SCOPE(from_mine ? "RenderTerrain.FromMine" : "RenderTerrain.Main");
+	renderer_3d_draw_call_scope terrain_draw_scope(RENDERER_DRAW_CALL_3D_TERRAIN);
 	static int first = 1;
 	if (first)
 	{

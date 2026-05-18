@@ -50,6 +50,7 @@ static ubyte triangulated_faces[MAX_FACES_PER_ROOM];
 
 static ubyte FacingPass=0;
 static int Multicolor_texture=-1;
+static bool Polymodel_cockpit_batching = false;
 
 static vector Fog_plane;
 static float Fog_distance,Fog_eye_distance;
@@ -232,6 +233,11 @@ void PolymodelPerfAddDrawModelSetup(double start_time)
 	Polymodel_perf_draw_model_setup_time += PerfMarkersNow() - start_time;
 }
 
+void PolymodelSetCockpitBatching(bool enabled)
+{
+	Polymodel_cockpit_batching = enabled;
+}
+
 static int ModelFaceSortFunc(const short *a, const short *b)
 {
 	float az,bz;
@@ -311,6 +317,7 @@ struct PolymodelBaseFaceBatchKey
 	sbyte alpha_type;
 	ubyte alpha_value;
 	ddgr_color flat_color;
+	vector light_direction;
 
 	bool Equals(const PolymodelBaseFaceBatchKey& other) const
 	{
@@ -320,7 +327,8 @@ struct PolymodelBaseFaceBatchKey
 			color_model_value == other.color_model_value &&
 			alpha_type == other.alpha_type &&
 			alpha_value == other.alpha_value &&
-			flat_color == other.flat_color;
+			flat_color == other.flat_color &&
+			(lighting != LS_PHONG || light_direction == other.light_direction);
 	}
 };
 
@@ -366,7 +374,7 @@ public:
 			rend_SetColorModel(batch.key.color_model_value);
 			rend_SetTextureType(batch.key.texture_type_value);
 			if (batch.key.lighting == LS_PHONG)
-				rend_SetPerPixelLightingDirection(Polymodel_light_direction);
+				rend_SetPerPixelLightingDirection(&batch.key.light_direction);
 			rend_SetLighting(batch.key.lighting);
 			rend_SetFlatColor(batch.key.flat_color);
 			rend_SetAlphaValue(batch.key.alpha_value);
@@ -399,6 +407,9 @@ public:
 private:
 	std::vector<PolymodelBaseFaceBatch> m_batches;
 };
+
+static PolymodelBaseFaceBatcher *Polymodel_active_opaque_batcher = nullptr;
+static PolymodelBaseFaceBatcher *Polymodel_active_alpha_batcher = nullptr;
 
 static void CopyPolymodelBatchPoints(PolymodelBatchedFace& batched_face, g3Point **pointlist, int nv)
 {
@@ -437,8 +448,39 @@ static ddgr_color GetPolymodelCustomFlatColor(ddgr_color base_color)
 	return GR_RGB(r, g, b);
 }
 
+static texture *GetPolymodelFaceTexture(poly_model *pm, bsp_info *sm, polyface *fp)
+{
+	texture *texp = NULL;
+	if (fp->texnum != -1)
+		texp = &GameTextures[pm->textures[fp->texnum]];
+
+	if (texp && (sm->flags & SOF_CUSTOM) && Polymodel_use_effect && (Polymodel_effect.type & PEF_CUSTOM_TEXTURE))
+		texp = &GameTextures[Polymodel_effect.custom_texture];
+
+	return texp;
+}
+
+static bool PolymodelFaceUsesAlpha(poly_model *pm, bsp_info *sm, int facenum)
+{
+	polyface *fp = &sm->faces[facenum];
+	texture *texp = GetPolymodelFaceTexture(pm, sm, fp);
+	if (texp && ((texp->flags & (TF_ALPHA | TF_SATURATE)) || texp->alpha < 0.99f))
+		return true;
+
+	if (!sm->alpha)
+		return false;
+
+	for (int i = 0; i < fp->nverts; i++)
+	{
+		if (sm->alpha[fp->vertnums[i]] < 0.99f)
+			return true;
+	}
+
+	return false;
+}
+
 static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
-	PolymodelBaseFaceBatcher& batcher)
+	PolymodelBaseFaceBatcher& batcher, bool allow_alpha = false)
 {
 	polyface *fp = &sm->faces[facenum];
 	if (fp->nverts < 3 || fp->nverts >= 100)
@@ -450,13 +492,7 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	if (Polymodel_use_effect && (Polymodel_effect.type & PEF_ALPHA))
 		return false;
 
-	const bool custom = (sm->flags & SOF_CUSTOM) != 0;
-	texture *texp = NULL;
-	if (fp->texnum != -1)
-		texp = &GameTextures[pm->textures[fp->texnum]];
-
-	if (texp && custom && Polymodel_use_effect && (Polymodel_effect.type & PEF_CUSTOM_TEXTURE))
-		texp = &GameTextures[Polymodel_effect.custom_texture];
+	texture *texp = GetPolymodelFaceTexture(pm, sm, fp);
 
 	if (texp && (Polymodel_effect.type & PEF_BUMPMAPPED) && texp->bumpmap != -1 &&
 		Polymodel_light_type == POLYMODEL_LIGHTING_GOURAUD)
@@ -477,16 +513,23 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	key.alpha_type = ATF_CONSTANT + ATF_VERTEX;
 	key.alpha_value = 255;
 	key.flat_color = GetPolymodelCustomFlatColor(fp->color);
+	if (Polymodel_light_direction)
+		key.light_direction = *Polymodel_light_direction;
 
 	if (texp)
 	{
-		if (texp->flags & (TF_ALPHA | TF_SATURATE))
+		if (!allow_alpha && (texp->flags & (TF_ALPHA | TF_SATURATE)))
 			return false;
 
 		key.bitmap_handle = GetTextureBitmap(texp - GameTextures, 0);
 		key.texture_type_value = TT_LINEAR;
-		key.alpha_type = ATF_TEXTURE + ATF_VERTEX;
 		key.alpha_value = (ubyte)(texp->alpha * 255.0f);
+		if (texp->flags & TF_SATURATE)
+			key.alpha_type = AT_SATURATE_CONSTANT_VERTEX;
+		else if (texp->flags & TF_ALPHA)
+			key.alpha_type = ATF_CONSTANT + ATF_VERTEX;
+		else
+			key.alpha_type = ATF_TEXTURE + ATF_VERTEX;
 		key.flat_color = 0;
 		if (Polymodel_light_type == POLYMODEL_LIGHTING_GOURAUD)
 			key.lighting = GetPolymodelGouraudLightingState();
@@ -1333,6 +1376,22 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 			PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
 			continue;
 		}
+
+		if (!StateLimited && Polymodel_active_opaque_batcher && Polymodel_active_alpha_batcher)
+		{
+			const bool alpha_face = PolymodelFaceUsesAlpha(pm, sm, i);
+			PolymodelBaseFaceBatcher& batcher = alpha_face ? *Polymodel_active_alpha_batcher : *Polymodel_active_opaque_batcher;
+			if (alpha_face && Perf_markers_enabled)
+				Polymodel_perf_alpha_face_count++;
+			PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
+			if (TryBatchSubmodelBaseFace(pm, sm, i, batcher, alpha_face))
+				continue;
+
+			Polymodel_active_opaque_batcher->Flush();
+			Polymodel_active_alpha_batcher->Flush();
+			RenderSubmodelFace(pm, sm, i);
+			continue;
+		}
 		
 		if (fp->texnum!=-1)
 		{
@@ -1365,7 +1424,7 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 		}
 	}
 
-	if (!StateLimited)
+	if (!StateLimited && !Polymodel_active_opaque_batcher)
 		base_face_batcher.Flush();
 
 	if (StateLimited)
@@ -1405,8 +1464,11 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 
 	// Now render all alpha faces
 	//rend_SetZBufferWriteMask (0);
-	for (i=0;i<num_alpha_faces;i++)
-		RenderSubmodelFace(pm,sm,alpha_faces[i]);
+	if (!Polymodel_active_alpha_batcher)
+	{
+		for (i=0;i<num_alpha_faces;i++)
+			RenderSubmodelFace(pm,sm,alpha_faces[i]);
+	}
 	//rend_SetZBufferWriteMask (1);
 
 	if (sm->flags & SOF_CUSTOM)
@@ -1761,12 +1823,28 @@ int RenderPolygonModel(poly_model * pm, uint f_render_sub)
 	rend_SetWrapType (WT_WRAP);
 	
 	FacingPass=0;
+	PolymodelBaseFaceBatcher cockpit_opaque_batcher;
+	PolymodelBaseFaceBatcher cockpit_alpha_batcher;
+	const bool use_cockpit_batches = Polymodel_cockpit_batching && UseHardware && !StateLimited &&
+		Polymodel_light_type != POLYMODEL_LIGHTING_LIGHTMAP && !Polymodel_use_effect;
+	if (use_cockpit_batches)
+	{
+		Polymodel_active_opaque_batcher = &cockpit_opaque_batcher;
+		Polymodel_active_alpha_batcher = &cockpit_alpha_batcher;
+	}
 	double root_pass_start_time = PolymodelPerfNow();
 	for (i=0;i<pm->n_models;i++)
 	{
 		bsp_info *sm=&pm->submodel[i];
 		if (sm->parent==-1)
 			RenderSubmodel (pm,sm, f_render_sub);
+	}
+	if (use_cockpit_batches)
+	{
+		Polymodel_active_opaque_batcher = nullptr;
+		Polymodel_active_alpha_batcher = nullptr;
+		cockpit_opaque_batcher.Flush();
+		cockpit_alpha_batcher.Flush();
 	}
 	PolymodelPerfAdd(Polymodel_perf_root_pass_time, root_pass_start_time);
 

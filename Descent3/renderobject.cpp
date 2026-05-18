@@ -1056,6 +1056,7 @@ void RenderObject(object* obj)
 #endif
 
 	double draw_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
+	renderer_3d_draw_call_scope object_draw_scope(RENDERER_DRAW_CALL_3D_OBJECT);
 	switch (obj->render_type)
 	{
 	case RT_NONE:

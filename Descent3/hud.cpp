@@ -1255,8 +1255,10 @@ static void HUDRenderDrawCallStats(const renderer_draw_call_stats& draw_stats)
 
 		char value_text[16];
 		int row_width = 0;
-		int label_width[3] = {};
-		int column_width[3] = {};
+		int label_width[4] = {};
+		int column_width[4] = {};
+		if (count > 4)
+			count = 4;
 		for (int i = 0; i < count; i++)
 		{
 			label_width[i] = grtext_GetTextLineWidth(columns[i].label);
@@ -1283,7 +1285,7 @@ static void HUDRenderDrawCallStats(const renderer_draw_call_stats& draw_stats)
 
 	const int reserved_value_width = grtext_GetTextLineWidth("88888");
 	const int line_height = grtext_GetHeight("X") + 2;
-	int y = Game_window_y + (Game_window_h / 2) - (line_height * 4);
+	int y = Game_window_y + (Game_window_h / 2) - (line_height * 3);
 
 	tDrawCallColumn total[] = {
 		{ "Draw calls: ", draw_stats.total, reserved_value_width },
@@ -1297,6 +1299,23 @@ static void HUDRenderDrawCallStats(const renderer_draw_call_stats& draw_stats)
 		{ "Font: ", draw_stats.category[RENDERER_DRAW_CALL_FONT], reserved_value_width },
 	};
 	draw_row(y, geometry, 3);
+	y += line_height;
+
+	tDrawCallColumn geometry_detail_a[] = {
+		{ "Room: ", draw_stats.category_3d[RENDERER_DRAW_CALL_3D_ROOM], reserved_value_width },
+		{ "Terr: ", draw_stats.category_3d[RENDERER_DRAW_CALL_3D_TERRAIN], reserved_value_width },
+		{ "Obj: ", draw_stats.category_3d[RENDERER_DRAW_CALL_3D_OBJECT], reserved_value_width },
+		{ "Cock: ", draw_stats.category_3d[RENDERER_DRAW_CALL_3D_COCKPIT], reserved_value_width },
+	};
+	draw_row(y, geometry_detail_a, 4);
+	y += line_height;
+
+	tDrawCallColumn geometry_detail_b[] = {
+		{ "Gauge: ", draw_stats.category_3d[RENDERER_DRAW_CALL_3D_GAUGE], reserved_value_width },
+		{ "FX: ", draw_stats.category_3d[RENDERER_DRAW_CALL_3D_EFFECT], reserved_value_width },
+		{ "Other: ", draw_stats.category_3d[RENDERER_DRAW_CALL_3D_OTHER], reserved_value_width },
+	};
+	draw_row(y, geometry_detail_b, 3);
 	y += line_height;
 
 	tDrawCallColumn primitives[] = {

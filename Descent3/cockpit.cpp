@@ -668,14 +668,24 @@ void RenderCockpit()
 	//	draws lower z cockpit, and monitor glares after gauge renderering
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBufferState(1);
-	DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r, light_scalar_g, light_scalar_b, Cockpit_info.nonlayered_mask, 0, 1);
+	{
+		renderer_3d_draw_call_scope cockpit_draw_scope(RENDERER_DRAW_CALL_3D_COCKPIT);
+		PolymodelSetCockpitBatching(true);
+		DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r, light_scalar_g, light_scalar_b, Cockpit_info.nonlayered_mask, 0, 1);
+		PolymodelSetCockpitBatching(false);
+	}
 	rend_SetBloomSuppression(1.0f);
 	rend_SetZBufferState(0);
 	RenderGauges(&view_pos, &view_tmat, normalized_time, (Cockpit_info.animating || Cockpit_info.resized), gauge_reset);
 	rend_SetBloomSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBufferState(1);
-	DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r, light_scalar_g, light_scalar_b, Cockpit_info.layered_mask, 0, 1);
+	{
+		renderer_3d_draw_call_scope cockpit_draw_scope(RENDERER_DRAW_CALL_3D_COCKPIT);
+		PolymodelSetCockpitBatching(true);
+		DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r, light_scalar_g, light_scalar_b, Cockpit_info.layered_mask, 0, 1);
+		PolymodelSetCockpitBatching(false);
+	}
 	rend_SetZBufferState(0);
 
 	if (display_adjust_active)
@@ -703,13 +713,18 @@ void RenderCockpitPostPost()
 
 	rend_SetZBufferWriteMask(0);
 	rend_SetZBufferState(0);
-	DrawPolygonModel(&Cockpit_post_post_snapshot.view_pos, &Cockpit_post_post_snapshot.view_tmat,
-		Cockpit_info.model_num, Cockpit_post_post_snapshot.normalized_time, 0,
-		&Cockpit_post_post_snapshot.light_vec,
-		Cockpit_post_post_snapshot.light_scalar_r,
-		Cockpit_post_post_snapshot.light_scalar_g,
-		Cockpit_post_post_snapshot.light_scalar_b,
-		Cockpit_info.post_post_mask, 0, 1);
+	{
+		renderer_3d_draw_call_scope cockpit_draw_scope(RENDERER_DRAW_CALL_3D_COCKPIT);
+		PolymodelSetCockpitBatching(true);
+		DrawPolygonModel(&Cockpit_post_post_snapshot.view_pos, &Cockpit_post_post_snapshot.view_tmat,
+			Cockpit_info.model_num, Cockpit_post_post_snapshot.normalized_time, 0,
+			&Cockpit_post_post_snapshot.light_vec,
+			Cockpit_post_post_snapshot.light_scalar_r,
+			Cockpit_post_post_snapshot.light_scalar_g,
+			Cockpit_post_post_snapshot.light_scalar_b,
+			Cockpit_info.post_post_mask, 0, 1);
+		PolymodelSetCockpitBatching(false);
+	}
 	rend_SetZBufferWriteMask(1);
 
 	if (Cockpit_post_post_snapshot.display_adjust_active)

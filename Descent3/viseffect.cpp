@@ -35,6 +35,7 @@
 #include "config.h"
 #include "weather.h"
 #include "polymodel.h"
+#include "renderer.h"
 #include "psrand.h"
 #include "mem.h"
 
@@ -1513,6 +1514,7 @@ void DrawVisMassDriverEffect(vis_effect* vis, bool f_boss)
 void DrawVisEffect(vis_effect* vis)
 {
 	ASSERT(vis->type != VIS_NONE);
+	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
 
 	// First check to see if these are special types
 

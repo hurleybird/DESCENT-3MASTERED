@@ -3884,6 +3884,7 @@ void RenderRoomOutline(room* rp)
 void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 {
 	PERF_MARKER_SCOPE(called_from_terrain ? "RenderMine.FromTerrain" : "RenderMine.Main");
+	renderer_3d_draw_call_scope room_draw_scope(RENDERER_DRAW_CALL_3D_ROOM);
 	if (!called_from_terrain)
 		Deferred_fog_ao_faces.clear();
 #ifdef EDITOR

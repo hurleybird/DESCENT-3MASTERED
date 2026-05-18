@@ -36,6 +36,8 @@
 #include "weapon.h"
 #include "stringtable.h"
 
+#include <vector>
+
 //////////////////////////////////////////////////////////////////////////////
 
 struct tGauge
@@ -140,6 +142,119 @@ void DrawGaugeQuadFlat(g3Point* pts, float* r, float* g, float* b, ubyte alpha);
 // correctly orders monitor vertices based off of UVs
 int GetFirstVert(bsp_info* sm);
 
+struct GaugeQuadBatchKey
+{
+	int bitmap_handle;
+	texture_type texture_type_value;
+	light_state lighting;
+	color_model color_model_value;
+	sbyte alpha_type;
+	ubyte alpha_value;
+
+	bool Equals(const GaugeQuadBatchKey& other) const
+	{
+		return bitmap_handle == other.bitmap_handle &&
+			texture_type_value == other.texture_type_value &&
+			lighting == other.lighting &&
+			color_model_value == other.color_model_value &&
+			alpha_type == other.alpha_type &&
+			alpha_value == other.alpha_value;
+	}
+};
+
+struct GaugeQuadBatchItem
+{
+	g3Point points[4];
+	g3Point* pointlist[4];
+
+	void RefreshPointList()
+	{
+		for (int i = 0; i < 4; i++)
+			pointlist[i] = &points[i];
+	}
+};
+
+struct GaugeQuadBatch
+{
+	GaugeQuadBatchKey key;
+	std::vector<GaugeQuadBatchItem> items;
+};
+
+static std::vector<GaugeQuadBatch> Gauge_quad_batches;
+
+static void FlushGaugeQuadBatches()
+{
+	if (Gauge_quad_batches.empty())
+		return;
+
+	rend_SetZBufferState(0);
+	rend_SetOverlayType(OT_NONE);
+
+	for (size_t batch_index = 0; batch_index < Gauge_quad_batches.size(); batch_index++)
+	{
+		GaugeQuadBatch& batch = Gauge_quad_batches[batch_index];
+		if (batch.items.empty())
+			continue;
+
+		rend_SetTextureType(batch.key.texture_type_value);
+		rend_SetLighting(batch.key.lighting);
+		rend_SetColorModel(batch.key.color_model_value);
+		rend_SetAlphaValue(batch.key.alpha_value);
+		rend_SetAlphaType(batch.key.alpha_type);
+
+		std::vector<renderer_poly_batch_item> renderer_items(batch.items.size());
+		for (size_t item_index = 0; item_index < batch.items.size(); item_index++)
+		{
+			batch.items[item_index].RefreshPointList();
+			renderer_items[item_index].pointlist = batch.items[item_index].pointlist;
+			renderer_items[item_index].nv = 4;
+		}
+
+		rend_DrawPolygon3DBatch(batch.key.bitmap_handle, renderer_items.data(), (int)renderer_items.size(), MAP_TYPE_BITMAP);
+	}
+
+	Gauge_quad_batches.clear();
+}
+
+static bool QueueGaugeQuad(const GaugeQuadBatchKey& key, g3Point* pts)
+{
+	g3Codes face_cc;
+	face_cc.cc_or = 0;
+	face_cc.cc_and = 0xff;
+	for (int i = 0; i < 4; i++)
+	{
+		face_cc.cc_or |= pts[i].p3_codes;
+		face_cc.cc_and &= pts[i].p3_codes;
+	}
+
+	if (face_cc.cc_or)
+		return false;
+
+	GaugeQuadBatchItem item;
+	for (int i = 0; i < 4; i++)
+	{
+		item.points[i] = pts[i];
+		item.points[i].p3_flags &= ~PF_TEMP_POINT;
+		if (!(item.points[i].p3_flags & PF_PROJECTED))
+			g3_ProjectPoint(&item.points[i]);
+	}
+
+	for (size_t i = 0; i < Gauge_quad_batches.size(); i++)
+	{
+		if (Gauge_quad_batches[i].key.Equals(key))
+		{
+			Gauge_quad_batches[i].items.push_back(item);
+			return true;
+		}
+	}
+
+	GaugeQuadBatch batch;
+	batch.key = key;
+	batch.items.push_back(item);
+	Gauge_quad_batches.push_back(batch);
+	return true;
+}
+
 //	tells what gauge index is the gauge stat item.
 inline int GAUGE_INDEX(tStatMask mask)
 {
@@ -221,6 +336,7 @@ void CloseGauges()
 //	renders gauges
 void RenderGauges(vector* cockpit_pos, matrix* cockpit_mat, float* normalized_time, bool moving, bool reset)
 {
+	renderer_3d_draw_call_scope gauge_draw_scope(RENDERER_DRAW_CALL_3D_GAUGE);
 	tGauge* gauge;
 	float font_aspect_x;
 	float font_aspect_y;
@@ -319,6 +435,7 @@ void RenderGauges(vector* cockpit_pos, matrix* cockpit_mat, float* normalized_ti
 	}
 
 	//	render all text
+	FlushGaugeQuadBatches();
 	grtext_Flush();
 
 	Gauge_mask_modified = 0;
@@ -735,6 +852,17 @@ void DrawGaugeMonitor(g3Point* pts, int bm, float brightness, float* alphas)
 
 	rend_SetAlphaType(AT_CONSTANT_VERTEX);
 
+	GaugeQuadBatchKey key = {};
+	key.bitmap_handle = bm;
+	key.texture_type_value = TT_LINEAR;
+	key.lighting = LS_NONE;
+	key.color_model_value = CM_MONO;
+	key.alpha_type = AT_CONSTANT_VERTEX;
+	key.alpha_value = (ubyte)(brightness * 255);
+	if (QueueGaugeQuad(key, pnts))
+		return;
+
+	FlushGaugeQuadBatches();
 	g3_DrawPoly(4, pntlist, bm);
 }
 
@@ -785,6 +913,17 @@ void DrawGaugeQuad(g3Point* pts, int bm, float u0, float v0, float u1, float v1,
 	else
 		rend_SetAlphaType(AT_SATURATE_TEXTURE);
 
+	GaugeQuadBatchKey key = {};
+	key.bitmap_handle = bm;
+	key.texture_type_value = TT_LINEAR;
+	key.lighting = LS_NONE;
+	key.color_model_value = CM_MONO;
+	key.alpha_type = saturate ? AT_SATURATE_TEXTURE : AT_CONSTANT_TEXTURE;
+	key.alpha_value = alpha;
+	if (QueueGaugeQuad(key, pnts))
+		return;
+
+	FlushGaugeQuadBatches();
 	g3_DrawPoly(4, pntlist, bm);
 }
 
@@ -835,6 +974,17 @@ void DrawGaugeQuadFlat(g3Point* pts, float* r, float* g, float* b, ubyte alpha)
 	rend_SetAlphaType(AT_CONSTANT);
 	rend_SetAlphaValue(alpha);
 
+	GaugeQuadBatchKey key = {};
+	key.bitmap_handle = 0;
+	key.texture_type_value = TT_FLAT;
+	key.lighting = LS_GOURAUD;
+	key.color_model_value = CM_RGB;
+	key.alpha_type = AT_CONSTANT;
+	key.alpha_value = alpha;
+	if (QueueGaugeQuad(key, pnts))
+		return;
+
+	FlushGaugeQuadBatches();
 	g3_DrawPoly(4, pntlist, 0);
 }
 

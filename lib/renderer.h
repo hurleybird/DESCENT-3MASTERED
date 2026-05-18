@@ -325,10 +325,23 @@ enum renderer_draw_call_category
 	RENDERER_DRAW_CALL_CATEGORY_COUNT
 };
 
+enum renderer_draw_call_3d_category
+{
+	RENDERER_DRAW_CALL_3D_OTHER = 0,
+	RENDERER_DRAW_CALL_3D_ROOM,
+	RENDERER_DRAW_CALL_3D_TERRAIN,
+	RENDERER_DRAW_CALL_3D_OBJECT,
+	RENDERER_DRAW_CALL_3D_COCKPIT,
+	RENDERER_DRAW_CALL_3D_GAUGE,
+	RENDERER_DRAW_CALL_3D_EFFECT,
+	RENDERER_DRAW_CALL_3D_CATEGORY_COUNT
+};
+
 struct renderer_draw_call_stats
 {
 	uint32_t total;
 	uint32_t category[RENDERER_DRAW_CALL_CATEGORY_COUNT];
+	uint32_t category_3d[RENDERER_DRAW_CALL_3D_CATEGORY_COUNT];
 };
 
 struct renderer_poly_batch_item
@@ -360,6 +373,26 @@ enum renderer_gpu_scene_mark
 void rend_GetStatistics(tRendererStats *stats);
 void rend_RecordDrawCall(renderer_draw_call_category category);
 void rend_GetDrawCallStats(renderer_draw_call_stats *stats);
+renderer_draw_call_3d_category rend_Set3DDrawCallCategory(renderer_draw_call_3d_category category);
+
+#ifdef __cplusplus
+class renderer_3d_draw_call_scope
+{
+public:
+	explicit renderer_3d_draw_call_scope(renderer_draw_call_3d_category category)
+	{
+		m_old_category = rend_Set3DDrawCallCategory(category);
+	}
+
+	~renderer_3d_draw_call_scope()
+	{
+		rend_Set3DDrawCallCategory(m_old_category);
+	}
+
+private:
+	renderer_draw_call_3d_category m_old_category;
+};
+#endif
 
 void rend_SetTextureType (texture_type tt);
 
