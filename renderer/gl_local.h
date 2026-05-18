@@ -101,6 +101,7 @@ class GL4Renderer : public IRenderer
 	Framebuffer ao_scene_framebuffer;
 	Framebuffer ao_composite_framebuffer;
 	Framebuffer post_present_framebuffer;
+	Framebuffer motion_blur_framebuffer;
 	MotionVectorResources motion_vectors;
 	PostProtectionMaskResources post_protection_mask;
 	int framebuffer_current_draw = 0;
@@ -126,6 +127,7 @@ class GL4Renderer : public IRenderer
 	ShaderProgram fontshader;
 	ShaderProgram motionvectorshader;
 	ShaderProgram motionvectordebugshader;
+	ShaderProgram motionblurshader;
 	ShaderProgram ao_compositeshader;
 	BloomResources bloom;
 	GTAOResources gtao;
@@ -157,6 +159,11 @@ class GL4Renderer : public IRenderer
 	GLint motionvectordebug_uv_origin = -1;
 	GLint motionvectordebug_uv_scale = -1;
 	GLint motionvectordebug_screen_size = -1;
+	GLint motionblur_color_source = -1;
+	GLint motionblur_velocity_source = -1;
+	GLint motionblur_velocity_uv_origin = -1;
+	GLint motionblur_velocity_uv_scale = -1;
+	GLint motionblur_strength = -1;
 	GLint ao_composite_final_source = -1;
 	GLint ao_composite_scene_source = -1;
 	GLint ao_composite_ao_scene_source = -1;
@@ -301,7 +308,7 @@ class GL4Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.5f, 0.5f, 0.5f, 1.0f, RENDERER_MOTION_VECTOR_OFF, false };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.5f, 0.5f, 0.5f, 1.0f, RENDERER_MOTION_VECTOR_OFF, false, 0.0f };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -351,6 +358,7 @@ private:
 	bool PixelMotionVectorModeEnabled() const;
 	bool MotionVectorWritesEnabled() const;
 	bool CurrentDrawWritesPixelMotionVectors() const;
+	void ApplyPixelMotionBlur(int supersampling_factor);
 	void DrawMotionVectorDebugPreview(int supersampling_factor);
 	void UseSceneDrawBuffers();
 

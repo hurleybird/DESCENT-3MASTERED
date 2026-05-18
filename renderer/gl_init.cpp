@@ -685,6 +685,7 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	extern const char* motionVectorVertexSrc;
 	extern const char* motionVectorFragmentSrc;
 	extern const char* motionVectorDebugFragmentSrc;
+	extern const char* pixelMotionBlurFragmentSrc;
 	extern const char* aoDeferredCompositeFragmentSrc;
 	blitshader.AttachSource(blitVertexSrc, blitFragmentSrc);
 	blitshader.Use();
@@ -747,6 +748,22 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 		motionvectordebug_screen_size == -1)
 		Error("GLRenderer::Init: Failed to find motion-vector debug uniforms!");
 
+	motionblurshader.AttachSource(blitVertexSrc, pixelMotionBlurFragmentSrc);
+	motionblurshader.Use();
+	motionblur_color_source = motionblurshader.FindUniform("color_source");
+	motionblur_velocity_source = motionblurshader.FindUniform("velocity_source");
+	motionblur_velocity_uv_origin = motionblurshader.FindUniform("velocity_uv_origin");
+	motionblur_velocity_uv_scale = motionblurshader.FindUniform("velocity_uv_scale");
+	motionblur_strength = motionblurshader.FindUniform("strength");
+	if (motionblur_color_source != -1)
+		glUniform1i(motionblur_color_source, 0);
+	if (motionblur_velocity_source != -1)
+		glUniform1i(motionblur_velocity_source, 1);
+	if (motionblur_color_source == -1 || motionblur_velocity_source == -1 ||
+		motionblur_velocity_uv_origin == -1 || motionblur_velocity_uv_scale == -1 ||
+		motionblur_strength == -1)
+		Error("GLRenderer::Init: Failed to find pixel motion blur uniforms!");
+
 	ao_compositeshader.AttachSource(blitVertexSrc, aoDeferredCompositeFragmentSrc);
 	ao_compositeshader.Use();
 	ao_composite_final_source = ao_compositeshader.FindUniform("final_source");
@@ -800,6 +817,8 @@ void GL4Renderer::Close()
 	downsampleshader.Destroy();
 	fontshader.Destroy();
 	motionvectorshader.Destroy();
+	motionvectordebugshader.Destroy();
+	motionblurshader.Destroy();
 	ao_compositeshader.Destroy();
 	bloom.DestroyShaders();
 	gtao.Destroy();

@@ -160,10 +160,61 @@ bool GL4Renderer::CurrentDrawWritesPixelMotionVectors() const
 	case AT_TEXTURE:
 		return true;
 	case AT_CONSTANT_TEXTURE:
-		return OpenGL_state.cur_alpha == 255 && ao_class_draw_value == RENDERER_AO_CLASS_TERRAIN;
+	case AT_CONSTANT:
+		return OpenGL_state.cur_alpha == 255;
 	default:
 		return false;
 	}
+}
+
+void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
+{
+	if (OpenGL_preferred_state.pixel_motion_blur_strength <= 0.0f ||
+		OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_PIXEL ||
+		motionblurshader.Handle() == 0 || post_present_framebuffer.Handle() == 0 ||
+		!MotionVectorTargetEnabled())
+	{
+		return;
+	}
+
+	GLuint velocity_texture = motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
+	if (velocity_texture == 0 || motion_vectors.width == 0 || motion_vectors.height == 0)
+		return;
+
+	if (supersampling_factor < 1)
+		supersampling_factor = 1;
+	const int framebuffer_logical_bottom_offset =
+		framebuffer_logical_height - OpenGL_state.screen_height - framebuffer_logical_offset_y;
+	const float source_width = (float)motion_vectors.width;
+	const float source_height = (float)motion_vectors.height;
+	const float uv_origin_x = (float)(framebuffer_logical_offset_x * supersampling_factor) / source_width;
+	const float uv_origin_y = (float)(framebuffer_logical_bottom_offset * supersampling_factor) / source_height;
+	const float uv_scale_x = (float)(OpenGL_state.screen_width * supersampling_factor) / source_width;
+	const float uv_scale_y = (float)(OpenGL_state.screen_height * supersampling_factor) / source_height;
+
+	motion_blur_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
+	if (motion_blur_framebuffer.Handle() == 0)
+		return;
+
+	motionblurshader.Use();
+	if (motionblur_color_source != -1)
+		glUniform1i(motionblur_color_source, 0);
+	if (motionblur_velocity_source != -1)
+		glUniform1i(motionblur_velocity_source, 1);
+	if (motionblur_velocity_uv_origin != -1)
+		glUniform2f(motionblur_velocity_uv_origin, uv_origin_x, uv_origin_y);
+	if (motionblur_velocity_uv_scale != -1)
+		glUniform2f(motionblur_velocity_uv_scale, uv_scale_x, uv_scale_y);
+	if (motionblur_strength != -1)
+		glUniform1f(motionblur_strength, OpenGL_preferred_state.pixel_motion_blur_strength);
+
+	rend_ClearBoundTextures();
+	GL_BindFramebufferTexture(post_present_framebuffer.ColorTextureForRead(), 0, GL_LINEAR);
+	GL_BindFramebufferTexture(velocity_texture, 1, GL_NEAREST);
+	GL_DrawFramebufferQuad(motion_blur_framebuffer.Handle(), 0, 0,
+		motion_blur_framebuffer.Width(), motion_blur_framebuffer.Height());
+	motion_blur_framebuffer.BlitToRaw(post_present_framebuffer.Handle(), 0, 0,
+		post_present_framebuffer.Width(), post_present_framebuffer.Height(), GL_NEAREST);
 }
 
 void GL4Renderer::DrawMotionVectorDebugPreview(int supersampling_factor)
@@ -700,7 +751,7 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 		vert.motion_velocity_x = (pnt->p3_sx - pnt->p3_prev_sx) / screen_width;
 		vert.motion_velocity_y = -(pnt->p3_sy - pnt->p3_prev_sy) / screen_height;
 	}
-	if (CurrentDrawWritesPixelMotionVectors())
+	if (CurrentDrawWritesPixelMotionVectors() && !motion_object_active)
 	{
 		float payloadw = 1.0f / (pnt->p3_z + Z_bias);
 		vert.motion_world_position.x = pnt->p3_vecPreRot.x * payloadw;
@@ -1342,7 +1393,7 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 			vertp->motion_velocity_x = (pnt->p3_sx - pnt->p3_prev_sx) / screen_width;
 			vertp->motion_velocity_y = -(pnt->p3_sy - pnt->p3_prev_sy) / screen_height;
 		}
-		if (CurrentDrawWritesPixelMotionVectors())
+		if (CurrentDrawWritesPixelMotionVectors() && !motion_object_active)
 		{
 			float payloadw = 1.0f / (pnt->p3_z + Z_bias);
 			vertp->motion_world_position.x = pnt->p3_vecPreRot.x * payloadw;

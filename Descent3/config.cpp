@@ -1039,6 +1039,15 @@ static float ClampLegacyMotionBlurAlphaExponent(float exponent)
 	return exponent;
 }
 
+static float ConfigNormalizePixelMotionBlurStrength(float strength)
+{
+	if (strength < 0.0f)
+		return 0.0f;
+	if (strength > 2.0f)
+		return 2.0f;
+	return strength;
+}
+
 static bool MotionBlurLegacyMatchesPreset(float copy_density, int max_iterations, float alpha_exponent)
 {
 	return fabs(Legacy_motion_blur_frame_time - (1.0f / 20.0f)) < 0.0001f &&
@@ -1109,6 +1118,7 @@ struct video_menu
 
 	short* fov;
 	short* frame_limit;
+	short* pixel_motion_blur;
 	char* buffer;
 	char* aspect_buffer;
 	bool* fullscreen;
@@ -1266,6 +1276,12 @@ struct video_menu
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
 			changed = true;
 		}
+		if (pixel_motion_blur && sheet->HasChanged(pixel_motion_blur))
+		{
+			Render_preferred_state.pixel_motion_blur_strength =
+				ConfigNormalizePixelMotionBlurStrength(CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur, 0.0f, 2.0f, 100));
+			changed = true;
+		}
 		if (perf_markers && sheet->HasChanged(perf_markers))
 		{
 			PerfMarkersSetEnabled(*perf_markers);
@@ -1345,6 +1361,7 @@ struct video_menu
 		motion_vector_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
+		pixel_motion_blur = NULL;
 		buffer = NULL;
 		aspect_buffer = NULL;
 		fullscreen = NULL;
@@ -1437,6 +1454,15 @@ struct video_menu
 		sheet->AddRadioButton("Pixel");
 		*motion_vectors = Render_preferred_state.motion_vector_mode;
 
+		sheet->NewGroup("Pixel blur", 184, 306);
+		tSliderSettings pixel_blur_settings = {};
+		pixel_blur_settings.min_val.f = 0.0f;
+		pixel_blur_settings.max_val.f = 2.0f;
+		pixel_blur_settings.type = SLIDER_UNITS_FLOAT;
+		pixel_motion_blur = sheet->AddSlider("Strength", 100,
+			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_strength, &pixel_blur_settings, 100),
+			&pixel_blur_settings);
+
 		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
@@ -1467,6 +1493,9 @@ struct video_menu
 			Render_preferred_state.motion_vector_mode = (ubyte)*motion_vectors;
 		if (motion_vector_debug)
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
+		if (pixel_motion_blur)
+			Render_preferred_state.pixel_motion_blur_strength =
+				ConfigNormalizePixelMotionBlurStrength(CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur, 0.0f, 2.0f, 100));
 		if (perf_markers)
 			PerfMarkersSetEnabled(*perf_markers);
 		if (show_fps)

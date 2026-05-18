@@ -1335,6 +1335,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 			glUniform2f(blitshader_uv_scale, 1.0f, 1.0f);
 		GL4PerfGpuDrain("GPU.PostPresentBlit");
 	}
+	ApplyPixelMotionBlur(supersampling_factor);
 	DrawMotionVectorDebugPreview(supersampling_factor);
 	ShaderProgram::ClearBinding();
 
@@ -2531,6 +2532,7 @@ void GL4Renderer::UpdateFramebuffer(void)
 		ao_scene_framebuffer.Destroy();
 		ao_composite_framebuffer.Destroy();
 		post_present_framebuffer.Destroy();
+		motion_blur_framebuffer.Destroy();
 		motion_vectors.Destroy();
 		post_protection_mask.Destroy();
 		GL_UnbindFramebufferTextures();
@@ -2572,6 +2574,7 @@ void GL4Renderer::UpdateFramebuffer(void)
 	else
 		downscale_framebuffer.Destroy();
 	post_present_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
+	motion_blur_framebuffer.Destroy();
 
 	bloom_source_valid = false;
 	ao_scene_valid = false;
@@ -2626,6 +2629,7 @@ void GL4Renderer::CloseFramebuffer(void)
 	ao_scene_framebuffer.Destroy();
 	ao_composite_framebuffer.Destroy();
 	post_present_framebuffer.Destroy();
+	motion_blur_framebuffer.Destroy();
 	bloom_source_valid = false;
 	ao_scene_valid = false;
 	motion_vectors.Destroy();

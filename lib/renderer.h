@@ -297,6 +297,7 @@ struct renderer_preferred_state
 	float gtao_mine_occlusion;
 	ubyte motion_vector_mode;
 	bool motion_vector_debug_preview;
+	float pixel_motion_blur_strength;
 };
 
 enum renderer_ao_class
