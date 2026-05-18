@@ -123,6 +123,16 @@ g3Point *ClipFarEdge( g3Point *on_pnt, g3Point *off_pnt )
 	{
 		tmp->p3_motion_world_valid = 0;
 	}
+	if (on_pnt->p3_motion_prev_world_valid && off_pnt->p3_motion_prev_world_valid)
+	{
+		tmp->p3_motion_prev_world_pos = on_pnt->p3_motion_prev_world_pos +
+			((off_pnt->p3_motion_prev_world_pos - on_pnt->p3_motion_prev_world_pos) * k);
+		tmp->p3_motion_prev_world_valid = 1;
+	}
+	else
+	{
+		tmp->p3_motion_prev_world_valid = 0;
+	}
 
 	if (on_pnt->p3_flags & PF_UV)
 	{
@@ -204,6 +214,16 @@ g3Point *ClipCustomEdge( g3Point *on_pnt, g3Point *off_pnt )
 	else
 	{
 		tmp->p3_motion_world_valid = 0;
+	}
+	if (on_pnt->p3_motion_prev_world_valid && off_pnt->p3_motion_prev_world_valid)
+	{
+		tmp->p3_motion_prev_world_pos = on_pnt->p3_motion_prev_world_pos +
+			((off_pnt->p3_motion_prev_world_pos - on_pnt->p3_motion_prev_world_pos) * k);
+		tmp->p3_motion_prev_world_valid = 1;
+	}
+	else
+	{
+		tmp->p3_motion_prev_world_valid = 0;
 	}
 
 	if (on_pnt->p3_flags & PF_UV)
@@ -305,6 +325,16 @@ g3Point *ClipEdge( int plane_flag, g3Point *on_pnt, g3Point *off_pnt )
 	else
 	{
 		tmp->p3_motion_world_valid = 0;
+	}
+	if (on_pnt->p3_motion_prev_world_valid && off_pnt->p3_motion_prev_world_valid)
+	{
+		tmp->p3_motion_prev_world_pos = on_pnt->p3_motion_prev_world_pos +
+			((off_pnt->p3_motion_prev_world_pos - on_pnt->p3_motion_prev_world_pos) * k);
+		tmp->p3_motion_prev_world_valid = 1;
+	}
+	else
+	{
+		tmp->p3_motion_prev_world_valid = 0;
 	}
 
 	if (on_pnt->p3_flags & PF_UV)

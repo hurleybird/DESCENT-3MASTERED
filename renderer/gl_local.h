@@ -74,6 +74,7 @@ struct gl_vertex
 	float motion_velocity_x;
 	float motion_velocity_y;
 	vec4_array motion_world_position;
+	vec4_array motion_previous_world_position;
 };
 
 struct gl_motion_vertex

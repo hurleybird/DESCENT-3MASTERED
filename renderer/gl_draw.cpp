@@ -154,6 +154,9 @@ bool GL4Renderer::CurrentDrawWritesPixelMotionVectors() const
 	if (!MotionVectorWritesEnabled() || OpenGL_state.cur_zbuffer_state == 0)
 		return false;
 
+	const bool opaque_polyobject_vertex_alpha =
+		ao_class_draw_value == RENDERER_AO_CLASS_POLYOBJECT && OpenGL_state.cur_alpha == 255;
+
 	switch (OpenGL_state.cur_alpha_type)
 	{
 	case AT_ALWAYS:
@@ -162,6 +165,10 @@ bool GL4Renderer::CurrentDrawWritesPixelMotionVectors() const
 	case AT_CONSTANT_TEXTURE:
 	case AT_CONSTANT:
 		return OpenGL_state.cur_alpha == 255;
+	case AT_TEXTURE_VERTEX:
+		return opaque_polyobject_vertex_alpha;
+	case AT_CONSTANT_VERTEX:
+		return opaque_polyobject_vertex_alpha && OpenGL_state.cur_texture_type == TT_FLAT;
 	default:
 		return false;
 	}
@@ -444,6 +451,10 @@ void GL4Renderer::InitPersistentDrawBuffer(size_t size)
 	//attrib 6: perspective-correct world position for pixel motion vectors
 	glEnableVertexAttribArray(6);
 	glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_world_position));
+
+	//attrib 7: perspective-correct previous world position for moving pixel motion vectors
+	glEnableVertexAttribArray(7);
+	glVertexAttribPointer(7, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_previous_world_position));
 #ifdef _DEBUG
 	err = glGetError();
 	if (err != GL_NO_ERROR)
@@ -744,6 +755,10 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 	vert.motion_world_position.y = 0.0f;
 	vert.motion_world_position.z = 0.0f;
 	vert.motion_world_position.w = 0.0f;
+	vert.motion_previous_world_position.x = 0.0f;
+	vert.motion_previous_world_position.y = 0.0f;
+	vert.motion_previous_world_position.z = 0.0f;
+	vert.motion_previous_world_position.w = 0.0f;
 	if (motion_object_active && OpenGL_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_PIXEL && pnt->p3_motion_valid)
 	{
 		const float screen_width = OpenGL_state.screen_width > 0 ? (float)OpenGL_state.screen_width : 1.0f;
@@ -760,13 +775,20 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 		vert.motion_world_position.w = payloadw;
 	}
 	else if (CurrentDrawWritesPixelMotionVectors() && motion_object_active &&
-		!pnt->p3_motion_valid && pnt->p3_motion_world_valid)
+		pnt->p3_motion_world_valid)
 	{
 		float payloadw = 1.0f / (pnt->p3_z + Z_bias);
 		vert.motion_world_position.x = pnt->p3_motion_world_pos.x * payloadw;
 		vert.motion_world_position.y = pnt->p3_motion_world_pos.y * payloadw;
 		vert.motion_world_position.z = pnt->p3_motion_world_pos.z * payloadw;
 		vert.motion_world_position.w = payloadw;
+		if (pnt->p3_motion_prev_world_valid)
+		{
+			vert.motion_previous_world_position.x = pnt->p3_motion_prev_world_pos.x * payloadw;
+			vert.motion_previous_world_position.y = pnt->p3_motion_prev_world_pos.y * payloadw;
+			vert.motion_previous_world_position.z = pnt->p3_motion_prev_world_pos.z * payloadw;
+			vert.motion_previous_world_position.w = payloadw;
+		}
 	}
 
 	float z = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / (pnt->p3_z + Z_bias))));
@@ -1140,6 +1162,10 @@ void GL4Renderer::SetDrawDefaults()
 		//attrib 6: perspective-correct world position for pixel motion vectors
 		glEnableVertexAttribArray(6);
 		glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_world_position));
+
+		//attrib 7: perspective-correct previous world position for moving pixel motion vectors
+		glEnableVertexAttribArray(7);
+		glVertexAttribPointer(7, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_previous_world_position));
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -1395,6 +1421,10 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 		vertp->motion_world_position.y = 0.0f;
 		vertp->motion_world_position.z = 0.0f;
 		vertp->motion_world_position.w = 0.0f;
+		vertp->motion_previous_world_position.x = 0.0f;
+		vertp->motion_previous_world_position.y = 0.0f;
+		vertp->motion_previous_world_position.z = 0.0f;
+		vertp->motion_previous_world_position.w = 0.0f;
 		if (motion_object_active && OpenGL_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_PIXEL && pnt->p3_motion_valid)
 		{
 			const float screen_width = OpenGL_state.screen_width > 0 ? (float)OpenGL_state.screen_width : 1.0f;
@@ -1411,13 +1441,20 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 			vertp->motion_world_position.w = payloadw;
 		}
 		else if (CurrentDrawWritesPixelMotionVectors() && motion_object_active &&
-			!pnt->p3_motion_valid && pnt->p3_motion_world_valid)
+			pnt->p3_motion_world_valid)
 		{
 			float payloadw = 1.0f / (pnt->p3_z + Z_bias);
 			vertp->motion_world_position.x = pnt->p3_motion_world_pos.x * payloadw;
 			vertp->motion_world_position.y = pnt->p3_motion_world_pos.y * payloadw;
 			vertp->motion_world_position.z = pnt->p3_motion_world_pos.z * payloadw;
 			vertp->motion_world_position.w = payloadw;
+			if (pnt->p3_motion_prev_world_valid)
+			{
+				vertp->motion_previous_world_position.x = pnt->p3_motion_prev_world_pos.x * payloadw;
+				vertp->motion_previous_world_position.y = pnt->p3_motion_prev_world_pos.y * payloadw;
+				vertp->motion_previous_world_position.z = pnt->p3_motion_prev_world_pos.z * payloadw;
+				vertp->motion_previous_world_position.w = payloadw;
+			}
 		}
 
 		float z = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / (pnt->p3_z + Z_bias))));
@@ -1811,6 +1848,10 @@ void GL4Renderer::SetPixel(ddgr_color color, int x, int y)
 	GL_vertices[0].motion_world_position.y = 0.0f;
 	GL_vertices[0].motion_world_position.z = 0.0f;
 	GL_vertices[0].motion_world_position.w = 0.0f;
+	GL_vertices[0].motion_previous_world_position.x = 0.0f;
+	GL_vertices[0].motion_previous_world_position.y = 0.0f;
+	GL_vertices[0].motion_previous_world_position.z = 0.0f;
+	GL_vertices[0].motion_previous_world_position.w = 0.0f;
 
 	//please do not call this function if you can avoid it.
 	int offset = CopyVertices(1);
@@ -1945,6 +1986,14 @@ void GL4Renderer::DrawLine(int x1, int y1, int x2, int y2)
 	GL_vertices[1].motion_world_position.y = 0.0f;
 	GL_vertices[1].motion_world_position.z = 0.0f;
 	GL_vertices[1].motion_world_position.w = 0.0f;
+	GL_vertices[0].motion_previous_world_position.x = 0.0f;
+	GL_vertices[0].motion_previous_world_position.y = 0.0f;
+	GL_vertices[0].motion_previous_world_position.z = 0.0f;
+	GL_vertices[0].motion_previous_world_position.w = 0.0f;
+	GL_vertices[1].motion_previous_world_position.x = 0.0f;
+	GL_vertices[1].motion_previous_world_position.y = 0.0f;
+	GL_vertices[1].motion_previous_world_position.z = 0.0f;
+	GL_vertices[1].motion_previous_world_position.w = 0.0f;
 
 	int offset = CopyVertices(2);
 	GLfloat line_width = std::max(1.0f, std::min((GLfloat)SupersamplingFactor(), max_line_width));
@@ -2058,6 +2107,10 @@ void GL4Renderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 		vertp->motion_world_position.y = 0.0f;
 		vertp->motion_world_position.z = 0.0f;
 		vertp->motion_world_position.w = 0.0f;
+		vertp->motion_previous_world_position.x = 0.0f;
+		vertp->motion_previous_world_position.y = 0.0f;
+		vertp->motion_previous_world_position.z = 0.0f;
+		vertp->motion_previous_world_position.w = 0.0f;
 		//glVertex3f(pnt->p3_sx + x_add, pnt->p3_sy + y_add, -z);
 	}
 

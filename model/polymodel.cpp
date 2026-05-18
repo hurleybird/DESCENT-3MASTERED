@@ -177,6 +177,7 @@ void PolymodelMotionSetPoint(g3Point *point, poly_model *pm, int submodel_num, c
 
 	point->p3_motion_valid = 0;
 	point->p3_motion_world_valid = 0;
+	point->p3_motion_prev_world_valid = 0;
 	if (!Polymodel_motion_active_history || !pm || !local_pos)
 		return;
 
@@ -194,6 +195,8 @@ void PolymodelMotionSetPoint(g3Point *point, poly_model *pm, int submodel_num, c
 	const PolymodelMotionSnapshot &previous = Polymodel_motion_active_history->previous;
 	if (!PolymodelMotionTransformPoint(previous, pm, submodel_num, local_pos, &world_pos))
 		return;
+	point->p3_motion_prev_world_pos = world_pos;
+	point->p3_motion_prev_world_valid = 1;
 	float sx = 0.0f, sy = 0.0f;
 	if (rend_ProjectPreviousFramePoint(&world_pos, &sx, &sy))
 	{
