@@ -298,6 +298,7 @@ struct renderer_preferred_state
 	ubyte motion_vector_mode;
 	bool motion_vector_debug_preview;
 	float pixel_motion_blur_strength;
+	float pixel_motion_blur_periphery_strength;
 };
 
 enum renderer_ao_class

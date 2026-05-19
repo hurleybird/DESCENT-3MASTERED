@@ -390,6 +390,7 @@ void SaveGameSettings()
 	Database->write("RS_motion_vector_mode", Render_preferred_state.motion_vector_mode);
 	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
+	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_periphery_strength", Render_preferred_state.pixel_motion_blur_periphery_strength);
 	tempint = Use_motion_blur ? 1 : 0;
 	Database->write("RS_motion_blur_type", tempint);
 	WRITE_FLOAT_SETTING("RS_legacy_motion_blur_frame_time", Legacy_motion_blur_frame_time);
@@ -571,6 +572,7 @@ void LoadGameSettings()
 	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_debug_preview = false;
 	Render_preferred_state.pixel_motion_blur_strength = 0.0f;
+	Render_preferred_state.pixel_motion_blur_periphery_strength = 1.0f;
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
 	Terrain_renderer_mode = TERRAIN_RENDERER_COMPUTE;
@@ -766,8 +768,13 @@ void LoadGameSettings()
 	READ_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	if (Render_preferred_state.pixel_motion_blur_strength < 0.0f)
 		Render_preferred_state.pixel_motion_blur_strength = 0.0f;
-	if (Render_preferred_state.pixel_motion_blur_strength > 2.0f)
-		Render_preferred_state.pixel_motion_blur_strength = 2.0f;
+	if (Render_preferred_state.pixel_motion_blur_strength > 4.0f)
+		Render_preferred_state.pixel_motion_blur_strength = 4.0f;
+	READ_FLOAT_SETTING("RS_pixel_motion_blur_periphery_strength", Render_preferred_state.pixel_motion_blur_periphery_strength);
+	if (Render_preferred_state.pixel_motion_blur_periphery_strength < 0.0f)
+		Render_preferred_state.pixel_motion_blur_periphery_strength = 0.0f;
+	if (Render_preferred_state.pixel_motion_blur_periphery_strength > 4.0f)
+		Render_preferred_state.pixel_motion_blur_periphery_strength = 4.0f;
 	saved_motion_blur_type = 0;
 	saved_motion_blur_type_present = Database->read_int("RS_motion_blur_type", &saved_motion_blur_type);
 	if (saved_motion_blur_type < 0) saved_motion_blur_type = 0;

@@ -902,6 +902,8 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 
 		if (framebuffer_state_changed)
 		{
+			have_previous_view_projection = false;
+			have_cockpit_previous_view_projection = false;
 			UpdateWindow();
 			SetViewport();
 			UpdateFramebuffer();
@@ -1006,7 +1008,7 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 			post_protection_mask_dirty = false;
 			post_protection_mask_cleared_this_frame = true;
 		}
-		if (MotionVectorTargetEnabled() && !motion_vectors_cleared_this_frame)
+		if (MotionVectorTargetEnabled() && !MotionVectorsFrozen() && !motion_vectors_cleared_this_frame)
 		{
 			motion_vectors.ClearAttached(framebuffers[framebuffer_current_draw].Handle());
 			motion_vectors_dirty = false;
@@ -1085,6 +1087,7 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 		return true;
 
 	deferred_bloom_composite_pending = false;
+	deferred_bloom_apply_pending = false;
 	deferred_bloom_framebuffer = nullptr;
 	deferred_bloom_protection_mask_texture = 0;
 
@@ -1299,10 +1302,6 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 
 	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_AFTER_GTAO);
 
-	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_enabled ? present_framebuffer : nullptr,
-		OpenGL_preferred_state, OpenGL_state, display_gamma,
-		late_post_enabled ? present_framebuffer->DepthTextureForRead() : 0, protection_mask_texture);
-	GL4PerfGpuDrain("GPU.Bloom.Apply");
 	const float post_uv_origin_x = present_framebuffer->Width() > 0 ?
 		(float)framebuffer_logical_offset_x / (float)present_framebuffer->Width() : 0.0f;
 	const float post_uv_origin_y = present_framebuffer->Height() > 0 ?
@@ -1311,10 +1310,44 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 		(float)OpenGL_state.screen_width / (float)present_framebuffer->Width() : 1.0f;
 	const float post_uv_scale_y = present_framebuffer->Height() > 0 ?
 		(float)OpenGL_state.screen_height / (float)present_framebuffer->Height() : 1.0f;
+	Framebuffer* bloom_framebuffer = nullptr;
 	if (defer_bloom_composite)
 	{
-		deferred_bloom_composite_pending = bloom_framebuffer != nullptr;
-		deferred_bloom_framebuffer = bloom_framebuffer;
+		if (bloom_enabled && present_framebuffer->Handle() != 0)
+		{
+			deferred_bloom_source_framebuffer.Update(present_framebuffer->Width(),
+				present_framebuffer->Height(), 0);
+			if (deferred_bloom_source_framebuffer.Handle() != 0)
+			{
+				present_framebuffer->BlitToRaw(deferred_bloom_source_framebuffer.Handle(), 0, 0,
+					deferred_bloom_source_framebuffer.Width(), deferred_bloom_source_framebuffer.Height(),
+					GL_NEAREST);
+				present_framebuffer->BlitDepthTo(deferred_bloom_source_framebuffer.Handle(), 0, 0,
+					deferred_bloom_source_framebuffer.Width(), deferred_bloom_source_framebuffer.Height());
+				deferred_bloom_apply_pending = true;
+				GL4PerfGpuDrain("GPU.Bloom.DeferredSourceCopy");
+			}
+			else
+			{
+				bloom.DestroyFramebuffers();
+			}
+		}
+		else
+		{
+			bloom.DestroyFramebuffers();
+		}
+	}
+	else
+	{
+		bloom_framebuffer = bloom.Apply(bloom_enabled ? present_framebuffer : nullptr,
+			OpenGL_preferred_state, OpenGL_state, display_gamma,
+			late_post_enabled ? present_framebuffer->DepthTextureForRead() : 0, protection_mask_texture);
+		GL4PerfGpuDrain("GPU.Bloom.Apply");
+	}
+	if (defer_bloom_composite)
+	{
+		deferred_bloom_composite_pending = false;
+		deferred_bloom_framebuffer = nullptr;
 		deferred_bloom_protection_mask_texture = protection_mask_texture;
 		deferred_bloom_uv_origin_x = post_uv_origin_x;
 		deferred_bloom_uv_origin_y = post_uv_origin_y;
@@ -1391,12 +1424,12 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 
 	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_AFTER_BLOOM);
 
-	if (framebuffer_ok && captured_scene_view_projection_valid)
+	if (!MotionVectorsFrozen() && framebuffer_ok && captured_scene_view_projection_valid)
 	{
 		memcpy(previous_view_projection, captured_scene_view_projection, sizeof(previous_view_projection));
 		have_previous_view_projection = true;
 	}
-	else if (framebuffer_ok && have_current_view_projection)
+	else if (!MotionVectorsFrozen() && framebuffer_ok && have_current_view_projection)
 	{
 		memcpy(previous_view_projection, current_view_projection, sizeof(previous_view_projection));
 		have_previous_view_projection = true;
@@ -1672,6 +1705,33 @@ void GL4Renderer::BlendPostCompositeOverPostPresent()
 	RestoreLegacy();
 }
 
+void GL4Renderer::ApplyDeferredBloom(GLuint alpha_occlusion_mask_texture)
+{
+	if (!deferred_bloom_apply_pending)
+		return;
+
+	deferred_bloom_apply_pending = false;
+	deferred_bloom_composite_pending = false;
+	deferred_bloom_framebuffer = nullptr;
+
+	if (!OpenGL_preferred_state.bloom_enabled || deferred_bloom_source_framebuffer.Handle() == 0)
+	{
+		bloom.DestroyFramebuffers();
+		return;
+	}
+
+	Framebuffer* bloom_framebuffer = bloom.Apply(&deferred_bloom_source_framebuffer,
+		OpenGL_preferred_state, OpenGL_state, deferred_display_gamma,
+		deferred_bloom_source_framebuffer.DepthTextureForRead(),
+		deferred_bloom_protection_mask_texture,
+		alpha_occlusion_mask_texture,
+		deferred_bloom_uv_origin_x, deferred_bloom_uv_origin_y,
+		deferred_bloom_uv_scale_x, deferred_bloom_uv_scale_y);
+	GL4PerfGpuDrain("GPU.Bloom.ApplyDeferred");
+	deferred_bloom_framebuffer = bloom_framebuffer;
+	deferred_bloom_composite_pending = bloom_framebuffer != nullptr;
+}
+
 void GL4Renderer::CompositeDeferredBloomOverPostPresent()
 {
 	if (post_present_framebuffer.Handle() == 0)
@@ -1687,7 +1747,7 @@ void GL4Renderer::CompositeDeferredBloomOverPostPresent()
 			bloom.compositeshader.Use();
 			glUniform1f(bloom.composite_gamma, deferred_display_gamma);
 			glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
-			glUniform1i(bloom.composite_use_alpha_mask, 1);
+			glUniform1i(bloom.composite_use_alpha_mask, 0);
 			glUniform1i(bloom.composite_use_protection_mask,
 				deferred_bloom_protection_mask_texture != 0 ? 1 : 0);
 			if (bloom.composite_uv_origin != -1)
@@ -1821,6 +1881,7 @@ void GL4Renderer::EndPostPresentFrame()
 		post_present_pending_swap = false;
 		cockpit_scene_frame_active = false;
 		deferred_bloom_composite_pending = false;
+		deferred_bloom_apply_pending = false;
 		deferred_bloom_framebuffer = nullptr;
 		deferred_bloom_protection_mask_texture = 0;
 	}
@@ -1876,7 +1937,11 @@ void GL4Renderer::EndCockpitFrame()
 
 	FlushFontBatch();
 	ClearPostPresentAlpha();
-	if (cockpit_scene_frame_active && ResolveCockpitLayerToPostComposite())
+	const bool cockpit_layer_resolved = cockpit_scene_frame_active && ResolveCockpitLayerToPostComposite();
+	GLuint cockpit_alpha_mask_texture = cockpit_layer_resolved ?
+		post_composite_framebuffer.ColorTextureForRead() : 0;
+	ApplyDeferredBloom(cockpit_alpha_mask_texture);
+	if (cockpit_layer_resolved)
 		BlendPostCompositeOverPostPresent();
 	cockpit_scene_frame_active = false;
 	CompositeDeferredBloomOverPostPresent();
@@ -1905,6 +1970,7 @@ void GL4Renderer::CaptureBloomSource()
 		bloom_source_framebuffer.Destroy();
 		bloom_source_resolved_framebuffer.Destroy();
 		bloom_source_downscale_framebuffer.Destroy();
+		deferred_bloom_source_framebuffer.Destroy();
 		ao_scene_framebuffer.Destroy();
 		ao_composite_framebuffer.Destroy();
 	}
@@ -1986,7 +2052,7 @@ void GL4Renderer::CaptureBloomSource()
 
 		framebuffers[framebuffer_current_draw].ClearAlphaToZero();
 		UseSceneDrawBuffers();
-		if (MotionVectorTargetEnabled())
+		if (MotionVectorTargetEnabled() && !MotionVectorsFrozen())
 		{
 			motion_vectors_capture_locked = true;
 			UseSceneDrawBuffers();
@@ -2927,6 +2993,7 @@ void GL4Renderer::UpdateFramebuffer(void)
 		bloom_source_framebuffer.Destroy();
 		bloom_source_resolved_framebuffer.Destroy();
 		bloom_source_downscale_framebuffer.Destroy();
+		deferred_bloom_source_framebuffer.Destroy();
 		ao_scene_framebuffer.Destroy();
 		ao_composite_framebuffer.Destroy();
 		post_present_framebuffer.Destroy();
@@ -2978,6 +3045,7 @@ void GL4Renderer::UpdateFramebuffer(void)
 
 	bloom_source_valid = false;
 	ao_scene_valid = false;
+	deferred_bloom_apply_pending = false;
 	legacy_draw_uniforms_dirty = true;
 	post_protection_mask_dirty = false;
 	post_protection_mask_cleared_this_frame = false;
@@ -3026,6 +3094,7 @@ void GL4Renderer::CloseFramebuffer(void)
 	bloom_source_framebuffer.Destroy();
 	bloom_source_resolved_framebuffer.Destroy();
 	bloom_source_downscale_framebuffer.Destroy();
+	deferred_bloom_source_framebuffer.Destroy();
 	ao_scene_framebuffer.Destroy();
 	ao_composite_framebuffer.Destroy();
 	post_present_framebuffer.Destroy();
@@ -3033,6 +3102,7 @@ void GL4Renderer::CloseFramebuffer(void)
 	motion_blur_framebuffer.Destroy();
 	bloom_source_valid = false;
 	ao_scene_valid = false;
+	deferred_bloom_apply_pending = false;
 	motion_vectors.Destroy();
 	post_protection_mask.Destroy();
 

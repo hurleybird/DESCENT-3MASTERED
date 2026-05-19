@@ -283,6 +283,9 @@ struct BloomResources
 	GLint threshold_value = -1;
 	GLint threshold_use_depth_mask = -1;
 	GLint threshold_use_protection_mask = -1;
+	GLint threshold_use_alpha_occlusion_mask = -1;
+	GLint threshold_alpha_occlusion_mask_uv_origin = -1;
+	GLint threshold_alpha_occlusion_mask_uv_scale = -1;
 	GLint merge_spread = -1;
 	GLint composite_gamma = -1;
 	GLint composite_intensity = -1;
@@ -297,7 +300,10 @@ struct BloomResources
 	void DestroyShaders();
 	void DestroyFramebuffers();
 	Framebuffer* Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
-		const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture);
+		const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture,
+		GLuint alpha_occlusion_mask_texture = 0, float alpha_occlusion_mask_uv_origin_x = 0.0f,
+		float alpha_occlusion_mask_uv_origin_y = 0.0f, float alpha_occlusion_mask_uv_scale_x = 1.0f,
+		float alpha_occlusion_mask_uv_scale_y = 1.0f);
 };
 
 //Ground-Truth Ambient Occlusion. Renders depth-driven AO, then modulates the

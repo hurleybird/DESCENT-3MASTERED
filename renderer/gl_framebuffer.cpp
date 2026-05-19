@@ -1221,18 +1221,25 @@ void BloomResources::InitShaders()
 	GLint threshold_source = thresholdshader.FindUniform("heh");
 	GLint threshold_depth = thresholdshader.FindUniform("depth_source");
 	GLint threshold_protection_mask = thresholdshader.FindUniform("protection_mask");
+	GLint threshold_alpha_occlusion_mask = thresholdshader.FindUniform("alpha_occlusion_mask");
 	if (threshold_source != -1)
 		glUniform1i(threshold_source, 0);
 	if (threshold_depth != -1)
 		glUniform1i(threshold_depth, 2);
 	if (threshold_protection_mask != -1)
 		glUniform1i(threshold_protection_mask, 3);
+	if (threshold_alpha_occlusion_mask != -1)
+		glUniform1i(threshold_alpha_occlusion_mask, 4);
 	threshold_gamma = thresholdshader.FindUniform("gamma");
 	threshold_value = thresholdshader.FindUniform("bloom_threshold");
 	threshold_use_depth_mask = thresholdshader.FindUniform("use_depth_mask");
 	threshold_use_protection_mask = thresholdshader.FindUniform("use_protection_mask");
+	threshold_use_alpha_occlusion_mask = thresholdshader.FindUniform("use_alpha_occlusion_mask");
+	threshold_alpha_occlusion_mask_uv_origin = thresholdshader.FindUniform("alpha_occlusion_mask_uv_origin");
+	threshold_alpha_occlusion_mask_uv_scale = thresholdshader.FindUniform("alpha_occlusion_mask_uv_scale");
 	if (threshold_gamma == -1 || threshold_value == -1 || threshold_use_depth_mask == -1 ||
-		threshold_use_protection_mask == -1)
+		threshold_use_protection_mask == -1 || threshold_use_alpha_occlusion_mask == -1 ||
+		threshold_alpha_occlusion_mask_uv_origin == -1 || threshold_alpha_occlusion_mask_uv_scale == -1)
 		Error("BloomResources::InitShaders: Failed to find threshold uniforms!");
 
 	downsampleshader.AttachSource(blitVertexSrc, bloomDownsampleFragmentSrc);
@@ -1305,7 +1312,10 @@ void BloomResources::DestroyFramebuffers()
 }
 
 Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
-	const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture)
+	const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture,
+	GLuint alpha_occlusion_mask_texture, float alpha_occlusion_mask_uv_origin_x,
+	float alpha_occlusion_mask_uv_origin_y, float alpha_occlusion_mask_uv_scale_x,
+	float alpha_occlusion_mask_uv_scale_y)
 {
 	if (!pref_state.bloom_enabled || source == nullptr)
 	{
@@ -1368,12 +1378,19 @@ Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred
 	glUniform1f(threshold_value, ClampBloomSetting(pref_state.bloom_threshold));
 	glUniform1i(threshold_use_depth_mask, depth_texture != 0);
 	glUniform1i(threshold_use_protection_mask, protection_mask_texture != 0);
+	glUniform1i(threshold_use_alpha_occlusion_mask, alpha_occlusion_mask_texture != 0);
+	glUniform2f(threshold_alpha_occlusion_mask_uv_origin,
+		alpha_occlusion_mask_uv_origin_x, alpha_occlusion_mask_uv_origin_y);
+	glUniform2f(threshold_alpha_occlusion_mask_uv_scale,
+		alpha_occlusion_mask_uv_scale_x, alpha_occlusion_mask_uv_scale_y);
 	rend_ClearBoundTextures();
 	GL_BindFramebufferTexture(source->ColorTextureForRead(), 0, GL_LINEAR);
 	if (depth_texture != 0)
 		GL_BindFramebufferTexture(depth_texture, 2, GL_NEAREST);
 	if (protection_mask_texture != 0)
 		GL_BindFramebufferTexture(protection_mask_texture, 3, GL_NEAREST);
+	if (alpha_occlusion_mask_texture != 0)
+		GL_BindFramebufferTexture(alpha_occlusion_mask_texture, 4, GL_LINEAR);
 	{
 		PERF_MARKER_SCOPE("Bloom.Threshold");
 		GL_DrawFramebufferQuadNoClear(framebuffers[0].Handle(), 0, 0, widths[0], heights[0]);

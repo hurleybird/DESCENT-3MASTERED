@@ -134,6 +134,8 @@ class GL4Renderer : public IRenderer
 	bool captured_scene_projection_valid = false;
 	bool captured_scene_view_projection_valid = false;
 	bool deferred_bloom_composite_pending = false;
+	bool deferred_bloom_apply_pending = false;
+	Framebuffer deferred_bloom_source_framebuffer;
 	Framebuffer* deferred_bloom_framebuffer = nullptr;
 	GLuint deferred_bloom_protection_mask_texture = 0;
 	bool cockpit_scene_frame_active = false;
@@ -169,6 +171,7 @@ class GL4Renderer : public IRenderer
 	GLint motionblur_velocity_uv_origin = -1;
 	GLint motionblur_velocity_uv_scale = -1;
 	GLint motionblur_strength = -1;
+	GLint motionblur_periphery_strength = -1;
 	GLint ao_composite_final_source = -1;
 	GLint ao_composite_scene_source = -1;
 	GLint ao_composite_ao_scene_source = -1;
@@ -314,7 +317,7 @@ class GL4Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.5f, 0.5f, 0.5f, 1.0f, RENDERER_MOTION_VECTOR_OFF, false, 0.0f };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.5f, 0.5f, 0.5f, 1.0f, RENDERER_MOTION_VECTOR_OFF, false, 0.0f, 1.0f };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -358,6 +361,7 @@ private:
 	void DestroyFontBatchResources();
 	bool MotionVectorTargetEnabled() const;
 	bool PixelMotionVectorModeEnabled() const;
+	bool MotionVectorsFrozen() const;
 	bool MotionVectorWritesEnabled() const;
 	bool CurrentDrawWritesPixelMotionVectors() const;
 	bool CurrentDrawIsLateCockpitPixelMotionVectorDraw() const;
@@ -406,6 +410,7 @@ private:
 	bool ResolveCockpitLayerToPostComposite();
 	void ClearPostPresentAlpha();
 	void BlendPostCompositeOverPostPresent();
+	void ApplyDeferredBloom(GLuint alpha_occlusion_mask_texture);
 	void CompositeDeferredBloomOverPostPresent();
 	void GammaCorrectPostPresent();
 	int SupersamplingFactor() const;

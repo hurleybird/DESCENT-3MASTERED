@@ -1043,8 +1043,17 @@ static float ConfigNormalizePixelMotionBlurStrength(float strength)
 {
 	if (strength < 0.0f)
 		return 0.0f;
-	if (strength > 2.0f)
-		return 2.0f;
+	if (strength > 4.0f)
+		return 4.0f;
+	return strength;
+}
+
+static float ConfigNormalizePixelMotionBlurPeripheryStrength(float strength)
+{
+	if (strength < 0.0f)
+		return 0.0f;
+	if (strength > 4.0f)
+		return 4.0f;
 	return strength;
 }
 
@@ -1134,6 +1143,7 @@ struct video_menu
 	short* fov;
 	short* frame_limit;
 	short* pixel_motion_blur;
+	short* pixel_motion_blur_periphery;
 	char* buffer;
 	char* aspect_buffer;
 	bool* fullscreen;
@@ -1291,7 +1301,14 @@ struct video_menu
 		if (pixel_motion_blur && sheet->HasChanged(pixel_motion_blur))
 		{
 			Render_preferred_state.pixel_motion_blur_strength =
-				ConfigNormalizePixelMotionBlurStrength(CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur, 0.0f, 2.0f, 100));
+				ConfigNormalizePixelMotionBlurStrength(CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur, 0.0f, 4.0f, 100));
+			changed = true;
+		}
+		if (pixel_motion_blur_periphery && sheet->HasChanged(pixel_motion_blur_periphery))
+		{
+			Render_preferred_state.pixel_motion_blur_periphery_strength =
+				ConfigNormalizePixelMotionBlurPeripheryStrength(
+					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_periphery, 0.0f, 4.0f, 100));
 			changed = true;
 		}
 		if (perf_markers && sheet->HasChanged(perf_markers))
@@ -1374,6 +1391,7 @@ struct video_menu
 		fov = NULL;
 		frame_limit = NULL;
 		pixel_motion_blur = NULL;
+		pixel_motion_blur_periphery = NULL;
 		buffer = NULL;
 		aspect_buffer = NULL;
 		fullscreen = NULL;
@@ -1468,11 +1486,14 @@ struct video_menu
 		sheet->NewGroup("Pixel blur", 184, 306);
 		tSliderSettings pixel_blur_settings = {};
 		pixel_blur_settings.min_val.f = 0.0f;
-		pixel_blur_settings.max_val.f = 2.0f;
+		pixel_blur_settings.max_val.f = 4.0f;
 		pixel_blur_settings.type = SLIDER_UNITS_FLOAT;
 		pixel_motion_blur = sheet->AddSlider("Strength", 100,
 			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_strength, &pixel_blur_settings, 100),
 			&pixel_blur_settings);
+		pixel_motion_blur_periphery = sheet->AddSlider("Periphery", 100,
+			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_periphery_strength,
+				&pixel_blur_settings, 100), &pixel_blur_settings);
 
 		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
@@ -1506,7 +1527,11 @@ struct video_menu
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
 		if (pixel_motion_blur)
 			Render_preferred_state.pixel_motion_blur_strength =
-				ConfigNormalizePixelMotionBlurStrength(CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur, 0.0f, 2.0f, 100));
+				ConfigNormalizePixelMotionBlurStrength(CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur, 0.0f, 4.0f, 100));
+		if (pixel_motion_blur_periphery)
+			Render_preferred_state.pixel_motion_blur_periphery_strength =
+				ConfigNormalizePixelMotionBlurPeripheryStrength(
+					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_periphery, 0.0f, 4.0f, 100));
 		if (perf_markers)
 			PerfMarkersSetEnabled(*perf_markers);
 		if (show_fps)

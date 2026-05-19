@@ -18,6 +18,7 @@
 */
 #include "gl_local.h"
 #include "game.h"
+#include "gameloop.h"
 
 #include <cstring>
 #include <vector>
@@ -26,6 +27,7 @@
 constexpr int NUM_LEGACY_VERTEX_ATTRIBS = 7;
 //The count of vertices that each buffer will store
 constexpr int NUM_VERTS_PER_BUFFER = 640000;
+constexpr float PIXEL_MOTION_BLUR_REFERENCE_FRAME_TIME = 1.0f / 60.0f;
 
 static bool GL4DrawTargetIsFramebuffer(GLuint framebuffer)
 {
@@ -162,14 +164,20 @@ bool GL4Renderer::PixelMotionVectorModeEnabled() const
 		motion_vectors.velocity_texture != 0;
 }
 
+bool GL4Renderer::MotionVectorsFrozen() const
+{
+	return Game_paused;
+}
+
 bool GL4Renderer::MotionVectorWritesEnabled() const
 {
-	return PixelMotionVectorModeEnabled() && !motion_vectors_capture_locked;
+	return PixelMotionVectorModeEnabled() && !motion_vectors_capture_locked && !MotionVectorsFrozen();
 }
 
 bool GL4Renderer::CurrentDrawWritesPixelMotionVectors() const
 {
-	if (!PixelMotionVectorModeEnabled() || post_present_pending_swap || OpenGL_state.cur_zbuffer_state == 0)
+	if (!PixelMotionVectorModeEnabled() || MotionVectorsFrozen() ||
+		post_present_pending_swap || OpenGL_state.cur_zbuffer_state == 0)
 		return false;
 
 	const bool cockpit_draw = rend_Get3DDrawCallCategory() == RENDERER_DRAW_CALL_3D_COCKPIT;
@@ -254,8 +262,17 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 		glUniform2f(motionblur_velocity_uv_origin, uv_origin_x, uv_origin_y);
 	if (motionblur_velocity_uv_scale != -1)
 		glUniform2f(motionblur_velocity_uv_scale, uv_scale_x, uv_scale_y);
+	float frame_time = Frametime;
+	if (frame_time < 0.001f)
+		frame_time = PIXEL_MOTION_BLUR_REFERENCE_FRAME_TIME;
+	float frame_scale = PIXEL_MOTION_BLUR_REFERENCE_FRAME_TIME / frame_time;
+	frame_scale = std::max(0.25f, std::min(frame_scale, 4.0f));
 	if (motionblur_strength != -1)
-		glUniform1f(motionblur_strength, OpenGL_preferred_state.pixel_motion_blur_strength);
+		glUniform1f(motionblur_strength,
+			OpenGL_preferred_state.pixel_motion_blur_strength * frame_scale);
+	if (motionblur_periphery_strength != -1)
+		glUniform1f(motionblur_periphery_strength,
+			std::max(0.0f, std::min(OpenGL_preferred_state.pixel_motion_blur_periphery_strength, 4.0f)));
 
 	rend_ClearBoundTextures();
 	GL_BindFramebufferTexture(post_present_framebuffer.ColorTextureForRead(), 0, GL_LINEAR);
