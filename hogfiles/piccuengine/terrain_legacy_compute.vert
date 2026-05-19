@@ -11,7 +11,7 @@ layout(location = 6) in vec2 uv_payload;
 out vec4 outcolor;
 out vec3 outuv;
 out vec3 outuv2;
-out vec3 outworld;
+out vec4 outworld;
 out float outdepth;
 flat out int outlmpage;
 flat out int outtexpage;
@@ -22,7 +22,7 @@ void main()
 	outcolor = color;
 	outuv = vec3(uv, uv_payload.x);
 	outuv2 = vec3(uv2, uv_payload.x);
-	outworld = world_position;
+	outworld = vec4(world_position, uv_payload.x);
 	outdepth = uv_payload.y;
 	outlmpage = material_pages & 255;
 	outtexpage = material_pages >> 8;

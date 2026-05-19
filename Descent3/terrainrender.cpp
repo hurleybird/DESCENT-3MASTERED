@@ -180,12 +180,17 @@ static GLint Terrain_compute_row0_uniform = -1;
 static GLint Terrain_compute_xstep_uniform = -1;
 static GLint Terrain_compute_zstep_uniform = -1;
 static GLint Terrain_compute_ystep_uniform = -1;
+static GLint Terrain_compute_projection_center_uniform = -1;
+static GLint Terrain_compute_projection_half_size_uniform = -1;
+static GLint Terrain_compute_viewport_size_uniform = -1;
+static GLint Terrain_compute_clip_scale_uniform = -1;
 static bool Terrain_compute_ready = false;
 static bool Terrain_compute_unavailable = false;
 static size_t Terrain_compute_vertex_capacity = 0;
 static bool Terrain_compute_draw_work_ready = false;
 static bool Terrain_compute_input_uploaded = false;
 static int Terrain_compute_draw_work_checksum = -2;
+static uint32_t Terrain_compute_draw_work_signature = 0;
 static ubyte Terrain_compute_draw_work_show_invisible = 0xff;
 static std::vector<TerrainGpuCellWork> Terrain_compute_cell_work;
 static std::vector<TerrainGpuCellInput> Terrain_compute_cell_inputs;
@@ -219,6 +224,10 @@ static void InvalidateTerrainComputeRendererCache()
 	Terrain_compute_xstep_uniform = -1;
 	Terrain_compute_zstep_uniform = -1;
 	Terrain_compute_ystep_uniform = -1;
+	Terrain_compute_projection_center_uniform = -1;
+	Terrain_compute_projection_half_size_uniform = -1;
+	Terrain_compute_viewport_size_uniform = -1;
+	Terrain_compute_clip_scale_uniform = -1;
 	Terrain_compute_ready = false;
 	Terrain_compute_unavailable = false;
 	Terrain_compute_vertex_capacity = 0;
@@ -740,6 +749,10 @@ uniform vec3 terrain_row0;
 uniform vec3 terrain_x_step;
 uniform vec3 terrain_z_step;
 uniform vec3 terrain_y_step;
+uniform vec2 terrain_projection_center;
+uniform vec2 terrain_projection_half_size;
+uniform vec2 terrain_viewport_size;
+uniform vec4 terrain_clip_scale;
 
 const float TERRAIN_COMPUTE_MIN_Z = 0.000001;
 const int TERRAIN_CLIP_MAX_VERTS = 8;
@@ -762,6 +775,14 @@ vec3 RotatePoint(vec3 world)
 		terrain_x_step * world.x +
 		terrain_y_step * world.y +
 		terrain_z_step * world.z;
+}
+
+vec2 ProjectTerrainPoint(vec3 rotated, float texw)
+{
+	vec2 screen = vec2(terrain_projection_center.x + rotated.x * terrain_projection_half_size.x * texw,
+		terrain_projection_center.y - rotated.y * terrain_projection_half_size.y * texw);
+	return vec2((screen.x * 2.0 / terrain_viewport_size.x) - 1.0,
+		1.0 - (screen.y * 2.0 / terrain_viewport_size.y));
 }
 
 vec3 CellPosition(uint segment, vec4 height, uint corner)
@@ -843,9 +864,9 @@ void WriteVertex(uint index, uint texture_page, uint lightmap_page, vec3 world, 
 	float texw = 1.0 / eye_z;
 	float legacy_depth = clamp(1.0 - texw, 0.0, 1.0);
 
-	vertices[index].position = vec3(rotated.x * texw, rotated.y * texw, legacy_depth * 2.0 - 1.0);
+	vertices[index].position = vec3(ProjectTerrainPoint(rotated, texw), legacy_depth * 2.0 - 1.0);
 	vertices[index].color = 0xffffffffu;
-	vertices[index].normal = world;
+	vertices[index].normal = world * texw;
 	vertices[index].lmpage = int((texture_page << 8u) | (lightmap_page & 255u));
 	vertices[index].uv1 = base_uv * texw;
 	vertices[index].uv2 = lightmap_uv * texw;
@@ -865,13 +886,13 @@ ClipVertex MixClipVertex(ClipVertex a, ClipVertex b, float t)
 int TerrainClipCode(ClipVertex vertex)
 {
 	int code = 0;
-	if (vertex.rotated.x < -vertex.rotated.z)
+	if (vertex.rotated.x < -vertex.rotated.z * terrain_clip_scale.x)
 		code |= TERRAIN_CLIP_LEFT;
-	if (vertex.rotated.x > vertex.rotated.z)
+	if (vertex.rotated.x > vertex.rotated.z * terrain_clip_scale.y)
 		code |= TERRAIN_CLIP_RIGHT;
-	if (vertex.rotated.y < -vertex.rotated.z)
+	if (vertex.rotated.y < -vertex.rotated.z * terrain_clip_scale.z)
 		code |= TERRAIN_CLIP_BOT;
-	if (vertex.rotated.y > vertex.rotated.z)
+	if (vertex.rotated.y > vertex.rotated.z * terrain_clip_scale.w)
 		code |= TERRAIN_CLIP_TOP;
 	if (vertex.rotated.z < 0.0)
 		code |= TERRAIN_CLIP_BEHIND;
@@ -893,12 +914,12 @@ void TerrainClipCodes(ClipVertex poly[TERRAIN_CLIP_MAX_VERTS], int count, out in
 float TerrainClipPlaneDistance(ClipVertex vertex, int plane)
 {
 	if (plane == TERRAIN_CLIP_LEFT)
-		return vertex.rotated.x + vertex.rotated.z;
+		return vertex.rotated.x + vertex.rotated.z * terrain_clip_scale.x;
 	if (plane == TERRAIN_CLIP_RIGHT)
-		return vertex.rotated.z - vertex.rotated.x;
+		return vertex.rotated.z * terrain_clip_scale.y - vertex.rotated.x;
 	if (plane == TERRAIN_CLIP_BOT)
-		return vertex.rotated.y + vertex.rotated.z;
-	return vertex.rotated.z - vertex.rotated.y;
+		return vertex.rotated.y + vertex.rotated.z * terrain_clip_scale.z;
+	return vertex.rotated.z * terrain_clip_scale.w - vertex.rotated.y;
 }
 
 ClipVertex IntersectTerrainClipPlane(ClipVertex inside_vertex, ClipVertex outside_vertex, int plane)
@@ -1139,6 +1160,10 @@ void main()
 	Terrain_compute_xstep_uniform = glGetUniformLocation(Terrain_compute_program, "terrain_x_step");
 	Terrain_compute_zstep_uniform = glGetUniformLocation(Terrain_compute_program, "terrain_z_step");
 	Terrain_compute_ystep_uniform = glGetUniformLocation(Terrain_compute_program, "terrain_y_step");
+	Terrain_compute_projection_center_uniform = glGetUniformLocation(Terrain_compute_program, "terrain_projection_center");
+	Terrain_compute_projection_half_size_uniform = glGetUniformLocation(Terrain_compute_program, "terrain_projection_half_size");
+	Terrain_compute_viewport_size_uniform = glGetUniformLocation(Terrain_compute_program, "terrain_viewport_size");
+	Terrain_compute_clip_scale_uniform = glGetUniformLocation(Terrain_compute_program, "terrain_clip_scale");
 
 	glGenBuffers(1, &Terrain_compute_input_buffer);
 	glGenBuffers(1, &Terrain_compute_vertex_buffer);
@@ -1309,6 +1334,43 @@ static void InvalidateTerrainComputeInputUpload()
 	Terrain_compute_input_uploaded = false;
 }
 
+static uint32_t TerrainComputeHashU32(uint32_t hash, uint32_t value)
+{
+	hash ^= value;
+	hash *= 16777619u;
+	return hash;
+}
+
+static uint32_t TerrainComputeDrawWorkSignature()
+{
+	uint32_t hash = 2166136261u;
+	hash = TerrainComputeHashU32(hash, (uint32_t)Terrain_checksum);
+	hash = TerrainComputeHashU32(hash, (uint32_t)Show_invisible_terrain);
+	hash = TerrainComputeHashU32(hash, (uint32_t)TERRAIN_WIDTH);
+	hash = TerrainComputeHashU32(hash, (uint32_t)TERRAIN_DEPTH);
+
+	for (int i = 0; i < TERRAIN_WIDTH * TERRAIN_DEPTH; i++)
+	{
+		const terrain_segment& segment = Terrain_seg[i];
+		uint32_t y_bits = 0;
+		memcpy(&y_bits, &segment.y, sizeof(y_bits));
+		hash = TerrainComputeHashU32(hash, y_bits);
+		hash = TerrainComputeHashU32(hash, (uint32_t)(ubyte)segment.ypos);
+		hash = TerrainComputeHashU32(hash, (uint32_t)(segment.flags & TF_INVISIBLE));
+		hash = TerrainComputeHashU32(hash, (uint32_t)(ushort)segment.texseg_index);
+		hash = TerrainComputeHashU32(hash, (uint32_t)(ubyte)segment.lm_quad);
+	}
+
+	for (int i = 0; i < TERRAIN_TEX_WIDTH * TERRAIN_TEX_DEPTH; i++)
+	{
+		const terrain_tex_segment& tex_segment = Terrain_tex_seg[i];
+		hash = TerrainComputeHashU32(hash, (uint32_t)(ushort)tex_segment.tex_index);
+		hash = TerrainComputeHashU32(hash, (uint32_t)(ubyte)tex_segment.rotation);
+	}
+
+	return hash;
+}
+
 static void BuildTerrainComputeFullDrawWork()
 {
 	Terrain_compute_cell_work.clear();
@@ -1325,14 +1387,17 @@ static void BuildTerrainComputeFullDrawWork()
 	FinalizeTerrainComputeBatches();
 	Terrain_compute_draw_work_ready = true;
 	Terrain_compute_draw_work_checksum = Terrain_checksum;
+	Terrain_compute_draw_work_signature = TerrainComputeDrawWorkSignature();
 	Terrain_compute_draw_work_show_invisible = Show_invisible_terrain;
 	InvalidateTerrainComputeInputUpload();
 }
 
 static void EnsureTerrainComputeFullDrawWork()
 {
+	const uint32_t signature = TerrainComputeDrawWorkSignature();
 	if (!Terrain_compute_draw_work_ready ||
 		Terrain_compute_draw_work_checksum != Terrain_checksum ||
+		Terrain_compute_draw_work_signature != signature ||
 		Terrain_compute_draw_work_show_invisible != Show_invisible_terrain)
 	{
 		BuildTerrainComputeFullDrawWork();
@@ -1406,6 +1471,13 @@ static void SetTerrainComputeViewUniforms()
 	glUniform3f(Terrain_compute_xstep_uniform, x_step.x, x_step.y, x_step.z);
 	glUniform3f(Terrain_compute_zstep_uniform, z_step.x, z_step.y, z_step.z);
 	glUniform3f(Terrain_compute_ystep_uniform, y_step.x, y_step.y, y_step.z);
+	glUniform2f(Terrain_compute_projection_center_uniform, Window_cx, Window_cy);
+	glUniform2f(Terrain_compute_projection_half_size_uniform, Window_w2, Window_h2);
+	glUniform2f(Terrain_compute_viewport_size_uniform,
+		Window_width > 0 ? (float)Window_width : 1.0f,
+		Window_height > 0 ? (float)Window_height : 1.0f);
+	glUniform4f(Terrain_compute_clip_scale_uniform,
+		Window_clip_left, Window_clip_right, Window_clip_bot, Window_clip_top);
 }
 
 static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog_enabled, bool scissor_to_window,

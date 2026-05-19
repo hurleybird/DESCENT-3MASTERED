@@ -42,7 +42,7 @@ layout(std140) uniform TerrainFogBlock
 in vec4 outcolor;
 in vec3 outuv;
 in vec3 outuv2;
-in vec3 outworld;
+in vec4 outworld;
 in float outdepth;
 flat in int outlmpage;
 flat in int outtexpage;
@@ -52,7 +52,12 @@ layout(location = 1) out vec2 velocity;
 layout(location = 2) out vec4 post_mask;
 layout(location = 3) out float ao_class;
 
-vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
+vec3 ReconstructTerrainWorldPosition()
+{
+	return outworld.xyz / max(outworld.w, 0.000001);
+}
+
+vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color, vec3 world_position)
 {
 	vec3 face_normal = vec3(0.0, 1.0, 0.0);
 	vec3 dynamic_color = vec3(0.0);
@@ -68,7 +73,7 @@ vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 			break;
 
 		int light_index = light_base + i;
-		vec3 light_delta = outworld - terrain_dynamic_light_positions[light_index];
+		vec3 light_delta = world_position - terrain_dynamic_light_positions[light_index];
 		float radius = max(terrain_dynamic_light_radii[light_index], 0.0001);
 		float distance = length(light_delta);
 		vec3 light_vector = (distance > 0.0001) ? light_delta / distance : face_normal;
@@ -108,7 +113,8 @@ vec4 SampleTerrainBaseTexture(vec2 uv, int layer)
 
 void main()
 {
-	velocity = ComputeMotionVector(outworld);
+	vec3 world_position = ReconstructTerrainWorldPosition();
+	velocity = ComputeMotionVector(world_position);
 	if (ao_capture_weight_mode != 0)
 	{
 		color = vec4(ao_weight_value, ao_weight_value, ao_weight_value, 1.0);
@@ -119,7 +125,7 @@ void main()
 
 	vec4 basecolor = SampleTerrainBaseTexture(outuv.xy / outuv.z, outtexpage);
 	vec4 lmcolor = texture(lightmaptexture, vec3(outuv2.xy / outuv2.z, float(clamp(outlmpage, 0, 3))));
-	lmcolor.rgb = ApplyDynamicLightmapLighting(lmcolor.rgb);
+	lmcolor.rgb = ApplyDynamicLightmapLighting(lmcolor.rgb, world_position);
 	vec4 litcolor = basecolor * lmcolor * outcolor;
 	float fog_start = clamp(1.0 - (1.0 / max(fog.start_dist, 0.0001)), 0.0, 1.0);
 	float fog_end = clamp(1.0 - (1.0 / max(fog.end_dist, 0.0001)), 0.0, 1.0);
