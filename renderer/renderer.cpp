@@ -39,6 +39,16 @@ static renderer_draw_call_stats Renderer_current_draw_call_stats = {};
 static renderer_draw_call_stats Renderer_last_draw_call_stats = {};
 static renderer_draw_call_3d_category Renderer_current_3d_draw_call_category = RENDERER_DRAW_CALL_3D_OTHER;
 static renderer_motion_vector_debug_sample Renderer_motion_vector_debug_sample = {};
+static renderer_resource_release_callback Renderer_resource_release_callbacks[16] = {};
+
+static void rend_ReleaseRegisteredRendererResources()
+{
+	for (int i = 0; i < (int)(sizeof(Renderer_resource_release_callbacks) / sizeof(Renderer_resource_release_callbacks[0])); i++)
+	{
+		if (Renderer_resource_release_callbacks[i])
+			Renderer_resource_release_callbacks[i]();
+	}
+}
 
 bool Renderer_initted;
 bool Renderer_close_flag;
@@ -84,6 +94,7 @@ static int rend_RecreateRenderer(renderer_preferred_state* pref_state)
 
 	if (renderer_inst)
 	{
+		rend_ReleaseRegisteredRendererResources();
 		renderer_inst->Close();
 		delete renderer_inst;
 		renderer_inst = nullptr;
@@ -155,6 +166,7 @@ void rend_Close()
 	if (!Renderer_initted)
 		return;
 
+	rend_ReleaseRegisteredRendererResources();
 	renderer_inst->Close();
 	delete renderer_inst;
 	renderer_inst = nullptr;
@@ -166,6 +178,27 @@ void rend_Close()
 uint32_t rend_GetGeneration()
 {
 	return Renderer_generation;
+}
+
+void rend_RegisterResourceReleaseCallback(renderer_resource_release_callback callback)
+{
+	if (!callback)
+		return;
+
+	for (int i = 0; i < (int)(sizeof(Renderer_resource_release_callbacks) / sizeof(Renderer_resource_release_callbacks[0])); i++)
+	{
+		if (Renderer_resource_release_callbacks[i] == callback)
+			return;
+	}
+
+	for (int i = 0; i < (int)(sizeof(Renderer_resource_release_callbacks) / sizeof(Renderer_resource_release_callbacks[0])); i++)
+	{
+		if (!Renderer_resource_release_callbacks[i])
+		{
+			Renderer_resource_release_callbacks[i] = callback;
+			return;
+		}
+	}
 }
 
 void rend_SetRendererType(renderer_type state)

@@ -417,6 +417,7 @@ void SaveGameSettings()
 	Database->write("MissileView",Missile_camera_window);
 	Database->write("OpenGLProfile", DesiredOpenGLProfile);
 	Database->write("OpenGLProfileExplicit", DesiredOpenGLProfileExplicit);
+	Database->write("TerrainRendererMode", Terrain_renderer_mode);
 	Database->write("DetailScorchMarks",Detail_settings.Scorches_enabled);
 	Database->write("DetailWeaponCoronas",Detail_settings.Weapon_coronas_enabled);
 	Database->write("DetailFog",Detail_settings.Fog_enabled);
@@ -822,6 +823,17 @@ void LoadGameSettings()
 	if (FindArg("-glcore") || FindArg("-gl4") || FindArg("-gl43") || FindArg("-gl3") || FindArg("-openglcore"))
 		DesiredOpenGLProfile = GLPROFILE_CORE;
 	Terrain_renderer_mode = DesiredOpenGLProfile == GLPROFILE_CORE ? TERRAIN_RENDERER_COMPUTE : TERRAIN_RENDERER_LEGACY;
+	tempint = Terrain_renderer_mode;
+	Database->read_int("TerrainRendererMode", &tempint);
+	if (DesiredOpenGLProfile == GLPROFILE_CORE &&
+		(tempint == TERRAIN_RENDERER_LEGACY || tempint == TERRAIN_RENDERER_COMPUTE))
+	{
+		Terrain_renderer_mode = tempint;
+	}
+	else if (DesiredOpenGLProfile != GLPROFILE_CORE)
+	{
+		Terrain_renderer_mode = TERRAIN_RENDERER_LEGACY;
+	}
 	if (DesiredOpenGLProfile != GLPROFILE_CORE)
 	{
 		Render_preferred_state.per_pixel_lighting = false;

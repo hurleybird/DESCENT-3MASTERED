@@ -216,6 +216,7 @@ static constexpr int TERRAIN_COMPUTE_VERTS_PER_TRIANGLE = 18;
 static constexpr int TERRAIN_COMPUTE_VERTS_PER_CELL = TERRAIN_COMPUTE_VERTS_PER_TRIANGLE * 2;
 static constexpr int TERRAIN_COMPUTE_LIGHTMAP_LAYERS = 4;
 static uint32_t Terrain_compute_renderer_generation = 0;
+static bool Terrain_compute_release_registered = false;
 
 static void InvalidateTerrainComputeRendererCache()
 {
@@ -266,6 +267,59 @@ static void EnsureTerrainComputeRendererGeneration()
 
 	Terrain_compute_renderer_generation = generation;
 	InvalidateTerrainComputeRendererCache();
+}
+
+static void TerrainComputeReleaseRendererResources()
+{
+	if (Terrain_compute_program != 0)
+		glDeleteProgram(Terrain_compute_program);
+
+	GLuint buffers[3] = {};
+	GLsizei buffer_count = 0;
+	if (Terrain_compute_input_buffer != 0)
+		buffers[buffer_count++] = Terrain_compute_input_buffer;
+	if (Terrain_compute_vertex_buffer != 0)
+		buffers[buffer_count++] = Terrain_compute_vertex_buffer;
+	if (Terrain_compute_indirect_buffer != 0)
+		buffers[buffer_count++] = Terrain_compute_indirect_buffer;
+	if (buffer_count > 0)
+		glDeleteBuffers(buffer_count, buffers);
+
+	if (Terrain_compute_vertex_array != 0)
+		glDeleteVertexArrays(1, &Terrain_compute_vertex_array);
+
+	GLuint textures[2] = {};
+	GLsizei texture_count = 0;
+	if (Terrain_compute_base_texture_array != 0)
+		textures[texture_count++] = Terrain_compute_base_texture_array;
+	if (Terrain_compute_lightmap_array != 0)
+		textures[texture_count++] = Terrain_compute_lightmap_array;
+	if (texture_count > 0)
+		glDeleteTextures(texture_count, textures);
+
+	if (glDeleteQueries != nullptr)
+	{
+		GLuint queries[2] = {};
+		GLsizei query_count = 0;
+		if (Terrain_compute_visibility_query != 0)
+			queries[query_count++] = Terrain_compute_visibility_query;
+		if (Terrain_compute_no_depth_visibility_query != 0)
+			queries[query_count++] = Terrain_compute_no_depth_visibility_query;
+		if (query_count > 0)
+			glDeleteQueries(query_count, queries);
+	}
+
+	Terrain_compute_renderer_generation = 0;
+	InvalidateTerrainComputeRendererCache();
+}
+
+static void EnsureTerrainComputeReleaseCallbackRegistered()
+{
+	if (Terrain_compute_release_registered)
+		return;
+
+	rend_RegisterResourceReleaseCallback(TerrainComputeReleaseRendererResources);
+	Terrain_compute_release_registered = true;
 }
 
 static void SetTerrainComputeStatus(const char* status)
@@ -988,6 +1042,34 @@ int TerrainClipCode(ClipVertex vertex)
 	return code;
 }
 
+bool CellOutsideTerrainFrustum(vec3 rotated0, vec3 rotated1, vec3 rotated2, vec3 rotated3)
+{
+	// Conservative per-cell culling only; surviving triangles still use the legacy clip path.
+	if (rotated0.z < 0.0 && rotated1.z < 0.0 && rotated2.z < 0.0 && rotated3.z < 0.0)
+		return true;
+	if (rotated0.x < -rotated0.z * terrain_clip_scale.x &&
+		rotated1.x < -rotated1.z * terrain_clip_scale.x &&
+		rotated2.x < -rotated2.z * terrain_clip_scale.x &&
+		rotated3.x < -rotated3.z * terrain_clip_scale.x)
+		return true;
+	if (rotated0.x > rotated0.z * terrain_clip_scale.y &&
+		rotated1.x > rotated1.z * terrain_clip_scale.y &&
+		rotated2.x > rotated2.z * terrain_clip_scale.y &&
+		rotated3.x > rotated3.z * terrain_clip_scale.y)
+		return true;
+	if (rotated0.y < -rotated0.z * terrain_clip_scale.z &&
+		rotated1.y < -rotated1.z * terrain_clip_scale.z &&
+		rotated2.y < -rotated2.z * terrain_clip_scale.z &&
+		rotated3.y < -rotated3.z * terrain_clip_scale.z)
+		return true;
+	if (rotated0.y > rotated0.z * terrain_clip_scale.w &&
+		rotated1.y > rotated1.z * terrain_clip_scale.w &&
+		rotated2.y > rotated2.z * terrain_clip_scale.w &&
+		rotated3.y > rotated3.z * terrain_clip_scale.w)
+		return true;
+	return false;
+}
+
 void TerrainClipCodes(ClipVertex poly[TERRAIN_CLIP_MAX_VERTS], int count, out int code_or, out int code_and)
 {
 	code_or = 0;
@@ -1126,13 +1208,10 @@ void WriteClippedTriangleFan(uint vertex_base, uint texture_page, uint lightmap_
 }
 
 void EmitTriangle(uint batch_index, uint batch_output_first_vertex, uint texture_page, uint lightmap_page,
-	vec3 world0, vec3 world1, vec3 world2,
+	vec3 world0, vec3 rotated0, vec3 world1, vec3 rotated1, vec3 world2, vec3 rotated2,
 	vec2 uv0, vec2 uv1, vec2 uv2,
 	vec2 lm0, vec2 lm1, vec2 lm2)
 {
-	vec3 rotated0 = RotatePoint(world0);
-	vec3 rotated1 = RotatePoint(world1);
-	vec3 rotated2 = RotatePoint(world2);
 	vec3 facing_normal = cross(rotated1 - rotated0, rotated2 - rotated1);
 	bool visible = dot(facing_normal, rotated1) < 0.0;
 
@@ -1186,6 +1265,13 @@ void main()
 	vec3 world2 = CellPosition(segment, cell.height, 2u);
 	vec3 world3 = CellPosition(segment, cell.height, 3u);
 
+	vec3 rotated0 = RotatePoint(world0);
+	vec3 rotated1 = RotatePoint(world1);
+	vec3 rotated2 = RotatePoint(world2);
+	vec3 rotated3 = RotatePoint(world3);
+	if (CellOutsideTerrainFrustum(rotated0, rotated1, rotated2, rotated3))
+		return;
+
 	vec2 uv0 = BaseUv(segment, rotation, 0u);
 	vec2 uv1 = BaseUv(segment, rotation, 1u);
 	vec2 uv2 = BaseUv(segment, rotation, 2u);
@@ -1196,8 +1282,10 @@ void main()
 	vec2 lm2 = LightmapUv(segment, 2u);
 	vec2 lm3 = LightmapUv(segment, 3u);
 
-	EmitTriangle(batch_index, batch_output_first_vertex, texture_page, lightmap_page, world0, world1, world3, uv0, uv1, uv3, lm0, lm1, lm3);
-	EmitTriangle(batch_index, batch_output_first_vertex, texture_page, lightmap_page, world3, world1, world2, uv3, uv1, uv2, lm3, lm1, lm2);
+	EmitTriangle(batch_index, batch_output_first_vertex, texture_page, lightmap_page,
+		world0, rotated0, world1, rotated1, world3, rotated3, uv0, uv1, uv3, lm0, lm1, lm3);
+	EmitTriangle(batch_index, batch_output_first_vertex, texture_page, lightmap_page,
+		world3, rotated3, world1, rotated1, world2, rotated2, uv3, uv1, uv2, lm3, lm1, lm2);
 }
 )glsl";
 
@@ -1258,6 +1346,7 @@ void main()
 	glGenBuffers(1, &Terrain_compute_vertex_buffer);
 	glGenBuffers(1, &Terrain_compute_indirect_buffer);
 	glGenVertexArrays(1, &Terrain_compute_vertex_array);
+	EnsureTerrainComputeReleaseCallbackRegistered();
 	ConfigureTerrainComputeVertexArray();
 
 	Terrain_compute_ready = true;
@@ -1979,6 +2068,7 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 	if (scissor_to_window)
 	{
 		rendTEMP_SaveScissorState(&scissor_state);
+		glDisable(GL_SCISSOR_TEST);
 		rendTEMP_SetScissorRect(left, top, right, bot, render_width, render_height);
 	}
 	CheckTerrainComputeDrawBadState(scissor_to_window);
@@ -2581,7 +2671,8 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 
 	rend_SetFlatColor(Terrain_sky.sky_color);
 	View_mode = GetFunctionMode();
-	Terrain_renderer_mode = (UseHardware && OpenGLProfile == GLPROFILE_CORE) ? TERRAIN_RENDERER_COMPUTE : TERRAIN_RENDERER_LEGACY;
+	if (!UseHardware || OpenGLProfile != GLPROFILE_CORE)
+		Terrain_renderer_mode = TERRAIN_RENDERER_LEGACY;
 
 	// Set this so we don't do reentrant rendering between terrain/mine
 	Terrain_from_mine = from_mine;
