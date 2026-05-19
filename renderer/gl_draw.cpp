@@ -60,6 +60,13 @@ static void GL4UseSceneDrawBuffersForCurrentDraw(bool include_motion_vectors, bo
 	GL_ConfigurePostMaskBlend();
 }
 
+static void GL4UseSceneColorDrawBuffer()
+{
+	const GLenum draw_buffer = GL_COLOR_ATTACHMENT0;
+	glDrawBuffers(1, &draw_buffer);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+}
+
 static void GL4BuildOrtho(float* mat, float left, float right, float bottom, float top, float znear, float zfar)
 {
 	memset(mat, 0, sizeof(float[16]));
@@ -1376,18 +1383,28 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
 	const bool include_motion_vectors = CurrentDrawUsesPixelMotionTarget();
 	const bool force_motion_vector_draw_buffer = CurrentDrawIsLateCockpitPixelMotionVectorDraw();
-	const bool include_ao_class = OpenGL_state.cur_zbuffer_state != 0;
+	const bool include_ao_class = !cockpit_scene_frame_active && OpenGL_state.cur_zbuffer_state != 0;
 	const bool override_draw_buffers = drawing_to_scene &&
-		(force_motion_vector_draw_buffer ||
+		(cockpit_scene_frame_active || force_motion_vector_draw_buffer ||
 		 (PixelMotionVectorModeEnabled() && !include_motion_vectors) || !include_ao_class);
 	if (override_draw_buffers)
-		GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors, include_ao_class);
+	{
+		if (cockpit_scene_frame_active)
+			GL4UseSceneColorDrawBuffer();
+		else
+			GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors, include_ao_class);
+	}
 	rend_RecordDrawCall(draw_call_category);
 	glDrawArrays(GL_TRIANGLE_FAN, offset, nv);
 	if (include_motion_vectors)
 		motion_vectors_dirty = true;
 	if (override_draw_buffers)
-		UseSceneDrawBuffers();
+	{
+		if (cockpit_scene_frame_active)
+			GL4UseSceneColorDrawBuffer();
+		else
+			UseSceneDrawBuffers();
+	}
 	OpenGL_polys_drawn++;
 	OpenGL_verts_processed += nv;
 
@@ -1480,18 +1497,28 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
 	const bool include_motion_vectors = CurrentDrawUsesPixelMotionTarget();
 	const bool force_motion_vector_draw_buffer = CurrentDrawIsLateCockpitPixelMotionVectorDraw();
-	const bool include_ao_class = OpenGL_state.cur_zbuffer_state != 0;
+	const bool include_ao_class = !cockpit_scene_frame_active && OpenGL_state.cur_zbuffer_state != 0;
 	const bool override_draw_buffers = drawing_to_scene &&
-		(force_motion_vector_draw_buffer ||
+		(cockpit_scene_frame_active || force_motion_vector_draw_buffer ||
 		 (PixelMotionVectorModeEnabled() && !include_motion_vectors) || !include_ao_class);
 	if (override_draw_buffers)
-		GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors, include_ao_class);
+	{
+		if (cockpit_scene_frame_active)
+			GL4UseSceneColorDrawBuffer();
+		else
+			GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors, include_ao_class);
+	}
 	rend_RecordDrawCall(draw_call_category);
 	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)vertices.size());
 	if (include_motion_vectors)
 		motion_vectors_dirty = true;
 	if (override_draw_buffers)
-		UseSceneDrawBuffers();
+	{
+		if (cockpit_scene_frame_active)
+			GL4UseSceneColorDrawBuffer();
+		else
+			UseSceneDrawBuffers();
+	}
 	OpenGL_polys_drawn += polygons_drawn;
 	OpenGL_verts_processed += original_vertices;
 

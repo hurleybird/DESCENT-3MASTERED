@@ -136,6 +136,7 @@ class GL4Renderer : public IRenderer
 	bool deferred_bloom_composite_pending = false;
 	Framebuffer* deferred_bloom_framebuffer = nullptr;
 	GLuint deferred_bloom_protection_mask_texture = 0;
+	bool cockpit_scene_frame_active = false;
 	float deferred_bloom_uv_origin_x = 0.0f;
 	float deferred_bloom_uv_origin_y = 0.0f;
 	float deferred_bloom_uv_scale_x = 1.0f;
@@ -401,6 +402,10 @@ private:
 	void RefreshViewSize();
 	void UpdatePresentRect();
 	bool BeginPostPresentFrameInternal(bool defer_bloom_composite);
+	void StartCockpitSceneFrame(int x1, int y1, int x2, int y2);
+	bool ResolveCockpitLayerToPostComposite();
+	void ClearPostPresentAlpha();
+	void BlendPostCompositeOverPostPresent();
 	void CompositeDeferredBloomOverPostPresent();
 	void GammaCorrectPostPresent();
 	int SupersamplingFactor() const;

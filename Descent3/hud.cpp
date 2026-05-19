@@ -940,6 +940,11 @@ void RenderHUDFrame(float zoom)
 	Small_hud_flag = (((float)Game_window_h / (float)Max_window_h) <= 0.80f) ? true : false;
 
 	bool must_render_cockpit = false;
+	bool render_reticle_after_world_post = false;
+	int reticle_window_x = Game_window_x;
+	int reticle_window_y = Game_window_y;
+	int reticle_window_w = Game_window_w;
+	int reticle_window_h = Game_window_h;
 	//	render special missile hud if available
 	if (Players[Player_num].guided_obj && !Guided_missile_smallview)
 	{
@@ -959,14 +964,14 @@ void RenderHUDFrame(float zoom)
 			RenderHUDItems(Hud_stat_mask);
 			must_render_cockpit = true; // needed to render animated deactivation sequence and should be dormant								
 			if (Game_toggles.show_reticle)
-				RenderReticle();
+				render_reticle_after_world_post = true;
 			break;
 
 		case HUD_COCKPIT:
 			RenderHUDItems(Hud_stat_mask);
 			must_render_cockpit = true; // called when cockpit is activating and functioning.									
 			if (Game_toggles.show_reticle)
-				RenderReticle();
+				render_reticle_after_world_post = true;
 			break;
 
 		case HUD_LETTERBOX:
@@ -1001,6 +1006,25 @@ void RenderHUDFrame(float zoom)
 	if (must_render_cockpit)
 	{
 		const bool cockpit_post_frame = rend_BeginCockpitFrame();
+		if (render_reticle_after_world_post)
+		{
+			if (cockpit_post_frame)
+			{
+				rend_StartPostPresentFrame(reticle_window_x, reticle_window_y,
+					reticle_window_x + reticle_window_w, reticle_window_y + reticle_window_h,
+					RF_CLEAR_ZBUFFER);
+				RenderReticle();
+				rend_EndFrame();
+			}
+			else
+			{
+				StartFrame(reticle_window_x, reticle_window_y,
+					reticle_window_x + reticle_window_w, reticle_window_y + reticle_window_h,
+					false);
+				RenderReticle();
+				EndFrame();
+			}
+		}
 		StartFrame(false);
 		g3_StartFrame(&Viewer_object->pos, &Viewer_object->orient, zoom);
 		RenderCockpit();

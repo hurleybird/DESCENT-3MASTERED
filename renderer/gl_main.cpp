@@ -957,6 +957,12 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		ApplySwapInterval();
 	}
 
+	if (cockpit_scene_frame_active)
+	{
+		StartCockpitSceneFrame(x1, y1, x2, y2);
+		return;
+	}
+
 	if (post_present_pending_swap)
 	{
 		StartPostPresentFrame(x1, y1, x2, y2, clear_flags);
@@ -1438,6 +1444,234 @@ void GL4Renderer::GammaCorrectPostPresent()
 	GL4PerfGpuDrain("GPU.CockpitPostGamma");
 }
 
+void GL4Renderer::StartCockpitSceneFrame(int x1, int y1, int x2, int y2)
+{
+	if (!framebuffer_ok)
+		return;
+
+	Framebuffer& framebuffer = framebuffers[framebuffer_current_draw];
+	framebuffer.MarkAllDirty();
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer.Handle());
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+	const GLenum draw_buffer = GL_COLOR_ATTACHMENT0;
+	glDrawBuffers(1, &draw_buffer);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+	glClearColor(0.0, 0.0, 0.0, 0.0);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	if (ao_suppression_draw_value != 0.0f)
+		legacy_draw_uniforms_dirty = true;
+	if (bloom_suppression_draw_value != 0.0f)
+		legacy_draw_uniforms_dirty = true;
+	if (ao_class_draw_value != 0)
+		legacy_draw_uniforms_dirty = true;
+	ao_suppression_draw_value = 0.0f;
+	bloom_suppression_draw_value = 0.0f;
+	ao_class_draw_value = 0;
+	ao_weight_draw_value = 1.0f;
+
+	if (framebuffer.Samples() >= 2)
+		glEnable(GL_MULTISAMPLE);
+	else
+		glDisable(GL_MULTISAMPLE);
+
+	OpenGL_state.clip_x1 = x1;
+	OpenGL_state.clip_y1 = y1;
+	OpenGL_state.clip_x2 = x2;
+	OpenGL_state.clip_y2 = y2;
+
+	float projection[16];
+	GL_Ortho(projection, 0, x2 - x1, y2 - y1, 0, 0, 1);
+	UpdateLegacyBlock(projection, mat4_identity);
+	glViewport(ScaledX(x1), FramebufferHeight() - ScaledY(y2), ScaledW(x2 - x1), ScaledH(y2 - y1));
+}
+
+bool GL4Renderer::ResolveCockpitLayerToPostComposite()
+{
+	if (!framebuffer_ok || post_present_framebuffer.Handle() == 0 ||
+		OpenGL_state.screen_width <= 0 || OpenGL_state.screen_height <= 0)
+	{
+		return false;
+	}
+
+	post_composite_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
+	if (post_composite_framebuffer.Handle() == 0)
+		return false;
+
+	const int supersampling_factor = SupersamplingFactor();
+	const int framebuffer_logical_bottom_offset =
+		framebuffer_logical_height - OpenGL_state.screen_height - framebuffer_logical_offset_y;
+	const int visible_origin_x = framebuffer_logical_offset_x;
+	const int visible_origin_y = framebuffer_logical_bottom_offset;
+	const int visible_width = OpenGL_state.screen_width;
+	const int visible_height = OpenGL_state.screen_height;
+
+	if (supersampling_factor >= 4)
+	{
+		downscale_framebuffer.Update(framebuffer_logical_width * 2, framebuffer_logical_height * 2, 0);
+		resolved_framebuffer.Update(framebuffer_logical_width, framebuffer_logical_height, 0);
+		if (downscale_framebuffer.Handle() == 0 || resolved_framebuffer.Handle() == 0)
+			return false;
+
+		downsampleshader.Use();
+		framebuffers[framebuffer_current_draw].DownsampleTo(downscale_framebuffer.Handle(), 0, 0,
+			downscale_framebuffer.Width(), downscale_framebuffer.Height(), downsampleshader_gamma,
+			deferred_display_gamma, downsampleshader_dest_origin, downsampleshader_source_visible_origin,
+			downsampleshader_source_visible_size, visible_origin_x * 4, visible_origin_y * 4,
+			visible_width * 4, visible_height * 4);
+		GL4PerfGpuDrain("GPU.CockpitDownsample.4xTo2x");
+
+		downsampleshader.Use();
+		downscale_framebuffer.DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
+			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma,
+			deferred_display_gamma, downsampleshader_dest_origin, downsampleshader_source_visible_origin,
+			downsampleshader_source_visible_size, visible_origin_x * 2, visible_origin_y * 2,
+			visible_width * 2, visible_height * 2);
+		GL4PerfGpuDrain("GPU.CockpitDownsample.2xTo1x");
+	}
+	else if (supersampling_factor >= 2)
+	{
+		resolved_framebuffer.Update(framebuffer_logical_width, framebuffer_logical_height, 0);
+		if (resolved_framebuffer.Handle() == 0)
+			return false;
+
+		downsampleshader.Use();
+		framebuffers[framebuffer_current_draw].DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
+			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma,
+			deferred_display_gamma, downsampleshader_dest_origin, downsampleshader_source_visible_origin,
+			downsampleshader_source_visible_size, visible_origin_x * 2, visible_origin_y * 2,
+			visible_width * 2, visible_height * 2);
+		GL4PerfGpuDrain("GPU.CockpitDownsample.2xTo1x");
+	}
+
+	Framebuffer* source_framebuffer = supersampling_factor >= 2 ?
+		&resolved_framebuffer : &framebuffers[framebuffer_current_draw];
+	const float uv_origin_x = source_framebuffer->Width() > 0 ?
+		(float)visible_origin_x / (float)source_framebuffer->Width() : 0.0f;
+	const float uv_origin_y = source_framebuffer->Height() > 0 ?
+		(float)visible_origin_y / (float)source_framebuffer->Height() : 0.0f;
+	const float uv_scale_x = source_framebuffer->Width() > 0 ?
+		(float)visible_width / (float)source_framebuffer->Width() : 1.0f;
+	const float uv_scale_y = source_framebuffer->Height() > 0 ?
+		(float)visible_height / (float)source_framebuffer->Height() : 1.0f;
+
+	blitshader.Use();
+	glUniform1f(blitshader_gamma, 1.0f);
+	if (blitshader_uv_origin != -1)
+		glUniform2f(blitshader_uv_origin, uv_origin_x, uv_origin_y);
+	if (blitshader_uv_scale != -1)
+		glUniform2f(blitshader_uv_scale, uv_scale_x, uv_scale_y);
+	source_framebuffer->BlitTo(post_composite_framebuffer.Handle(), 0, 0,
+		post_composite_framebuffer.Width(), post_composite_framebuffer.Height(), false);
+	if (blitshader_uv_origin != -1)
+		glUniform2f(blitshader_uv_origin, 0.0f, 0.0f);
+	if (blitshader_uv_scale != -1)
+		glUniform2f(blitshader_uv_scale, 1.0f, 1.0f);
+	GL4PerfGpuDrain("GPU.CockpitResolve");
+
+	return true;
+}
+
+void GL4Renderer::ClearPostPresentAlpha()
+{
+	if (post_present_framebuffer.Handle() == 0)
+		return;
+
+	GLint old_draw = 0;
+	GLint old_draw_buffer = GL_COLOR_ATTACHMENT0;
+	GLboolean color_mask[4];
+	GLboolean scissor_enabled = glIsEnabled(GL_SCISSOR_TEST);
+	GLfloat old_clear_color[4];
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+	glGetIntegerv(GL_DRAW_BUFFER, &old_draw_buffer);
+	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+	glGetFloatv(GL_COLOR_CLEAR_VALUE, old_clear_color);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, post_present_framebuffer.Handle());
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	glDisable(GL_SCISSOR_TEST);
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+	glClearColor(0.0, 0.0, 0.0, 0.0);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	glClearColor(old_clear_color[0], old_clear_color[1], old_clear_color[2], old_clear_color[3]);
+	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+	if (scissor_enabled)
+		glEnable(GL_SCISSOR_TEST);
+	else
+		glDisable(GL_SCISSOR_TEST);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	if ((GLuint)old_draw != post_present_framebuffer.Handle())
+		glDrawBuffer(old_draw_buffer);
+}
+
+void GL4Renderer::BlendPostCompositeOverPostPresent()
+{
+	if (post_present_framebuffer.Handle() == 0 || post_composite_framebuffer.Handle() == 0)
+		return;
+
+	GLuint cockpit_texture = post_composite_framebuffer.ColorTextureForRead();
+	if (cockpit_texture == 0)
+		return;
+
+	blitshader.Use();
+	glUniform1f(blitshader_gamma, 1.0f);
+	if (blitshader_uv_origin != -1)
+		glUniform2f(blitshader_uv_origin, 0.0f, 0.0f);
+	if (blitshader_uv_scale != -1)
+		glUniform2f(blitshader_uv_scale, 1.0f, 1.0f);
+	rend_ClearBoundTextures();
+	GL_BindFramebufferTexture(cockpit_texture, 0, GL_LINEAR);
+
+	const GLboolean blend_was_enabled = glIsEnabled(GL_BLEND);
+	const GLboolean depth_was_enabled = glIsEnabled(GL_DEPTH_TEST);
+	const GLboolean cull_was_enabled = glIsEnabled(GL_CULL_FACE);
+	const GLboolean scissor_was_enabled = glIsEnabled(GL_SCISSOR_TEST);
+	GLboolean color_mask[4];
+	GLboolean depth_mask;
+	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+	GLint old_src_rgb = GL_ONE;
+	GLint old_dst_rgb = GL_ZERO;
+	GLint old_src_alpha = GL_ONE;
+	GLint old_dst_alpha = GL_ZERO;
+	glGetIntegerv(GL_BLEND_SRC_RGB, &old_src_rgb);
+	glGetIntegerv(GL_BLEND_DST_RGB, &old_dst_rgb);
+	glGetIntegerv(GL_BLEND_SRC_ALPHA, &old_src_alpha);
+	glGetIntegerv(GL_BLEND_DST_ALPHA, &old_dst_alpha);
+	GLint old_viewport[4];
+	glGetIntegerv(GL_VIEWPORT, old_viewport);
+	GLint old_draw = 0;
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+
+	glBindVertexArray(GL_GetFramebufferVAO());
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, post_present_framebuffer.Handle());
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+	glViewport(0, 0, post_present_framebuffer.Width(), post_present_framebuffer.Height());
+	glEnable(GL_BLEND);
+	glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_SCISSOR_TEST);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_FALSE);
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_POSTPROCESS);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
+	glBlendFuncSeparate(old_src_rgb, old_dst_rgb, old_src_alpha, old_dst_alpha);
+	if (blend_was_enabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+	if (depth_was_enabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+	if (cull_was_enabled) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+	if (scissor_was_enabled) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+	glDepthMask(depth_mask);
+	rend_ClearBoundTextures();
+	RestoreLegacy();
+}
+
 void GL4Renderer::CompositeDeferredBloomOverPostPresent()
 {
 	if (post_present_framebuffer.Handle() == 0)
@@ -1453,7 +1687,7 @@ void GL4Renderer::CompositeDeferredBloomOverPostPresent()
 			bloom.compositeshader.Use();
 			glUniform1f(bloom.composite_gamma, deferred_display_gamma);
 			glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
-			glUniform1i(bloom.composite_use_alpha_mask, 0);
+			glUniform1i(bloom.composite_use_alpha_mask, 1);
 			glUniform1i(bloom.composite_use_protection_mask,
 				deferred_bloom_protection_mask_texture != 0 ? 1 : 0);
 			if (bloom.composite_uv_origin != -1)
@@ -1585,6 +1819,7 @@ void GL4Renderer::EndPostPresentFrame()
 		motion_vectors_cleared_this_frame = false;
 		motion_vectors_capture_locked = false;
 		post_present_pending_swap = false;
+		cockpit_scene_frame_active = false;
 		deferred_bloom_composite_pending = false;
 		deferred_bloom_framebuffer = nullptr;
 		deferred_bloom_protection_mask_texture = 0;
@@ -1627,7 +1862,11 @@ bool GL4Renderer::BeginCockpitFrame()
 	if (!framebuffer_ok)
 		return false;
 
-	return BeginPostPresentFrameInternal(true);
+	if (!BeginPostPresentFrameInternal(true))
+		return false;
+
+	cockpit_scene_frame_active = true;
+	return true;
 }
 
 void GL4Renderer::EndCockpitFrame()
@@ -1636,6 +1875,10 @@ void GL4Renderer::EndCockpitFrame()
 		return;
 
 	FlushFontBatch();
+	ClearPostPresentAlpha();
+	if (cockpit_scene_frame_active && ResolveCockpitLayerToPostComposite())
+		BlendPostCompositeOverPostPresent();
+	cockpit_scene_frame_active = false;
 	CompositeDeferredBloomOverPostPresent();
 	UseDrawVAO();
 }
