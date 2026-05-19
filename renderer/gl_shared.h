@@ -227,6 +227,9 @@ struct MotionVectorResources
 	GLuint velocity_texture = 0;
 	GLuint resolved_texture = 0;
 	GLuint resolve_framebuffer = 0;
+	GLuint object_id_texture = 0;
+	GLuint object_id_resolved_texture = 0;
+	GLuint object_id_resolve_framebuffer = 0;
 	uint32_t width = 0;
 	uint32_t height = 0;
 	uint32_t samples = 0;
@@ -236,6 +239,7 @@ struct MotionVectorResources
 	void AttachToFramebuffer(GLuint framebuffer);
 	void ClearAttached(GLuint framebuffer);
 	GLuint TextureForRead(GLuint source_framebuffer);
+	GLuint ObjectIdTextureForRead(GLuint source_framebuffer);
 };
 
 struct PostProtectionMaskResources
@@ -255,7 +259,8 @@ struct PostProtectionMaskResources
 	void Destroy();
 	void AttachToFramebuffer(GLuint framebuffer);
 	void ClearAttached(GLuint framebuffer);
-	void UseSceneDrawBuffers(GLuint framebuffer, bool include_motion_vectors = false);
+	void UseSceneDrawBuffers(GLuint framebuffer, bool include_motion_vectors = false,
+		bool include_motion_object_ids = false);
 	GLuint TextureForRead(GLuint source_framebuffer);
 	GLuint AOClassTextureForRead(GLuint source_framebuffer);
 };

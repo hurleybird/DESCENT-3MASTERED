@@ -36,29 +36,32 @@ static bool GL4DrawTargetIsFramebuffer(GLuint framebuffer)
 	return (GLuint)current_draw == framebuffer;
 }
 
-static void GL4UseSceneDrawBuffersWithoutAOClass(bool include_motion_vectors)
+static void GL4UseSceneDrawBuffersWithoutAOClass(bool include_motion_vectors, bool include_motion_object_ids)
 {
-	const GLenum draw_buffers[4] =
+	const GLenum draw_buffers[5] =
 	{
 		GL_COLOR_ATTACHMENT0,
 		static_cast<GLenum>(include_motion_vectors ? GL_COLOR_ATTACHMENT1 : GL_NONE),
 		GL_COLOR_ATTACHMENT2,
-		GL_NONE
+		GL_NONE,
+		static_cast<GLenum>(include_motion_object_ids ? GL_COLOR_ATTACHMENT4 : GL_NONE)
 	};
-	glDrawBuffers(4, draw_buffers);
+	glDrawBuffers(include_motion_object_ids ? 5 : 4, draw_buffers);
 	GL_ConfigurePostMaskBlend();
 }
 
-static void GL4UseSceneDrawBuffersForCurrentDraw(bool include_motion_vectors, bool include_ao_class)
+static void GL4UseSceneDrawBuffersForCurrentDraw(bool include_motion_vectors, bool include_ao_class,
+	bool include_motion_object_ids)
 {
-	const GLenum draw_buffers[4] =
+	const GLenum draw_buffers[5] =
 	{
 		GL_COLOR_ATTACHMENT0,
 		static_cast<GLenum>(include_motion_vectors ? GL_COLOR_ATTACHMENT1 : GL_NONE),
 		GL_COLOR_ATTACHMENT2,
-		static_cast<GLenum>(include_ao_class ? GL_COLOR_ATTACHMENT3 : GL_NONE)
+		static_cast<GLenum>(include_ao_class ? GL_COLOR_ATTACHMENT3 : GL_NONE),
+		static_cast<GLenum>(include_motion_object_ids ? GL_COLOR_ATTACHMENT4 : GL_NONE)
 	};
-	glDrawBuffers(4, draw_buffers);
+	glDrawBuffers(include_motion_object_ids ? 5 : 4, draw_buffers);
 	GL_ConfigurePostMaskBlend();
 }
 
@@ -99,43 +102,6 @@ static float GL4FontBatchIdentity[16] =
 	0, 0, 1, 0,
 	0, 0, 0, 1
 };
-
-static void GL4WriteMotionVectorDebugPixel(GLuint framebuffer, int x, int y, const float value[4])
-{
-	GLint old_draw = 0;
-	GLint old_draw_buffer = GL_COLOR_ATTACHMENT0;
-	GLboolean scissor_was_enabled = glIsEnabled(GL_SCISSOR_TEST);
-	GLint old_scissor[4];
-	GLboolean color_mask[4];
-	GLboolean blend_enabled = glIsEnabled(GL_BLEND);
-	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
-	glGetIntegerv(GL_DRAW_BUFFER, &old_draw_buffer);
-	glGetIntegerv(GL_SCISSOR_BOX, old_scissor);
-	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
-
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
-	GLenum draw_buffer = GL_COLOR_ATTACHMENT1;
-	glDrawBuffers(1, &draw_buffer);
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	glDisable(GL_BLEND);
-	glEnable(GL_SCISSOR_TEST);
-	glScissor(x, y, 1, 1);
-	glClearBufferfv(GL_COLOR, 0, value);
-
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
-	glDrawBuffer(old_draw_buffer);
-	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
-	if (blend_enabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
-	if (scissor_was_enabled)
-	{
-		glEnable(GL_SCISSOR_TEST);
-		glScissor(old_scissor[0], old_scissor[1], old_scissor[2], old_scissor[3]);
-	}
-	else
-	{
-		glDisable(GL_SCISSOR_TEST);
-	}
-}
 
 static int GL4FontBatchIndexForAlpha(int alpha_type)
 {
@@ -180,6 +146,9 @@ bool GL4Renderer::CurrentDrawWritesPixelMotionVectors() const
 		post_present_pending_swap || OpenGL_state.cur_zbuffer_state == 0)
 		return false;
 
+	if (!motion_object_active)
+		return false;
+
 	const bool cockpit_draw = rend_Get3DDrawCallCategory() == RENDERER_DRAW_CALL_3D_COCKPIT;
 	if (motion_vectors_capture_locked && !cockpit_draw)
 		return false;
@@ -205,6 +174,12 @@ bool GL4Renderer::CurrentDrawWritesPixelMotionVectors() const
 	}
 }
 
+bool GL4Renderer::CurrentDrawWritesMotionObjectId() const
+{
+	return CurrentDrawWritesPixelMotionVectors() && motion_object_id != 0 &&
+		!cockpit_motion_object_active;
+}
+
 bool GL4Renderer::CurrentDrawIsLateCockpitPixelMotionVectorDraw() const
 {
 	return PixelMotionVectorModeEnabled() &&
@@ -228,8 +203,17 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 		return;
 	}
 
-	GLuint velocity_texture = motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
-	if (velocity_texture == 0 || motion_vectors.width == 0 || motion_vectors.height == 0)
+	if (motion_vectors.width == 0 || motion_vectors.height == 0)
+		return;
+	GLuint depth_texture = bloom_source_valid && bloom_source_framebuffer.Handle() != 0 ?
+		bloom_source_framebuffer.DepthTextureForRead() :
+		framebuffers[framebuffer_current_draw].DepthTextureForRead();
+	const bool has_dynamic_velocity = motion_vectors_dirty;
+	GLuint velocity_texture = has_dynamic_velocity ?
+		motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
+	GLuint object_id_texture = has_dynamic_velocity ?
+		motion_vectors.ObjectIdTextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
+	if (has_dynamic_velocity && (velocity_texture == 0 || object_id_texture == 0))
 		return;
 	GLuint protection_mask_texture = post_protection_mask_dirty ?
 		post_protection_mask.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
@@ -256,6 +240,10 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 		glUniform1i(motionblur_velocity_source, 1);
 	if (motionblur_protection_mask != -1)
 		glUniform1i(motionblur_protection_mask, 2);
+	if (motionblur_depth_source != -1)
+		glUniform1i(motionblur_depth_source, 3);
+	if (motionblur_object_id_source != -1)
+		glUniform1i(motionblur_object_id_source, 4);
 	if (motionblur_use_protection_mask != -1)
 		glUniform1i(motionblur_use_protection_mask, protection_mask_texture != 0 ? 1 : 0);
 	if (motionblur_velocity_uv_origin != -1)
@@ -273,12 +261,42 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 	if (motionblur_periphery_strength != -1)
 		glUniform1f(motionblur_periphery_strength,
 			std::max(0.0f, std::min(OpenGL_preferred_state.pixel_motion_blur_periphery_strength, 4.0f)));
+	const bool use_frozen_static_motion = MotionVectorsFrozen() && frozen_static_motion_valid;
+	const float* reconstruction_projection = use_frozen_static_motion ? frozen_static_motion_projection :
+		(captured_scene_projection_valid ? captured_scene_projection : current_projection);
+	const float* reconstruction_inverse_modelview = use_frozen_static_motion ?
+		frozen_static_motion_inverse_modelview :
+		(captured_scene_inverse_modelview_valid ? captured_scene_inverse_modelview : current_inverse_modelview);
+	const float* reconstruction_previous_view_projection = use_frozen_static_motion ?
+		frozen_static_motion_previous_view_projection : previous_view_projection;
+	const bool has_reconstruction_matrices = use_frozen_static_motion ||
+		(captured_scene_projection_valid && captured_scene_inverse_modelview_valid) ||
+		(have_current_projection && have_current_inverse_modelview);
+	const bool has_static_reconstruction = depth_texture != 0 &&
+		(use_frozen_static_motion || have_previous_view_projection) &&
+		has_reconstruction_matrices;
+	if (motionblur_current_projection != -1)
+		glUniformMatrix4fv(motionblur_current_projection, 1, GL_FALSE, reconstruction_projection);
+	if (motionblur_current_inverse_modelview != -1)
+		glUniformMatrix4fv(motionblur_current_inverse_modelview, 1, GL_FALSE, reconstruction_inverse_modelview);
+	if (motionblur_previous_view_projection != -1)
+		glUniformMatrix4fv(motionblur_previous_view_projection, 1, GL_FALSE,
+			reconstruction_previous_view_projection);
+	if (motionblur_has_static_reconstruction != -1)
+		glUniform1i(motionblur_has_static_reconstruction, has_static_reconstruction ? 1 : 0);
+	if (motionblur_has_dynamic_velocity != -1)
+		glUniform1i(motionblur_has_dynamic_velocity, has_dynamic_velocity ? 1 : 0);
 
 	rend_ClearBoundTextures();
 	GL_BindFramebufferTexture(post_present_framebuffer.ColorTextureForRead(), 0, GL_LINEAR);
-	GL_BindFramebufferTexture(velocity_texture, 1, GL_NEAREST);
+	if (velocity_texture != 0)
+		GL_BindFramebufferTexture(velocity_texture, 1, GL_NEAREST);
 	if (protection_mask_texture != 0)
 		GL_BindFramebufferTexture(protection_mask_texture, 2, GL_NEAREST);
+	if (depth_texture != 0)
+		GL_BindFramebufferTexture(depth_texture, 3, GL_NEAREST);
+	if (object_id_texture != 0)
+		GL_BindFramebufferTexture(object_id_texture, 4, GL_NEAREST);
 	GL_DrawFramebufferQuad(motion_blur_framebuffer.Handle(), 0, 0,
 		motion_blur_framebuffer.Width(), motion_blur_framebuffer.Height());
 	motion_blur_framebuffer.BlitToRaw(post_present_framebuffer.Handle(), 0, 0,
@@ -304,6 +322,10 @@ void GL4Renderer::DrawMotionVectorDebugPreview(int supersampling_factor)
 		rend_SetMotionVectorDebugSample(&debug_sample);
 		return;
 	}
+	GLuint depth_texture = bloom_source_valid && bloom_source_framebuffer.Handle() != 0 ?
+		bloom_source_framebuffer.DepthTextureForRead() :
+		framebuffers[framebuffer_current_draw].DepthTextureForRead();
+	GLuint object_id_texture = motion_vectors.ObjectIdTextureForRead(framebuffers[framebuffer_current_draw].Handle());
 
 	if (supersampling_factor < 1)
 		supersampling_factor = 1;
@@ -372,37 +394,54 @@ void GL4Renderer::DrawMotionVectorDebugPreview(int supersampling_factor)
 	debug_sample.max_vy = max_velocity[1];
 	debug_sample.max_mag = max_mag_squared;
 
-	const float probe_value[4] = { 0.03125f, -0.0625f, 0.0f, 0.0f };
-	const float restore_value[4] = { center_velocity[0], center_velocity[1], 0.0f, 0.0f };
-	GL4WriteMotionVectorDebugPixel(framebuffers[framebuffer_current_draw].Handle(), center_x, center_y, probe_value);
-	motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
-	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
-	glGetIntegerv(GL_READ_BUFFER, &old_read_buffer);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, motion_vectors.resolve_framebuffer);
-	glReadBuffer(GL_COLOR_ATTACHMENT0);
-	float probe_velocity[2] = {};
-	glReadPixels(center_x, center_y, 1, 1, GL_RG, GL_FLOAT, probe_velocity);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
-	glReadBuffer(old_read_buffer);
-	debug_sample.probe_valid = true;
-	debug_sample.probe_vx = probe_velocity[0];
-	debug_sample.probe_vy = probe_velocity[1];
-	GL4WriteMotionVectorDebugPixel(framebuffers[framebuffer_current_draw].Handle(), center_x, center_y, restore_value);
-	velocity_texture = motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
 	rend_SetMotionVectorDebugSample(&debug_sample);
 
 	motionvectordebugshader.Use();
 	if (motionvectordebug_velocity_source != -1)
 		glUniform1i(motionvectordebug_velocity_source, 0);
+	if (motionvectordebug_depth_source != -1)
+		glUniform1i(motionvectordebug_depth_source, 1);
+	if (motionvectordebug_object_id_source != -1)
+		glUniform1i(motionvectordebug_object_id_source, 2);
 	if (motionvectordebug_uv_origin != -1)
 		glUniform2f(motionvectordebug_uv_origin, uv_origin_x, uv_origin_y);
 	if (motionvectordebug_uv_scale != -1)
 		glUniform2f(motionvectordebug_uv_scale, uv_scale_x, uv_scale_y);
 	if (motionvectordebug_screen_size != -1)
 		glUniform2f(motionvectordebug_screen_size, (float)OpenGL_state.screen_width, (float)OpenGL_state.screen_height);
+	const bool use_frozen_static_motion = MotionVectorsFrozen() && frozen_static_motion_valid;
+	const float* reconstruction_projection = use_frozen_static_motion ? frozen_static_motion_projection :
+		(captured_scene_projection_valid ? captured_scene_projection : current_projection);
+	const float* reconstruction_inverse_modelview = use_frozen_static_motion ?
+		frozen_static_motion_inverse_modelview :
+		(captured_scene_inverse_modelview_valid ? captured_scene_inverse_modelview : current_inverse_modelview);
+	const float* reconstruction_previous_view_projection = use_frozen_static_motion ?
+		frozen_static_motion_previous_view_projection : previous_view_projection;
+	const bool has_reconstruction_matrices = use_frozen_static_motion ||
+		(captured_scene_projection_valid && captured_scene_inverse_modelview_valid) ||
+		(have_current_projection && have_current_inverse_modelview);
+	const bool has_static_reconstruction = depth_texture != 0 &&
+		(use_frozen_static_motion || have_previous_view_projection) &&
+		has_reconstruction_matrices;
+	if (motionvectordebug_current_projection != -1)
+		glUniformMatrix4fv(motionvectordebug_current_projection, 1, GL_FALSE, reconstruction_projection);
+	if (motionvectordebug_current_inverse_modelview != -1)
+		glUniformMatrix4fv(motionvectordebug_current_inverse_modelview, 1, GL_FALSE,
+			reconstruction_inverse_modelview);
+	if (motionvectordebug_previous_view_projection != -1)
+		glUniformMatrix4fv(motionvectordebug_previous_view_projection, 1, GL_FALSE,
+			reconstruction_previous_view_projection);
+	if (motionvectordebug_has_static_reconstruction != -1)
+		glUniform1i(motionvectordebug_has_static_reconstruction, has_static_reconstruction ? 1 : 0);
+	if (motionvectordebug_has_dynamic_velocity != -1)
+		glUniform1i(motionvectordebug_has_dynamic_velocity, motion_vectors_dirty ? 1 : 0);
 
 	rend_ClearBoundTextures();
 	GL_BindFramebufferTexture(velocity_texture, 0, GL_NEAREST);
+	if (depth_texture != 0)
+		GL_BindFramebufferTexture(depth_texture, 1, GL_NEAREST);
+	if (object_id_texture != 0)
+		GL_BindFramebufferTexture(object_id_texture, 2, GL_NEAREST);
 
 	const GLboolean blend_was_enabled = glIsEnabled(GL_BLEND);
 	const GLboolean depth_was_enabled = glIsEnabled(GL_DEPTH_TEST);
@@ -456,8 +495,7 @@ void GL4Renderer::DrawMotionVectorDebugPreview(int supersampling_factor)
 
 void GL4Renderer::UseSceneDrawBuffers()
 {
-	post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle(),
-		MotionVectorWritesEnabled());
+	post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle(), false, false);
 }
 
 void GL4Renderer::InitPersistentDrawBuffer(size_t size)
@@ -799,7 +837,7 @@ void GL4Renderer::FlushFontBatchVertices(int batch_index)
 		OpenGL_state.cur_zbuffer_state == 0 &&
 		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
 	if (suppress_ao_class_write)
-		GL4UseSceneDrawBuffersWithoutAOClass(false);
+		GL4UseSceneDrawBuffersWithoutAOClass(false, false);
 	rend_RecordDrawCall(RENDERER_DRAW_CALL_FONT);
 	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)font_batch_vertices[batch_index].size());
 	if (suppress_ao_class_write)
@@ -1037,6 +1075,7 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_motion_vector_previous_view_projection_uniforms[i] = drawshaders[i].FindUniform("motion_vector_previous_view_projection");
 		drawshader_motion_vector_has_previous_uniforms[i] = drawshaders[i].FindUniform("motion_vector_has_previous");
 		drawshader_motion_vector_payload_type_uniforms[i] = drawshaders[i].FindUniform("motion_vector_payload_type");
+		drawshader_motion_vector_object_id_uniforms[i] = drawshaders[i].FindUniform("motion_vector_object_id");
 	}
 
 	lastdrawshader = -1;
@@ -1128,7 +1167,8 @@ void GL4Renderer::SelectDrawShader()
 
 	const bool shader_changed = shader_index != lastdrawshader;
 	drawshaders[shader_index].Use();
-	if (!shader_changed && !legacy_draw_uniforms_dirty && !CurrentDrawUsesPixelMotionTarget())
+	if (!shader_changed && !legacy_draw_uniforms_dirty && !CurrentDrawUsesPixelMotionTarget() &&
+		!CurrentDrawWritesMotionObjectId())
 		return;
 
 	if (drawshader_ao_suppression_uniforms[shader_index] != -1)
@@ -1182,6 +1222,9 @@ void GL4Renderer::SelectDrawShader()
 	if (drawshader_motion_vector_payload_type_uniforms[shader_index] != -1)
 		glUniform1i(drawshader_motion_vector_payload_type_uniforms[shader_index],
 			cockpit_motion_object_active ? 1 : 0);
+	if (drawshader_motion_vector_object_id_uniforms[shader_index] != -1)
+		glUniform1ui(drawshader_motion_vector_object_id_uniforms[shader_index],
+			CurrentDrawWritesMotionObjectId() ? motion_object_id : 0u);
 
 	const bool phong_enabled = OpenGL_state.cur_light_state == LS_PHONG;
 	if (drawshader_phong_enabled_uniforms[shader_index] != -1)
@@ -1399,22 +1442,26 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 	const bool drawing_to_scene = framebuffer_ok &&
 		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
 	const bool include_motion_vectors = CurrentDrawUsesPixelMotionTarget();
+	const bool include_motion_object_ids = CurrentDrawWritesMotionObjectId();
 	const bool force_motion_vector_draw_buffer = CurrentDrawIsLateCockpitPixelMotionVectorDraw();
 	const bool include_ao_class = !cockpit_scene_frame_active && OpenGL_state.cur_zbuffer_state != 0;
 	const bool override_draw_buffers = drawing_to_scene &&
 		(cockpit_scene_frame_active || force_motion_vector_draw_buffer ||
-		 (PixelMotionVectorModeEnabled() && !include_motion_vectors) || !include_ao_class);
+		 PixelMotionVectorModeEnabled() || !include_ao_class);
 	if (override_draw_buffers)
 	{
 		if (cockpit_scene_frame_active)
 			GL4UseSceneColorDrawBuffer();
 		else
-			GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors, include_ao_class);
+			GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors, include_ao_class,
+				include_motion_object_ids);
 	}
 	rend_RecordDrawCall(draw_call_category);
 	glDrawArrays(GL_TRIANGLE_FAN, offset, nv);
-	if (include_motion_vectors)
+	if (include_motion_vectors || include_motion_object_ids)
+	{
 		motion_vectors_dirty = true;
+	}
 	if (override_draw_buffers)
 	{
 		if (cockpit_scene_frame_active)
@@ -1513,22 +1560,26 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 	const bool drawing_to_scene = framebuffer_ok &&
 		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
 	const bool include_motion_vectors = CurrentDrawUsesPixelMotionTarget();
+	const bool include_motion_object_ids = CurrentDrawWritesMotionObjectId();
 	const bool force_motion_vector_draw_buffer = CurrentDrawIsLateCockpitPixelMotionVectorDraw();
 	const bool include_ao_class = !cockpit_scene_frame_active && OpenGL_state.cur_zbuffer_state != 0;
 	const bool override_draw_buffers = drawing_to_scene &&
 		(cockpit_scene_frame_active || force_motion_vector_draw_buffer ||
-		 (PixelMotionVectorModeEnabled() && !include_motion_vectors) || !include_ao_class);
+		 PixelMotionVectorModeEnabled() || !include_ao_class);
 	if (override_draw_buffers)
 	{
 		if (cockpit_scene_frame_active)
 			GL4UseSceneColorDrawBuffer();
 		else
-			GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors, include_ao_class);
+			GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors, include_ao_class,
+				include_motion_object_ids);
 	}
 	rend_RecordDrawCall(draw_call_category);
 	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)vertices.size());
-	if (include_motion_vectors)
+	if (include_motion_vectors || include_motion_object_ids)
+	{
 		motion_vectors_dirty = true;
+	}
 	if (override_draw_buffers)
 	{
 		if (cockpit_scene_frame_active)
@@ -1560,6 +1611,7 @@ void GL4Renderer::BeginMotionObject(int object_handle)
 {
 	const bool cockpit_draw = rend_Get3DDrawCallCategory() == RENDERER_DRAW_CALL_3D_COCKPIT;
 	cockpit_motion_object_active = false;
+	motion_object_id = 0;
 	motion_object_active = object_handle >= 0 && framebuffer_ok &&
 		!post_present_pending_swap &&
 		(!motion_vectors_capture_locked || cockpit_draw) &&
@@ -1567,6 +1619,8 @@ void GL4Renderer::BeginMotionObject(int object_handle)
 		motion_vectors.velocity_texture != 0;
 	if (motion_object_active && cockpit_draw)
 		cockpit_motion_object_active = true;
+	else if (motion_object_active)
+		motion_object_id = (unsigned int)object_handle + 1u;
 }
 
 void GL4Renderer::EndMotionObject()
@@ -1578,6 +1632,7 @@ void GL4Renderer::EndMotionObject()
 	}
 	motion_object_active = false;
 	cockpit_motion_object_active = false;
+	motion_object_id = 0;
 }
 
 // draws a scaled 2d bitmap to our buffer

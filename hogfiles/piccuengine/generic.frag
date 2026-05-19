@@ -44,6 +44,7 @@ uniform mat4 motion_vector_current_view_projection;
 uniform mat4 motion_vector_previous_view_projection;
 uniform int motion_vector_has_previous;
 uniform int motion_vector_payload_type;
+uniform uint motion_vector_object_id;
 
 in vec4 outcolor;
 in vec4 outnormal;
@@ -63,6 +64,7 @@ layout(location = 0) out vec4 color;
 layout(location = 1) out vec2 velocity;
 layout(location = 2) out vec4 post_mask;
 layout(location = 3) out float ao_class;
+layout(location = 4) out uint motion_object_id;
 
 vec4 ApplyPhongLighting(vec4 source_color)
 {
@@ -117,8 +119,10 @@ vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 void main()
 {
 	velocity = vec2(0.0);
+	motion_object_id = 0u;
 	if (motion_vector_mode == 2)
 	{
+		motion_object_id = motion_vector_object_id;
 		if (motion_vector_payload_type == 1)
 		{
 			if (motion_vector_has_previous != 0 &&

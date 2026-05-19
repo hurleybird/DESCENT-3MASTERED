@@ -19,6 +19,7 @@
 #include "gl_local.h"
 #include "args.h"
 #include <stdio.h>
+#include <string.h>
 
 #ifdef SDL3
 #include <SDL3/SDL_video.h>
@@ -526,7 +527,6 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 {
 	//int width,height;
 	int retval = 1;
-	int i;
 
 	mprintf((0, "Setting up opengl mode!\n"));
 
@@ -732,13 +732,33 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	motionvectordebugshader.AttachSource(blitVertexSrc, motionVectorDebugFragmentSrc);
 	motionvectordebugshader.Use();
 	motionvectordebug_velocity_source = motionvectordebugshader.FindUniform("velocity_source");
+	motionvectordebug_depth_source = motionvectordebugshader.FindUniform("depth_source");
+	motionvectordebug_object_id_source = motionvectordebugshader.FindUniform("object_id_source");
 	motionvectordebug_uv_origin = motionvectordebugshader.FindUniform("uv_origin");
 	motionvectordebug_uv_scale = motionvectordebugshader.FindUniform("uv_scale");
 	motionvectordebug_screen_size = motionvectordebugshader.FindUniform("screen_size");
+	motionvectordebug_current_projection = motionvectordebugshader.FindUniform("current_projection");
+	motionvectordebug_current_inverse_modelview =
+		motionvectordebugshader.FindUniform("current_inverse_modelview");
+	motionvectordebug_previous_view_projection =
+		motionvectordebugshader.FindUniform("previous_view_projection");
+	motionvectordebug_has_static_reconstruction =
+		motionvectordebugshader.FindUniform("has_static_reconstruction");
+	motionvectordebug_has_dynamic_velocity =
+		motionvectordebugshader.FindUniform("has_dynamic_velocity");
 	if (motionvectordebug_velocity_source != -1)
 		glUniform1i(motionvectordebug_velocity_source, 0);
+	if (motionvectordebug_depth_source != -1)
+		glUniform1i(motionvectordebug_depth_source, 1);
+	if (motionvectordebug_object_id_source != -1)
+		glUniform1i(motionvectordebug_object_id_source, 2);
 	if (motionvectordebug_uv_origin == -1 || motionvectordebug_uv_scale == -1 ||
-		motionvectordebug_screen_size == -1)
+		motionvectordebug_screen_size == -1 || motionvectordebug_depth_source == -1 ||
+		motionvectordebug_object_id_source == -1 || motionvectordebug_current_projection == -1 ||
+		motionvectordebug_current_inverse_modelview == -1 ||
+		motionvectordebug_previous_view_projection == -1 ||
+		motionvectordebug_has_static_reconstruction == -1 ||
+		motionvectordebug_has_dynamic_velocity == -1)
 		Error("GLRenderer::Init: Failed to find motion-vector debug uniforms!");
 
 	motionvectorcopyshader.AttachSource(blitVertexSrc, motionVectorCopyFragmentSrc);
@@ -757,21 +777,36 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	motionblur_color_source = motionblurshader.FindUniform("color_source");
 	motionblur_velocity_source = motionblurshader.FindUniform("velocity_source");
 	motionblur_protection_mask = motionblurshader.FindUniform("protection_mask");
+	motionblur_depth_source = motionblurshader.FindUniform("depth_source");
+	motionblur_object_id_source = motionblurshader.FindUniform("object_id_source");
 	motionblur_use_protection_mask = motionblurshader.FindUniform("use_protection_mask");
 	motionblur_velocity_uv_origin = motionblurshader.FindUniform("velocity_uv_origin");
 	motionblur_velocity_uv_scale = motionblurshader.FindUniform("velocity_uv_scale");
 	motionblur_strength = motionblurshader.FindUniform("strength");
 	motionblur_periphery_strength = motionblurshader.FindUniform("periphery_strength");
+	motionblur_current_projection = motionblurshader.FindUniform("current_projection");
+	motionblur_current_inverse_modelview = motionblurshader.FindUniform("current_inverse_modelview");
+	motionblur_previous_view_projection = motionblurshader.FindUniform("previous_view_projection");
+	motionblur_has_static_reconstruction = motionblurshader.FindUniform("has_static_reconstruction");
+	motionblur_has_dynamic_velocity = motionblurshader.FindUniform("has_dynamic_velocity");
 	if (motionblur_color_source != -1)
 		glUniform1i(motionblur_color_source, 0);
 	if (motionblur_velocity_source != -1)
 		glUniform1i(motionblur_velocity_source, 1);
 	if (motionblur_protection_mask != -1)
 		glUniform1i(motionblur_protection_mask, 2);
+	if (motionblur_depth_source != -1)
+		glUniform1i(motionblur_depth_source, 3);
+	if (motionblur_object_id_source != -1)
+		glUniform1i(motionblur_object_id_source, 4);
 	if (motionblur_color_source == -1 || motionblur_velocity_source == -1 ||
-		motionblur_protection_mask == -1 || motionblur_use_protection_mask == -1 ||
+		motionblur_protection_mask == -1 || motionblur_depth_source == -1 ||
+		motionblur_object_id_source == -1 || motionblur_use_protection_mask == -1 ||
 		motionblur_velocity_uv_origin == -1 || motionblur_velocity_uv_scale == -1 ||
-		motionblur_strength == -1 || motionblur_periphery_strength == -1)
+		motionblur_strength == -1 || motionblur_periphery_strength == -1 ||
+		motionblur_current_projection == -1 || motionblur_current_inverse_modelview == -1 ||
+		motionblur_previous_view_projection == -1 || motionblur_has_static_reconstruction == -1 ||
+		motionblur_has_dynamic_velocity == -1)
 		Error("GLRenderer::Init: Failed to find pixel motion blur uniforms!");
 
 	ao_compositeshader.AttachSource(blitVertexSrc, aoDeferredCompositeFragmentSrc);

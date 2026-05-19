@@ -1034,6 +1034,7 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 			{
 				have_previous_view_projection = false;
 				have_cockpit_previous_view_projection = false;
+				frozen_static_motion_valid = false;
 			}
 			else if (pref_state->motion_vector_mode != RENDERER_MOTION_VECTOR_OFF)
 			{
@@ -1598,6 +1599,27 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 
 	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_AFTER_BLOOM);
 
+	if (!MotionVectorsFrozen() && framebuffer_ok && MotionVectorTargetEnabled() &&
+		have_previous_view_projection)
+	{
+		const bool have_captured_static_matrices =
+			captured_scene_projection_valid && captured_scene_inverse_modelview_valid;
+		const bool have_current_static_matrices =
+			have_current_projection && have_current_inverse_modelview;
+		if (have_captured_static_matrices || have_current_static_matrices)
+		{
+			memcpy(frozen_static_motion_projection,
+				have_captured_static_matrices ? captured_scene_projection : current_projection,
+				sizeof(frozen_static_motion_projection));
+			memcpy(frozen_static_motion_inverse_modelview,
+				have_captured_static_matrices ? captured_scene_inverse_modelview : current_inverse_modelview,
+				sizeof(frozen_static_motion_inverse_modelview));
+			memcpy(frozen_static_motion_previous_view_projection, previous_view_projection,
+				sizeof(frozen_static_motion_previous_view_projection));
+			frozen_static_motion_valid = true;
+		}
+	}
+
 	if (!MotionVectorsFrozen() && framebuffer_ok && captured_scene_view_projection_valid)
 	{
 		memcpy(previous_view_projection, captured_scene_view_projection, sizeof(previous_view_projection));
@@ -2133,10 +2155,14 @@ void GL4Renderer::CaptureBloomSource()
 	ao_scene_valid = false;
 	captured_scene_projection_valid = false;
 	captured_scene_view_projection_valid = false;
+	captured_scene_inverse_modelview_valid = false;
 
 	const bool ao_enabled = OpenGL_preferred_state.gtao_enabled && framebuffer_ok;
 	const bool bloom_enabled = OpenGL_preferred_state.bloom_enabled;
-	const bool late_post_enabled = ao_enabled || bloom_enabled;
+	const bool motion_depth_enabled = PixelMotionVectorModeEnabled() &&
+		(OpenGL_preferred_state.pixel_motion_blur_strength > 0.0f ||
+		 OpenGL_preferred_state.motion_vector_debug_preview);
+	const bool late_post_enabled = ao_enabled || bloom_enabled || motion_depth_enabled;
 
 	if (!late_post_enabled)
 	{
@@ -2154,6 +2180,17 @@ void GL4Renderer::CaptureBloomSource()
 		{
 			memcpy(captured_scene_view_projection, current_view_projection, sizeof(captured_scene_view_projection));
 			captured_scene_view_projection_valid = true;
+		}
+		if (have_current_projection)
+		{
+			memcpy(captured_scene_projection, current_projection, sizeof(captured_scene_projection));
+			captured_scene_projection_valid = true;
+		}
+		if (have_current_inverse_modelview)
+		{
+			memcpy(captured_scene_inverse_modelview, current_inverse_modelview,
+				sizeof(captured_scene_inverse_modelview));
+			captured_scene_inverse_modelview_valid = true;
 		}
 
 		if (late_post_enabled && OpenGL_state.screen_width > 0 && OpenGL_state.screen_height > 0)
@@ -2215,9 +2252,6 @@ void GL4Renderer::CaptureBloomSource()
 					bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height());
 			}
 			GL4PerfGpuDrain("GPU.CaptureDepth");
-			memcpy(captured_scene_projection, last_projection, sizeof(captured_scene_projection));
-			captured_scene_projection_valid = true;
-
 			glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 			bloom_source_valid = true;
@@ -3219,12 +3253,12 @@ void GL4Renderer::UpdateFramebuffer(void)
 		{
 			framebuffers[i].ClearAll();
 			if (motion_vectors_enabled)
+			{
 				motion_vectors.ClearAttached(framebuffers[i].Handle());
+			}
 			post_protection_mask.ClearAttached(framebuffers[i].Handle());
 		}
-		post_protection_mask.UseSceneDrawBuffers(framebuffers[i].Handle(),
-			OpenGL_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_PIXEL &&
-			motion_vectors.velocity_texture != 0);
+		post_protection_mask.UseSceneDrawBuffers(framebuffers[i].Handle(), false, false);
 	}
 	bool restored_motion_vectors = false;
 	if (motion_vectors_enabled && preserved_motion_vectors.texture != 0 &&
@@ -3319,6 +3353,7 @@ void GL4Renderer::CloseFramebuffer(void)
 	ao_scene_valid = false;
 	deferred_bloom_apply_pending = false;
 	motion_vectors.Destroy();
+	frozen_static_motion_valid = false;
 	post_protection_mask.Destroy();
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);

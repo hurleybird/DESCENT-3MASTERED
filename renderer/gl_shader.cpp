@@ -299,6 +299,10 @@ void GL4Renderer::BindPipeline(uint32_t handle)
 		GLint motion_vector_payload_type_uniform = gl_shaderprogs[handle].FindUniform("motion_vector_payload_type");
 		if (motion_vector_payload_type_uniform != -1)
 			glUniform1i(motion_vector_payload_type_uniform, 0);
+		GLint motion_vector_object_id_uniform = gl_shaderprogs[handle].FindUniform("motion_vector_object_id");
+		if (motion_vector_object_id_uniform != -1)
+			glUniform1ui(motion_vector_object_id_uniform,
+				CurrentDrawWritesMotionObjectId() ? motion_object_id : 0u);
 	}
 }
 
@@ -314,9 +318,12 @@ void GL4Renderer::UpdateCommon(float* projection, float* modelview, int depth)
 	if (depth == 0)
 	{
 		memcpy(last_projection, projection, sizeof(last_projection));
+		memcpy(current_projection, projection, sizeof(current_projection));
+		have_current_projection = true;
 		g3_Mat4Multiply(current_view_projection, projection, modelview);
 		have_current_view_projection = true;
 		have_current_inverse_view_projection = InvertMatrix4(current_view_projection, current_inverse_view_projection);
+		have_current_inverse_modelview = InvertMatrix4(modelview, current_inverse_modelview);
 	}
 
 	glBindBuffer(GL_COPY_WRITE_BUFFER, commonbuffername);

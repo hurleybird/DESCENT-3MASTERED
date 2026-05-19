@@ -810,6 +810,10 @@ void MotionVectorResources::Update(uint32_t new_width, uint32_t new_height, uint
 		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, velocity_texture);
 		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, samples, GL_RG16F, width, height, GL_TRUE);
 
+		glGenTextures(1, &object_id_texture);
+		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, object_id_texture);
+		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, samples, GL_R32UI, width, height, GL_TRUE);
+
 		glGenTextures(1, &resolved_texture);
 		glBindTexture(GL_TEXTURE_2D, resolved_texture);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, width, height, 0, GL_RG, GL_FLOAT, nullptr);
@@ -821,6 +825,20 @@ void MotionVectorResources::Update(uint32_t new_width, uint32_t new_height, uint
 		glGenFramebuffers(1, &resolve_framebuffer);
 		glBindFramebuffer(GL_FRAMEBUFFER, resolve_framebuffer);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, resolved_texture, 0);
+
+		glGenTextures(1, &object_id_resolved_texture);
+		glBindTexture(GL_TEXTURE_2D, object_id_resolved_texture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, width, height, 0, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+		glGenFramebuffers(1, &object_id_resolve_framebuffer);
+		glBindFramebuffer(GL_FRAMEBUFFER, object_id_resolve_framebuffer);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, object_id_resolved_texture, 0);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glReadBuffer(GL_COLOR_ATTACHMENT0);
 	}
 	else
 	{
@@ -836,6 +854,20 @@ void MotionVectorResources::Update(uint32_t new_width, uint32_t new_height, uint
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, velocity_texture, 0);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+		glGenTextures(1, &object_id_texture);
+		glBindTexture(GL_TEXTURE_2D, object_id_texture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, width, height, 0, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+		glGenFramebuffers(1, &object_id_resolve_framebuffer);
+		glBindFramebuffer(GL_FRAMEBUFFER, object_id_resolve_framebuffer);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, object_id_texture, 0);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glReadBuffer(GL_COLOR_ATTACHMENT0);
 	}
 
 	rend_ClearBoundTextures();
@@ -845,11 +877,17 @@ void MotionVectorResources::Update(uint32_t new_width, uint32_t new_height, uint
 void MotionVectorResources::Destroy()
 {
 	glDeleteFramebuffers(1, &resolve_framebuffer);
+	glDeleteFramebuffers(1, &object_id_resolve_framebuffer);
 	glDeleteTextures(1, &velocity_texture);
 	glDeleteTextures(1, &resolved_texture);
+	glDeleteTextures(1, &object_id_texture);
+	glDeleteTextures(1, &object_id_resolved_texture);
 	velocity_texture = 0;
 	resolved_texture = 0;
 	resolve_framebuffer = 0;
+	object_id_texture = 0;
+	object_id_resolved_texture = 0;
+	object_id_resolve_framebuffer = 0;
 	width = height = samples = 0;
 }
 
@@ -861,6 +899,7 @@ void MotionVectorResources::AttachToFramebuffer(GLuint framebuffer)
 	GLenum texture_type = samples >= 2 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D;
 	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, texture_type, velocity_texture, 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT4, texture_type, object_id_texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	glReadBuffer(GL_COLOR_ATTACHMENT0);
 
@@ -870,6 +909,7 @@ void MotionVectorResources::AttachToFramebuffer(GLuint framebuffer)
 		mprintf((0, "MotionVectorResources::AttachToFramebuffer: disabling motion vectors, framebuffer status 0x%x.\n",
 			fbstatus));
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, texture_type, 0, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT4, texture_type, 0, 0);
 		Destroy();
 	}
 }
@@ -889,6 +929,10 @@ void MotionVectorResources::ClearAttached(GLuint framebuffer)
 	glDrawBuffers(1, &draw_buffer);
 	const float zero[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 	glClearBufferfv(GL_COLOR, 0, zero);
+	draw_buffer = GL_COLOR_ATTACHMENT4;
+	glDrawBuffers(1, &draw_buffer);
+	const GLuint zero_id[4] = { 0u, 0u, 0u, 0u };
+	glClearBufferuiv(GL_COLOR, 0, zero_id);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
@@ -916,6 +960,29 @@ GLuint MotionVectorResources::TextureForRead(GLuint source_framebuffer)
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 	return resolved_texture;
+}
+
+GLuint MotionVectorResources::ObjectIdTextureForRead(GLuint source_framebuffer)
+{
+	if (object_id_texture == 0)
+		return 0;
+
+	if (samples < 2)
+		return object_id_texture;
+
+	GLint old_read = 0, old_draw = 0;
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, source_framebuffer);
+	glReadBuffer(GL_COLOR_ATTACHMENT4);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, object_id_resolve_framebuffer);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	return object_id_resolved_texture;
 }
 
 void PostProtectionMaskResources::Update(uint32_t new_width, uint32_t new_height, uint32_t msaa_samples)
@@ -1084,25 +1151,27 @@ void PostProtectionMaskResources::ClearAttached(GLuint framebuffer)
 		glDrawBuffer(old_draw_buffer);
 }
 
-void PostProtectionMaskResources::UseSceneDrawBuffers(GLuint framebuffer, bool include_motion_vectors)
+void PostProtectionMaskResources::UseSceneDrawBuffers(GLuint framebuffer, bool include_motion_vectors,
+	bool include_motion_object_ids)
 {
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
-	if (mask_texture != 0)
+	const GLenum draw_buffers[5] =
 	{
-		const GLenum draw_buffers[4] =
-		{
-			GL_COLOR_ATTACHMENT0,
-			static_cast<GLenum>(include_motion_vectors ? GL_COLOR_ATTACHMENT1 : GL_NONE),
-			GL_COLOR_ATTACHMENT2,
-			GL_COLOR_ATTACHMENT3
-		};
+		GL_COLOR_ATTACHMENT0,
+		static_cast<GLenum>(include_motion_vectors ? GL_COLOR_ATTACHMENT1 : GL_NONE),
+		static_cast<GLenum>(mask_texture != 0 ? GL_COLOR_ATTACHMENT2 : GL_NONE),
+		static_cast<GLenum>(mask_texture != 0 ? GL_COLOR_ATTACHMENT3 : GL_NONE),
+		static_cast<GLenum>(include_motion_object_ids ? GL_COLOR_ATTACHMENT4 : GL_NONE)
+	};
+	if (include_motion_object_ids)
+		glDrawBuffers(5, draw_buffers);
+	else if (mask_texture != 0)
 		glDrawBuffers(4, draw_buffers);
-		GL_ConfigurePostMaskBlend();
-	}
+	else if (include_motion_vectors)
+		glDrawBuffers(2, draw_buffers);
 	else
-	{
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	}
+	GL_ConfigurePostMaskBlend();
 	glReadBuffer(GL_COLOR_ATTACHMENT0);
 }
 
@@ -1116,6 +1185,11 @@ void GL_ConfigurePostMaskBlend()
 	glBlendEquationi(2, GL_MAX);
 	glBlendFunci(2, GL_ONE, GL_ONE);
 	glDisablei(GL_BLEND, 3);
+	glColorMaski(3, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDisablei(GL_BLEND, 4);
+	glBlendEquationi(4, GL_FUNC_ADD);
+	glBlendFunci(4, GL_ONE, GL_ZERO);
+	glColorMaski(4, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 }
 
 GLuint PostProtectionMaskResources::TextureForRead(GLuint source_framebuffer)
