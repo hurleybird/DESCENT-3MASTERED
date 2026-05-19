@@ -136,7 +136,7 @@ static bool ConfigCanUseGTAO()
 
 static bool ConfigShowsLegacyTerrainControls()
 {
-	return OpenGLProfile != GLPROFILE_CORE || Terrain_renderer_mode != TERRAIN_RENDERER_COMPUTE;
+	return OpenGLProfile != GLPROFILE_CORE;
 }
 
 int ConfigNormalizeSupersamplingFactor(int factor)
@@ -2121,7 +2121,7 @@ struct details_menu
 	bool* specmap, * headlight, * mirror,				// check boxes
 		* dynamic, * fog, * coronas, * procedurals,
 		* powerup_halo, * scorches, * weapon_coronas,
-		* cockpit_improvement, * terrain_compute;
+		* cockpit_improvement;
 	short* pixel_err,										// 0-27 (1-28)
 		* rend_dist;											// 0-120 (80-200)
 
@@ -2165,7 +2165,6 @@ struct details_menu
 		pixel_err = NULL;
 		rend_dist = NULL;
 		motion_blur = NULL;
-		terrain_compute = NULL;
 		if (show_legacy_terrain_controls)
 		{
 			sheet->NewGroup(TXT_GEOMETRY, 90, 0);
@@ -2207,12 +2206,6 @@ struct details_menu
 		sheet->AddRadioButton(TXT_CFG_HIGH);
 		*motion_blur = MotionBlurPresetToIndex();
 
-		if (OpenGLProfile == GLPROFILE_CORE)
-		{
-			sheet->NewGroup("Terrain Renderer", show_legacy_terrain_controls ? 174 : 306, show_legacy_terrain_controls ? 216 : 0);
-			terrain_compute = sheet->AddLongCheckBox("GL4 compute terrain", Terrain_renderer_mode == TERRAIN_RENDERER_COMPUTE);
-		}
-
 		return sheet;
 	};
 
@@ -2237,10 +2230,6 @@ struct details_menu
 			Detail_settings.Terrain_render_distance = (((*rend_dist) * 2) + MINIMUM_RENDER_DIST) * ((float)TERRAIN_SIZE);
 		Detail_settings.Weapon_coronas_enabled = *weapon_coronas;
 		Cockpit_alt_mode = *cockpit_improvement;
-		if (terrain_compute && OpenGLProfile == GLPROFILE_CORE)
-			Terrain_renderer_mode = *terrain_compute ? TERRAIN_RENDERER_COMPUTE : TERRAIN_RENDERER_LEGACY;
-		else if (OpenGLProfile != GLPROFILE_CORE)
-			Terrain_renderer_mode = TERRAIN_RENDERER_LEGACY;
 
 		Default_detail_level = *detail_level;
 		Database->write("PredefDetailSetting", Default_detail_level);
@@ -2260,11 +2249,6 @@ struct details_menu
 		{
 			Cockpit_alt_mode = *cockpit_improvement;
 		}
-		bool terrain_compute_changed = terrain_compute && sheet->HasChanged(terrain_compute);
-		if (terrain_compute_changed && OpenGLProfile == GLPROFILE_CORE)
-		{
-			Terrain_renderer_mode = *terrain_compute ? TERRAIN_RENDERER_COMPUTE : TERRAIN_RENDERER_LEGACY;
-		}
 
 		// check here if the detail level currently set should be custom
 		bool changed = sheet->HasChanged(specmap) ||
@@ -2278,7 +2262,6 @@ struct details_menu
 			sheet->HasChanged(scorches) ||
 			sheet->HasChanged(weapon_coronas) ||
 			sheet->HasChanged(objcomp) ||
-			terrain_compute_changed ||
 			(pixel_err && sheet->HasChanged(pixel_err)) ||
 			(rend_dist && sheet->HasChanged(rend_dist));
 

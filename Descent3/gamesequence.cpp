@@ -375,6 +375,8 @@ bool SimpleStartLevel(char* level_name)
 
 bool StartNewGame()
 {
+	TerrainRenderer_ResetLevelState();
+
 	SetCurrentLevel(Current_mission.cur_level);
 
 	ResetGamemode();
@@ -503,6 +505,8 @@ void LoadLevelText(char* level_filename);
 void StartLevel()
 {
 	extern void RestoreCameraRearviews();		// gameloop.cpp
+
+	TerrainRenderer_ResetLevelState();
 
 	//Init time
 	Gametime = 0.0f;

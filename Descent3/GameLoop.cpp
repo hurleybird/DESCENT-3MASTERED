@@ -2464,6 +2464,7 @@ void GameRenderFrame(void)
 			grtext_Flush();
 			EndFrame();
 		}
+#if 0
 		char terrain_debug_display[256] = "";
 		bool terrain_debug_current = Terrain_compute_debug_label[0] != '\0';
 		if (terrain_debug_current)
@@ -2492,6 +2493,7 @@ void GameRenderFrame(void)
 			grtext_SetFlags(0);
 			EndFrame();
 		}
+#endif
 		rend_FlushTextLayer();
 		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_DEBUG);
 	}
