@@ -66,15 +66,13 @@ static IRenderer* rend_CreateRendererInstance()
 static bool rend_PreferredStateRequiresFreshRenderer(const renderer_preferred_state& old_state,
 	const renderer_preferred_state& new_state)
 {
-	// Keep full renderer teardown scoped to framebuffer/context-defining settings.
-	return old_state.antialised != new_state.antialised ||
-		old_state.width != new_state.width ||
+	// MSAA and SSAA are offscreen framebuffer settings; the active renderer
+	// can resize those targets without losing GL-owned temporal resources.
+	return old_state.width != new_state.width ||
 		old_state.height != new_state.height ||
 		old_state.window_width != new_state.window_width ||
 		old_state.window_height != new_state.window_height ||
-		old_state.fullscreen != new_state.fullscreen ||
-		old_state.supersampling_factor != new_state.supersampling_factor ||
-		old_state.msaa_samples != new_state.msaa_samples;
+		old_state.fullscreen != new_state.fullscreen;
 }
 
 static int rend_RecreateRenderer(renderer_preferred_state* pref_state)

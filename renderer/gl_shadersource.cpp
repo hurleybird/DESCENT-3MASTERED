@@ -73,6 +73,22 @@ const char* motionVectorDebugFragmentSrc =
 "}\n"
 "";
 
+const char* motionVectorCopyFragmentSrc =
+"#version 450 core\n"
+"\n"
+"in vec2 outuv;\n"
+"layout(location = 0) out vec2 velocity;\n"
+"\n"
+"uniform sampler2D velocity_source;\n"
+"uniform vec2 uv_origin;\n"
+"uniform vec2 uv_scale;\n"
+"\n"
+"void main()\n"
+"{\n"
+"	velocity = texture(velocity_source, uv_origin + outuv * uv_scale).xy;\n"
+"}\n"
+"";
+
 const char* pixelMotionBlurFragmentSrc =
 "#version 450 core\n"
 "\n"

@@ -120,6 +120,7 @@ class GL4Renderer : public IRenderer
 	ShaderProgram downsampleshader;
 	ShaderProgram fontshader;
 	ShaderProgram motionvectordebugshader;
+	ShaderProgram motionvectorcopyshader;
 	ShaderProgram motionblurshader;
 	ShaderProgram ao_compositeshader;
 	BloomResources bloom;
@@ -164,6 +165,9 @@ class GL4Renderer : public IRenderer
 	GLint motionvectordebug_uv_origin = -1;
 	GLint motionvectordebug_uv_scale = -1;
 	GLint motionvectordebug_screen_size = -1;
+	GLint motionvectorcopy_velocity_source = -1;
+	GLint motionvectorcopy_uv_origin = -1;
+	GLint motionvectorcopy_uv_scale = -1;
 	GLint motionblur_color_source = -1;
 	GLint motionblur_velocity_source = -1;
 	GLint motionblur_protection_mask = -1;
@@ -268,7 +272,12 @@ class GL4Renderer : public IRenderer
 	bool motion_object_active = false;
 	bool motion_vectors_dirty = false;
 	bool motion_vectors_cleared_this_frame = false;
+	bool preserve_motion_vectors_on_next_framebuffer_update = false;
 	bool motion_vectors_capture_locked = false;
+	int motion_vector_visible_origin_x = 0;
+	int motion_vector_visible_origin_y = 0;
+	int motion_vector_visible_width = 0;
+	int motion_vector_visible_height = 0;
 	bool cockpit_motion_object_active = false;
 	float cockpit_previous_view_projection[16] = {};
 	bool have_cockpit_previous_view_projection = false;

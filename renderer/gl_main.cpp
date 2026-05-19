@@ -34,6 +34,134 @@ static void GL4PerfGpuDrain(const char* marker_name)
 	(void)marker_name;
 }
 
+struct GL4MotionVectorPreserveSnapshot
+{
+	GLuint texture = 0;
+	GLuint framebuffer = 0;
+	int width = 0;
+	int height = 0;
+	int visible_origin_x = 0;
+	int visible_origin_y = 0;
+	int visible_width = 0;
+	int visible_height = 0;
+};
+
+static void GL4DestroyMotionVectorPreserveSnapshot(GL4MotionVectorPreserveSnapshot& snapshot)
+{
+	glDeleteFramebuffers(1, &snapshot.framebuffer);
+	glDeleteTextures(1, &snapshot.texture);
+	snapshot = {};
+}
+
+static bool GL4CaptureMotionVectorPreserveSnapshot(GLuint source_texture, int width, int height,
+	int visible_origin_x, int visible_origin_y, int visible_width, int visible_height,
+	GL4MotionVectorPreserveSnapshot& snapshot)
+{
+	if (source_texture == 0 || width <= 0 || height <= 0 ||
+		visible_width <= 0 || visible_height <= 0)
+	{
+		return false;
+	}
+
+	GLint old_read = 0;
+	GLint old_draw = 0;
+	GLint old_read_buffer = GL_COLOR_ATTACHMENT0;
+	GLint old_draw_buffer = GL_COLOR_ATTACHMENT0;
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+	glGetIntegerv(GL_READ_BUFFER, &old_read_buffer);
+	glGetIntegerv(GL_DRAW_BUFFER, &old_draw_buffer);
+
+	GLuint source_framebuffer = 0;
+	glGenFramebuffers(1, &source_framebuffer);
+	glGenFramebuffers(1, &snapshot.framebuffer);
+	glGenTextures(1, &snapshot.texture);
+	glBindTexture(GL_TEXTURE_2D, snapshot.texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, width, height, 0, GL_RG, GL_FLOAT, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, source_framebuffer);
+	glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+		source_texture, 0);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, snapshot.framebuffer);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+		snapshot.texture, 0);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+
+	bool complete =
+		glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE &&
+		glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+	if (complete)
+	{
+		glBlitFramebuffer(0, 0, width, height, 0, 0, width, height,
+			GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		snapshot.width = width;
+		snapshot.height = height;
+		snapshot.visible_origin_x = visible_origin_x;
+		snapshot.visible_origin_y = visible_origin_y;
+		snapshot.visible_width = visible_width;
+		snapshot.visible_height = visible_height;
+	}
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
+	glReadBuffer(old_read_buffer);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	glDrawBuffer(old_draw_buffer);
+	glDeleteFramebuffers(1, &source_framebuffer);
+
+	if (!complete)
+		GL4DestroyMotionVectorPreserveSnapshot(snapshot);
+	return complete;
+}
+
+static bool GL4RestoreMotionVectorPreserveSnapshot(const GL4MotionVectorPreserveSnapshot& snapshot,
+	GLuint target_framebuffer, ShaderProgram& copy_shader, GLint source_uniform,
+	GLint uv_origin_uniform, GLint uv_scale_uniform, int target_origin_x, int target_origin_y,
+	int target_width, int target_height, bool target_multisampled)
+{
+	if (snapshot.texture == 0 || target_framebuffer == 0 || copy_shader.Handle() == 0 ||
+		target_width <= 0 || target_height <= 0 || snapshot.width <= 0 || snapshot.height <= 0 ||
+		snapshot.visible_width <= 0 || snapshot.visible_height <= 0)
+	{
+		return false;
+	}
+
+	copy_shader.Use();
+	if (source_uniform != -1)
+		glUniform1i(source_uniform, 0);
+	if (uv_origin_uniform != -1)
+		glUniform2f(uv_origin_uniform,
+			(float)snapshot.visible_origin_x / (float)snapshot.width,
+			(float)snapshot.visible_origin_y / (float)snapshot.height);
+	if (uv_scale_uniform != -1)
+		glUniform2f(uv_scale_uniform,
+			(float)snapshot.visible_width / (float)snapshot.width,
+			(float)snapshot.visible_height / (float)snapshot.height);
+
+	rend_ClearBoundTextures();
+	GL_BindFramebufferTexture(snapshot.texture, 0, GL_LINEAR);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target_framebuffer);
+	const GLenum draw_buffer = GL_COLOR_ATTACHMENT1;
+	glDrawBuffers(1, &draw_buffer);
+	GLboolean multisample_enabled = glIsEnabled(GL_MULTISAMPLE);
+	if (target_multisampled)
+		glEnable(GL_MULTISAMPLE);
+	else
+		glDisable(GL_MULTISAMPLE);
+	GL_DrawFramebufferQuadNoClear(target_framebuffer, target_origin_x, target_origin_y,
+		target_width, target_height);
+	if (multisample_enabled)
+		glEnable(GL_MULTISAMPLE);
+	else
+		glDisable(GL_MULTISAMPLE);
+	ShaderProgram::ClearBinding();
+	return true;
+}
+
 static constexpr int GL4_GPU_FRAME_QUERY_COUNT = 8;
 static GLuint GL4_gpu_frame_queries[GL4_GPU_FRAME_QUERY_COUNT] = {};
 static bool GL4_gpu_frame_queries_initialized = false;
@@ -902,8 +1030,15 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 
 		if (framebuffer_state_changed)
 		{
-			have_previous_view_projection = false;
-			have_cockpit_previous_view_projection = false;
+			if (pref_state->motion_vector_mode != old_state.motion_vector_mode)
+			{
+				have_previous_view_projection = false;
+				have_cockpit_previous_view_projection = false;
+			}
+			else if (pref_state->motion_vector_mode != RENDERER_MOTION_VECTOR_OFF)
+			{
+				preserve_motion_vectors_on_next_framebuffer_update = true;
+			}
 			UpdateWindow();
 			SetViewport();
 			UpdateFramebuffer();
@@ -953,6 +1088,8 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 			OpenGL_preferred_state = msaa_deferred_preferred_state;
 			msaa_deferred_preferred_state_valid = false;
 		}
+		if (OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_OFF)
+			preserve_motion_vectors_on_next_framebuffer_update = true;
 		UpdateWindow();
 		SetViewport();
 		UpdateFramebuffer();
@@ -2932,6 +3069,9 @@ int GL4Renderer::SaveScreenshotPNG(const char* filename)
 
 void GL4Renderer::UpdateFramebuffer(void)
 {
+	const bool preserve_motion_vectors_for_update =
+		preserve_motion_vectors_on_next_framebuffer_update;
+	preserve_motion_vectors_on_next_framebuffer_update = false;
 	int preferred_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(OpenGL_preferred_state));
 	int target_samples = preferred_samples;
 	uint32_t current_samples = framebuffers[0].RequestedSamples();
@@ -2952,6 +3092,10 @@ void GL4Renderer::UpdateFramebuffer(void)
 	}
 	const int supersampling_factor = SupersamplingFactor();
 	const int overscan_percent = GL4OverscanPercent(OpenGL_preferred_state);
+	const int old_motion_vector_visible_origin_x = motion_vector_visible_origin_x;
+	const int old_motion_vector_visible_origin_y = motion_vector_visible_origin_y;
+	const int old_motion_vector_visible_width = motion_vector_visible_width;
+	const int old_motion_vector_visible_height = motion_vector_visible_height;
 	framebuffer_logical_width = OpenGL_state.screen_width;
 	framebuffer_logical_height = OpenGL_state.screen_height;
 	if (overscan_percent > 100 && framebuffer_logical_width > 0 && framebuffer_logical_height > 0)
@@ -2961,6 +3105,12 @@ void GL4Renderer::UpdateFramebuffer(void)
 	}
 	framebuffer_logical_offset_x = (framebuffer_logical_width - OpenGL_state.screen_width + 1) / 2;
 	framebuffer_logical_offset_y = (framebuffer_logical_height - OpenGL_state.screen_height + 1) / 2;
+	const int framebuffer_logical_bottom_offset =
+		framebuffer_logical_height - OpenGL_state.screen_height - framebuffer_logical_offset_y;
+	const int current_motion_vector_visible_origin_x = framebuffer_logical_offset_x * supersampling_factor;
+	const int current_motion_vector_visible_origin_y = framebuffer_logical_bottom_offset * supersampling_factor;
+	const int current_motion_vector_visible_width = OpenGL_state.screen_width * supersampling_factor;
+	const int current_motion_vector_visible_height = OpenGL_state.screen_height * supersampling_factor;
 
 	int target_width = framebuffer_logical_width * supersampling_factor;
 	int target_height = framebuffer_logical_height * supersampling_factor;
@@ -2975,6 +3125,17 @@ void GL4Renderer::UpdateFramebuffer(void)
 		(framebuffers[0].RequestedSamples() != (uint32_t)target_samples ||
 		 framebuffers[0].Width() != (uint32_t)target_width ||
 		 framebuffers[0].Height() != (uint32_t)target_height);
+	const bool motion_vectors_enabled = OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_OFF;
+	GL4MotionVectorPreserveSnapshot preserved_motion_vectors;
+	if (framebuffer_state_changed && motion_vectors_enabled && motion_vectors.velocity_texture != 0)
+	{
+		GLuint source_texture = motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
+		GL4CaptureMotionVectorPreserveSnapshot(source_texture,
+			(int)motion_vectors.width, (int)motion_vectors.height,
+			old_motion_vector_visible_origin_x, old_motion_vector_visible_origin_y,
+			old_motion_vector_visible_width, old_motion_vector_visible_height,
+			preserved_motion_vectors);
+	}
 	if (framebuffer_state_changed)
 	{
 		// Drain current rendering, unbind old targets, then delete every old
@@ -3005,7 +3166,6 @@ void GL4Renderer::UpdateFramebuffer(void)
 		glFinish();
 	}
 	gtao.DestroyFramebuffers();
-	const bool motion_vectors_enabled = OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_OFF;
 	if (!motion_vectors_enabled)
 		motion_vectors.Destroy();
 
@@ -3030,6 +3190,18 @@ void GL4Renderer::UpdateFramebuffer(void)
 			OpenGL_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_PIXEL &&
 			motion_vectors.velocity_texture != 0);
 	}
+	bool restored_motion_vectors = false;
+	if (motion_vectors_enabled && preserved_motion_vectors.texture != 0 &&
+		motion_vectors.velocity_texture != 0)
+	{
+		restored_motion_vectors = GL4RestoreMotionVectorPreserveSnapshot(preserved_motion_vectors,
+			framebuffers[0].Handle(), motionvectorcopyshader, motionvectorcopy_velocity_source,
+			motionvectorcopy_uv_origin, motionvectorcopy_uv_scale,
+			current_motion_vector_visible_origin_x, current_motion_vector_visible_origin_y,
+			current_motion_vector_visible_width, current_motion_vector_visible_height,
+			framebuffers[0].Samples() >= 2);
+	}
+	GL4DestroyMotionVectorPreserveSnapshot(preserved_motion_vectors);
 	if (supersampling_factor >= 2 || ((OpenGL_preferred_state.bloom_enabled || OpenGL_preferred_state.gtao_enabled) && target_samples >= 2))
 		resolved_framebuffer.Update(framebuffer_logical_width, framebuffer_logical_height, 0);
 	else
@@ -3049,8 +3221,15 @@ void GL4Renderer::UpdateFramebuffer(void)
 	legacy_draw_uniforms_dirty = true;
 	post_protection_mask_dirty = false;
 	post_protection_mask_cleared_this_frame = false;
-	motion_vectors_cleared_this_frame = false;
+	const bool kept_existing_motion_vectors =
+		preserve_motion_vectors_for_update && !framebuffer_state_changed &&
+		motion_vectors_enabled && motion_vectors.velocity_texture != 0;
+	motion_vectors_cleared_this_frame = restored_motion_vectors || kept_existing_motion_vectors;
 	motion_vectors_capture_locked = false;
+	motion_vector_visible_origin_x = current_motion_vector_visible_origin_x;
+	motion_vector_visible_origin_y = current_motion_vector_visible_origin_y;
+	motion_vector_visible_width = current_motion_vector_visible_width;
+	motion_vector_visible_height = current_motion_vector_visible_height;
 
 	framebuffer_current_draw = 0;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[0].Handle());
