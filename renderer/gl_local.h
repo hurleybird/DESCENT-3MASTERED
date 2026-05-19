@@ -194,7 +194,10 @@ class GL4Renderer : public IRenderer
 	GLint motionblur_velocity_uv_origin = -1;
 	GLint motionblur_velocity_uv_scale = -1;
 	GLint motionblur_strength = -1;
-	GLint motionblur_periphery_strength = -1;
+	GLint motionblur_legacy_object_strength = -1;
+	GLint motionblur_center_suppression = -1;
+	GLint motionblur_legacy_object_center_suppression = -1;
+	GLint motionblur_sample_count = -1;
 	GLint motionblur_current_projection = -1;
 	GLint motionblur_current_inverse_modelview = -1;
 	GLint motionblur_previous_view_projection = -1;
@@ -352,7 +355,7 @@ class GL4Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.5f, 0.5f, 0.5f, 1.0f, RENDERER_MOTION_VECTOR_OFF, false, 0.0f, 1.0f };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.5f, 0.5f, 0.5f, 1.0f, RENDERER_MOTION_VECTOR_OFF, false, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 9 };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -614,7 +617,7 @@ public:
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 	void DrawPolygon2D(int handle, g3Point** p, int nv) override;
 
-	void BeginMotionObject(int object_handle) override;
+	void BeginMotionObject(int object_handle, int motion_object_flags = RENDERER_MOTION_OBJECT_DEFAULT) override;
 	void EndMotionObject() override;
 	void SetAOSuppression(float value) override;
 	void SetBloomSuppression(float value) override;

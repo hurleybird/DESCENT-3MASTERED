@@ -299,6 +299,10 @@ struct renderer_preferred_state
 	bool motion_vector_debug_preview;
 	float pixel_motion_blur_strength;
 	float pixel_motion_blur_periphery_strength;
+	float pixel_motion_blur_legacy_object_strength;
+	float pixel_motion_blur_center_suppression;
+	float pixel_motion_blur_legacy_object_center_suppression;
+	ubyte pixel_motion_blur_samples;
 };
 
 enum renderer_ao_class
@@ -308,6 +312,12 @@ enum renderer_ao_class
 	RENDERER_AO_CLASS_POLYOBJECT = 2,
 	RENDERER_AO_CLASS_MINE_ROCK = 3,
 	RENDERER_AO_CLASS_MINE = 4
+};
+
+enum renderer_motion_object_flags
+{
+	RENDERER_MOTION_OBJECT_DEFAULT = 0,
+	RENDERER_MOTION_OBJECT_LEGACY_BLUR = 1 << 0
 };
 
 struct renderer_lfb
@@ -439,7 +449,8 @@ void rend_DrawPolygon3DBatch(int handle,const renderer_poly_batch_item *items,in
 void rend_DrawPolygon2D(int handle,g3Point **p,int nv);
 
 // Marks subsequent 3D polygons as belonging to a moving object for motion-vector capture.
-void rend_BeginMotionObject(int object_handle);
+void rend_BeginMotionObject(int object_handle,
+	int motion_object_flags = RENDERER_MOTION_OBJECT_DEFAULT);
 void rend_EndMotionObject();
 void rend_SetAOSuppression(float value);
 void rend_SetBloomSuppression(float value);

@@ -28,6 +28,7 @@ constexpr int NUM_LEGACY_VERTEX_ATTRIBS = 7;
 //The count of vertices that each buffer will store
 constexpr int NUM_VERTS_PER_BUFFER = 640000;
 constexpr float PIXEL_MOTION_BLUR_REFERENCE_FRAME_TIME = 1.0f / 60.0f;
+constexpr unsigned int GL4_MOTION_OBJECT_LEGACY_BLUR_MASK = 0x80000000u;
 
 static bool GL4DrawTargetIsFramebuffer(GLuint framebuffer)
 {
@@ -195,7 +196,11 @@ bool GL4Renderer::CurrentDrawUsesPixelMotionTarget() const
 
 void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 {
-	if (OpenGL_preferred_state.pixel_motion_blur_strength <= 0.0f ||
+	const float scene_strength = std::max(0.0f,
+		std::min(OpenGL_preferred_state.pixel_motion_blur_strength, 4.0f));
+	const float legacy_object_strength = std::max(0.0f,
+		std::min(OpenGL_preferred_state.pixel_motion_blur_legacy_object_strength, 4.0f));
+	if ((scene_strength <= 0.0f && legacy_object_strength <= 0.0f) ||
 		OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_PIXEL ||
 		motionblurshader.Handle() == 0 || post_present_framebuffer.Handle() == 0 ||
 		!MotionVectorTargetEnabled())
@@ -209,6 +214,8 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 		bloom_source_framebuffer.DepthTextureForRead() :
 		framebuffers[framebuffer_current_draw].DepthTextureForRead();
 	const bool has_dynamic_velocity = motion_vectors_dirty;
+	if (scene_strength <= 0.0f && !has_dynamic_velocity)
+		return;
 	GLuint velocity_texture = has_dynamic_velocity ?
 		motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
 	GLuint object_id_texture = has_dynamic_velocity ?
@@ -256,11 +263,25 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 	float frame_scale = PIXEL_MOTION_BLUR_REFERENCE_FRAME_TIME / frame_time;
 	frame_scale = std::max(0.25f, std::min(frame_scale, 4.0f));
 	if (motionblur_strength != -1)
-		glUniform1f(motionblur_strength,
-			OpenGL_preferred_state.pixel_motion_blur_strength * frame_scale);
-	if (motionblur_periphery_strength != -1)
-		glUniform1f(motionblur_periphery_strength,
-			std::max(0.0f, std::min(OpenGL_preferred_state.pixel_motion_blur_periphery_strength, 4.0f)));
+		glUniform1f(motionblur_strength, scene_strength * frame_scale);
+	if (motionblur_legacy_object_strength != -1)
+		glUniform1f(motionblur_legacy_object_strength, legacy_object_strength * frame_scale);
+	if (motionblur_center_suppression != -1)
+		glUniform1f(motionblur_center_suppression,
+			std::max(0.0f, std::min(OpenGL_preferred_state.pixel_motion_blur_center_suppression, 1.0f)));
+	if (motionblur_legacy_object_center_suppression != -1)
+		glUniform1f(motionblur_legacy_object_center_suppression,
+			std::max(0.0f, std::min(
+				OpenGL_preferred_state.pixel_motion_blur_legacy_object_center_suppression, 1.0f)));
+	if (motionblur_sample_count != -1)
+	{
+		int samples = OpenGL_preferred_state.pixel_motion_blur_samples;
+		if (samples < 3)
+			samples = 3;
+		if (samples > 17)
+			samples = 17;
+		glUniform1i(motionblur_sample_count, samples);
+	}
 	const bool use_frozen_static_motion = MotionVectorsFrozen() && frozen_static_motion_valid;
 	const float* reconstruction_projection = use_frozen_static_motion ? frozen_static_motion_projection :
 		(captured_scene_projection_valid ? captured_scene_projection : current_projection);
@@ -1607,7 +1628,7 @@ void GL4Renderer::DrawPolygon2D(int handle, g3Point** p, int nv)
 	draw_call_category = old_category;
 }
 
-void GL4Renderer::BeginMotionObject(int object_handle)
+void GL4Renderer::BeginMotionObject(int object_handle, int motion_object_flags)
 {
 	const bool cockpit_draw = rend_Get3DDrawCallCategory() == RENDERER_DRAW_CALL_3D_COCKPIT;
 	cockpit_motion_object_active = false;
@@ -1620,7 +1641,12 @@ void GL4Renderer::BeginMotionObject(int object_handle)
 	if (motion_object_active && cockpit_draw)
 		cockpit_motion_object_active = true;
 	else if (motion_object_active)
-		motion_object_id = (unsigned int)object_handle + 1u;
+	{
+		motion_object_id = ((unsigned int)object_handle + 1u) &
+			~GL4_MOTION_OBJECT_LEGACY_BLUR_MASK;
+		if (motion_object_flags & RENDERER_MOTION_OBJECT_LEGACY_BLUR)
+			motion_object_id |= GL4_MOTION_OBJECT_LEGACY_BLUR_MASK;
+	}
 }
 
 void GL4Renderer::EndMotionObject()

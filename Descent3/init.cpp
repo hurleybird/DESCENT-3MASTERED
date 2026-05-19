@@ -391,6 +391,11 @@ void SaveGameSettings()
 	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_periphery_strength", Render_preferred_state.pixel_motion_blur_periphery_strength);
+	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_legacy_object_strength", Render_preferred_state.pixel_motion_blur_legacy_object_strength);
+	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_center_suppression", Render_preferred_state.pixel_motion_blur_center_suppression);
+	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_legacy_object_center_suppression",
+		Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression);
+	Database->write("RS_pixel_motion_blur_samples", Render_preferred_state.pixel_motion_blur_samples);
 	tempint = Use_motion_blur ? 1 : 0;
 	Database->write("RS_motion_blur_type", tempint);
 	WRITE_FLOAT_SETTING("RS_legacy_motion_blur_frame_time", Legacy_motion_blur_frame_time);
@@ -573,6 +578,10 @@ void LoadGameSettings()
 	Render_preferred_state.motion_vector_debug_preview = false;
 	Render_preferred_state.pixel_motion_blur_strength = 0.0f;
 	Render_preferred_state.pixel_motion_blur_periphery_strength = 1.0f;
+	Render_preferred_state.pixel_motion_blur_legacy_object_strength = 0.0f;
+	Render_preferred_state.pixel_motion_blur_center_suppression = 0.0f;
+	Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression = 0.0f;
+	Render_preferred_state.pixel_motion_blur_samples = 9;
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
 	Terrain_renderer_mode = TERRAIN_RENDERER_COMPUTE;
@@ -775,6 +784,33 @@ void LoadGameSettings()
 		Render_preferred_state.pixel_motion_blur_periphery_strength = 0.0f;
 	if (Render_preferred_state.pixel_motion_blur_periphery_strength > 4.0f)
 		Render_preferred_state.pixel_motion_blur_periphery_strength = 4.0f;
+	Render_preferred_state.pixel_motion_blur_legacy_object_strength =
+		Render_preferred_state.pixel_motion_blur_strength;
+	READ_FLOAT_SETTING("RS_pixel_motion_blur_legacy_object_strength",
+		Render_preferred_state.pixel_motion_blur_legacy_object_strength);
+	if (Render_preferred_state.pixel_motion_blur_legacy_object_strength < 0.0f)
+		Render_preferred_state.pixel_motion_blur_legacy_object_strength = 0.0f;
+	if (Render_preferred_state.pixel_motion_blur_legacy_object_strength > 4.0f)
+		Render_preferred_state.pixel_motion_blur_legacy_object_strength = 4.0f;
+	READ_FLOAT_SETTING("RS_pixel_motion_blur_center_suppression",
+		Render_preferred_state.pixel_motion_blur_center_suppression);
+	if (Render_preferred_state.pixel_motion_blur_center_suppression < 0.0f)
+		Render_preferred_state.pixel_motion_blur_center_suppression = 0.0f;
+	if (Render_preferred_state.pixel_motion_blur_center_suppression > 1.0f)
+		Render_preferred_state.pixel_motion_blur_center_suppression = 1.0f;
+	Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression =
+		Render_preferred_state.pixel_motion_blur_center_suppression;
+	READ_FLOAT_SETTING("RS_pixel_motion_blur_legacy_object_center_suppression",
+		Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression);
+	if (Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression < 0.0f)
+		Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression = 0.0f;
+	if (Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression > 1.0f)
+		Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression = 1.0f;
+	tempint = Render_preferred_state.pixel_motion_blur_samples;
+	Database->read_int("RS_pixel_motion_blur_samples", &tempint);
+	if (tempint < 3) tempint = 3;
+	if (tempint > 17) tempint = 17;
+	Render_preferred_state.pixel_motion_blur_samples = (ubyte)tempint;
 	saved_motion_blur_type = 0;
 	saved_motion_blur_type_present = Database->read_int("RS_motion_blur_type", &saved_motion_blur_type);
 	if (saved_motion_blur_type < 0) saved_motion_blur_type = 0;

@@ -2161,6 +2161,7 @@ void GL4Renderer::CaptureBloomSource()
 	const bool bloom_enabled = OpenGL_preferred_state.bloom_enabled;
 	const bool motion_depth_enabled = PixelMotionVectorModeEnabled() &&
 		(OpenGL_preferred_state.pixel_motion_blur_strength > 0.0f ||
+		 OpenGL_preferred_state.pixel_motion_blur_legacy_object_strength > 0.0f ||
 		 OpenGL_preferred_state.motion_vector_debug_preview);
 	const bool late_post_enabled = ao_enabled || bloom_enabled || motion_depth_enabled;
 

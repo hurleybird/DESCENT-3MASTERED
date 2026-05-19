@@ -1048,13 +1048,22 @@ static float ConfigNormalizePixelMotionBlurStrength(float strength)
 	return strength;
 }
 
-static float ConfigNormalizePixelMotionBlurPeripheryStrength(float strength)
+static float ConfigNormalizePixelMotionBlurCenterSuppression(float suppression)
 {
-	if (strength < 0.0f)
+	if (suppression < 0.0f)
 		return 0.0f;
-	if (strength > 4.0f)
-		return 4.0f;
-	return strength;
+	if (suppression > 1.0f)
+		return 1.0f;
+	return suppression;
+}
+
+static int ConfigNormalizePixelMotionBlurSamples(int samples)
+{
+	if (samples < 3)
+		samples = 3;
+	if (samples > 17)
+		samples = 17;
+	return samples;
 }
 
 static int ConfigNormalizeMotionVectorMode(int mode)
@@ -1143,7 +1152,10 @@ struct video_menu
 	short* fov;
 	short* frame_limit;
 	short* pixel_motion_blur;
-	short* pixel_motion_blur_periphery;
+	short* pixel_motion_blur_legacy;
+	short* pixel_motion_blur_center;
+	short* pixel_motion_blur_legacy_center;
+	short* pixel_motion_blur_quality;
 	char* buffer;
 	char* aspect_buffer;
 	bool* fullscreen;
@@ -1304,11 +1316,31 @@ struct video_menu
 				ConfigNormalizePixelMotionBlurStrength(CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur, 0.0f, 4.0f, 100));
 			changed = true;
 		}
-		if (pixel_motion_blur_periphery && sheet->HasChanged(pixel_motion_blur_periphery))
+		if (pixel_motion_blur_legacy && sheet->HasChanged(pixel_motion_blur_legacy))
 		{
-			Render_preferred_state.pixel_motion_blur_periphery_strength =
-				ConfigNormalizePixelMotionBlurPeripheryStrength(
-					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_periphery, 0.0f, 4.0f, 100));
+			Render_preferred_state.pixel_motion_blur_legacy_object_strength =
+				ConfigNormalizePixelMotionBlurStrength(
+					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_legacy, 0.0f, 4.0f, 100));
+			changed = true;
+		}
+		if (pixel_motion_blur_center && sheet->HasChanged(pixel_motion_blur_center))
+		{
+			Render_preferred_state.pixel_motion_blur_center_suppression =
+				ConfigNormalizePixelMotionBlurCenterSuppression(
+					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_center, 0.0f, 1.0f, 100));
+			changed = true;
+		}
+		if (pixel_motion_blur_legacy_center && sheet->HasChanged(pixel_motion_blur_legacy_center))
+		{
+			Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression =
+				ConfigNormalizePixelMotionBlurCenterSuppression(
+					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_legacy_center, 0.0f, 1.0f, 100));
+			changed = true;
+		}
+		if (pixel_motion_blur_quality && sheet->HasChanged(pixel_motion_blur_quality))
+		{
+			Render_preferred_state.pixel_motion_blur_samples = (ubyte)ConfigNormalizePixelMotionBlurSamples(
+				CALC_SLIDER_INT_VALUE(*pixel_motion_blur_quality, 3, 17, 14));
 			changed = true;
 		}
 		if (perf_markers && sheet->HasChanged(perf_markers))
@@ -1391,7 +1423,10 @@ struct video_menu
 		fov = NULL;
 		frame_limit = NULL;
 		pixel_motion_blur = NULL;
-		pixel_motion_blur_periphery = NULL;
+		pixel_motion_blur_legacy = NULL;
+		pixel_motion_blur_center = NULL;
+		pixel_motion_blur_legacy_center = NULL;
+		pixel_motion_blur_quality = NULL;
 		buffer = NULL;
 		aspect_buffer = NULL;
 		fullscreen = NULL;
@@ -1488,12 +1523,29 @@ struct video_menu
 		pixel_blur_settings.min_val.f = 0.0f;
 		pixel_blur_settings.max_val.f = 4.0f;
 		pixel_blur_settings.type = SLIDER_UNITS_FLOAT;
-		pixel_motion_blur = sheet->AddSlider("Strength", 100,
+		pixel_motion_blur = sheet->AddSlider("Scene", 100,
 			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_strength, &pixel_blur_settings, 100),
 			&pixel_blur_settings);
-		pixel_motion_blur_periphery = sheet->AddSlider("Periphery", 100,
-			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_periphery_strength,
+		pixel_motion_blur_legacy = sheet->AddSlider("Legacy obj", 100,
+			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_legacy_object_strength,
 				&pixel_blur_settings, 100), &pixel_blur_settings);
+		tSliderSettings pixel_blur_center_settings = {};
+		pixel_blur_center_settings.min_val.f = 0.0f;
+		pixel_blur_center_settings.max_val.f = 1.0f;
+		pixel_blur_center_settings.type = SLIDER_UNITS_FLOAT;
+		pixel_motion_blur_center = sheet->AddSlider("Scene sup", 100,
+			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_center_suppression,
+				&pixel_blur_center_settings, 100), &pixel_blur_center_settings);
+		pixel_motion_blur_legacy_center = sheet->AddSlider("Legacy sup", 100,
+			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression,
+				&pixel_blur_center_settings, 100), &pixel_blur_center_settings);
+		tSliderSettings pixel_blur_quality_settings = {};
+		pixel_blur_quality_settings.min_val.i = 3;
+		pixel_blur_quality_settings.max_val.i = 17;
+		pixel_blur_quality_settings.type = SLIDER_UNITS_INT;
+		pixel_motion_blur_quality = sheet->AddSlider("Samples", 14,
+			ConfigNormalizePixelMotionBlurSamples(Render_preferred_state.pixel_motion_blur_samples) - 3,
+			&pixel_blur_quality_settings);
 
 		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
@@ -1528,10 +1580,21 @@ struct video_menu
 		if (pixel_motion_blur)
 			Render_preferred_state.pixel_motion_blur_strength =
 				ConfigNormalizePixelMotionBlurStrength(CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur, 0.0f, 4.0f, 100));
-		if (pixel_motion_blur_periphery)
-			Render_preferred_state.pixel_motion_blur_periphery_strength =
-				ConfigNormalizePixelMotionBlurPeripheryStrength(
-					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_periphery, 0.0f, 4.0f, 100));
+		if (pixel_motion_blur_legacy)
+			Render_preferred_state.pixel_motion_blur_legacy_object_strength =
+				ConfigNormalizePixelMotionBlurStrength(
+					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_legacy, 0.0f, 4.0f, 100));
+		if (pixel_motion_blur_center)
+			Render_preferred_state.pixel_motion_blur_center_suppression =
+				ConfigNormalizePixelMotionBlurCenterSuppression(
+					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_center, 0.0f, 1.0f, 100));
+		if (pixel_motion_blur_legacy_center)
+			Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression =
+				ConfigNormalizePixelMotionBlurCenterSuppression(
+					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_legacy_center, 0.0f, 1.0f, 100));
+		if (pixel_motion_blur_quality)
+			Render_preferred_state.pixel_motion_blur_samples = (ubyte)ConfigNormalizePixelMotionBlurSamples(
+				CALC_SLIDER_INT_VALUE(*pixel_motion_blur_quality, 3, 17, 14));
 		if (perf_markers)
 			PerfMarkersSetEnabled(*perf_markers);
 		if (show_fps)

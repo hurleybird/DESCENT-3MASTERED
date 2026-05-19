@@ -308,12 +308,12 @@ void rend_DrawPolygon2D(int handle, g3Point** p, int nv)
 	renderer_inst->DrawPolygon2D(handle, p, nv);
 }
 
-void rend_BeginMotionObject(int object_handle)
+void rend_BeginMotionObject(int object_handle, int motion_object_flags)
 {
 	if (!Renderer_initted)
 		return;
 
-	renderer_inst->BeginMotionObject(object_handle);
+	renderer_inst->BeginMotionObject(object_handle, motion_object_flags);
 }
 
 void rend_EndMotionObject()

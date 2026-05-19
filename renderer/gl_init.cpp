@@ -783,7 +783,11 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	motionblur_velocity_uv_origin = motionblurshader.FindUniform("velocity_uv_origin");
 	motionblur_velocity_uv_scale = motionblurshader.FindUniform("velocity_uv_scale");
 	motionblur_strength = motionblurshader.FindUniform("strength");
-	motionblur_periphery_strength = motionblurshader.FindUniform("periphery_strength");
+	motionblur_legacy_object_strength = motionblurshader.FindUniform("legacy_object_strength");
+	motionblur_center_suppression = motionblurshader.FindUniform("center_suppression");
+	motionblur_legacy_object_center_suppression =
+		motionblurshader.FindUniform("legacy_object_center_suppression");
+	motionblur_sample_count = motionblurshader.FindUniform("sample_count");
 	motionblur_current_projection = motionblurshader.FindUniform("current_projection");
 	motionblur_current_inverse_modelview = motionblurshader.FindUniform("current_inverse_modelview");
 	motionblur_previous_view_projection = motionblurshader.FindUniform("previous_view_projection");
@@ -803,7 +807,10 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 		motionblur_protection_mask == -1 || motionblur_depth_source == -1 ||
 		motionblur_object_id_source == -1 || motionblur_use_protection_mask == -1 ||
 		motionblur_velocity_uv_origin == -1 || motionblur_velocity_uv_scale == -1 ||
-		motionblur_strength == -1 || motionblur_periphery_strength == -1 ||
+		motionblur_strength == -1 || motionblur_legacy_object_strength == -1 ||
+		motionblur_center_suppression == -1 ||
+		motionblur_legacy_object_center_suppression == -1 ||
+		motionblur_sample_count == -1 ||
 		motionblur_current_projection == -1 || motionblur_current_inverse_modelview == -1 ||
 		motionblur_previous_view_projection == -1 || motionblur_has_static_reconstruction == -1 ||
 		motionblur_has_dynamic_velocity == -1)
