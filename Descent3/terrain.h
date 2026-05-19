@@ -220,6 +220,9 @@ enum terrain_renderer_mode
 
 extern int Terrain_renderer_mode;
 extern char Terrain_compute_status_text[96];
+extern char Terrain_compute_debug_label[160];
+extern char Terrain_compute_debug_last_label[160];
+extern int Terrain_compute_debug_last_frame;
 
 extern float Last_terrain_render_time;
 

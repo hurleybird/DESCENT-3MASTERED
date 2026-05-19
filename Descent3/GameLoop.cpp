@@ -2385,6 +2385,7 @@ void GameRenderFrame(void)
 	}
 
 	//Render the mine
+	Terrain_compute_debug_label[0] = '\0';
 	if (!no_render)
 	{
 		if (Game_paused && !Demo_do_one_frame)
@@ -2461,6 +2462,34 @@ void GameRenderFrame(void)
 			sprintf(buffer, "Uploads=%d", stats.texture_uploads);
 			RenderHUDText(GR_RGB(255, 40, 40), 255, 1, x, y, buffer); y += height;
 			grtext_Flush();
+			EndFrame();
+		}
+		char terrain_debug_display[256] = "";
+		bool terrain_debug_current = Terrain_compute_debug_label[0] != '\0';
+		if (terrain_debug_current)
+		{
+			strncpy(terrain_debug_display, Terrain_compute_debug_label, sizeof(terrain_debug_display));
+			terrain_debug_display[sizeof(terrain_debug_display) - 1] = '\0';
+		}
+		else if (Terrain_compute_debug_last_label[0] != '\0' &&
+			FrameCount - Terrain_compute_debug_last_frame <= 600)
+		{
+			snprintf(terrain_debug_display, sizeof(terrain_debug_display), "LAST %df: %s",
+				FrameCount - Terrain_compute_debug_last_frame, Terrain_compute_debug_last_label);
+			terrain_debug_display[sizeof(terrain_debug_display) - 1] = '\0';
+		}
+		if (terrain_debug_display[0] != '\0')
+		{
+			PERF_MARKER_SCOPE("TerrainComputeDebugLabel");
+			StartFrame(0, 0, Max_window_w, Max_window_h);
+			rend_StartFrame(0, 0, Max_window_w, Max_window_h, 0);
+			grtext_SetFont(HUD_FONT);
+			grtext_SetColor(terrain_debug_current ? GR_RGB(255, 40, 40) : GR_RGB(255, 160, 40));
+			grtext_SetAlpha(255);
+			grtext_SetFlags(GRTEXTFLAG_SHADOW);
+			grtext_Puts(8, Max_window_h - grfont_GetHeight(HUD_FONT) - 6, terrain_debug_display);
+			grtext_Flush();
+			grtext_SetFlags(0);
 			EndFrame();
 		}
 		rend_FlushTextLayer();

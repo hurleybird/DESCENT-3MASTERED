@@ -1075,6 +1075,34 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 	return retval;
 }
 
+static void GL4ClearBuffers(GLbitfield clear_flags)
+{
+	if (clear_flags == 0)
+		return;
+
+	GLboolean depth_mask = GL_TRUE;
+	GLdouble depth_clear_value = 1.0;
+	GLboolean scissor_enabled = glIsEnabled(GL_SCISSOR_TEST);
+	if (clear_flags & GL_DEPTH_BUFFER_BIT)
+	{
+		glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+		glGetDoublev(GL_DEPTH_CLEAR_VALUE, &depth_clear_value);
+		glDepthMask(GL_TRUE);
+		glClearDepth(1.0);
+	}
+
+	glDisable(GL_SCISSOR_TEST);
+	glClear(clear_flags);
+
+	if (clear_flags & GL_DEPTH_BUFFER_BIT)
+	{
+		glClearDepth(depth_clear_value);
+		glDepthMask(depth_mask);
+	}
+	if (scissor_enabled)
+		glEnable(GL_SCISSOR_TEST);
+}
+
 void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 {
 	if (msaa_deferred_apply_pending && framebuffer_ok)
@@ -1135,8 +1163,17 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		glclearflags |= GL_COLOR_BUFFER_BIT;
 	}
 
-	if (glclearflags != 0)
-		glClear(glclearflags);
+	if (framebuffer_ok)
+	{
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
+		if (glclearflags & GL_COLOR_BUFFER_BIT)
+		{
+			const GLenum draw_buffer = GL_COLOR_ATTACHMENT0;
+			glDrawBuffers(1, &draw_buffer);
+			glReadBuffer(GL_COLOR_ATTACHMENT0);
+		}
+	}
+	GL4ClearBuffers(glclearflags);
 	if (framebuffer_ok)
 	{
 		if (!post_protection_mask_cleared_this_frame)
@@ -1628,7 +1665,7 @@ void GL4Renderer::StartCockpitSceneFrame(int x1, int y1, int x2, int y2)
 	glReadBuffer(GL_COLOR_ATTACHMENT0);
 
 	glClearColor(0.0, 0.0, 0.0, 0.0);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	GL4ClearBuffers(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	if (ao_suppression_draw_value != 0.0f)
 		legacy_draw_uniforms_dirty = true;
@@ -1942,8 +1979,7 @@ void GL4Renderer::StartPostPresentFrame(int x1, int y1, int x2, int y2, int clea
 		glClearColor(0.0, 0.0, 0.0, 1.0);
 		glclearflags |= GL_COLOR_BUFFER_BIT;
 	}
-	if (glclearflags != 0)
-		glClear(glclearflags);
+	GL4ClearBuffers(glclearflags);
 
 	glDisable(GL_MULTISAMPLE);
 	OpenGL_state.clip_x1 = x1;
@@ -2502,7 +2538,7 @@ void GL4Renderer::ClearScreen(ddgr_color color)
 
 	glClearColor((float)r / 255.0f, (float)g / 255.0f, (float)b / 255.0f, 0);
 
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	GL4ClearBuffers(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
 // Clears the zbuffer for the screen
@@ -2510,7 +2546,7 @@ void GL4Renderer::ClearZBuffer(void)
 {
 	FlushFontBatch();
 
-	glClear(GL_DEPTH_BUFFER_BIT);
+	GL4ClearBuffers(GL_DEPTH_BUFFER_BIT);
 }
 
 // returns the alpha that we should use
