@@ -17,6 +17,7 @@
 */
 
 #include "newui_core.h"
+#include "3d.h"
 #include "bitmap.h"
 #include "mem.h"
 #include "pserror.h"
@@ -36,6 +37,71 @@
 #include <stdarg.h>
 
 extern void ui_DoCursor();
+
+static void newui_DrawSliderFill(int l, int t, int r, int b, float percent_full)
+{
+	if (r <= l || b <= t)
+		return;
+
+	if (percent_full < 0.0f)
+		percent_full = 0.0f;
+	if (percent_full > 1.0f)
+		percent_full = 1.0f;
+
+	rendering_state old_state;
+	rend_GetRenderState(&old_state);
+
+	g3Point points[4];
+	g3Point *pntlist[4];
+
+	points[0].p3_sx = l;
+	points[0].p3_sy = t;
+	points[0].p3_r = 0.0f;
+	points[0].p3_g = 0.0f;
+	points[0].p3_b = 0.0f;
+
+	points[1].p3_sx = r;
+	points[1].p3_sy = t;
+	points[1].p3_r = 0.0f;
+	points[1].p3_g = percent_full;
+	points[1].p3_b = 0.0f;
+
+	points[2].p3_sx = r;
+	points[2].p3_sy = b;
+	points[2].p3_r = 0.0f;
+	points[2].p3_g = percent_full;
+	points[2].p3_b = 0.0f;
+
+	points[3].p3_sx = l;
+	points[3].p3_sy = b;
+	points[3].p3_r = 0.0f;
+	points[3].p3_g = 0.0f;
+	points[3].p3_b = 0.0f;
+
+	for (int i = 0; i < 4; i++)
+	{
+		points[i].p3_z = 0.0f;
+		points[i].p3_a = 1.0f;
+		points[i].p3_flags = PF_PROJECTED | PF_RGBA;
+		pntlist[i] = &points[i];
+	}
+
+	rend_SetZBufferState(0);
+	rend_SetLighting(LS_GOURAUD);
+	rend_SetTextureType(TT_FLAT);
+	rend_SetColorModel(CM_RGB);
+	rend_SetAlphaType(AT_CONSTANT);
+	rend_SetAlphaValue(255);
+	rend_DrawPolygon2D(0, pntlist, 4);
+
+	rend_SetZBufferState(old_state.cur_zbuffer_state);
+	rend_SetLighting(old_state.cur_light_state);
+	rend_SetTextureType(old_state.cur_texture_type);
+	rend_SetColorModel(old_state.cur_color_model);
+	rend_SetAlphaType(old_state.cur_alpha_type);
+	rend_SetAlphaValue(old_state.cur_alpha);
+	rend_SetFlatColor(old_state.cur_color);
+}
 
 // filenames of ui bitmaps
 /*
@@ -2791,8 +2857,8 @@ void newuiSlider::OnUserProcess()
 void newuiSlider::OnDraw()
 {
 	int ox = 0, oy = 0;
-	int x, lx;
-	float percent_full, delta_g, green_intensity;
+	int lx;
+	float percent_full;
 
 	percent_full = (float)m_pos / (float)m_unitrange;
 
@@ -2841,14 +2907,7 @@ void newuiSlider::OnDraw()
 	int height = m_bar_bmp->height() - 6;
 
 	lx = (percent_full * width) + ox;
-	delta_g = (lx - ox) ? (percent_full * 255.0f) / (lx - ox) : 0.0f;
-	green_intensity = 0.0f;
-
-	for (x = ox; x < lx; x++)
-	{
-		ui_DrawLine(GR_RGB(0, green_intensity, 0), x, oy + 1, x, oy + height - 1);
-		green_intensity += delta_g;
-	}
+	newui_DrawSliderFill(ox, oy + 1, lx, oy + height, percent_full);
 }
 
 
