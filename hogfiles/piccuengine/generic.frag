@@ -22,6 +22,7 @@ uniform vec3 dynamic_face_normal;
 uniform vec3 dynamic_light_positions[8];
 uniform vec3 dynamic_light_colors[8];
 uniform float dynamic_light_radii[8];
+uniform float dynamic_light_falloffs[8];
 uniform vec3 dynamic_light_directions[8];
 uniform float dynamic_light_dot_ranges[8];
 uniform int dynamic_light_directional[8];
@@ -98,6 +99,7 @@ vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 		float scalar = 1.0 - (distance / radius);
 		if (scalar <= 0.0)
 			continue;
+		scalar = pow(scalar, max(dynamic_light_falloffs[i], 0.0001));
 
 		if (dynamic_light_directional[i] != 0)
 		{

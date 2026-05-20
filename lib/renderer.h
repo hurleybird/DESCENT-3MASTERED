@@ -116,6 +116,7 @@ struct renderer_per_pixel_light
 	float position[3];
 	float color[3];
 	float radius;
+	float falloff;
 	float direction[3];
 	float dot_range;
 	bool directional;

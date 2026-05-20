@@ -69,6 +69,7 @@ class ShaderProgram
 	GLint m_dynamic_light_positions = -1;
 	GLint m_dynamic_light_colors = -1;
 	GLint m_dynamic_light_radii = -1;
+	GLint m_dynamic_light_falloffs = -1;
 	GLint m_dynamic_light_directions = -1;
 	GLint m_dynamic_light_dot_ranges = -1;
 	GLint m_dynamic_light_directional = -1;
@@ -96,7 +97,7 @@ public:
 
 	void Use();
 	void ApplyDynamicLighting(int count, const float* face_normal, const GLfloat* positions,
-		const GLfloat* colors, const GLfloat* radii, const GLfloat* directions,
+		const GLfloat* colors, const GLfloat* radii, const GLfloat* falloffs, const GLfloat* directions,
 		const GLfloat* dot_ranges, const GLint* directional);
 
 	//Replacement for glUseProgram(0) that nulls the last binding.

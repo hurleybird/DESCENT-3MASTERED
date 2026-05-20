@@ -2397,6 +2397,7 @@ static void UpdateCurrentDynamicLightingUniforms(int count, const vector &face_n
 	GLfloat positions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3],
 	GLfloat colors[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3],
 	GLfloat radii[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS],
+	GLfloat falloffs[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS],
 	GLfloat directions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3],
 	GLfloat dot_ranges[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS],
 	GLint directional[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS])
@@ -2405,7 +2406,7 @@ static void UpdateCurrentDynamicLightingUniforms(int count, const vector &face_n
 	if (current)
 	{
 		current->ApplyDynamicLighting(count, &face_normal.x, &positions[0][0], &colors[0][0],
-			radii, &directions[0][0], dot_ranges, directional);
+			radii, falloffs, &directions[0][0], dot_ranges, directional);
 	}
 }
 
@@ -2419,6 +2420,7 @@ void GL4Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int coun
 		per_pixel_dynamic_light_count = 0;
 		UpdateCurrentDynamicLightingUniforms(per_pixel_dynamic_light_count, per_pixel_dynamic_face_normal,
 			per_pixel_dynamic_positions, per_pixel_dynamic_colors, per_pixel_dynamic_radii,
+			per_pixel_dynamic_falloffs,
 			per_pixel_dynamic_directions, per_pixel_dynamic_dot_ranges, per_pixel_dynamic_directional);
 		return;
 	}
@@ -2437,6 +2439,7 @@ void GL4Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int coun
 		per_pixel_dynamic_colors[i][2] = lights[i].color[2];
 
 		per_pixel_dynamic_radii[i] = lights[i].radius;
+		per_pixel_dynamic_falloffs[i] = lights[i].falloff;
 
 		per_pixel_dynamic_directions[i][0] = lights[i].direction[0];
 		per_pixel_dynamic_directions[i][1] = lights[i].direction[1];
@@ -2448,6 +2451,7 @@ void GL4Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int coun
 
 	UpdateCurrentDynamicLightingUniforms(per_pixel_dynamic_light_count, per_pixel_dynamic_face_normal,
 		per_pixel_dynamic_positions, per_pixel_dynamic_colors, per_pixel_dynamic_radii,
+		per_pixel_dynamic_falloffs,
 		per_pixel_dynamic_directions, per_pixel_dynamic_dot_ranges, per_pixel_dynamic_directional);
 }
 

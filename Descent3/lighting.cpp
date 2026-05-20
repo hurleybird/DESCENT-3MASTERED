@@ -98,6 +98,10 @@ int Num_per_pixel_lightmap_faces = 0;
 per_pixel_lightmap_face Per_pixel_lightmap_textures[MAX_DYNAMIC_FACES];
 int Num_per_pixel_lightmap_textures = 0;
 
+constexpr float PER_PIXEL_HEADLIGHT_STRENGTH = 1.5f;
+constexpr float PER_PIXEL_HEADLIGHT_RADIUS = 0.67f;
+constexpr float PER_PIXEL_HEADLIGHT_FALLOFF = 1.5f;
+
 static bool UsePerPixelRoomLighting()
 {
 	return Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender();
@@ -112,38 +116,49 @@ static bool PerPixelLightMatches(const renderer_per_pixel_light &a, const render
 {
 	return a.position[0] == b.position[0] && a.position[1] == b.position[1] && a.position[2] == b.position[2] &&
 		a.color[0] == b.color[0] && a.color[1] == b.color[1] && a.color[2] == b.color[2] &&
-		a.radius == b.radius && a.dot_range == b.dot_range && a.directional == b.directional &&
+		a.radius == b.radius && a.falloff == b.falloff && a.dot_range == b.dot_range && a.directional == b.directional &&
 		a.direction[0] == b.direction[0] && a.direction[1] == b.direction[1] && a.direction[2] == b.direction[2];
 }
 
 static void AddPerPixelLightmapTextureLight(int lm_handle, const vector *pos, float light_dist,
-	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range);
+	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range,
+	bool per_pixel_headlight);
 static void AddPerPixelLightmapFaceLight(per_pixel_lightmap_face *light_list, int &light_list_count, int lightmap_key,
 	const vector *pos, float light_dist, float red_scale, float green_scale, float blue_scale,
-	const vector *light_direction, float dot_range);
+	const vector *light_direction, float dot_range, bool per_pixel_headlight);
 static int GetPerPixelLightmapFaceLights(per_pixel_lightmap_face *light_list, int light_list_count, int lightmap_key,
 	renderer_per_pixel_light *lights, int max_lights);
 
 static void AddPerPixelLightmapLight(ushort lmi_handle, const vector *pos, float light_dist,
-	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range)
+	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range,
+	bool per_pixel_headlight)
 {
 	AddPerPixelLightmapTextureLight(LightmapInfo[lmi_handle].lm_handle, pos, light_dist, red_scale, green_scale,
-		blue_scale, light_direction, dot_range);
+		blue_scale, light_direction, dot_range, per_pixel_headlight);
 	AddPerPixelLightmapFaceLight(Per_pixel_lightmap_faces, Num_per_pixel_lightmap_faces, lmi_handle, pos, light_dist,
-		red_scale, green_scale, blue_scale, light_direction, dot_range);
+		red_scale, green_scale, blue_scale, light_direction, dot_range, per_pixel_headlight);
 }
 
 static void AddPerPixelLightmapTextureLight(int lm_handle, const vector *pos, float light_dist,
-	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range)
+	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range,
+	bool per_pixel_headlight)
 {
 	AddPerPixelLightmapFaceLight(Per_pixel_lightmap_textures, Num_per_pixel_lightmap_textures, lm_handle, pos,
-		light_dist, red_scale, green_scale, blue_scale, light_direction, dot_range);
+		light_dist, red_scale, green_scale, blue_scale, light_direction, dot_range, per_pixel_headlight);
 }
 
 static void AddPerPixelLightmapFaceLight(per_pixel_lightmap_face *light_list, int &light_list_count, int lightmap_key,
 	const vector *pos, float light_dist, float red_scale, float green_scale, float blue_scale,
-	const vector *light_direction, float dot_range)
+	const vector *light_direction, float dot_range, bool per_pixel_headlight)
 {
+	if (per_pixel_headlight)
+	{
+		red_scale *= PER_PIXEL_HEADLIGHT_STRENGTH;
+		green_scale *= PER_PIXEL_HEADLIGHT_STRENGTH;
+		blue_scale *= PER_PIXEL_HEADLIGHT_STRENGTH;
+		light_dist *= PER_PIXEL_HEADLIGHT_RADIUS;
+	}
+
 	renderer_per_pixel_light light = {};
 	light.position[0] = pos->x;
 	light.position[1] = pos->y;
@@ -152,6 +167,7 @@ static void AddPerPixelLightmapFaceLight(per_pixel_lightmap_face *light_list, in
 	light.color[1] = green_scale;
 	light.color[2] = blue_scale;
 	light.radius = light_dist;
+	light.falloff = per_pixel_headlight ? PER_PIXEL_HEADLIGHT_FALLOFF : 1.0f;
 	light.dot_range = dot_range;
 	light.directional = light_direction != nullptr;
 	if (light_direction)
@@ -503,7 +519,7 @@ void ApplyLightingToExternalRoom(vector* pos, int roomnum, float light_dist, flo
 		if (per_pixel_room_lighting)
 		{
 			AddPerPixelLightmapLight(fp->lmi_handle, pos, light_dist, red_scale, green_scale, blue_scale,
-				light_direction, dot_range);
+				light_direction, dot_range, false);
 
 			if (!(Lmi_spoken_for[fp->lmi_handle / 8] & (1 << (fp->lmi_handle % 8))))
 			{
@@ -906,7 +922,7 @@ void ApplyLightingToSubmodel(object* obj, poly_model* pm, bsp_info* sm, float li
 		if (per_pixel_lightmap_lighting)
 		{
 			AddPerPixelLightmapLight(fp->lmi_handle, &light_pos, light_dist, red_scale, green_scale, blue_scale,
-				Use_light_direction ? &light_dir : nullptr, dot_range);
+				Use_light_direction ? &light_dir : nullptr, dot_range, false);
 
 			if (!(Lmi_spoken_for[fp->lmi_handle / 8] & (1 << (fp->lmi_handle % 8))))
 			{
@@ -1314,7 +1330,7 @@ void ApplyLightingToObjects(vector* pos, int roomnum, float light_dist, float re
 }
 
 // Applys dynamic lightmap changes to rooms and room objects.  If light direction is non-null, we are applying a directional light
-void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_scale, float green_scale, float blue_scale, vector* light_direction, float dot_range)
+void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_scale, float green_scale, float blue_scale, vector* light_direction, float dot_range, bool per_pixel_headlight)
 {
 	fvi_face_room_list facelist[MAX_DYNAMIC_FACES];
 	ushort lmilist[MAX_DYNAMIC_FACES];
@@ -1415,7 +1431,7 @@ void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_
 		if (per_pixel_room_lighting)
 		{
 			AddPerPixelLightmapLight(fp->lmi_handle, pos, light_dist, red_scale, green_scale, blue_scale,
-				light_direction, dot_range);
+				light_direction, dot_range, per_pixel_headlight);
 
 			if (!(Lmi_spoken_for[fp->lmi_handle / 8] & (1 << (fp->lmi_handle % 8))))
 			{
@@ -1798,7 +1814,7 @@ void ClearDynamicLightmaps()
 }
 
 // Changes the terrain shading to approximate lighting
-void ApplyLightingToTerrain(vector* pos, int cellnum, float light_dist, float red_scale, float green_scale, float blue_scale, vector* light_direction, float dot_range)
+void ApplyLightingToTerrain(vector* pos, int cellnum, float light_dist, float red_scale, float green_scale, float blue_scale, vector* light_direction, float dot_range, bool per_pixel_headlight)
 {
 	int celllist[MAX_DYNAMIC_CELLS];
 	int num_cells, i;
@@ -1867,7 +1883,7 @@ void ApplyLightingToTerrain(vector* pos, int cellnum, float light_dist, float re
 				}
 
 				AddPerPixelLightmapTextureLight(whichmap, pos, light_dist, red_scale, green_scale, blue_scale,
-					light_direction, dot_range);
+					light_direction, dot_range, per_pixel_headlight);
 			}
 
 			continue;

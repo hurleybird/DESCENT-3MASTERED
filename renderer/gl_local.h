@@ -249,6 +249,7 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_dynamic_positions_uniforms[8] = {};
 	GLint drawshader_dynamic_colors_uniforms[8] = {};
 	GLint drawshader_dynamic_radii_uniforms[8] = {};
+	GLint drawshader_dynamic_falloffs_uniforms[8] = {};
 	GLint drawshader_dynamic_directions_uniforms[8] = {};
 	GLint drawshader_dynamic_dot_ranges_uniforms[8] = {};
 	GLint drawshader_dynamic_directional_uniforms[8] = {};
@@ -289,6 +290,7 @@ class GL4Renderer : public IRenderer
 	GLfloat per_pixel_dynamic_positions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
 	GLfloat per_pixel_dynamic_colors[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
 	GLfloat per_pixel_dynamic_radii[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
+	GLfloat per_pixel_dynamic_falloffs[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
 	GLfloat per_pixel_dynamic_directions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
 	GLfloat per_pixel_dynamic_dot_ranges[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
 	GLint per_pixel_dynamic_directional[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};

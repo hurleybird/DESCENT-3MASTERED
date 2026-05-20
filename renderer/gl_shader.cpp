@@ -520,6 +520,7 @@ void ShaderProgram::CreateCommonBindings(int bindindex)
 	m_dynamic_light_positions = glGetUniformLocation(m_name, "dynamic_light_positions[0]");
 	m_dynamic_light_colors = glGetUniformLocation(m_name, "dynamic_light_colors[0]");
 	m_dynamic_light_radii = glGetUniformLocation(m_name, "dynamic_light_radii[0]");
+	m_dynamic_light_falloffs = glGetUniformLocation(m_name, "dynamic_light_falloffs[0]");
 	m_dynamic_light_directions = glGetUniformLocation(m_name, "dynamic_light_directions[0]");
 	m_dynamic_light_dot_ranges = glGetUniformLocation(m_name, "dynamic_light_dot_ranges[0]");
 	m_dynamic_light_directional = glGetUniformLocation(m_name, "dynamic_light_directional[0]");
@@ -663,7 +664,7 @@ void ShaderProgram::Use()
 }
 
 void ShaderProgram::ApplyDynamicLighting(int count, const float* face_normal, const GLfloat* positions,
-	const GLfloat* colors, const GLfloat* radii, const GLfloat* directions,
+	const GLfloat* colors, const GLfloat* radii, const GLfloat* falloffs, const GLfloat* directions,
 	const GLfloat* dot_ranges, const GLint* directional)
 {
 	if (m_dynamic_light_count == -1)
@@ -688,6 +689,8 @@ void ShaderProgram::ApplyDynamicLighting(int count, const float* face_normal, co
 		glUniform3fv(m_dynamic_light_colors, count, colors);
 	if (m_dynamic_light_radii != -1)
 		glUniform1fv(m_dynamic_light_radii, count, radii);
+	if (m_dynamic_light_falloffs != -1)
+		glUniform1fv(m_dynamic_light_falloffs, count, falloffs);
 	if (m_dynamic_light_directions != -1)
 		glUniform3fv(m_dynamic_light_directions, count, directions);
 	if (m_dynamic_light_dot_ranges != -1)
