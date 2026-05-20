@@ -208,10 +208,16 @@ bool GL4Renderer::CurrentDrawUsesPixelMotionTarget() const
 
 void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 {
-	const float scene_strength = std::max(0.0f,
+	float scene_strength = std::max(0.0f,
 		std::min(OpenGL_preferred_state.pixel_motion_blur_strength, 4.0f));
-	const float legacy_object_strength = std::max(0.0f,
+	float legacy_object_strength = std::max(0.0f,
 		std::min(OpenGL_preferred_state.pixel_motion_blur_legacy_object_strength, 4.0f));
+	const float afterburner_factor = std::max(0.0f, std::min(Render_afterburner_visual_factor, 1.0f));
+	const float afterburner_blur_multiplier = std::max(0.0f,
+		std::min(OpenGL_preferred_state.afterburner_pixel_blur_multiplier, 4.0f));
+	const float afterburner_blur_scale = 1.0f + (afterburner_factor * afterburner_blur_multiplier);
+	scene_strength *= afterburner_blur_scale;
+	legacy_object_strength *= afterburner_blur_scale;
 	if ((scene_strength <= 0.0f && legacy_object_strength <= 0.0f) ||
 		OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_PIXEL ||
 		motionblurshader.Handle() == 0 || post_present_framebuffer.Handle() == 0 ||

@@ -989,6 +989,22 @@ void DoPlayerFrameForOne(int slot)
 			Sound_system.Play3dSound(SOUND_AFTERBURNER_TAIL, obj);
 		}
 	}
+
+	if (slot == Player_num)
+	{
+		Render_afterburner_visual_factor = Players[slot].afterburner_mag;
+		const bool zoomed = (Players[slot].flags & PLAYER_FLAGS_ZOOMED) != 0;
+		const bool liquid_fov = obj->effect_info && (obj->effect_info->type_flags & EF_LIQUID);
+		if (!zoomed && !liquid_fov)
+		{
+			float fov_multiplier = Render_preferred_state.afterburner_fov_multiplier;
+			if (fov_multiplier < 0.0f)
+				fov_multiplier = 0.0f;
+			if (fov_multiplier > 0.5f)
+				fov_multiplier = 0.5f;
+			Render_FOV = Render_FOV_desired * (1.0f + (Render_afterburner_visual_factor * fov_multiplier));
+		}
+	}
 }
 
 //	Do player automatic frame (all player automatic actions)

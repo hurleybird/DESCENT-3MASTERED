@@ -409,6 +409,9 @@ void SaveGameSettings()
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_legacy_object_center_suppression",
 		Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression);
 	Database->write("RS_pixel_motion_blur_samples", Render_preferred_state.pixel_motion_blur_samples);
+	WRITE_FLOAT_SETTING("RS_afterburner_fov_multiplier", Render_preferred_state.afterburner_fov_multiplier);
+	WRITE_FLOAT_SETTING("RS_afterburner_pixel_blur_multiplier",
+		Render_preferred_state.afterburner_pixel_blur_multiplier);
 	tempint = Use_motion_blur ? 1 : 0;
 	Database->write("RS_motion_blur_type", tempint);
 	WRITE_FLOAT_SETTING("RS_legacy_motion_blur_frame_time", Legacy_motion_blur_frame_time);
@@ -602,6 +605,8 @@ void LoadGameSettings()
 	Render_preferred_state.pixel_motion_blur_center_suppression = 0.0f;
 	Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression = 0.0f;
 	Render_preferred_state.pixel_motion_blur_samples = 9;
+	Render_preferred_state.afterburner_fov_multiplier = 0.08f;
+	Render_preferred_state.afterburner_pixel_blur_multiplier = 2.0f;
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
 	Terrain_renderer_mode = TERRAIN_RENDERER_COMPUTE;
@@ -872,6 +877,8 @@ void LoadGameSettings()
 	if (tempint < 3) tempint = 3;
 	if (tempint > 17) tempint = 17;
 	Render_preferred_state.pixel_motion_blur_samples = (ubyte)tempint;
+	Render_preferred_state.afterburner_fov_multiplier = 0.08f;
+	Render_preferred_state.afterburner_pixel_blur_multiplier = 2.0f;
 	saved_motion_blur_type = 0;
 	saved_motion_blur_type_present = Database->read_int("RS_motion_blur_type", &saved_motion_blur_type);
 	if (saved_motion_blur_type < 0) saved_motion_blur_type = 0;
@@ -1029,6 +1036,39 @@ void LoadGameSettings()
 	{
 		Use_motion_blur = 0;
 		Render_preferred_state.combined_motion_blur = false;
+	}
+	if (Render_preferred_state.combined_motion_blur)
+	{
+		Use_motion_blur = 0;
+		Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_PIXEL;
+		Render_preferred_state.pixel_motion_blur_strength = 0.32f;
+		Render_preferred_state.combined_motion_blur_legacy_strength = 1.0f;
+		Render_preferred_state.combined_motion_blur_legacy_frame_time = 0.03f;
+		Render_preferred_state.combined_motion_blur_legacy_sphere_size = 0.20f;
+		Render_preferred_state.combined_motion_blur_legacy_copy_density = 2.0f;
+		Render_preferred_state.combined_motion_blur_legacy_max_iterations = 24;
+		Render_preferred_state.combined_motion_blur_legacy_alpha_exponent = 2.0f;
+		Render_preferred_state.pixel_motion_blur_legacy_object_strength = 0.32f;
+		Render_preferred_state.pixel_motion_blur_center_suppression = 1.0f;
+		Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression = 0.0f;
+		Render_preferred_state.pixel_motion_blur_samples = 17;
+	}
+	else
+	{
+		Render_preferred_state.pixel_motion_blur_strength = 0.0f;
+		Render_preferred_state.pixel_motion_blur_legacy_object_strength = 0.0f;
+		Render_preferred_state.pixel_motion_blur_center_suppression = 0.0f;
+		Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression = 0.0f;
+		if (Use_motion_blur)
+		{
+			Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
+			Legacy_motion_blur_frame_time = 1.0f / 20.0f;
+			Legacy_motion_blur_sphere_size_percent = 0.20f;
+			Legacy_motion_blur_copy_density = 1.0f;
+			Legacy_motion_blur_max_iterations = 12;
+			Legacy_motion_blur_alpha_scale = 1.0f;
+			Legacy_motion_blur_alpha_exponent = 1.0f;
+		}
 	}
 
 	Render_powerup_sparkles = false;

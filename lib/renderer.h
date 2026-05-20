@@ -310,6 +310,8 @@ struct renderer_preferred_state
 	float pixel_motion_blur_center_suppression;
 	float pixel_motion_blur_legacy_object_center_suppression;
 	ubyte pixel_motion_blur_samples;
+	float afterburner_fov_multiplier;
+	float afterburner_pixel_blur_multiplier;
 };
 
 enum renderer_ao_class

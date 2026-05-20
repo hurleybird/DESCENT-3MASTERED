@@ -99,6 +99,7 @@ extern bool Display_renderer_stats;
 //Current zoom factor (this is the tan of 29.25, which is half our FOV of 58.5)
 float Render_FOV = Render_FOV_desired;
 float Render_zoom = D3_DEFAULT_ZOOM;
+float Render_afterburner_visual_factor = 0.0f;
 
 //How long (in seconds) the last frame took
 float Frametime = .1f;

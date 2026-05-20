@@ -39,6 +39,7 @@ extern float Render_FOV_desired;
 
 extern float Render_zoom;
 extern float Render_FOV;
+extern float Render_afterburner_visual_factor;
 
 extern bool Game_paused;							//	determines if game is paused.
 extern double Min_allowed_frametime;				// minimum seconds per frame, used for frame limiting

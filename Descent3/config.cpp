@@ -980,9 +980,8 @@ extern float Legacy_motion_blur_alpha_exponent;
 enum
 {
 	MOTION_BLUR_UI_OFF = 0,
-	MOTION_BLUR_UI_LOW = 1,
-	MOTION_BLUR_UI_MED = 2,
-	MOTION_BLUR_UI_HIGH = 3
+	MOTION_BLUR_UI_OLD = 1,
+	MOTION_BLUR_UI_NEW = 2
 };
 
 static float ClampLegacyMotionBlurFrameTime(float frame_time)
@@ -1102,15 +1101,13 @@ static bool MotionBlurLegacyMatchesPreset(float copy_density, int max_iterations
 
 static int MotionBlurPresetToIndex()
 {
+	if (Render_preferred_state.combined_motion_blur)
+		return MOTION_BLUR_UI_NEW;
 	if (!Use_motion_blur)
 		return MOTION_BLUR_UI_OFF;
 	if (MotionBlurLegacyMatchesPreset(1.0f, 12, 1.0f))
-		return MOTION_BLUR_UI_LOW;
-	if (MotionBlurLegacyMatchesPreset(2.0f, 24, 1.5f))
-		return MOTION_BLUR_UI_MED;
-	if (MotionBlurLegacyMatchesPreset(3.0f, 36, 2.0f))
-		return MOTION_BLUR_UI_HIGH;
-	return MOTION_BLUR_UI_LOW;
+		return MOTION_BLUR_UI_OLD;
+	return MOTION_BLUR_UI_OLD;
 }
 
 static void ApplyLegacyMotionBlurValues(float copy_density, int max_iterations, float alpha_exponent)
@@ -1124,6 +1121,32 @@ static void ApplyLegacyMotionBlurValues(float copy_density, int max_iterations, 
 	Legacy_motion_blur_alpha_exponent = alpha_exponent;
 }
 
+static void ClearPixelMotionBlurValues()
+{
+	Render_preferred_state.pixel_motion_blur_strength = 0.0f;
+	Render_preferred_state.pixel_motion_blur_legacy_object_strength = 0.0f;
+	Render_preferred_state.pixel_motion_blur_center_suppression = 0.0f;
+	Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression = 0.0f;
+}
+
+static void ApplyNewMotionBlurValues()
+{
+	Use_motion_blur = 0;
+	Render_preferred_state.combined_motion_blur = true;
+	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_PIXEL;
+	Render_preferred_state.pixel_motion_blur_strength = 0.32f;
+	Render_preferred_state.combined_motion_blur_legacy_strength = 1.0f;
+	Render_preferred_state.combined_motion_blur_legacy_frame_time = 0.03f;
+	Render_preferred_state.combined_motion_blur_legacy_sphere_size = 0.20f;
+	Render_preferred_state.combined_motion_blur_legacy_copy_density = 2.0f;
+	Render_preferred_state.combined_motion_blur_legacy_max_iterations = 24;
+	Render_preferred_state.combined_motion_blur_legacy_alpha_exponent = 2.0f;
+	Render_preferred_state.pixel_motion_blur_legacy_object_strength = 0.32f;
+	Render_preferred_state.pixel_motion_blur_center_suppression = 1.0f;
+	Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression = 0.0f;
+	Render_preferred_state.pixel_motion_blur_samples = 17;
+}
+
 static void ConfigEnsureCombinedMotionBlurVectorMode()
 {
 	if (Render_preferred_state.combined_motion_blur &&
@@ -1133,22 +1156,36 @@ static void ConfigEnsureCombinedMotionBlurVectorMode()
 	}
 }
 
+static bool ConfigMotionVectorsHaveActiveConsumer()
+{
+	return Render_preferred_state.motion_vector_debug_preview ||
+		Render_preferred_state.pixel_motion_blur_strength > 0.0f ||
+		Render_preferred_state.pixel_motion_blur_legacy_object_strength > 0.0f;
+}
+
+static void ConfigFinalizeMotionVectorUse()
+{
+	if (!ConfigMotionVectorsHaveActiveConsumer())
+		Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
+}
+
 static void ApplyMotionBlurPresetFromIndex(int index)
 {
 	switch (index)
 	{
-	case MOTION_BLUR_UI_LOW:
+	case MOTION_BLUR_UI_OLD:
 		ApplyLegacyMotionBlurValues(1.0f, 12, 1.0f);
+		Render_preferred_state.combined_motion_blur = false;
+		ClearPixelMotionBlurValues();
 		break;
-	case MOTION_BLUR_UI_MED:
-		ApplyLegacyMotionBlurValues(2.0f, 24, 1.5f);
-		break;
-	case MOTION_BLUR_UI_HIGH:
-		ApplyLegacyMotionBlurValues(3.0f, 36, 2.0f);
+	case MOTION_BLUR_UI_NEW:
+		ApplyNewMotionBlurValues();
 		break;
 	case MOTION_BLUR_UI_OFF:
 	default:
 		Use_motion_blur = 0;
+		Render_preferred_state.combined_motion_blur = false;
+		ClearPixelMotionBlurValues();
 		break;
 	}
 
@@ -1171,17 +1208,6 @@ struct video_menu
 
 	short* fov;
 	short* frame_limit;
-	short* pixel_motion_blur;
-	short* combined_motion_blur_legacy;
-	short* combined_legacy_frame_time;
-	short* combined_legacy_sphere_size;
-	short* combined_legacy_copy_density;
-	short* combined_legacy_max_iterations;
-	short* combined_legacy_alpha_exponent;
-	short* pixel_motion_blur_legacy;
-	short* pixel_motion_blur_center;
-	short* pixel_motion_blur_legacy_center;
-	short* pixel_motion_blur_quality;
 	char* buffer;
 	char* aspect_buffer;
 	bool* fullscreen;
@@ -1341,81 +1367,6 @@ struct video_menu
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
 			changed = true;
 		}
-		if (pixel_motion_blur && sheet->HasChanged(pixel_motion_blur))
-		{
-			Render_preferred_state.pixel_motion_blur_strength =
-				ConfigNormalizePixelMotionBlurStrength(CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur, 0.0f, 4.0f, 100));
-			changed = true;
-		}
-		if (combined_motion_blur_legacy && sheet->HasChanged(combined_motion_blur_legacy))
-		{
-			Render_preferred_state.combined_motion_blur_legacy_strength =
-				ConfigNormalizeCombinedLegacyGeoStrength(
-					CALC_SLIDER_FLOAT_VALUE(*combined_motion_blur_legacy, 0.0f, 1.0f, 100));
-			changed = true;
-		}
-		if (combined_legacy_frame_time && sheet->HasChanged(combined_legacy_frame_time))
-		{
-			Render_preferred_state.combined_motion_blur_legacy_frame_time =
-				ClampLegacyMotionBlurFrameTime(
-					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_frame_time, 0.001f, 0.5f, 100));
-			changed = true;
-		}
-		if (combined_legacy_sphere_size && sheet->HasChanged(combined_legacy_sphere_size))
-		{
-			Render_preferred_state.combined_motion_blur_legacy_sphere_size =
-				ClampLegacyMotionBlurSphereSize(
-					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_sphere_size, 0.01f, 2.0f, 100));
-			changed = true;
-		}
-		if (combined_legacy_copy_density && sheet->HasChanged(combined_legacy_copy_density))
-		{
-			Render_preferred_state.combined_motion_blur_legacy_copy_density =
-				ClampLegacyMotionBlurCopyDensity(
-					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_copy_density, 0.0f, 8.0f, 100));
-			changed = true;
-		}
-		if (combined_legacy_max_iterations && sheet->HasChanged(combined_legacy_max_iterations))
-		{
-			Render_preferred_state.combined_motion_blur_legacy_max_iterations =
-				ClampLegacyMotionBlurIterations(
-					CALC_SLIDER_INT_VALUE(*combined_legacy_max_iterations, 1, 64, 63));
-			changed = true;
-		}
-		if (combined_legacy_alpha_exponent && sheet->HasChanged(combined_legacy_alpha_exponent))
-		{
-			Render_preferred_state.combined_motion_blur_legacy_alpha_exponent =
-				ClampLegacyMotionBlurAlphaExponent(
-					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_alpha_exponent, 0.1f, 8.0f, 100));
-			changed = true;
-		}
-		if (pixel_motion_blur_legacy && sheet->HasChanged(pixel_motion_blur_legacy))
-		{
-			Render_preferred_state.pixel_motion_blur_legacy_object_strength =
-				ConfigNormalizePixelMotionBlurStrength(
-					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_legacy, 0.0f, 4.0f, 100));
-			changed = true;
-		}
-		if (pixel_motion_blur_center && sheet->HasChanged(pixel_motion_blur_center))
-		{
-			Render_preferred_state.pixel_motion_blur_center_suppression =
-				ConfigNormalizePixelMotionBlurCenterSuppression(
-					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_center, 0.0f, 1.0f, 100));
-			changed = true;
-		}
-		if (pixel_motion_blur_legacy_center && sheet->HasChanged(pixel_motion_blur_legacy_center))
-		{
-			Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression =
-				ConfigNormalizePixelMotionBlurCenterSuppression(
-					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_legacy_center, 0.0f, 1.0f, 100));
-			changed = true;
-		}
-		if (pixel_motion_blur_quality && sheet->HasChanged(pixel_motion_blur_quality))
-		{
-			Render_preferred_state.pixel_motion_blur_samples = (ubyte)ConfigNormalizePixelMotionBlurSamples(
-				CALC_SLIDER_INT_VALUE(*pixel_motion_blur_quality, 3, 17, 14));
-			changed = true;
-		}
 		if (perf_markers && sheet->HasChanged(perf_markers))
 		{
 			PerfMarkersSetEnabled(*perf_markers);
@@ -1495,17 +1446,6 @@ struct video_menu
 		motion_vector_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
-		pixel_motion_blur = NULL;
-		combined_motion_blur_legacy = NULL;
-		combined_legacy_frame_time = NULL;
-		combined_legacy_sphere_size = NULL;
-		combined_legacy_copy_density = NULL;
-		combined_legacy_max_iterations = NULL;
-		combined_legacy_alpha_exponent = NULL;
-		pixel_motion_blur_legacy = NULL;
-		pixel_motion_blur_center = NULL;
-		pixel_motion_blur_legacy_center = NULL;
-		pixel_motion_blur_quality = NULL;
 		buffer = NULL;
 		aspect_buffer = NULL;
 		fullscreen = NULL;
@@ -1597,79 +1537,6 @@ struct video_menu
 		sheet->AddRadioButton("Pixel");
 		*motion_vectors = ConfigMotionVectorModeToIndex(Render_preferred_state.motion_vector_mode);
 
-		sheet->NewGroup("Pixel blur", 184, 306);
-		tSliderSettings pixel_blur_settings = {};
-		pixel_blur_settings.min_val.f = 0.0f;
-		pixel_blur_settings.max_val.f = 4.0f;
-		pixel_blur_settings.type = SLIDER_UNITS_FLOAT;
-		pixel_motion_blur = sheet->AddSlider("Scene", 100,
-			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_strength, &pixel_blur_settings, 100),
-			&pixel_blur_settings);
-		tSliderSettings legacy_geo_settings = {};
-		legacy_geo_settings.min_val.f = 0.0f;
-		legacy_geo_settings.max_val.f = 1.0f;
-		legacy_geo_settings.type = SLIDER_UNITS_FLOAT;
-		combined_motion_blur_legacy = sheet->AddSlider("Legacy geo", 100,
-			CALC_SLIDER_POS_FLOAT(Render_preferred_state.combined_motion_blur_legacy_strength,
-				&legacy_geo_settings, 100), &legacy_geo_settings);
-		pixel_motion_blur_legacy = sheet->AddSlider("Legacy px", 100,
-			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_legacy_object_strength,
-				&pixel_blur_settings, 100), &pixel_blur_settings);
-		tSliderSettings pixel_blur_center_settings = {};
-		pixel_blur_center_settings.min_val.f = 0.0f;
-		pixel_blur_center_settings.max_val.f = 1.0f;
-		pixel_blur_center_settings.type = SLIDER_UNITS_FLOAT;
-		pixel_motion_blur_center = sheet->AddSlider("Scene sup", 100,
-			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_center_suppression,
-				&pixel_blur_center_settings, 100), &pixel_blur_center_settings);
-		pixel_motion_blur_legacy_center = sheet->AddSlider("Legacy px sup", 100,
-			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression,
-				&pixel_blur_center_settings, 100), &pixel_blur_center_settings);
-		tSliderSettings pixel_blur_quality_settings = {};
-		pixel_blur_quality_settings.min_val.i = 3;
-		pixel_blur_quality_settings.max_val.i = 17;
-		pixel_blur_quality_settings.type = SLIDER_UNITS_INT;
-		pixel_motion_blur_quality = sheet->AddSlider("Samples", 14,
-			ConfigNormalizePixelMotionBlurSamples(Render_preferred_state.pixel_motion_blur_samples) - 3,
-			&pixel_blur_quality_settings);
-
-		sheet->NewGroup("Legacy blur", 410, 306);
-		tSliderSettings combined_legacy_time_settings = {};
-		combined_legacy_time_settings.min_val.f = 0.001f;
-		combined_legacy_time_settings.max_val.f = 0.5f;
-		combined_legacy_time_settings.type = SLIDER_UNITS_FLOAT;
-		combined_legacy_frame_time = sheet->AddSlider("Time", 100,
-			CALC_SLIDER_POS_FLOAT(Render_preferred_state.combined_motion_blur_legacy_frame_time,
-				&combined_legacy_time_settings, 100), &combined_legacy_time_settings);
-		tSliderSettings combined_legacy_sphere_settings = {};
-		combined_legacy_sphere_settings.min_val.f = 0.01f;
-		combined_legacy_sphere_settings.max_val.f = 2.0f;
-		combined_legacy_sphere_settings.type = SLIDER_UNITS_FLOAT;
-		combined_legacy_sphere_size = sheet->AddSlider("Sphere", 100,
-			CALC_SLIDER_POS_FLOAT(Render_preferred_state.combined_motion_blur_legacy_sphere_size,
-				&combined_legacy_sphere_settings, 100), &combined_legacy_sphere_settings);
-		tSliderSettings combined_legacy_density_settings = {};
-		combined_legacy_density_settings.min_val.f = 0.0f;
-		combined_legacy_density_settings.max_val.f = 8.0f;
-		combined_legacy_density_settings.type = SLIDER_UNITS_FLOAT;
-		combined_legacy_copy_density = sheet->AddSlider("Density", 100,
-			CALC_SLIDER_POS_FLOAT(Render_preferred_state.combined_motion_blur_legacy_copy_density,
-				&combined_legacy_density_settings, 100), &combined_legacy_density_settings);
-		tSliderSettings combined_legacy_iteration_settings = {};
-		combined_legacy_iteration_settings.min_val.i = 1;
-		combined_legacy_iteration_settings.max_val.i = 64;
-		combined_legacy_iteration_settings.type = SLIDER_UNITS_INT;
-		combined_legacy_max_iterations = sheet->AddSlider("Copies", 63,
-			ClampLegacyMotionBlurIterations(Render_preferred_state.combined_motion_blur_legacy_max_iterations) - 1,
-			&combined_legacy_iteration_settings);
-		tSliderSettings combined_legacy_alpha_settings = {};
-		combined_legacy_alpha_settings.min_val.f = 0.1f;
-		combined_legacy_alpha_settings.max_val.f = 8.0f;
-		combined_legacy_alpha_settings.type = SLIDER_UNITS_FLOAT;
-		combined_legacy_alpha_exponent = sheet->AddSlider("Alpha", 100,
-			CALC_SLIDER_POS_FLOAT(Render_preferred_state.combined_motion_blur_legacy_alpha_exponent,
-				&combined_legacy_alpha_settings, 100), &combined_legacy_alpha_settings);
-
 		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
@@ -1701,48 +1568,6 @@ struct video_menu
 		if (motion_vector_debug)
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
 		ConfigEnsureCombinedMotionBlurVectorMode();
-		if (pixel_motion_blur)
-			Render_preferred_state.pixel_motion_blur_strength =
-				ConfigNormalizePixelMotionBlurStrength(CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur, 0.0f, 4.0f, 100));
-		if (combined_motion_blur_legacy)
-			Render_preferred_state.combined_motion_blur_legacy_strength =
-				ConfigNormalizeCombinedLegacyGeoStrength(
-					CALC_SLIDER_FLOAT_VALUE(*combined_motion_blur_legacy, 0.0f, 1.0f, 100));
-		if (combined_legacy_frame_time)
-			Render_preferred_state.combined_motion_blur_legacy_frame_time =
-				ClampLegacyMotionBlurFrameTime(
-					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_frame_time, 0.001f, 0.5f, 100));
-		if (combined_legacy_sphere_size)
-			Render_preferred_state.combined_motion_blur_legacy_sphere_size =
-				ClampLegacyMotionBlurSphereSize(
-					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_sphere_size, 0.01f, 2.0f, 100));
-		if (combined_legacy_copy_density)
-			Render_preferred_state.combined_motion_blur_legacy_copy_density =
-				ClampLegacyMotionBlurCopyDensity(
-					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_copy_density, 0.0f, 8.0f, 100));
-		if (combined_legacy_max_iterations)
-			Render_preferred_state.combined_motion_blur_legacy_max_iterations =
-				ClampLegacyMotionBlurIterations(
-					CALC_SLIDER_INT_VALUE(*combined_legacy_max_iterations, 1, 64, 63));
-		if (combined_legacy_alpha_exponent)
-			Render_preferred_state.combined_motion_blur_legacy_alpha_exponent =
-				ClampLegacyMotionBlurAlphaExponent(
-					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_alpha_exponent, 0.1f, 8.0f, 100));
-		if (pixel_motion_blur_legacy)
-			Render_preferred_state.pixel_motion_blur_legacy_object_strength =
-				ConfigNormalizePixelMotionBlurStrength(
-					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_legacy, 0.0f, 4.0f, 100));
-		if (pixel_motion_blur_center)
-			Render_preferred_state.pixel_motion_blur_center_suppression =
-				ConfigNormalizePixelMotionBlurCenterSuppression(
-					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_center, 0.0f, 1.0f, 100));
-		if (pixel_motion_blur_legacy_center)
-			Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression =
-				ConfigNormalizePixelMotionBlurCenterSuppression(
-					CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur_legacy_center, 0.0f, 1.0f, 100));
-		if (pixel_motion_blur_quality)
-			Render_preferred_state.pixel_motion_blur_samples = (ubyte)ConfigNormalizePixelMotionBlurSamples(
-				CALC_SLIDER_INT_VALUE(*pixel_motion_blur_quality, 3, 17, 14));
 		if (perf_markers)
 			PerfMarkersSetEnabled(*perf_markers);
 		if (show_fps)
@@ -2329,7 +2154,7 @@ struct details_menu
 	int* detail_level;									// detail level radio
 	int* objcomp;											// object complexity radio
 	int* motion_blur;									// motion blur radio
-	bool* combined_motion_blur;							// combined pixel/geometry blur toggle
+	int motion_blur_applied_index;
 	bool* specmap, * headlight, * mirror,				// check boxes
 		* dynamic, * fog, * coronas, * procedurals,
 		* powerup_halo, * scorches, * weapon_coronas,
@@ -2377,7 +2202,7 @@ struct details_menu
 		pixel_err = NULL;
 		rend_dist = NULL;
 		motion_blur = NULL;
-		combined_motion_blur = NULL;
+		motion_blur_applied_index = MotionBlurPresetToIndex();
 		if (show_legacy_terrain_controls)
 		{
 			sheet->NewGroup(TXT_GEOMETRY, 90, 0);
@@ -2414,12 +2239,9 @@ struct details_menu
 
 		sheet->NewGroup("Motion Blur", show_legacy_terrain_controls ? 174 : 198, show_legacy_terrain_controls ? 152 : 0);
 		motion_blur = sheet->AddFirstRadioButton(TXT_OFF);
-		sheet->AddRadioButton(TXT_LOW);
-		sheet->AddRadioButton(TXT_CFG_MEDIUM);
-		sheet->AddRadioButton(TXT_CFG_HIGH);
-		*motion_blur = MotionBlurPresetToIndex();
-		combined_motion_blur = sheet->AddLongCheckBox("Combined blur",
-			Render_preferred_state.combined_motion_blur);
+		sheet->AddRadioButton("Old");
+		sheet->AddRadioButton("New");
+		*motion_blur = motion_blur_applied_index;
 
 		return sheet;
 	};
@@ -2435,11 +2257,10 @@ struct details_menu
 		Detail_settings.Object_complexity = *objcomp;
 		if (motion_blur)
 			ApplyMotionBlurPresetFromIndex(*motion_blur);
-		if (combined_motion_blur)
-		{
-			Render_preferred_state.combined_motion_blur = *combined_motion_blur;
-			ConfigEnsureCombinedMotionBlurVectorMode();
-		}
+		const ubyte old_motion_vector_mode = Render_preferred_state.motion_vector_mode;
+		ConfigFinalizeMotionVectorUse();
+		if (old_motion_vector_mode != Render_preferred_state.motion_vector_mode)
+			rend_SetPreferredState(&Render_preferred_state);
 		if (pixel_err)
 			Detail_settings.Pixel_error = MAXIMUM_TERRAIN_DETAIL - ((*pixel_err) + MINIMUM_TERRAIN_DETAIL);
 		Detail_settings.Powerup_halos = *powerup_halo;
@@ -2460,16 +2281,12 @@ struct details_menu
 	// process output and do stuff accordintly
 	void process(int res)
 	{
-		if (motion_blur && sheet->HasChanged(motion_blur))
+		if (motion_blur && *motion_blur != motion_blur_applied_index)
 		{
 			ApplyMotionBlurPresetFromIndex(*motion_blur);
+			motion_blur_applied_index = *motion_blur;
 			rend_SetPreferredState(&Render_preferred_state);
-		}
-		if (combined_motion_blur && sheet->HasChanged(combined_motion_blur))
-		{
-			Render_preferred_state.combined_motion_blur = *combined_motion_blur;
-			ConfigEnsureCombinedMotionBlurVectorMode();
-			rend_SetPreferredState(&Render_preferred_state);
+			sheet->UpdateChanges();
 		}
 		bool cockpit_improvement_changed = sheet->HasChanged(cockpit_improvement);
 		if (cockpit_improvement_changed)
