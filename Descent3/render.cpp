@@ -3829,7 +3829,9 @@ void RenderMirrorRooms()
 				save_index = rp->wpb_index;
 				for (t = 0; t < fp->num_verts; t++)
 					save_points[t] = World_point_buffer[fp->face_verts[t]];
+				rend_SetMotionBlurSuppression(1.0f);
 				DrawPostrenderFace(Mirror_rooms[i], rp->mirror_face, false);
+				rend_SetMotionBlurSuppression(0.0f);
 
 				rp->wpb_index = save_index;
 				for (t = 0; t < fp->num_verts; t++)

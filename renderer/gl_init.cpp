@@ -778,6 +778,7 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	motionblur_velocity_source = motionblurshader.FindUniform("velocity_source");
 	motionblur_depth_source = motionblurshader.FindUniform("depth_source");
 	motionblur_object_id_source = motionblurshader.FindUniform("object_id_source");
+	motionblur_protection_mask = motionblurshader.FindUniform("protection_mask");
 	motionblur_velocity_uv_origin = motionblurshader.FindUniform("velocity_uv_origin");
 	motionblur_velocity_uv_scale = motionblurshader.FindUniform("velocity_uv_scale");
 	motionblur_strength = motionblurshader.FindUniform("strength");
@@ -791,6 +792,7 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	motionblur_previous_view_projection = motionblurshader.FindUniform("previous_view_projection");
 	motionblur_has_static_reconstruction = motionblurshader.FindUniform("has_static_reconstruction");
 	motionblur_has_dynamic_velocity = motionblurshader.FindUniform("has_dynamic_velocity");
+	motionblur_use_protection_mask = motionblurshader.FindUniform("use_protection_mask");
 	if (motionblur_color_source != -1)
 		glUniform1i(motionblur_color_source, 0);
 	if (motionblur_velocity_source != -1)

@@ -264,6 +264,8 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 		glUniform1i(motionblur_depth_source, 3);
 	if (motionblur_object_id_source != -1)
 		glUniform1i(motionblur_object_id_source, 4);
+	if (motionblur_protection_mask != -1)
+		glUniform1i(motionblur_protection_mask, 5);
 	if (motionblur_velocity_uv_origin != -1)
 		glUniform2f(motionblur_velocity_uv_origin, uv_origin_x, uv_origin_y);
 	if (motionblur_velocity_uv_scale != -1)
@@ -321,6 +323,10 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 		glUniform1i(motionblur_has_static_reconstruction, has_static_reconstruction ? 1 : 0);
 	if (motionblur_has_dynamic_velocity != -1)
 		glUniform1i(motionblur_has_dynamic_velocity, has_dynamic_velocity ? 1 : 0);
+	GLuint protection_mask_texture = post_protection_mask_dirty ?
+		post_protection_mask.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
+	if (motionblur_use_protection_mask != -1)
+		glUniform1i(motionblur_use_protection_mask, protection_mask_texture != 0 ? 1 : 0);
 
 	rend_ClearBoundTextures();
 	GL_BindFramebufferTexture(post_present_framebuffer.ColorTextureForRead(), 0, GL_LINEAR);
@@ -330,6 +336,8 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 		GL_BindFramebufferTexture(depth_texture, 3, GL_NEAREST);
 	if (object_id_texture != 0)
 		GL_BindFramebufferTexture(object_id_texture, 4, GL_NEAREST);
+	if (protection_mask_texture != 0)
+		GL_BindFramebufferTexture(protection_mask_texture, 5, GL_NEAREST);
 	GL_DrawFramebufferQuad(motion_blur_framebuffer.Handle(), 0, 0,
 		motion_blur_framebuffer.Width(), motion_blur_framebuffer.Height());
 	motion_blur_framebuffer.BlitToRaw(post_present_framebuffer.Handle(), 0, 0,
@@ -1091,6 +1099,7 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_dynamic_directional_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_directional[0]");
 		drawshader_ao_suppression_uniforms[i] = drawshaders[i].FindUniform("ao_suppression");
 		drawshader_bloom_suppression_uniforms[i] = drawshaders[i].FindUniform("bloom_suppression");
+		drawshader_motion_blur_suppression_uniforms[i] = drawshaders[i].FindUniform("motion_blur_suppression");
 		drawshader_ao_class_uniforms[i] = drawshaders[i].FindUniform("ao_class_value");
 		drawshader_ao_weight_uniforms[i] = drawshaders[i].FindUniform("ao_weight_value");
 		drawshader_ao_capture_weight_mode_uniforms[i] = drawshaders[i].FindUniform("ao_capture_weight_mode");
@@ -1208,6 +1217,8 @@ void GL4Renderer::SelectDrawShader()
 		glUniform1f(drawshader_ao_suppression_uniforms[shader_index], ao_suppression_draw_value);
 	if (drawshader_bloom_suppression_uniforms[shader_index] != -1)
 		glUniform1f(drawshader_bloom_suppression_uniforms[shader_index], bloom_suppression_draw_value);
+	if (drawshader_motion_blur_suppression_uniforms[shader_index] != -1)
+		glUniform1f(drawshader_motion_blur_suppression_uniforms[shader_index], motion_blur_suppression_draw_value);
 	if (drawshader_ao_class_uniforms[shader_index] != -1)
 		glUniform1i(drawshader_ao_class_uniforms[shader_index], ao_class_draw_value);
 	if (drawshader_ao_weight_uniforms[shader_index] != -1)

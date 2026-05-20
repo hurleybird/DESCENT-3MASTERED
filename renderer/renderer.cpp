@@ -366,6 +366,14 @@ void rend_SetBloomSuppression(float value)
 	renderer_inst->SetBloomSuppression(value);
 }
 
+void rend_SetMotionBlurSuppression(float value)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->SetMotionBlurSuppression(value);
+}
+
 void rend_SetAOClass(int value)
 {
 	if (!Renderer_initted)

@@ -295,6 +295,7 @@ struct RoomMesh
 
 		assert(Rooms[roomnum].mirror_face != -1);
 		Room_VertexBuffer.BindBitmap(GetTextureBitmap(Rooms[roomnum].faces[Rooms[roomnum].mirror_face].tmap, 0));
+		rend_SetMotionBlurSuppression(1.0f);
 		for (RoomDrawElement& element : MirrorInteractions)
 		{
 			Room_VertexBuffer.BindLightmap(element.lmhandle);
@@ -303,6 +304,7 @@ struct RoomMesh
 			//And draw
 			Room_VertexBuffer.DrawIndexed(PrimitiveType::Triangles, element.range);
 		}
+		rend_SetMotionBlurSuppression(0.0f);
 		rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
 	}
 

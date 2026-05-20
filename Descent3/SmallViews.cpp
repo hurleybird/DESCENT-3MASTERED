@@ -209,6 +209,7 @@ void RenderSmallWindow(int left, int top, int right, int bot, object* viewer, ve
 
 	//Set up for rendering
 	StartFrame(left, top, right, bot);
+	rend_SetMotionBlurSuppression(1.0f);
 
 	//	scale font according to screen size
 	float font_aspect_x = (float)Game_window_w / Max_window_w;
@@ -263,7 +264,9 @@ void RenderSmallWindow(int left, int top, int right, int bot, object* viewer, ve
 		Viewer_object = viewer;
 
 		//Render the world
+		rend_SuspendMotionVectorWrites();
 		GameRenderWorld(viewer, viewer_eye, viewer_roomnum, viewer_orient, zoom, rear_view);
+		rend_ResumeMotionVectorWrites();
 
 		//Restore the viewer
 		Viewer_object = save_viewer_object;
@@ -306,6 +309,7 @@ void RenderSmallWindow(int left, int top, int right, int bot, object* viewer, ve
 	}
 
 	//Done rendering
+	rend_SetMotionBlurSuppression(0.0f);
 	EndFrame();
 }
 

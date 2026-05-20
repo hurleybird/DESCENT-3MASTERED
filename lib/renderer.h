@@ -467,6 +467,7 @@ bool rend_GetMotionVectorSample(const vector *current_world, const vector *previ
 	float *current_u, float *current_v, float *velocity_u, float *velocity_v);
 void rend_SetAOSuppression(float value);
 void rend_SetBloomSuppression(float value);
+void rend_SetMotionBlurSuppression(float value);
 void rend_SetAOClass(int value);
 void rend_SetPostMaskOnly(int state);
 

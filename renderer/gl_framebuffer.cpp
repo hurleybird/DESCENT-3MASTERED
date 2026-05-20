@@ -1008,7 +1008,7 @@ void PostProtectionMaskResources::Update(uint32_t new_width, uint32_t new_height
 	{
 		glGenRenderbuffers(1, &mask_texture);
 		glBindRenderbuffer(GL_RENDERBUFFER, mask_texture);
-		glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RG8, width, height);
+		glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA8, width, height);
 
 		glGenRenderbuffers(1, &ao_class_texture);
 		glBindRenderbuffer(GL_RENDERBUFFER, ao_class_texture);
@@ -1018,7 +1018,7 @@ void PostProtectionMaskResources::Update(uint32_t new_width, uint32_t new_height
 	{
 		glGenTextures(1, &mask_texture);
 		glBindTexture(GL_TEXTURE_2D, mask_texture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, width, height, 0, GL_RG, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -1037,7 +1037,7 @@ void PostProtectionMaskResources::Update(uint32_t new_width, uint32_t new_height
 	{
 		glGenTextures(1, &resolved_texture);
 		glBindTexture(GL_TEXTURE_2D, resolved_texture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, width, height, 0, GL_RG, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);

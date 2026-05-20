@@ -196,6 +196,7 @@ public:
 	}
 	virtual void SetAOSuppression(float value) {}
 	virtual void SetBloomSuppression(float value) {}
+	virtual void SetMotionBlurSuppression(float value) {}
 	virtual void SetAOClass(int value) {}
 	virtual void SetPostMaskOnly(int state) {}
 	virtual void SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect) {}

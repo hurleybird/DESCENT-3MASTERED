@@ -43,7 +43,7 @@ SET (MAIN_SOURCES
 		Descent3/game.h
 		Descent3/gamecinematics.h
 		Descent3/gamecinematics_external.h
-		Descent3/gameevent.h
+		Descent3/gameevent.h 
 		Descent3/gamefile.h
 		Descent3/gamefont.h
 		Descent3/gameloop.h
