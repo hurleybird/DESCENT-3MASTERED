@@ -298,6 +298,13 @@ struct renderer_preferred_state
 	ubyte motion_vector_mode;
 	bool motion_vector_debug_preview;
 	float pixel_motion_blur_strength;
+	bool combined_motion_blur;
+	float combined_motion_blur_legacy_strength;
+	float combined_motion_blur_legacy_frame_time;
+	float combined_motion_blur_legacy_sphere_size;
+	float combined_motion_blur_legacy_copy_density;
+	int combined_motion_blur_legacy_max_iterations;
+	float combined_motion_blur_legacy_alpha_exponent;
 	float pixel_motion_blur_periphery_strength;
 	float pixel_motion_blur_legacy_object_strength;
 	float pixel_motion_blur_center_suppression;
@@ -452,6 +459,10 @@ void rend_DrawPolygon2D(int handle,g3Point **p,int nv);
 void rend_BeginMotionObject(int object_handle,
 	int motion_object_flags = RENDERER_MOTION_OBJECT_DEFAULT);
 void rend_EndMotionObject();
+void rend_SuspendMotionVectorWrites();
+void rend_ResumeMotionVectorWrites();
+bool rend_GetMotionVectorSample(const vector *current_world, const vector *previous_world,
+	float *current_u, float *current_v, float *velocity_u, float *velocity_v);
 void rend_SetAOSuppression(float value);
 void rend_SetBloomSuppression(float value);
 void rend_SetAOClass(int value);

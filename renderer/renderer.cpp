@@ -324,6 +324,32 @@ void rend_EndMotionObject()
 	renderer_inst->EndMotionObject();
 }
 
+void rend_SuspendMotionVectorWrites()
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->SuspendMotionVectorWrites();
+}
+
+void rend_ResumeMotionVectorWrites()
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->ResumeMotionVectorWrites();
+}
+
+bool rend_GetMotionVectorSample(const vector *current_world, const vector *previous_world,
+	float *current_u, float *current_v, float *velocity_u, float *velocity_v)
+{
+	if (!Renderer_initted)
+		return false;
+
+	return renderer_inst->GetMotionVectorSample(current_world, previous_world,
+		current_u, current_v, velocity_u, velocity_v);
+}
+
 void rend_SetAOSuppression(float value)
 {
 	if (!Renderer_initted)

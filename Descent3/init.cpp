@@ -390,6 +390,19 @@ void SaveGameSettings()
 	Database->write("RS_motion_vector_mode", Render_preferred_state.motion_vector_mode);
 	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
+	Database->write("RS_combined_motion_blur", Render_preferred_state.combined_motion_blur);
+	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_strength",
+		Render_preferred_state.combined_motion_blur_legacy_strength);
+	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_frame_time",
+		Render_preferred_state.combined_motion_blur_legacy_frame_time);
+	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_sphere_size",
+		Render_preferred_state.combined_motion_blur_legacy_sphere_size);
+	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_copy_density",
+		Render_preferred_state.combined_motion_blur_legacy_copy_density);
+	Database->write("RS_combined_motion_blur_legacy_max_iterations",
+		Render_preferred_state.combined_motion_blur_legacy_max_iterations);
+	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_alpha_exponent",
+		Render_preferred_state.combined_motion_blur_legacy_alpha_exponent);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_periphery_strength", Render_preferred_state.pixel_motion_blur_periphery_strength);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_legacy_object_strength", Render_preferred_state.pixel_motion_blur_legacy_object_strength);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_center_suppression", Render_preferred_state.pixel_motion_blur_center_suppression);
@@ -577,6 +590,13 @@ void LoadGameSettings()
 	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_debug_preview = false;
 	Render_preferred_state.pixel_motion_blur_strength = 0.0f;
+	Render_preferred_state.combined_motion_blur = false;
+	Render_preferred_state.combined_motion_blur_legacy_strength = 1.0f;
+	Render_preferred_state.combined_motion_blur_legacy_frame_time = 1.0f / 20.0f;
+	Render_preferred_state.combined_motion_blur_legacy_sphere_size = 0.20f;
+	Render_preferred_state.combined_motion_blur_legacy_copy_density = 2.0f;
+	Render_preferred_state.combined_motion_blur_legacy_max_iterations = 24;
+	Render_preferred_state.combined_motion_blur_legacy_alpha_exponent = 1.5f;
 	Render_preferred_state.pixel_motion_blur_periphery_strength = 1.0f;
 	Render_preferred_state.pixel_motion_blur_legacy_object_strength = 0.0f;
 	Render_preferred_state.pixel_motion_blur_center_suppression = 0.0f;
@@ -779,6 +799,47 @@ void LoadGameSettings()
 		Render_preferred_state.pixel_motion_blur_strength = 0.0f;
 	if (Render_preferred_state.pixel_motion_blur_strength > 4.0f)
 		Render_preferred_state.pixel_motion_blur_strength = 4.0f;
+	Database->read("RS_combined_motion_blur", &Render_preferred_state.combined_motion_blur);
+	READ_FLOAT_SETTING("RS_combined_motion_blur_legacy_strength",
+		Render_preferred_state.combined_motion_blur_legacy_strength);
+	if (Render_preferred_state.combined_motion_blur_legacy_strength < 0.0f)
+		Render_preferred_state.combined_motion_blur_legacy_strength = 0.0f;
+	if (Render_preferred_state.combined_motion_blur_legacy_strength > 1.0f)
+		Render_preferred_state.combined_motion_blur_legacy_strength = 1.0f;
+	READ_FLOAT_SETTING("RS_combined_motion_blur_legacy_frame_time",
+		Render_preferred_state.combined_motion_blur_legacy_frame_time);
+	if (Render_preferred_state.combined_motion_blur_legacy_frame_time < 0.001f)
+		Render_preferred_state.combined_motion_blur_legacy_frame_time = 0.001f;
+	if (Render_preferred_state.combined_motion_blur_legacy_frame_time > 0.5f)
+		Render_preferred_state.combined_motion_blur_legacy_frame_time = 0.5f;
+	READ_FLOAT_SETTING("RS_combined_motion_blur_legacy_sphere_size",
+		Render_preferred_state.combined_motion_blur_legacy_sphere_size);
+	if (Render_preferred_state.combined_motion_blur_legacy_sphere_size < 0.01f)
+		Render_preferred_state.combined_motion_blur_legacy_sphere_size = 0.01f;
+	if (Render_preferred_state.combined_motion_blur_legacy_sphere_size > 2.0f)
+		Render_preferred_state.combined_motion_blur_legacy_sphere_size = 2.0f;
+	READ_FLOAT_SETTING("RS_combined_motion_blur_legacy_copy_density",
+		Render_preferred_state.combined_motion_blur_legacy_copy_density);
+	if (Render_preferred_state.combined_motion_blur_legacy_copy_density < 0.0f)
+		Render_preferred_state.combined_motion_blur_legacy_copy_density = 0.0f;
+	if (Render_preferred_state.combined_motion_blur_legacy_copy_density > 8.0f)
+		Render_preferred_state.combined_motion_blur_legacy_copy_density = 8.0f;
+	tempint = Render_preferred_state.combined_motion_blur_legacy_max_iterations;
+	Database->read_int("RS_combined_motion_blur_legacy_max_iterations", &tempint);
+	if (tempint < 1) tempint = 1;
+	if (tempint > 64) tempint = 64;
+	Render_preferred_state.combined_motion_blur_legacy_max_iterations = tempint;
+	READ_FLOAT_SETTING("RS_combined_motion_blur_legacy_alpha_exponent",
+		Render_preferred_state.combined_motion_blur_legacy_alpha_exponent);
+	if (Render_preferred_state.combined_motion_blur_legacy_alpha_exponent < 0.1f)
+		Render_preferred_state.combined_motion_blur_legacy_alpha_exponent = 0.1f;
+	if (Render_preferred_state.combined_motion_blur_legacy_alpha_exponent > 8.0f)
+		Render_preferred_state.combined_motion_blur_legacy_alpha_exponent = 8.0f;
+	if (Render_preferred_state.combined_motion_blur &&
+		Render_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_OFF)
+	{
+		Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_PIXEL;
+	}
 	READ_FLOAT_SETTING("RS_pixel_motion_blur_periphery_strength", Render_preferred_state.pixel_motion_blur_periphery_strength);
 	if (Render_preferred_state.pixel_motion_blur_periphery_strength < 0.0f)
 		Render_preferred_state.pixel_motion_blur_periphery_strength = 0.0f;
@@ -965,7 +1026,10 @@ void LoadGameSettings()
 	if (saved_motion_blur_type_present)
 		Use_motion_blur = saved_motion_blur_type != 0;
 	if(no_motion_blur)
+	{
 		Use_motion_blur = 0;
+		Render_preferred_state.combined_motion_blur = false;
+	}
 
 	Render_powerup_sparkles = false;
 	if(Katmai && !FindArg("-nosparkles"))

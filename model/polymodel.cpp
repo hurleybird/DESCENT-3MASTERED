@@ -134,6 +134,24 @@ void PolymodelMotionCaptureCurrent(poly_model *pm, vector *pos, matrix *orient)
 	Polymodel_motion_active_history->has_current = true;
 }
 
+bool PolymodelMotionGetObjectPrevious(int object_handle, vector *pos, matrix *orient)
+{
+	auto it = Polymodel_motion_history.find(object_handle);
+	if (it == Polymodel_motion_history.end() || !it->second.has_previous)
+		return false;
+
+	if (pos)
+		*pos = it->second.previous.pos;
+	if (orient)
+		*orient = it->second.previous.orient;
+	return true;
+}
+
+bool PolymodelMotionHasActiveObject()
+{
+	return Polymodel_motion_active_history != nullptr;
+}
+
 void PolymodelMotionEndObject()
 {
 	Polymodel_motion_active = false;
@@ -192,9 +210,18 @@ void PolymodelMotionSetPoint(g3Point *point, poly_model *pm, int submodel_num, c
 		return;
 
 	const PolymodelMotionSnapshot &previous = Polymodel_motion_active_history->previous;
-	if (!PolymodelMotionTransformPoint(previous, pm, submodel_num, local_pos, &world_pos))
+	if (PolymodelMotionTransformPoint(previous, pm, submodel_num, local_pos, &world_pos))
+	{
+		point->p3_motion_prev_world_pos = world_pos;
+	}
+	else if (point->p3_motion_world_valid)
+	{
+		point->p3_motion_prev_world_pos = previous.pos + (point->p3_motion_world_pos - current.pos);
+	}
+	else
+	{
 		return;
-	point->p3_motion_prev_world_pos = world_pos;
+	}
 	point->p3_motion_prev_world_valid = 1;
 }
 

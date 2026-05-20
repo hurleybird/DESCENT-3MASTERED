@@ -81,12 +81,20 @@ float RenderObjectStaticScalar = 1.0f;
 ubyte* RenderObjectGouraudValue = NULL;
 lightmap_object* RenderObjectLightmapObject = NULL;
 vector RenderObject_LightDirection;
+static bool RenderObject_disable_motion_capture = false;
+
+bool GetLinearPosition(vector* points, float* times, int num_points, float t, vector* pos);
 
 float Last_powerup_sparkle_time = 0.0f;
 bool Render_powerup_sparkles = false;
 
 static bool RenderObject_IsLegacyMotionBlurEligible(const object* obj)
 {
+	if (!obj || obj->render_type != RT_POLYOBJ || obj->size <= 0.001f)
+		return false;
+	if (obj->rtype.pobj_info.model_num < 0 || obj->rtype.pobj_info.model_num >= MAX_POLY_MODELS)
+		return false;
+
 	return (obj->type == OBJ_ROBOT || obj->type == OBJ_DEBRIS) &&
 		Object_map_position_history[OBJNUM(obj)] != -1;
 }
@@ -95,6 +103,69 @@ static int RenderObject_MotionObjectFlags(const object* obj)
 {
 	return RenderObject_IsLegacyMotionBlurEligible(obj) ?
 		RENDERER_MOTION_OBJECT_LEGACY_BLUR : RENDERER_MOTION_OBJECT_DEFAULT;
+}
+
+static float RenderObject_ClampPixelMotionBlurStrength(float strength)
+{
+	if (strength < 0.0f)
+		return 0.0f;
+	if (strength > 4.0f)
+		return 4.0f;
+	return strength;
+}
+
+static float RenderObject_ClampCombinedLegacyGeoSensitivity(float sensitivity)
+{
+	if (sensitivity < 0.0f)
+		return 0.0f;
+	if (sensitivity > 1.0f)
+		return 1.0f;
+	return sensitivity;
+}
+
+static float RenderObject_ClampCombinedLegacyFrameTime(float frame_time)
+{
+	if (frame_time < 0.001f)
+		return 0.001f;
+	if (frame_time > 0.5f)
+		return 0.5f;
+	return frame_time;
+}
+
+static float RenderObject_ClampCombinedLegacySphereSize(float sphere_size)
+{
+	if (sphere_size < 0.01f)
+		return 0.01f;
+	if (sphere_size > 2.0f)
+		return 2.0f;
+	return sphere_size;
+}
+
+static float RenderObject_ClampCombinedLegacyCopyDensity(float density)
+{
+	if (density < 0.0f)
+		return 0.0f;
+	if (density > 8.0f)
+		return 8.0f;
+	return density;
+}
+
+static int RenderObject_ClampCombinedLegacyIterations(int iterations)
+{
+	if (iterations < 1)
+		return 1;
+	if (iterations > 64)
+		return 64;
+	return iterations;
+}
+
+static float RenderObject_ClampCombinedLegacyAlphaExponent(float exponent)
+{
+	if (exponent < 0.1f)
+		return 0.1f;
+	if (exponent > 8.0f)
+		return 8.0f;
+	return exponent;
 }
 
 static double Render_object_perf_first_time = 0.0;
@@ -1117,9 +1188,98 @@ void RenderObject(object* obj)
 
 		////////////////////////////////////////////
 		/////////////MOTION BLUR////////////////////
-		if (Use_motion_blur && RenderObject_IsLegacyMotionBlurEligible(obj))
+		if ((Use_motion_blur || Render_preferred_state.combined_motion_blur) &&
+			RenderObject_IsLegacyMotionBlurEligible(obj))
 		{
 			double motion_blur_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
+			if (Render_preferred_state.combined_motion_blur)
+			{
+				const float sensitivity = RenderObject_ClampCombinedLegacyGeoSensitivity(
+					Render_preferred_state.combined_motion_blur_legacy_strength);
+				const float frame_time = RenderObject_ClampCombinedLegacyFrameTime(
+					Render_preferred_state.combined_motion_blur_legacy_frame_time);
+				const float sphere_size = RenderObject_ClampCombinedLegacySphereSize(
+					Render_preferred_state.combined_motion_blur_legacy_sphere_size);
+				const float copy_density = RenderObject_ClampCombinedLegacyCopyDensity(
+					Render_preferred_state.combined_motion_blur_legacy_copy_density);
+				const int max_iterations = RenderObject_ClampCombinedLegacyIterations(
+					Render_preferred_state.combined_motion_blur_legacy_max_iterations);
+				const float alpha_exponent = RenderObject_ClampCombinedLegacyAlphaExponent(
+					Render_preferred_state.combined_motion_blur_legacy_alpha_exponent);
+				float vel_mag = fabs(vm_GetMagnitude(&obj->mtype.phys_info.velocity));
+				int num_iterations = (int)((vel_mag * sensitivity * frame_time * copy_density) /
+					(sphere_size * obj->size));
+
+				if (num_iterations > max_iterations)
+					num_iterations = max_iterations;
+				if (num_iterations < 0)
+					num_iterations = 0;
+
+				if (num_iterations >= 1)
+				{
+					vector saved_pos = obj->pos;
+					float saved_alpha_fac = rend_GetAlphaFactor();
+					vector positions[MAX_POSITION_HISTORY + 1];
+					float times[MAX_POSITION_HISTORY + 1];
+					bool saved_disable_motion_capture = RenderObject_disable_motion_capture;
+
+					int pos_slot = Object_map_position_history[OBJNUM(obj)];
+					int c_pos = Object_position_head;
+					for (int i = 0; i < MAX_POSITION_HISTORY + 1; i++)
+					{
+						if (i == 0)
+						{
+							positions[i] = obj->pos;
+							times[i] = 0.0f;
+						}
+						else
+						{
+							positions[i] = Object_position_samples[pos_slot].pos[c_pos];
+							times[i] = Gametime - Last_position_history_update[c_pos];
+							c_pos++;
+							c_pos = c_pos % MAX_POSITION_HISTORY;
+						}
+					}
+
+					RenderObject_disable_motion_capture = true;
+					float t_interval = frame_time / ((float)num_iterations + 1);
+					float alpha_step = 1.0f / (num_iterations + 1);
+					float curr_alpha = 1.0f - alpha_step;
+					float curr_t = t_interval;
+
+					for (int i = 0; i < num_iterations; i++)
+					{
+						if (!GetLinearPosition(positions, times, MAX_POSITION_HISTORY + 1, curr_t, &obj->pos))
+							break;
+
+						float alpha = curr_alpha;
+						if (alpha < 0.0f)
+							alpha = 0.0f;
+						alpha = powf(alpha, alpha_exponent);
+						if (alpha > 1.0f)
+							alpha = 1.0f;
+						rend_SetAlphaFactor(alpha);
+
+						if (obj->rtype.pobj_info.anim_frame || (Poly_models[obj->rtype.pobj_info.model_num].frame_max != Poly_models[obj->rtype.pobj_info.model_num].frame_min))
+						{
+							RenderObject_DrawPolymodel(obj, normalized_time);
+						}
+						else
+						{
+							RenderObject_DrawPolymodel(obj, NULL);
+						}
+
+						curr_alpha -= alpha_step;
+						curr_t += t_interval;
+					}
+
+					obj->pos = saved_pos;
+					rend_SetAlphaFactor(saved_alpha_fac);
+					RenderObject_disable_motion_capture = saved_disable_motion_capture;
+				}
+			}
+			else
+			{
 			float vel_mag;	//velocity magnitude
 			float sphere_size_perc = Legacy_motion_blur_sphere_size_percent;	// percentage of object size
 			float copy_density = Legacy_motion_blur_copy_density;
@@ -1220,6 +1380,7 @@ void RenderObject(object* obj)
 
 				obj->pos = saved_pos;
 				rend_SetAlphaFactor(saved_alpha_fac);
+			}
 			}
 			if (perf_scope.IsActive())
 				RenderObjectPerfAdd(Render_object_perf_motion_blur_time, motion_blur_start_time);
@@ -1686,8 +1847,11 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 	if (use_effect)
 		SetPolymodelEffect(&pe);
 
-	PolymodelMotionBeginObject(OBJNUM(obj), &obj_pos, &obj->orient);
-	rend_BeginMotionObject(OBJNUM(obj), RenderObject_MotionObjectFlags(obj));
+	if (!RenderObject_disable_motion_capture)
+	{
+		PolymodelMotionBeginObject(OBJNUM(obj), &obj_pos, &obj->orient);
+		rend_BeginMotionObject(OBJNUM(obj), RenderObject_MotionObjectFlags(obj));
+	}
 	rend_SetAOClass(RENDERER_AO_CLASS_POLYOBJECT);
 
 	if (RenderObjectType == RO_STATIC)
@@ -1725,8 +1889,11 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 		Int3();	// Get Jason
 
 	rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
-	rend_EndMotionObject();
-	PolymodelMotionEndObject();
+	if (!RenderObject_disable_motion_capture)
+	{
+		rend_EndMotionObject();
+		PolymodelMotionEndObject();
+	}
 }
 
 // Sets the direction of the lightsource to be used when calculating vertex lighting
@@ -1977,15 +2144,21 @@ void DrawPowerupGlowDisk(object* obj)
 	}
 
 	// Draw lo-res disk
-	PolymodelMotionBeginObject(OBJNUM(obj), &obj->pos, &obj->orient);
-	rend_BeginMotionObject(OBJNUM(obj), RenderObject_MotionObjectFlags(obj));
+	if (!RenderObject_disable_motion_capture)
+	{
+		PolymodelMotionBeginObject(OBJNUM(obj), &obj->pos, &obj->orient);
+		rend_BeginMotionObject(OBJNUM(obj), RenderObject_MotionObjectFlags(obj));
+	}
 	rend_SetAOClass(RENDERER_AO_CLASS_POLYOBJECT);
 	rend_SetAOSuppression(1.0f);
 	DrawColoredDisk(&obj->pos, li->red_light1, li->green_light1, li->blue_light1, POWERUP_HALO_ALPHA * alpha_scalar, 0.0f, (obj->size / 2) + size_adjust, 0, 2);
 	rend_SetAOSuppression(0.0f);
 	rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
-	rend_EndMotionObject();
-	PolymodelMotionEndObject();
+	if (!RenderObject_disable_motion_capture)
+	{
+		rend_EndMotionObject();
+		PolymodelMotionEndObject();
+	}
 }
 
 // Draws the glowing disk around a player indicating damage

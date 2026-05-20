@@ -1048,6 +1048,15 @@ static float ConfigNormalizePixelMotionBlurStrength(float strength)
 	return strength;
 }
 
+static float ConfigNormalizeCombinedLegacyGeoStrength(float strength)
+{
+	if (strength < 0.0f)
+		return 0.0f;
+	if (strength > 1.0f)
+		return 1.0f;
+	return strength;
+}
+
 static float ConfigNormalizePixelMotionBlurCenterSuppression(float suppression)
 {
 	if (suppression < 0.0f)
@@ -1115,6 +1124,15 @@ static void ApplyLegacyMotionBlurValues(float copy_density, int max_iterations, 
 	Legacy_motion_blur_alpha_exponent = alpha_exponent;
 }
 
+static void ConfigEnsureCombinedMotionBlurVectorMode()
+{
+	if (Render_preferred_state.combined_motion_blur &&
+		Render_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_OFF)
+	{
+		Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_PIXEL;
+	}
+}
+
 static void ApplyMotionBlurPresetFromIndex(int index)
 {
 	switch (index)
@@ -1133,6 +1151,8 @@ static void ApplyMotionBlurPresetFromIndex(int index)
 		Use_motion_blur = 0;
 		break;
 	}
+
+	ConfigEnsureCombinedMotionBlurVectorMode();
 }
 
 struct video_menu
@@ -1152,6 +1172,12 @@ struct video_menu
 	short* fov;
 	short* frame_limit;
 	short* pixel_motion_blur;
+	short* combined_motion_blur_legacy;
+	short* combined_legacy_frame_time;
+	short* combined_legacy_sphere_size;
+	short* combined_legacy_copy_density;
+	short* combined_legacy_max_iterations;
+	short* combined_legacy_alpha_exponent;
 	short* pixel_motion_blur_legacy;
 	short* pixel_motion_blur_center;
 	short* pixel_motion_blur_legacy_center;
@@ -1303,6 +1329,11 @@ struct video_menu
 		if (motion_vectors && sheet->HasChanged(motion_vectors))
 		{
 			Render_preferred_state.motion_vector_mode = (ubyte)ConfigMotionVectorIndexToMode(*motion_vectors);
+			ConfigEnsureCombinedMotionBlurVectorMode();
+			if (Render_preferred_state.combined_motion_blur)
+			{
+				*motion_vectors = ConfigMotionVectorModeToIndex(Render_preferred_state.motion_vector_mode);
+			}
 			changed = true;
 		}
 		if (motion_vector_debug && sheet->HasChanged(motion_vector_debug))
@@ -1314,6 +1345,48 @@ struct video_menu
 		{
 			Render_preferred_state.pixel_motion_blur_strength =
 				ConfigNormalizePixelMotionBlurStrength(CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur, 0.0f, 4.0f, 100));
+			changed = true;
+		}
+		if (combined_motion_blur_legacy && sheet->HasChanged(combined_motion_blur_legacy))
+		{
+			Render_preferred_state.combined_motion_blur_legacy_strength =
+				ConfigNormalizeCombinedLegacyGeoStrength(
+					CALC_SLIDER_FLOAT_VALUE(*combined_motion_blur_legacy, 0.0f, 1.0f, 100));
+			changed = true;
+		}
+		if (combined_legacy_frame_time && sheet->HasChanged(combined_legacy_frame_time))
+		{
+			Render_preferred_state.combined_motion_blur_legacy_frame_time =
+				ClampLegacyMotionBlurFrameTime(
+					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_frame_time, 0.001f, 0.5f, 100));
+			changed = true;
+		}
+		if (combined_legacy_sphere_size && sheet->HasChanged(combined_legacy_sphere_size))
+		{
+			Render_preferred_state.combined_motion_blur_legacy_sphere_size =
+				ClampLegacyMotionBlurSphereSize(
+					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_sphere_size, 0.01f, 2.0f, 100));
+			changed = true;
+		}
+		if (combined_legacy_copy_density && sheet->HasChanged(combined_legacy_copy_density))
+		{
+			Render_preferred_state.combined_motion_blur_legacy_copy_density =
+				ClampLegacyMotionBlurCopyDensity(
+					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_copy_density, 0.0f, 8.0f, 100));
+			changed = true;
+		}
+		if (combined_legacy_max_iterations && sheet->HasChanged(combined_legacy_max_iterations))
+		{
+			Render_preferred_state.combined_motion_blur_legacy_max_iterations =
+				ClampLegacyMotionBlurIterations(
+					CALC_SLIDER_INT_VALUE(*combined_legacy_max_iterations, 1, 64, 63));
+			changed = true;
+		}
+		if (combined_legacy_alpha_exponent && sheet->HasChanged(combined_legacy_alpha_exponent))
+		{
+			Render_preferred_state.combined_motion_blur_legacy_alpha_exponent =
+				ClampLegacyMotionBlurAlphaExponent(
+					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_alpha_exponent, 0.1f, 8.0f, 100));
 			changed = true;
 		}
 		if (pixel_motion_blur_legacy && sheet->HasChanged(pixel_motion_blur_legacy))
@@ -1423,6 +1496,12 @@ struct video_menu
 		fov = NULL;
 		frame_limit = NULL;
 		pixel_motion_blur = NULL;
+		combined_motion_blur_legacy = NULL;
+		combined_legacy_frame_time = NULL;
+		combined_legacy_sphere_size = NULL;
+		combined_legacy_copy_density = NULL;
+		combined_legacy_max_iterations = NULL;
+		combined_legacy_alpha_exponent = NULL;
 		pixel_motion_blur_legacy = NULL;
 		pixel_motion_blur_center = NULL;
 		pixel_motion_blur_legacy_center = NULL;
@@ -1526,7 +1605,14 @@ struct video_menu
 		pixel_motion_blur = sheet->AddSlider("Scene", 100,
 			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_strength, &pixel_blur_settings, 100),
 			&pixel_blur_settings);
-		pixel_motion_blur_legacy = sheet->AddSlider("Legacy obj", 100,
+		tSliderSettings legacy_geo_settings = {};
+		legacy_geo_settings.min_val.f = 0.0f;
+		legacy_geo_settings.max_val.f = 1.0f;
+		legacy_geo_settings.type = SLIDER_UNITS_FLOAT;
+		combined_motion_blur_legacy = sheet->AddSlider("Legacy geo", 100,
+			CALC_SLIDER_POS_FLOAT(Render_preferred_state.combined_motion_blur_legacy_strength,
+				&legacy_geo_settings, 100), &legacy_geo_settings);
+		pixel_motion_blur_legacy = sheet->AddSlider("Legacy px", 100,
 			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_legacy_object_strength,
 				&pixel_blur_settings, 100), &pixel_blur_settings);
 		tSliderSettings pixel_blur_center_settings = {};
@@ -1536,7 +1622,7 @@ struct video_menu
 		pixel_motion_blur_center = sheet->AddSlider("Scene sup", 100,
 			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_center_suppression,
 				&pixel_blur_center_settings, 100), &pixel_blur_center_settings);
-		pixel_motion_blur_legacy_center = sheet->AddSlider("Legacy sup", 100,
+		pixel_motion_blur_legacy_center = sheet->AddSlider("Legacy px sup", 100,
 			CALC_SLIDER_POS_FLOAT(Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression,
 				&pixel_blur_center_settings, 100), &pixel_blur_center_settings);
 		tSliderSettings pixel_blur_quality_settings = {};
@@ -1546,6 +1632,43 @@ struct video_menu
 		pixel_motion_blur_quality = sheet->AddSlider("Samples", 14,
 			ConfigNormalizePixelMotionBlurSamples(Render_preferred_state.pixel_motion_blur_samples) - 3,
 			&pixel_blur_quality_settings);
+
+		sheet->NewGroup("Legacy blur", 410, 306);
+		tSliderSettings combined_legacy_time_settings = {};
+		combined_legacy_time_settings.min_val.f = 0.001f;
+		combined_legacy_time_settings.max_val.f = 0.5f;
+		combined_legacy_time_settings.type = SLIDER_UNITS_FLOAT;
+		combined_legacy_frame_time = sheet->AddSlider("Time", 100,
+			CALC_SLIDER_POS_FLOAT(Render_preferred_state.combined_motion_blur_legacy_frame_time,
+				&combined_legacy_time_settings, 100), &combined_legacy_time_settings);
+		tSliderSettings combined_legacy_sphere_settings = {};
+		combined_legacy_sphere_settings.min_val.f = 0.01f;
+		combined_legacy_sphere_settings.max_val.f = 2.0f;
+		combined_legacy_sphere_settings.type = SLIDER_UNITS_FLOAT;
+		combined_legacy_sphere_size = sheet->AddSlider("Sphere", 100,
+			CALC_SLIDER_POS_FLOAT(Render_preferred_state.combined_motion_blur_legacy_sphere_size,
+				&combined_legacy_sphere_settings, 100), &combined_legacy_sphere_settings);
+		tSliderSettings combined_legacy_density_settings = {};
+		combined_legacy_density_settings.min_val.f = 0.0f;
+		combined_legacy_density_settings.max_val.f = 8.0f;
+		combined_legacy_density_settings.type = SLIDER_UNITS_FLOAT;
+		combined_legacy_copy_density = sheet->AddSlider("Density", 100,
+			CALC_SLIDER_POS_FLOAT(Render_preferred_state.combined_motion_blur_legacy_copy_density,
+				&combined_legacy_density_settings, 100), &combined_legacy_density_settings);
+		tSliderSettings combined_legacy_iteration_settings = {};
+		combined_legacy_iteration_settings.min_val.i = 1;
+		combined_legacy_iteration_settings.max_val.i = 64;
+		combined_legacy_iteration_settings.type = SLIDER_UNITS_INT;
+		combined_legacy_max_iterations = sheet->AddSlider("Copies", 63,
+			ClampLegacyMotionBlurIterations(Render_preferred_state.combined_motion_blur_legacy_max_iterations) - 1,
+			&combined_legacy_iteration_settings);
+		tSliderSettings combined_legacy_alpha_settings = {};
+		combined_legacy_alpha_settings.min_val.f = 0.1f;
+		combined_legacy_alpha_settings.max_val.f = 8.0f;
+		combined_legacy_alpha_settings.type = SLIDER_UNITS_FLOAT;
+		combined_legacy_alpha_exponent = sheet->AddSlider("Alpha", 100,
+			CALC_SLIDER_POS_FLOAT(Render_preferred_state.combined_motion_blur_legacy_alpha_exponent,
+				&combined_legacy_alpha_settings, 100), &combined_legacy_alpha_settings);
 
 		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
@@ -1577,9 +1700,34 @@ struct video_menu
 			Render_preferred_state.motion_vector_mode = (ubyte)ConfigMotionVectorIndexToMode(*motion_vectors);
 		if (motion_vector_debug)
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
+		ConfigEnsureCombinedMotionBlurVectorMode();
 		if (pixel_motion_blur)
 			Render_preferred_state.pixel_motion_blur_strength =
 				ConfigNormalizePixelMotionBlurStrength(CALC_SLIDER_FLOAT_VALUE(*pixel_motion_blur, 0.0f, 4.0f, 100));
+		if (combined_motion_blur_legacy)
+			Render_preferred_state.combined_motion_blur_legacy_strength =
+				ConfigNormalizeCombinedLegacyGeoStrength(
+					CALC_SLIDER_FLOAT_VALUE(*combined_motion_blur_legacy, 0.0f, 1.0f, 100));
+		if (combined_legacy_frame_time)
+			Render_preferred_state.combined_motion_blur_legacy_frame_time =
+				ClampLegacyMotionBlurFrameTime(
+					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_frame_time, 0.001f, 0.5f, 100));
+		if (combined_legacy_sphere_size)
+			Render_preferred_state.combined_motion_blur_legacy_sphere_size =
+				ClampLegacyMotionBlurSphereSize(
+					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_sphere_size, 0.01f, 2.0f, 100));
+		if (combined_legacy_copy_density)
+			Render_preferred_state.combined_motion_blur_legacy_copy_density =
+				ClampLegacyMotionBlurCopyDensity(
+					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_copy_density, 0.0f, 8.0f, 100));
+		if (combined_legacy_max_iterations)
+			Render_preferred_state.combined_motion_blur_legacy_max_iterations =
+				ClampLegacyMotionBlurIterations(
+					CALC_SLIDER_INT_VALUE(*combined_legacy_max_iterations, 1, 64, 63));
+		if (combined_legacy_alpha_exponent)
+			Render_preferred_state.combined_motion_blur_legacy_alpha_exponent =
+				ClampLegacyMotionBlurAlphaExponent(
+					CALC_SLIDER_FLOAT_VALUE(*combined_legacy_alpha_exponent, 0.1f, 8.0f, 100));
 		if (pixel_motion_blur_legacy)
 			Render_preferred_state.pixel_motion_blur_legacy_object_strength =
 				ConfigNormalizePixelMotionBlurStrength(
@@ -2181,6 +2329,7 @@ struct details_menu
 	int* detail_level;									// detail level radio
 	int* objcomp;											// object complexity radio
 	int* motion_blur;									// motion blur radio
+	bool* combined_motion_blur;							// combined pixel/geometry blur toggle
 	bool* specmap, * headlight, * mirror,				// check boxes
 		* dynamic, * fog, * coronas, * procedurals,
 		* powerup_halo, * scorches, * weapon_coronas,
@@ -2228,6 +2377,7 @@ struct details_menu
 		pixel_err = NULL;
 		rend_dist = NULL;
 		motion_blur = NULL;
+		combined_motion_blur = NULL;
 		if (show_legacy_terrain_controls)
 		{
 			sheet->NewGroup(TXT_GEOMETRY, 90, 0);
@@ -2268,6 +2418,8 @@ struct details_menu
 		sheet->AddRadioButton(TXT_CFG_MEDIUM);
 		sheet->AddRadioButton(TXT_CFG_HIGH);
 		*motion_blur = MotionBlurPresetToIndex();
+		combined_motion_blur = sheet->AddLongCheckBox("Combined blur",
+			Render_preferred_state.combined_motion_blur);
 
 		return sheet;
 	};
@@ -2283,6 +2435,11 @@ struct details_menu
 		Detail_settings.Object_complexity = *objcomp;
 		if (motion_blur)
 			ApplyMotionBlurPresetFromIndex(*motion_blur);
+		if (combined_motion_blur)
+		{
+			Render_preferred_state.combined_motion_blur = *combined_motion_blur;
+			ConfigEnsureCombinedMotionBlurVectorMode();
+		}
 		if (pixel_err)
 			Detail_settings.Pixel_error = MAXIMUM_TERRAIN_DETAIL - ((*pixel_err) + MINIMUM_TERRAIN_DETAIL);
 		Detail_settings.Powerup_halos = *powerup_halo;
@@ -2306,6 +2463,13 @@ struct details_menu
 		if (motion_blur && sheet->HasChanged(motion_blur))
 		{
 			ApplyMotionBlurPresetFromIndex(*motion_blur);
+			rend_SetPreferredState(&Render_preferred_state);
+		}
+		if (combined_motion_blur && sheet->HasChanged(combined_motion_blur))
+		{
+			Render_preferred_state.combined_motion_blur = *combined_motion_blur;
+			ConfigEnsureCombinedMotionBlurVectorMode();
+			rend_SetPreferredState(&Render_preferred_state);
 		}
 		bool cockpit_improvement_changed = sheet->HasChanged(cockpit_improvement);
 		if (cockpit_improvement_changed)

@@ -143,6 +143,9 @@ bool GL4Renderer::MotionVectorWritesEnabled() const
 
 bool GL4Renderer::CurrentDrawWritesPixelMotionVectors() const
 {
+	if (motion_vector_write_suppression_depth > 0)
+		return false;
+
 	if (!PixelMotionVectorModeEnabled() || MotionVectorsFrozen() ||
 		post_present_pending_swap || OpenGL_state.cur_zbuffer_state == 0)
 		return false;
@@ -268,13 +271,16 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 		glUniform1f(motionblur_strength, scene_strength * frame_scale);
 	if (motionblur_legacy_object_strength != -1)
 		glUniform1f(motionblur_legacy_object_strength, legacy_object_strength * frame_scale);
+	const float center_suppression = std::max(0.0f,
+		std::min(OpenGL_preferred_state.pixel_motion_blur_center_suppression, 1.0f));
+	const float legacy_center_suppression = std::max(0.0f,
+		std::min(OpenGL_preferred_state.pixel_motion_blur_legacy_object_center_suppression, 1.0f));
 	if (motionblur_center_suppression != -1)
 		glUniform1f(motionblur_center_suppression,
-			std::max(0.0f, std::min(OpenGL_preferred_state.pixel_motion_blur_center_suppression, 1.0f)));
+			center_suppression);
 	if (motionblur_legacy_object_center_suppression != -1)
 		glUniform1f(motionblur_legacy_object_center_suppression,
-			std::max(0.0f, std::min(
-				OpenGL_preferred_state.pixel_motion_blur_legacy_object_center_suppression, 1.0f)));
+			legacy_center_suppression);
 	if (motionblur_sample_count != -1)
 	{
 		int samples = OpenGL_preferred_state.pixel_motion_blur_samples;
@@ -1659,6 +1665,48 @@ void GL4Renderer::EndMotionObject()
 	motion_object_active = false;
 	cockpit_motion_object_active = false;
 	motion_object_id = 0;
+}
+
+void GL4Renderer::SuspendMotionVectorWrites()
+{
+	motion_vector_write_suppression_depth++;
+	if (PixelMotionVectorModeEnabled())
+		legacy_draw_uniforms_dirty = true;
+}
+
+void GL4Renderer::ResumeMotionVectorWrites()
+{
+	if (motion_vector_write_suppression_depth > 0)
+		motion_vector_write_suppression_depth--;
+	if (PixelMotionVectorModeEnabled())
+		legacy_draw_uniforms_dirty = true;
+}
+
+bool GL4Renderer::GetMotionVectorSample(const vector *current_world, const vector *previous_world,
+	float *current_u, float *current_v, float *velocity_u, float *velocity_v)
+{
+	if (!current_world || !previous_world || !current_u || !current_v || !velocity_u || !velocity_v ||
+		!have_current_view_projection || !have_previous_view_projection)
+	{
+		return false;
+	}
+
+	vec4_array current_clip = {};
+	vec4_array previous_clip = {};
+	GL4TransformWorldToClip(current_view_projection, *current_world, current_clip);
+	GL4TransformWorldToClip(previous_view_projection, *previous_world, previous_clip);
+	if (current_clip.w <= 0.00001f || previous_clip.w <= 0.00001f)
+		return false;
+
+	const float current_ndc_x = current_clip.x / current_clip.w;
+	const float current_ndc_y = current_clip.y / current_clip.w;
+	const float previous_ndc_x = previous_clip.x / previous_clip.w;
+	const float previous_ndc_y = previous_clip.y / previous_clip.w;
+	*current_u = current_ndc_x * 0.5f + 0.5f;
+	*current_v = current_ndc_y * 0.5f + 0.5f;
+	*velocity_u = (current_ndc_x - previous_ndc_x) * 0.5f;
+	*velocity_v = (current_ndc_y - previous_ndc_y) * 0.5f;
+	return true;
 }
 
 // draws a scaled 2d bitmap to our buffer

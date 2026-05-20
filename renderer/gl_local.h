@@ -300,6 +300,7 @@ class GL4Renderer : public IRenderer
 	bool motion_vectors_cleared_this_frame = false;
 	bool preserve_motion_vectors_on_next_framebuffer_update = false;
 	bool motion_vectors_capture_locked = false;
+	int motion_vector_write_suppression_depth = 0;
 	int motion_vector_visible_origin_x = 0;
 	int motion_vector_visible_origin_y = 0;
 	int motion_vector_visible_width = 0;
@@ -353,7 +354,7 @@ class GL4Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.5f, 0.5f, 0.5f, 1.0f, RENDERER_MOTION_VECTOR_OFF, false, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 9 };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.5f, 0.5f, 0.5f, 1.0f, RENDERER_MOTION_VECTOR_OFF, false, 0.0f, false, 1.0f, 1.0f / 20.0f, 0.20f, 2.0f, 24, 1.5f, 1.0f, 0.0f, 0.0f, 0.0f, 9 };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -617,6 +618,10 @@ public:
 
 	void BeginMotionObject(int object_handle, int motion_object_flags = RENDERER_MOTION_OBJECT_DEFAULT) override;
 	void EndMotionObject() override;
+	void SuspendMotionVectorWrites() override;
+	void ResumeMotionVectorWrites() override;
+	bool GetMotionVectorSample(const vector *current_world, const vector *previous_world,
+		float *current_u, float *current_v, float *velocity_u, float *velocity_v) override;
 	void SetAOSuppression(float value) override;
 	void SetBloomSuppression(float value) override;
 	void SetAOClass(int value) override;

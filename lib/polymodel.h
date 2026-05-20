@@ -126,6 +126,8 @@ void DonePolyModelPosInstance ();
 void PolymodelMotionStartFrame();
 void PolymodelMotionBeginObject(int object_handle, vector *pos, matrix *orient);
 void PolymodelMotionCaptureCurrent(poly_model *pm, vector *pos, matrix *orient);
+bool PolymodelMotionGetObjectPrevious(int object_handle, vector *pos, matrix *orient);
+bool PolymodelMotionHasActiveObject();
 void PolymodelMotionEndObject();
 void PolymodelMotionSetPoint(g3Point *point, poly_model *pm, int submodel_num, const vector *local_pos);
 void PolymodelMotionSetObjectPoint(g3Point *point, const vector *world_pos);

@@ -20,6 +20,7 @@
 
 #include "3d.h"
 #include "HardwareInternal.h"
+#include "polymodel.h"
 #include "renderer.h"
 
 #define round(v) ( (int)( ((v) + 0.5f) ) )
@@ -276,7 +277,6 @@ void g3_DrawBitmap(vector *pos,float width,float height,int bm,int color)
 	if (pnt.p3_codes & CC_OFF_FAR)
 		return;
 
-
 	g3_ProjectPoint(&pnt);
 
 	// Calculate the 4 corners of this bitmap
@@ -343,7 +343,12 @@ void g3_DrawBitmap(vector *pos,float width,float height,int bm,int color)
 		return;
 
 	// And draw!!
+	const bool suppress_motion_vectors = PolymodelMotionHasActiveObject();
+	if (suppress_motion_vectors)
+		rend_SuspendMotionVectorWrites();
 	rend_DrawScaledBitmapWithZ(x1, y1, x2, y2, bm, u0, v0, u1, v1, pnt.p3_z, color);
+	if (suppress_motion_vectors)
+		rend_ResumeMotionVectorWrites();
 }
 
 // Draws a bitmap that has been rotated about its center.  Angle of rotation is passed as 'rot_angle'

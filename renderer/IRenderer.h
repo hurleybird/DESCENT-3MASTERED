@@ -187,6 +187,13 @@ public:
 
 	virtual void BeginMotionObject(int object_handle, int motion_object_flags = RENDERER_MOTION_OBJECT_DEFAULT) {}
 	virtual void EndMotionObject() {}
+	virtual void SuspendMotionVectorWrites() {}
+	virtual void ResumeMotionVectorWrites() {}
+	virtual bool GetMotionVectorSample(const vector *current_world, const vector *previous_world,
+		float *current_u, float *current_v, float *velocity_u, float *velocity_v)
+	{
+		return false;
+	}
 	virtual void SetAOSuppression(float value) {}
 	virtual void SetBloomSuppression(float value) {}
 	virtual void SetAOClass(int value) {}
