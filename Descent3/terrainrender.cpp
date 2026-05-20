@@ -2680,17 +2680,22 @@ void RenderAllTerrainObjects()
 			int vis_effect = objs_to_render[i].vis_effect;
 			int objnum = objs_to_render[i].objnum;
 			if (vis_effect)
-				DrawVisEffect(&VisEffects[objnum]);
+				DrawVisEffectMaybeBatched(&VisEffects[objnum]);
 			else
+			{
+				FlushVisEffectBatches();
 				RenderObject(&Objects[objnum]);
+			}
 		}
+		ForceFlushVisEffectBatches();
 	}
 	// Render snows
 	rend_SetZBufferWriteMask(0);
 	{
 		PERF_MARKER_SCOPE("TerrainObjects.RenderSnow");
 		for (i = 0; i < num_snows; i++)
-			DrawVisEffect(&VisEffects[snows[i]]);
+			DrawVisEffectMaybeBatched(&VisEffects[snows[i]]);
+		ForceFlushVisEffectBatches();
 	}
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBufferState(1);

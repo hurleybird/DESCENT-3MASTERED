@@ -66,6 +66,30 @@ void VisEffectMoveAll ();
 // Renders a vis effect
 void DrawVisEffect (vis_effect *vis);
 
+// Renders through the VIS_FIREBALL batcher when enabled, otherwise uses DrawVisEffect.
+void DrawVisEffectMaybeBatched(vis_effect *vis);
+void FlushVisEffectBatches();
+void ForceFlushVisEffectBatches();
+
+struct vis_fireball_batch_debug_stats
+{
+	unsigned attempts;
+	unsigned accepted;
+	unsigned rejected;
+	unsigned queued;
+	unsigned flushes;
+	unsigned flushed_items;
+	unsigned max_batch_items;
+	unsigned single_item_flushes;
+	unsigned key_flushes;
+	unsigned forced_flushes;
+	unsigned fallback_flushes;
+	unsigned atlas_hits;
+	unsigned atlas_fallbacks;
+};
+
+void VisEffectGetBatchDebugStats(vis_fireball_batch_debug_stats *stats);
+
 // Creates a some sparks that go in random directions
 void CreateRandomSparks (int num_sparks,vector *pos,int roomnum,int which_index=-1,float force_scalar=1);
 

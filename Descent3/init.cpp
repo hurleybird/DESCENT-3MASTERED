@@ -389,6 +389,7 @@ void SaveGameSettings()
 	Database->write("RS_gtao_debug_preview", Render_preferred_state.gtao_debug_preview);
 	Database->write("RS_motion_vector_mode", Render_preferred_state.motion_vector_mode);
 	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
+	Database->write("RS_batched_vis_effects", Render_batched_vis_effects);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	Database->write("RS_combined_motion_blur", Render_preferred_state.combined_motion_blur);
 	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_strength",
@@ -592,6 +593,7 @@ void LoadGameSettings()
 	Render_preferred_state.gtao_mine_occlusion = 1.0f;
 	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_debug_preview = false;
+	Render_batched_vis_effects = false;
 	Render_preferred_state.pixel_motion_blur_strength = 0.0f;
 	Render_preferred_state.combined_motion_blur = false;
 	Render_preferred_state.combined_motion_blur_legacy_strength = 1.0f;
@@ -800,6 +802,7 @@ void LoadGameSettings()
 		tempint = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_mode = (ubyte)tempint;
 	Database->read("RS_motion_vector_debug_preview", &Render_preferred_state.motion_vector_debug_preview);
+	Database->read("RS_batched_vis_effects", &Render_batched_vis_effects);
 	READ_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	if (Render_preferred_state.pixel_motion_blur_strength < 0.0f)
 		Render_preferred_state.pixel_motion_blur_strength = 0.0f;

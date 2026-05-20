@@ -208,12 +208,13 @@ void PostRender(int roomnum)
 				if (first_vis_effect_time == 0.0)
 					first_vis_effect_time = start_time;
 				index = Postrender_list[i].visnum;
-				DrawVisEffect(&VisEffects[index]);
+				DrawVisEffectMaybeBatched(&VisEffects[index]);
 				if (Perf_markers_enabled)
 					vis_effect_time += PerfMarkersNow() - start_time;
 			}
 			else if (Postrender_list[i].type == PRT_OBJECT)
 			{
+				FlushVisEffectBatches();
 				double object_start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;
 				if (first_object_time == 0.0)
 					first_object_time = object_start_time;
@@ -253,6 +254,7 @@ void PostRender(int roomnum)
 			}
 			else
 			{
+				FlushVisEffectBatches();
 				double start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;
 				if (first_face_time == 0.0)
 					first_face_time = start_time;
@@ -262,6 +264,7 @@ void PostRender(int roomnum)
 					face_time += PerfMarkersNow() - start_time;
 			}
 		}
+		ForceFlushVisEffectBatches();
 	}
 	if (Perf_markers_enabled)
 	{

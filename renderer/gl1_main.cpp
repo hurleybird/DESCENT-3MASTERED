@@ -919,6 +919,7 @@ float GLCompatibilityRenderer::GetAlphaMultiplier(void)
 	case AT_CONSTANT_VERTEX:
 		return OpenGL_state.cur_alpha / 255.0;
 	case AT_TEXTURE_VERTEX:
+	case AT_LIGHTMAP_BLEND_VERTEX:
 		return 1.0;
 	case AT_LIGHTMAP_BLEND:
 	case AT_LIGHTMAP_BLEND_SATURATE:
@@ -1031,6 +1032,7 @@ void GLCompatibilityRenderer::SetAlphaType(sbyte atype)
 		glTexEnvi(GL_TEXTURE_ENV, GL_SRC0_RGB, GL_TEXTURE);
 		break;
 	case AT_LIGHTMAP_BLEND:
+	case AT_LIGHTMAP_BLEND_VERTEX:
 		SetAlwaysAlpha(false);
 		glBlendFuncSeparate(GL_DST_COLOR, GL_ZERO, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);

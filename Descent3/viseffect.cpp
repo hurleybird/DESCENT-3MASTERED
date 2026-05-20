@@ -17,16 +17,19 @@
 */
 
 #include <algorithm>
+#include <vector>
 #include "viseffect.h"
 #include "fireball.h"
 #include "terrain.h"
 #include "game.h"
 #include "room.h"
 #include "vclip.h"
+#include "bitmap.h"
 #include "gametexture.h"
 #include "object.h"
 #include <memory.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "PHYSICS.H"
 #include "weapon.h"
 #include "lighting.h"
@@ -1030,6 +1033,866 @@ int GetBillboardCorners(g3Point* pnts, g3Point* top_point, g3Point* bot_point, f
 		return 0;
 
 	return 1;
+}
+
+struct VisFireballBatchKey
+{
+	int bitmap_handle;
+	sbyte alpha_type;
+
+	bool Equals(const VisFireballBatchKey& other) const
+	{
+		return bitmap_handle == other.bitmap_handle &&
+			alpha_type == other.alpha_type;
+	}
+};
+
+struct VisFireballBatchItem
+{
+	g3Point points[4];
+	g3Point* pointlist[4];
+
+	void RefreshPointList()
+	{
+		for (int i = 0; i < 4; i++)
+			pointlist[i] = &points[i];
+	}
+};
+
+struct VisFireballAtlasFrame
+{
+	int source_handle;
+	int width;
+	int height;
+	float u0;
+	float v0;
+	float u1;
+	float v1;
+};
+
+struct VisFireballVClipAtlas
+{
+	int vclip_handle;
+	int atlas_handle;
+	bool valid;
+	bool failed;
+	std::vector<VisFireballAtlasFrame> frames;
+};
+
+static bool VisFireball_batch_valid = false;
+static VisFireballBatchKey VisFireball_batch_key = {};
+static std::vector<VisFireballBatchItem> VisFireball_batch_items;
+static std::vector<VisFireballVClipAtlas> VisFireball_vclip_atlases;
+static const bool VIS_FIREBALL_BARRIER_FLUSHES_ENABLED = false;
+static const bool VIS_FIREBALL_BATCH_DEBUG_TINT = true;
+static const int VIS_FIREBALL_BATCH_DEBUG_TINT_COLOR = GR_RGB(0, 255, 96);
+static const int VIS_FIREBALL_ATLAS_PADDING = 1;
+static const int VIS_FIREBALL_ATLAS_MAX_DIMENSION = 2048;
+
+static vis_fireball_batch_debug_stats VisFireball_batch_debug_stats = {};
+static int VisFireball_batch_debug_frame = -1;
+
+static void VisEffectResetBatchDebugStatsForFrame()
+{
+	if (VisFireball_batch_debug_frame == FrameCount)
+		return;
+
+	VisFireball_batch_debug_stats = {};
+	VisFireball_batch_debug_frame = FrameCount;
+}
+
+static bool VisEffectHasQueuedBatch()
+{
+	return VisFireball_batch_valid && !VisFireball_batch_items.empty();
+}
+
+void VisEffectGetBatchDebugStats(vis_fireball_batch_debug_stats* stats)
+{
+	if (!stats)
+		return;
+
+	VisEffectResetBatchDebugStatsForFrame();
+	*stats = VisFireball_batch_debug_stats;
+}
+
+static int VisEffectNextPowerOfTwo(int value)
+{
+	int power = 1;
+	while (power < value)
+		power <<= 1;
+	return power;
+}
+
+static VisFireballVClipAtlas* VisEffectFindVClipAtlas(int vclip_handle)
+{
+	for (size_t i = 0; i < VisFireball_vclip_atlases.size(); i++)
+	{
+		if (VisFireball_vclip_atlases[i].vclip_handle == vclip_handle)
+			return &VisFireball_vclip_atlases[i];
+	}
+
+	return NULL;
+}
+
+static bool VisEffectAtlasMatchesVClip(const VisFireballVClipAtlas& atlas, int vclip_handle)
+{
+	if (vclip_handle < 0 || vclip_handle >= MAX_VCLIPS)
+		return false;
+
+	vclip* vc = &GameVClips[vclip_handle];
+	if (!vc->used || !vc->frames || vc->num_frames <= 0 ||
+		vc->num_frames != (int)atlas.frames.size())
+		return false;
+
+	for (int i = 0; i < vc->num_frames; i++)
+	{
+		if (atlas.frames[i].source_handle != vc->frames[i])
+			return false;
+	}
+
+	return true;
+}
+
+static void VisEffectFreeVClipAtlas(VisFireballVClipAtlas& atlas)
+{
+	if (atlas.atlas_handle > BAD_BITMAP_HANDLE && GameBitmaps[atlas.atlas_handle].used)
+		bm_FreeBitmap(atlas.atlas_handle);
+
+	atlas.atlas_handle = BAD_BITMAP_HANDLE;
+	atlas.valid = false;
+	atlas.failed = true;
+	atlas.frames.clear();
+}
+
+static void VisEffectCopyAtlasFrame(int atlas_handle, int dest_x, int dest_y, int source_handle)
+{
+	ushort* dest = bm_data(atlas_handle, 0);
+	ushort* src = bm_data(source_handle, 0);
+	const int atlas_width = bm_w(atlas_handle, 0);
+	const int source_width = bm_w(source_handle, 0);
+	const int source_height = bm_h(source_handle, 0);
+
+	if (!dest || !src)
+		return;
+
+	const int image_x = dest_x + VIS_FIREBALL_ATLAS_PADDING;
+	const int image_y = dest_y + VIS_FIREBALL_ATLAS_PADDING;
+
+	for (int y = 0; y < source_height; y++)
+	{
+		ushort* dest_row = dest + ((image_y + y) * atlas_width) + image_x;
+		ushort* src_row = src + (y * source_width);
+		memcpy(dest_row, src_row, source_width * sizeof(ushort));
+
+		dest_row[-1] = src_row[0];
+		dest_row[source_width] = src_row[source_width - 1];
+	}
+
+	ushort* dest_top = dest + (dest_y * atlas_width) + image_x;
+	ushort* dest_bottom = dest + ((image_y + source_height) * atlas_width) + image_x;
+	ushort* src_top = src;
+	ushort* src_bottom = src + ((source_height - 1) * source_width);
+	memcpy(dest_top, src_top, source_width * sizeof(ushort));
+	memcpy(dest_bottom, src_bottom, source_width * sizeof(ushort));
+
+	dest_top[-1] = src_top[0];
+	dest_top[source_width] = src_top[source_width - 1];
+	dest_bottom[-1] = src_bottom[0];
+	dest_bottom[source_width] = src_bottom[source_width - 1];
+}
+
+static bool VisEffectBuildVClipAtlas(int vclip_handle, VisFireballVClipAtlas& atlas)
+{
+	atlas.vclip_handle = vclip_handle;
+	atlas.atlas_handle = BAD_BITMAP_HANDLE;
+	atlas.valid = false;
+	atlas.failed = true;
+	atlas.frames.clear();
+
+	if (vclip_handle < 0 || vclip_handle >= MAX_VCLIPS)
+		return false;
+
+	vclip* vc = &GameVClips[vclip_handle];
+	if (!vc->used || !vc->frames || vc->num_frames <= 0)
+		return false;
+
+	int max_width = 0;
+	int max_height = 0;
+	int bitmap_format = BITMAP_FORMAT_STANDARD;
+	for (int i = 0; i < vc->num_frames; i++)
+	{
+		const int frame_handle = vc->frames[i];
+		if (frame_handle <= BAD_BITMAP_HANDLE || !GameBitmaps[frame_handle].used)
+			return false;
+
+		if (i == 0)
+			bitmap_format = GameBitmaps[frame_handle].format;
+		else if (GameBitmaps[frame_handle].format != bitmap_format)
+			return false;
+
+		const int width = bm_w(frame_handle, 0);
+		const int height = bm_h(frame_handle, 0);
+		if (width <= 0 || height <= 0)
+			return false;
+
+		max_width = std::max(max_width, width);
+		max_height = std::max(max_height, height);
+	}
+
+	const int cell_width = max_width + (VIS_FIREBALL_ATLAS_PADDING * 2);
+	const int cell_height = max_height + (VIS_FIREBALL_ATLAS_PADDING * 2);
+	int columns = 1;
+	while (columns * columns < vc->num_frames)
+		columns++;
+
+	const int rows = (vc->num_frames + columns - 1) / columns;
+	const int atlas_width = VisEffectNextPowerOfTwo(columns * cell_width);
+	const int atlas_height = VisEffectNextPowerOfTwo(rows * cell_height);
+
+	if (atlas_width > VIS_FIREBALL_ATLAS_MAX_DIMENSION || atlas_height > VIS_FIREBALL_ATLAS_MAX_DIMENSION)
+		return false;
+
+	const int atlas_handle = bm_AllocBitmap(atlas_width, atlas_height, 0);
+	if (atlas_handle <= BAD_BITMAP_HANDLE)
+		return false;
+
+	GameBitmaps[atlas_handle].flags |= BF_TRANSPARENT | BF_CHANGED;
+	GameBitmaps[atlas_handle].format = bitmap_format;
+	snprintf(GameBitmaps[atlas_handle].name, BITMAP_NAME_LEN, "vfxatlas%d", vclip_handle);
+
+	ushort* atlas_data = bm_data(atlas_handle, 0);
+	if (!atlas_data)
+	{
+		bm_FreeBitmap(atlas_handle);
+		return false;
+	}
+
+	for (int i = 0; i < atlas_width * atlas_height; i++)
+		atlas_data[i] = NEW_TRANSPARENT_COLOR;
+
+	atlas.frames.resize(vc->num_frames);
+	for (int i = 0; i < vc->num_frames; i++)
+	{
+		const int frame_handle = vc->frames[i];
+		const int frame_width = bm_w(frame_handle, 0);
+		const int frame_height = bm_h(frame_handle, 0);
+		const int cell_x = (i % columns) * cell_width;
+		const int cell_y = (i / columns) * cell_height;
+
+		VisEffectCopyAtlasFrame(atlas_handle, cell_x, cell_y, frame_handle);
+
+		VisFireballAtlasFrame& frame = atlas.frames[i];
+		frame.source_handle = frame_handle;
+		frame.width = frame_width;
+		frame.height = frame_height;
+		frame.u0 = (float)(cell_x + VIS_FIREBALL_ATLAS_PADDING) / (float)atlas_width;
+		frame.v0 = (float)(cell_y + VIS_FIREBALL_ATLAS_PADDING) / (float)atlas_height;
+		frame.u1 = (float)(cell_x + VIS_FIREBALL_ATLAS_PADDING + frame_width) / (float)atlas_width;
+		frame.v1 = (float)(cell_y + VIS_FIREBALL_ATLAS_PADDING + frame_height) / (float)atlas_height;
+	}
+
+	atlas.atlas_handle = atlas_handle;
+	atlas.valid = true;
+	atlas.failed = false;
+	return true;
+}
+
+static bool VisEffectGetVClipAtlasFrame(int vclip_handle, int frame_index, int* bitmap_handle,
+	int* width, int* height, float* u0, float* v0, float* u1, float* v1)
+{
+	VisFireballVClipAtlas* atlas = VisEffectFindVClipAtlas(vclip_handle);
+	if (!atlas)
+	{
+		VisFireballVClipAtlas new_atlas;
+		VisEffectBuildVClipAtlas(vclip_handle, new_atlas);
+		VisFireball_vclip_atlases.push_back(new_atlas);
+		atlas = &VisFireball_vclip_atlases.back();
+	}
+	else if (!VisEffectAtlasMatchesVClip(*atlas, vclip_handle))
+	{
+		VisEffectFreeVClipAtlas(*atlas);
+		VisEffectBuildVClipAtlas(vclip_handle, *atlas);
+	}
+
+	if (!atlas->valid || atlas->failed || frame_index < 0 || frame_index >= (int)atlas->frames.size())
+		return false;
+
+	const VisFireballAtlasFrame& frame = atlas->frames[frame_index];
+	*bitmap_handle = atlas->atlas_handle;
+	*width = frame.width;
+	*height = frame.height;
+	*u0 = frame.u0;
+	*v0 = frame.v0;
+	*u1 = frame.u1;
+	*v1 = frame.v1;
+	return true;
+}
+
+static void VisEffectApplyBatchUVs(VisFireballBatchItem& item, float u0, float v0, float u1, float v1)
+{
+	item.points[0].p3_u = u0;
+	item.points[0].p3_v = v0;
+	item.points[1].p3_u = u1;
+	item.points[1].p3_v = v0;
+	item.points[2].p3_u = u1;
+	item.points[2].p3_v = v1;
+	item.points[3].p3_u = u0;
+	item.points[3].p3_v = v1;
+}
+
+static void VisEffectSelectVClipBitmap(int vclip_handle, int frame_index, int* bitmap_handle,
+	int* width, int* height, float* u0, float* v0, float* u1, float* v1)
+{
+	*bitmap_handle = BAD_BITMAP_HANDLE;
+	*width = 0;
+	*height = 0;
+	*u0 = 0.0f;
+	*v0 = 0.0f;
+	*u1 = 1.0f;
+	*v1 = 1.0f;
+
+	if (vclip_handle < 0 || vclip_handle >= MAX_VCLIPS)
+		return;
+
+	vclip* vc = &GameVClips[vclip_handle];
+	if (!vc->used || !vc->frames || vc->num_frames <= 0)
+		return;
+
+	if (frame_index < 0)
+		frame_index = 0;
+	if (frame_index >= vc->num_frames)
+		frame_index = vc->num_frames - 1;
+
+	if (VisEffectGetVClipAtlasFrame(vclip_handle, frame_index, bitmap_handle, width, height, u0, v0, u1, v1))
+	{
+		VisEffectResetBatchDebugStatsForFrame();
+		VisFireball_batch_debug_stats.atlas_hits++;
+		return;
+	}
+
+	VisEffectResetBatchDebugStatsForFrame();
+	VisFireball_batch_debug_stats.atlas_fallbacks++;
+
+	*bitmap_handle = vc->frames[frame_index];
+	*width = bm_w(*bitmap_handle, 0);
+	*height = bm_h(*bitmap_handle, 0);
+}
+
+
+static ubyte VisEffectClampAlpha(float value)
+{
+	if (value <= 0.0f)
+		return 0;
+	if (value >= 255.0f)
+		return 255;
+	return (ubyte)value;
+}
+
+static sbyte VisEffectBatchAlphaType(sbyte alpha_type, ubyte alpha_value, float* vertex_alpha)
+{
+	*vertex_alpha = 1.0f;
+
+	if (alpha_type == AT_SATURATE_TEXTURE)
+	{
+		*vertex_alpha = alpha_value / 255.0f;
+		return AT_SATURATE_TEXTURE_VERTEX;
+	}
+
+	if (alpha_type == AT_CONSTANT_TEXTURE)
+	{
+		*vertex_alpha = alpha_value / 255.0f;
+		return AT_TEXTURE_VERTEX;
+	}
+
+	if (alpha_type == AT_LIGHTMAP_BLEND)
+	{
+		*vertex_alpha = alpha_value / 255.0f;
+		return AT_LIGHTMAP_BLEND_VERTEX;
+	}
+
+	return alpha_type;
+}
+
+static bool VisEffectProjectBatchPoints(VisFireballBatchItem& item, float z_bias, float vertex_alpha)
+{
+	for (int i = 0; i < 4; i++)
+	{
+		item.points[i].p3_flags |= PF_RGBA;
+		item.points[i].p3_a = vertex_alpha;
+
+		if (item.points[i].p3_codes)
+			return false;
+
+		if (!(item.points[i].p3_flags & PF_PROJECTED))
+			g3_ProjectPoint(&item.points[i]);
+
+		item.points[i].p3_z += z_bias;
+	}
+
+	return true;
+}
+
+static void VisEffectColorToFloat(int color, float* red, float* green, float* blue)
+{
+	*red = GR_COLOR_RED(color) / 255.0f;
+	*green = GR_COLOR_GREEN(color) / 255.0f;
+	*blue = GR_COLOR_BLUE(color) / 255.0f;
+}
+
+static void VisEffectApplyBatchVertexColor(VisFireballBatchItem& item, float red, float green,
+	float blue, float alpha)
+{
+	for (int i = 0; i < 4; i++)
+	{
+		item.points[i].p3_flags |= PF_RGBA;
+		item.points[i].p3_r = red;
+		item.points[i].p3_g = green;
+		item.points[i].p3_b = blue;
+		item.points[i].p3_a = alpha;
+	}
+}
+
+static bool VisEffectBuildRotatedBatchItem(VisFireballBatchItem& item, const vector* pos, angle rot_angle,
+	float width, float height, float z_bias, float vertex_alpha)
+{
+	g3Point center;
+	if (g3_RotatePoint(&center, const_cast<vector*>(pos)) & CC_BEHIND)
+		return false;
+	if (center.p3_codes & CC_OFF_FAR)
+		return false;
+
+	matrix rot_matrix;
+	vm_AnglesToMatrix(&rot_matrix, 0, 0, rot_angle);
+	rot_matrix.rvec *= Matrix_scale.x;
+	rot_matrix.uvec *= Matrix_scale.y;
+
+	vector rot_vectors[4];
+	rot_vectors[0].x = -width;
+	rot_vectors[0].y = height;
+	rot_vectors[1].x = width;
+	rot_vectors[1].y = height;
+	rot_vectors[2].x = width;
+	rot_vectors[2].y = -height;
+	rot_vectors[3].x = -width;
+	rot_vectors[3].y = -height;
+
+	for (int i = 0; i < 4; i++)
+	{
+		rot_vectors[i].z = 0;
+		vm_MatrixMulVector(&item.points[i].p3_vec, &rot_vectors[i], &rot_matrix);
+		item.points[i].p3_flags = PF_UV | PF_RGBA;
+		item.points[i].p3_l = 1.0f;
+		item.points[i].p3_vec += center.p3_vec;
+		g3_CodePoint(&item.points[i]);
+	}
+
+	item.points[0].p3_u = 0.0f;
+	item.points[0].p3_v = 0.0f;
+	item.points[1].p3_u = 1.0f;
+	item.points[1].p3_v = 0.0f;
+	item.points[2].p3_u = 1.0f;
+	item.points[2].p3_v = 1.0f;
+	item.points[3].p3_u = 0.0f;
+	item.points[3].p3_v = 1.0f;
+
+	return VisEffectProjectBatchPoints(item, z_bias, vertex_alpha);
+}
+
+static bool VisEffectBuildPlanarBatchItem(VisFireballBatchItem& item, const vector* pos, const vector* norm,
+	angle rot_angle, float width, float height, float z_bias, float vertex_alpha)
+{
+	matrix rot_matrix;
+	vm_VectorToMatrix(&rot_matrix, const_cast<vector*>(norm), NULL, NULL);
+	vm_TransposeMatrix(&rot_matrix);
+
+	matrix twist_matrix;
+	vm_AnglesToMatrix(&twist_matrix, 0, 0, rot_angle);
+
+	vector rot_vectors[4];
+	rot_vectors[0] = (twist_matrix.rvec * -width);
+	rot_vectors[0] += (twist_matrix.uvec * height);
+	rot_vectors[1] = (twist_matrix.rvec * width);
+	rot_vectors[1] += (twist_matrix.uvec * height);
+	rot_vectors[2] = (twist_matrix.rvec * width);
+	rot_vectors[2] -= (twist_matrix.uvec * height);
+	rot_vectors[3] = (twist_matrix.rvec * -width);
+	rot_vectors[3] -= (twist_matrix.uvec * height);
+
+	for (int i = 0; i < 4; ++i)
+	{
+		vector temp_vec = rot_vectors[i];
+		vm_MatrixMulVector(&rot_vectors[i], &temp_vec, &rot_matrix);
+		rot_vectors[i] += *pos;
+		g3_RotatePoint(&item.points[i], &rot_vectors[i]);
+		item.points[i].p3_flags |= PF_UV | PF_L | PF_RGBA;
+		item.points[i].p3_l = 1.0f;
+	}
+
+	item.points[0].p3_u = 0.0f;
+	item.points[0].p3_v = 0.0f;
+	item.points[1].p3_u = 1.0f;
+	item.points[1].p3_v = 0.0f;
+	item.points[2].p3_u = 1.0f;
+	item.points[2].p3_v = 1.0f;
+	item.points[3].p3_u = 0.0f;
+	item.points[3].p3_v = 1.0f;
+
+	return VisEffectProjectBatchPoints(item, z_bias, vertex_alpha);
+}
+
+static bool VisEffectIsSpecialFireball(int id)
+{
+	return id == LIGHTNING_BOLT_INDEX ||
+		id == GRAY_LIGHTNING_BOLT_INDEX ||
+		id == MASSDRIVER_EFFECT_INDEX ||
+		id == MERCBOSS_MASSDRIVER_EFFECT_INDEX ||
+		id == BILLBOARD_SMOKETRAIL_INDEX ||
+		id == THICK_LIGHTNING_INDEX ||
+		id == SINE_WAVE_INDEX ||
+		id == BLAST_RING_INDEX ||
+		id == FADING_LINE_INDEX ||
+		id == SNOWFLAKE_INDEX ||
+		id == RAINDROP_INDEX ||
+		id == PUDDLEDROP_INDEX ||
+		id == AXIS_BILLBOARD_INDEX;
+}
+
+static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey& key,
+	VisFireballBatchItem& item)
+{
+	if (vis->type != VIS_FIREBALL || VisEffectIsSpecialFireball(vis->id))
+		return false;
+
+	float time_live = Gametime - vis->creation_time;
+	if (time_live < 0)
+		time_live = 0;
+
+	float size = vis->size;
+	if (Katmai)
+	{
+		if (vis->id == BIG_EXPLOSION_INDEX || vis->id == MED_EXPLOSION_INDEX ||
+			vis->id == MED_EXPLOSION_INDEX2 || vis->id == MED_EXPLOSION_INDEX3)
+			size *= 1.8f;
+	}
+
+	const int visnum = vis - VisEffects;
+	angle rot_angle;
+	fireball* fb = &Fireballs[vis->id];
+
+	if (fb->type == FT_BILLOW)
+		rot_angle = ((visnum * 5000) + (FrameCount * 160)) % 65536;
+	else if (vis->flags & VF_ATTACHED)
+		rot_angle = 0;
+	else if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX)
+		rot_angle = ((visnum * 5000) + (FrameCount * 860)) % 65536;
+	else if (vis->id == SUN_CORONA_INDEX)
+	{
+		rot_angle = ((visnum * 5000) + (FrameCount * 500)) % 65536;
+		size *= 1.0f + ((rand() % 10) / 100.0f);
+	}
+	else
+		rot_angle = (visnum * 5000) % 65536;
+
+	float norm_time = time_live / vis->lifetime;
+	if (vis->flags & VF_ATTACHED)
+	{
+		int int_time_live = time_live;
+		norm_time = time_live - int_time_live;
+	}
+
+	if (norm_time >= 1)
+		norm_time = 0.99999f;
+
+	if (vis->flags & VF_EXPAND)
+		size = (vis->size / 2) + ((vis->size * norm_time) / 2);
+
+	int bm_handle;
+	int bitmap_width = 0;
+	int bitmap_height = 0;
+	float u0 = 0.0f;
+	float v0 = 0.0f;
+	float u1 = 1.0f;
+	float v1 = 1.0f;
+	if (vis->id == SMOKE_TRAIL_INDEX)
+	{
+		int texnum = vis->custom_handle;
+		if (GameTextures[texnum].flags & TF_ANIMATED)
+		{
+			int vnum = GameTextures[texnum].bm_handle;
+			vclip* vc = &GameVClips[vnum];
+			int int_frame = vc->num_frames * norm_time;
+			VisEffectSelectVClipBitmap(vnum, int_frame, &bm_handle, &bitmap_width, &bitmap_height,
+				&u0, &v0, &u1, &v1);
+		}
+		else
+			bm_handle = GameTextures[texnum].bm_handle;
+	}
+	else if (vis->id == SPRAY_INDEX)
+	{
+		int vnum = vis->custom_handle;
+		vclip* vc = &GameVClips[vnum];
+		int int_frame = vc->num_frames * norm_time;
+		VisEffectSelectVClipBitmap(vnum, int_frame, &bm_handle, &bitmap_width, &bitmap_height,
+			&u0, &v0, &u1, &v1);
+	}
+	else if (vis->id == CUSTOM_EXPLOSION_INDEX || vis->id == PARTICLE_INDEX)
+	{
+		if (GameTextures[vis->custom_handle].flags & TF_ANIMATED)
+		{
+			int vnum = GameTextures[vis->custom_handle].bm_handle;
+			vclip* vc = &GameVClips[vnum];
+			int int_frame = vc->num_frames * norm_time;
+			VisEffectSelectVClipBitmap(vnum, int_frame, &bm_handle, &bitmap_width, &bitmap_height,
+				&u0, &v0, &u1, &v1);
+		}
+		else
+			bm_handle = GetTextureBitmap(vis->custom_handle, 0);
+	}
+	else if (fb->type == FT_SPARK)
+	{
+		bm_handle = fb->bm_handle;
+		size *= (1.0f - norm_time);
+	}
+	else if (vis->id == SUN_CORONA_INDEX || vis->id == MUZZLE_FLASH_INDEX ||
+		vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX)
+	{
+		bm_handle = fb->bm_handle;
+	}
+	else
+	{
+		int vnum = fb->bm_handle;
+		vclip* vc = &GameVClips[vnum];
+		int int_frame = vc->num_frames * norm_time;
+		VisEffectSelectVClipBitmap(vnum, int_frame, &bm_handle, &bitmap_width, &bitmap_height,
+			&u0, &v0, &u1, &v1);
+	}
+
+	if (bitmap_width <= 0 || bitmap_height <= 0)
+	{
+		if (bm_handle <= BAD_BITMAP_HANDLE || !GameBitmaps[bm_handle].used)
+			return false;
+
+		bitmap_width = bm_w(bm_handle, 0);
+		bitmap_height = bm_h(bm_handle, 0);
+	}
+
+	if (bitmap_width <= 0 || bitmap_height <= 0)
+		return false;
+
+	if (fb->type == FT_SMOKE)
+	{
+		if (norm_time > 0.3f)
+		{
+			float temp_time = (norm_time - 0.3f) / 0.7f;
+			if (vis->flags & VF_REVERSE)
+				size /= (1 + (temp_time * 2.3f));
+			else
+				size *= (1 + (temp_time * 2.3f));
+		}
+	}
+
+	sbyte alpha_type;
+	if (vis->id == SMOKE_TRAIL_INDEX || vis->id == CUSTOM_EXPLOSION_INDEX || vis->id == PARTICLE_INDEX)
+	{
+		if (GameTextures[vis->custom_handle].flags & TF_SATURATE)
+			alpha_type = AT_SATURATE_TEXTURE;
+		else
+			alpha_type = ATF_CONSTANT + ATF_TEXTURE;
+	}
+	else if (vis->id == BLACK_SMOKE_INDEX)
+	{
+		alpha_type = AT_LIGHTMAP_BLEND;
+	}
+	else if ((fb->type == FT_SMOKE && vis->id != MED_SMOKE_INDEX) ||
+		vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX)
+	{
+		alpha_type = ATF_CONSTANT + ATF_TEXTURE;
+	}
+	else
+	{
+		alpha_type = AT_SATURATE_TEXTURE;
+	}
+
+	float val;
+	if (norm_time > 0.5f)
+		val = 1.0f - ((norm_time - 0.5f) / 0.5f);
+	else
+		val = 1.0f;
+
+	if (size > MAX_FIREBALL_SIZE)
+		size = MAX_FIREBALL_SIZE;
+	if ((vis->id != BIG_EXPLOSION_INDEX && vis->id != BLUE_EXPLOSION_INDEX) &&
+		size > (MAX_FIREBALL_SIZE / 2))
+		size = MAX_FIREBALL_SIZE / 2;
+
+	ubyte alpha_value;
+	if (vis->id == SMOKE_TRAIL_INDEX || vis->id == CUSTOM_EXPLOSION_INDEX || vis->id == PARTICLE_INDEX)
+		alpha_value = VisEffectClampAlpha(val * GameTextures[vis->custom_handle].alpha * 255.0f);
+	else if (fb->type == FT_SMOKE)
+		alpha_value = VisEffectClampAlpha(val * SMOKE_ALPHA * 255.0f);
+	else if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX)
+		alpha_value = 255;
+	else if (vis->id == MUZZLE_FLASH_INDEX)
+		alpha_value = 128;
+	else if (vis->flags & VF_ATTACHED)
+		alpha_value = VisEffectClampAlpha(FIREBALL_ALPHA * 255.0f);
+	else
+		alpha_value = VisEffectClampAlpha(val * FIREBALL_ALPHA * 255.0f);
+
+	float vertex_alpha;
+	const sbyte batch_alpha_type = VisEffectBatchAlphaType(alpha_type, alpha_value, &vertex_alpha);
+
+	key.bitmap_handle = bm_handle;
+	key.alpha_type = batch_alpha_type;
+
+	float vertex_red = 1.0f;
+	float vertex_green = 1.0f;
+	float vertex_blue = 1.0f;
+
+	if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX || vis->id == GRAY_SPARK_INDEX)
+	{
+		VisEffectColorToFloat(GR_16_TO_COLOR(vis->lighting_color), &vertex_red, &vertex_green,
+			&vertex_blue);
+	}
+	else if (VIS_FIREBALL_BATCH_DEBUG_TINT)
+	{
+		VisEffectColorToFloat(VIS_FIREBALL_BATCH_DEBUG_TINT_COLOR, &vertex_red, &vertex_green,
+			&vertex_blue);
+	}
+
+	const float width = size;
+	const float height = (size * bitmap_height) / bitmap_width;
+	const float z_bias = (vis->flags & VF_NO_Z_ADJUST) ? 0.0f : -size;
+	bool built;
+
+	if (vis->flags & VF_PLANAR)
+		built = VisEffectBuildPlanarBatchItem(item, &vis->pos, &vis->end_pos, rot_angle, width, height,
+			z_bias, vertex_alpha);
+	else
+		built = VisEffectBuildRotatedBatchItem(item, &vis->pos, rot_angle, width, height, z_bias, vertex_alpha);
+
+	if (built)
+	{
+		VisEffectApplyBatchUVs(item, u0, v0, u1, v1);
+		VisEffectApplyBatchVertexColor(item, vertex_red, vertex_green, vertex_blue, vertex_alpha);
+	}
+
+	return built;
+}
+
+static void FlushVisEffectBatchesNow()
+{
+	if (!VisEffectHasQueuedBatch())
+	{
+		return;
+	}
+
+	VisEffectResetBatchDebugStatsForFrame();
+	const unsigned item_count = (unsigned)VisFireball_batch_items.size();
+	VisFireball_batch_debug_stats.flushes++;
+	VisFireball_batch_debug_stats.flushed_items += item_count;
+	if (item_count > VisFireball_batch_debug_stats.max_batch_items)
+		VisFireball_batch_debug_stats.max_batch_items = item_count;
+	if (item_count == 1)
+		VisFireball_batch_debug_stats.single_item_flushes++;
+
+	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
+
+	rend_SetAlphaType(VisFireball_batch_key.alpha_type);
+	rend_SetAlphaValue(255);
+	rend_SetOverlayType(OT_NONE);
+	rend_SetZBias(0.0f);
+	rend_SetZBufferWriteMask(0);
+	rend_SetWrapType(WT_CLAMP);
+	rend_SetLighting(LS_GOURAUD);
+	rend_SetColorModel(CM_RGB);
+	rend_SetAOSuppression(1.0f);
+	rend_SetTextureType(TT_LINEAR);
+
+	std::vector<renderer_poly_batch_item> renderer_items(VisFireball_batch_items.size());
+	for (size_t i = 0; i < VisFireball_batch_items.size(); i++)
+	{
+		VisFireball_batch_items[i].RefreshPointList();
+		renderer_items[i].pointlist = VisFireball_batch_items[i].pointlist;
+		renderer_items[i].nv = 4;
+	}
+
+	rend_DrawPolygon3DBatch(VisFireball_batch_key.bitmap_handle, renderer_items.data(),
+		(int)renderer_items.size(), MAP_TYPE_BITMAP);
+
+	rend_SetAOSuppression(0.0f);
+	rend_SetZBias(0.0f);
+	rend_SetZBufferWriteMask(1);
+	rend_SetWrapType(WT_WRAP);
+	rend_SetLighting(LS_NONE);
+	rend_SetColorModel(CM_MONO);
+
+	VisFireball_batch_items.clear();
+	VisFireball_batch_valid = false;
+}
+
+void FlushVisEffectBatches()
+{
+	if (VIS_FIREBALL_BARRIER_FLUSHES_ENABLED)
+		FlushVisEffectBatchesNow();
+}
+
+void ForceFlushVisEffectBatches()
+{
+	if (VisEffectHasQueuedBatch())
+	{
+		VisEffectResetBatchDebugStatsForFrame();
+		VisFireball_batch_debug_stats.forced_flushes++;
+	}
+
+	FlushVisEffectBatchesNow();
+}
+
+static void QueueVisEffectBatchItem(const VisFireballBatchKey& key, const VisFireballBatchItem& item)
+{
+	if (VisFireball_batch_valid && !VisFireball_batch_key.Equals(key))
+	{
+		VisEffectResetBatchDebugStatsForFrame();
+		VisFireball_batch_debug_stats.key_flushes++;
+		FlushVisEffectBatchesNow();
+	}
+
+	if (!VisFireball_batch_valid)
+	{
+		VisFireball_batch_key = key;
+		VisFireball_batch_valid = true;
+	}
+
+	VisFireball_batch_items.push_back(item);
+	VisFireball_batch_debug_stats.queued++;
+}
+
+void DrawVisEffectMaybeBatched(vis_effect* vis)
+{
+	if (!Render_batched_vis_effects)
+	{
+		DrawVisEffect(vis);
+		return;
+	}
+
+	VisEffectResetBatchDebugStatsForFrame();
+	VisFireball_batch_debug_stats.attempts++;
+
+	VisFireballBatchKey key = {};
+	VisFireballBatchItem item = {};
+	if (!VisEffectBuildFireballBatchItem(vis, key, item))
+	{
+		VisFireball_batch_debug_stats.rejected++;
+		if (VisEffectHasQueuedBatch())
+			VisFireball_batch_debug_stats.fallback_flushes++;
+
+		FlushVisEffectBatchesNow();
+		DrawVisEffect(vis);
+		return;
+	}
+
+	VisFireball_batch_debug_stats.accepted++;
+	QueueVisEffectBatchItem(key, item);
 }
 
 

@@ -37,6 +37,7 @@
 #include "stringtable.h"
 #include "pstring.h"
 #include "config.h"
+#include "viseffect.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1362,7 +1363,7 @@ static void HUDRenderDrawCallStats(const renderer_draw_call_stats& draw_stats)
 		{ "Room: ", draw_stats.category_3d[RENDERER_DRAW_CALL_3D_ROOM], reserved_value_width },
 		{ "Terr: ", draw_stats.category_3d[RENDERER_DRAW_CALL_3D_TERRAIN], reserved_value_width },
 		{ "Obj: ", draw_stats.category_3d[RENDERER_DRAW_CALL_3D_OBJECT], reserved_value_width },
-		{ "Cock: ", draw_stats.category_3d[RENDERER_DRAW_CALL_3D_COCKPIT], reserved_value_width },
+		{ "Pit: ", draw_stats.category_3d[RENDERER_DRAW_CALL_3D_COCKPIT], reserved_value_width },
 	};
 	draw_row(y, geometry_detail_a, 4);
 	y += line_height;
@@ -1424,6 +1425,81 @@ static void HUDRenderMotionVectorDebugSample()
 	}
 }
 
+static void HUDRenderVisFireballBatchDebug(float hud_font_scale)
+{
+	if (!Render_batched_vis_effects)
+		return;
+
+	vis_fireball_batch_debug_stats stats = {};
+	VisEffectGetBatchDebugStats(&stats);
+
+	const unsigned average_batch = stats.flushes ? ((stats.flushed_items + (stats.flushes / 2)) / stats.flushes) : 0;
+	const float debug_font_scale = hud_font_scale * 0.70f;
+	grtext_SetFontScale(debug_font_scale);
+
+	struct tVisBatchColumn
+	{
+		const char* label;
+		unsigned value;
+	};
+
+	const auto draw_row = [](int y, const tVisBatchColumn* columns, int count) {
+		const int reserved_value_width = grtext_GetTextLineWidth("88888");
+		const int gap_width = grtext_GetTextLineWidth("  ");
+		int row_width = 0;
+		int label_width[16];
+		int column_width[16];
+
+		for (int i = 0; i < count; i++)
+		{
+			label_width[i] = grtext_GetTextLineWidth(columns[i].label);
+			column_width[i] = label_width[i] + reserved_value_width;
+			row_width += column_width[i];
+		}
+		row_width += gap_width * (count - 1);
+
+		int x = Game_window_x + ((Game_window_w - row_width) / 2);
+		for (int i = 0; i < count; i++)
+		{
+			char value_text[32];
+			RenderHUDTextFlags(0, GR_GREEN, HUD_ALPHA, 0, x, y, "%s", columns[i].label);
+			snprintf(value_text, sizeof(value_text), "%u", columns[i].value);
+			const int value_width = grtext_GetTextLineWidth(value_text);
+			const int value_x = x + label_width[i] + reserved_value_width - value_width;
+			RenderHUDTextFlags(0, GR_GREEN, HUD_ALPHA, 0, value_x, y, "%s", value_text);
+			x += column_width[i] + gap_width;
+		}
+	};
+
+	const int line_height = grtext_GetHeight("X") + 2;
+	const int reserved_bottom_lines = Render_preferred_state.motion_vector_debug_preview ? 1 : 0;
+	int y = Game_window_y + Game_window_h - (line_height * (reserved_bottom_lines + 2)) - 4;
+
+	tVisBatchColumn row_a[] = {
+		{ "VISB in:", stats.attempts },
+		{ "bat:", stats.accepted },
+		{ "rej:", stats.rejected },
+		{ "fl:", stats.flushes },
+		{ "it:", stats.flushed_items },
+		{ "avg:", average_batch },
+	};
+	draw_row(y, row_a, 6);
+	y += line_height;
+
+	tVisBatchColumn row_b[] = {
+		{ "max:", stats.max_batch_items },
+		{ "one:", stats.single_item_flushes },
+		{ "key:", stats.key_flushes },
+		{ "force:", stats.forced_flushes },
+		{ "fb:", stats.fallback_flushes },
+		{ "atl:", stats.atlas_hits },
+		{ "noatl:", stats.atlas_fallbacks },
+	};
+	draw_row(y, row_b, 7);
+
+	grtext_SetFontScale(hud_font_scale);
+}
+
 #define HUD_KEYS_NEXT_LINE	hudconty += HUDEnabledControlsLineAdvance()
 
 //	iterate through entire hud item list to draw.
@@ -1452,12 +1528,15 @@ void RenderHUDItems(tStatMask stat_mask)
 		extra_scale = (float)Max_window_h / PICCU_FONT_SCALE_THRESHOLD;
 	}
 
+	float hud_font_scale;
 	if (font_aspect_y <= 0.60f)
-		grtext_SetFontScale(0.60f * extra_scale * ConfigNormalizeHudTextScale(Hud_text_scale));
+		hud_font_scale = 0.60f * extra_scale * ConfigNormalizeHudTextScale(Hud_text_scale);
 	else if (font_aspect_y <= 0.80f)
-		grtext_SetFontScale(0.80f * extra_scale * ConfigNormalizeHudTextScale(Hud_text_scale));
+		hud_font_scale = 0.80f * extra_scale * ConfigNormalizeHudTextScale(Hud_text_scale);
 	else
-		grtext_SetFontScale(extra_scale * ConfigNormalizeHudTextScale(Hud_text_scale));
+		hud_font_scale = extra_scale * ConfigNormalizeHudTextScale(Hud_text_scale);
+
+	grtext_SetFontScale(hud_font_scale);
 
 	//	do framerate calculations
 	if (Frametime > 0.0f)
@@ -1490,6 +1569,8 @@ void RenderHUDItems(tStatMask stat_mask)
 
 	if (Render_preferred_state.motion_vector_debug_preview)
 		HUDRenderMotionVectorDebugSample();
+
+	HUDRenderVisFireballBatchDebug(hud_font_scale);
 
 	// show music spew
 

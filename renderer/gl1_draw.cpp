@@ -18,6 +18,8 @@
 */
 #include "gl1_local.h"
 
+#include <vector>
+
 void GLCompatibilityRenderer::SetDrawDefaults()
 {
 	glEnableClientState(GL_VERTEX_ARRAY);
@@ -177,6 +179,156 @@ void GLCompatibilityRenderer::DrawPolygon3D(int handle, g3Point** p, int nv, int
 		return;	// Temp fix until I figure out whats going on
 		Int3();	// Shouldn't reach here
 	}
+}
+
+void GLCompatibilityRenderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items,
+	int count, int map_type)
+{
+	if (!items || count <= 0)
+		return;
+
+	if (OpenGL_state.cur_texture_quality == 0 || Overlay_type != OT_NONE)
+	{
+		IRenderer::DrawPolygon3DBatch(handle, items, count, map_type);
+		return;
+	}
+
+	int triangle_vertices = 0;
+	int original_vertices = 0;
+	for (int i = 0; i < count; i++)
+	{
+		if (items[i].nv >= 3 && items[i].nv < 100)
+		{
+			triangle_vertices += (items[i].nv - 2) * 3;
+			original_vertices += items[i].nv;
+		}
+	}
+
+	if (triangle_vertices <= 0)
+		return;
+
+	float fr = 0.0f;
+	float fg = 0.0f;
+	float fb = 0.0f;
+	if (OpenGL_state.cur_light_state == LS_FLAT_GOURAUD)
+	{
+		fr = GR_COLOR_RED(OpenGL_state.cur_color) / 255.0f;
+		fg = GR_COLOR_GREEN(OpenGL_state.cur_color) / 255.0f;
+		fb = GR_COLOR_BLUE(OpenGL_state.cur_color) / 255.0f;
+	}
+
+	if (UseMultitexture)
+	{
+		SetMultitextureBlendMode(false);
+	}
+
+	MakeBitmapCurrent(handle, map_type, 0);
+	MakeWrapTypeCurrent(handle, map_type, 0);
+	MakeFilterTypeCurrent(handle, map_type, 0);
+
+	const int x_add = OpenGL_state.clip_x1;
+	const int y_add = OpenGL_state.clip_y1;
+	const float constant_alpha = Alpha_multiplier * OpenGL_Alpha_factor;
+
+	std::vector<vector> vertices;
+	std::vector<compat_color_array> colors;
+	std::vector<compat_tex_array> tex_coords;
+	vertices.reserve(triangle_vertices);
+	colors.reserve(triangle_vertices);
+	tex_coords.reserve(triangle_vertices);
+
+	auto append_vertex = [&](g3Point* pnt)
+	{
+		float alpha = constant_alpha;
+		if (OpenGL_state.cur_alpha_type & ATF_VERTEX)
+		{
+			alpha = pnt->p3_a * Alpha_multiplier * OpenGL_Alpha_factor;
+		}
+
+		compat_color_array color = {};
+		if (OpenGL_state.cur_light_state != LS_NONE)
+		{
+			if (OpenGL_state.cur_light_state == LS_FLAT_GOURAUD)
+			{
+				color.r = fr;
+				color.g = fg;
+				color.b = fb;
+				color.a = alpha;
+			}
+			else if (OpenGL_state.cur_color_model == CM_MONO)
+			{
+				color.r = pnt->p3_l;
+				color.g = pnt->p3_l;
+				color.b = pnt->p3_l;
+				color.a = alpha;
+			}
+			else
+			{
+				color.r = pnt->p3_r;
+				color.g = pnt->p3_g;
+				color.b = pnt->p3_b;
+				color.a = alpha;
+			}
+		}
+		else
+		{
+			color.r = 1.0f;
+			color.g = 1.0f;
+			color.b = 1.0f;
+			color.a = alpha;
+		}
+
+		const float texw = 1.0f / (pnt->p3_z + Z_bias);
+		compat_tex_array tex = {};
+		tex.s = pnt->p3_u * texw;
+		tex.t = pnt->p3_v * texw;
+		tex.w = texw;
+
+		vector vert = {};
+		vert.x = pnt->p3_sx + x_add;
+		vert.y = pnt->p3_sy + y_add;
+		float z = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / (pnt->p3_z + Z_bias))));
+		vert.z = -z;
+
+		vertices.push_back(vert);
+		colors.push_back(color);
+		tex_coords.push_back(tex);
+	};
+
+	int polygons_drawn = 0;
+	for (int i = 0; i < count; i++)
+	{
+		const renderer_poly_batch_item& item = items[i];
+		if (item.nv < 3 || item.nv >= 100)
+			continue;
+
+		for (int v = 0; v < item.nv - 2; v++)
+		{
+			append_vertex(item.pointlist[0]);
+			append_vertex(item.pointlist[v + 1]);
+			append_vertex(item.pointlist[v + 2]);
+		}
+		polygons_drawn++;
+	}
+
+	if (vertices.empty())
+		return;
+
+	glVertexPointer(3, GL_FLOAT, 0, vertices.data());
+	glColorPointer(4, GL_FLOAT, 0, colors.data());
+	glTexCoordPointer(4, GL_FLOAT, 0, tex_coords.data());
+
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_3D);
+	glDrawArrays(GL_TRIANGLES, 0, (GLsizei)vertices.size());
+
+	glVertexPointer(3, GL_FLOAT, 0, GL_verts);
+	glColorPointer(4, GL_FLOAT, 0, GL_colors);
+	glTexCoordPointer(4, GL_FLOAT, 0, GL_tex_coords);
+
+	OpenGL_polys_drawn += polygons_drawn;
+	OpenGL_verts_processed += original_vertices;
+
+	CHECK_ERROR(10);
 }
 
 // Takes nv vertices and draws the 2D polygon defined by those vertices.

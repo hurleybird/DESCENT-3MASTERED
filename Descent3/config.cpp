@@ -107,6 +107,7 @@ bool Game_fullscreen = false;
 int Game_frame_limit_fps = 0;
 float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
+bool Render_batched_vis_effects = false;
 bool Cockpit_alt_mode = true;
 float Render_FOV_desired = 72;
 
@@ -1210,6 +1211,7 @@ struct video_menu
 	bool* perf_markers;
 	bool* show_fps;
 	bool* show_draw_calls;
+	bool* batched_vis_effects;
 	bool* motion_vector_debug;
 
 	short* fov;
@@ -1399,6 +1401,11 @@ struct video_menu
 			Render_draw_call_stats = *show_draw_calls;
 			ui_changed = true;
 		}
+		if (batched_vis_effects && sheet->HasChanged(batched_vis_effects))
+		{
+			Render_batched_vis_effects = *batched_vis_effects;
+			ui_changed = true;
+		}
 		if (antialiasing && sheet->HasChanged(antialiasing))
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1457,6 +1464,7 @@ struct video_menu
 		perf_markers = NULL;
 		show_fps = NULL;
 		show_draw_calls = NULL;
+		batched_vis_effects = NULL;
 		motion_vector_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
@@ -1558,6 +1566,7 @@ struct video_menu
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
 		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats);
+		batched_vis_effects = sheet->AddLongCheckBox("Batched particles", Render_batched_vis_effects);
 
 		return sheet;
 	};
@@ -1596,6 +1605,8 @@ struct video_menu
 		}
 		if (show_draw_calls)
 			Render_draw_call_stats = *show_draw_calls;
+		if (batched_vis_effects)
+			Render_batched_vis_effects = *batched_vis_effects;
 		if (antialiasing)
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);

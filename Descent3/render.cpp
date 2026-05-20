@@ -3623,12 +3623,13 @@ void RenderRoomObjects(room* rp)
 				// dest_vecs contains the point on the other side of the mirror (ie the reflected point)
 				vis->end_pos = *end_vec - (*norm * (dist_from_mirror * 2));
 
-				DrawVisEffect(vis);
+				DrawVisEffectMaybeBatched(vis);
 				vis->pos = save_vec;
 				vis->end_pos = save_end_vec;
 			}
 			else
 			{
+				FlushVisEffectBatches();
 				object* objp = &Objects[objnum];
 
 				vector save_vec = objp->pos;
@@ -3666,6 +3667,7 @@ void RenderRoomObjects(room* rp)
 				objp->orient = save_orient;
 			}
 		}
+		ForceFlushVisEffectBatches();
 		return;
 	}
 
@@ -3674,16 +3676,18 @@ void RenderRoomObjects(room* rp)
 		objnum = obj_sort_list[i].objnum;
 		if (obj_sort_list[i].vis_effect)
 		{
-			DrawVisEffect(&VisEffects[objnum]);
+			DrawVisEffectMaybeBatched(&VisEffects[objnum]);
 		}
 		else
 		{
+			FlushVisEffectBatches();
 			object* objp = &Objects[objnum];
 			if (objp == Viewer_object)
 				continue;
 			RenderObject(objp);
 		}
 	}
+	ForceFlushVisEffectBatches();
 #ifdef _DEBUG
 	Polymodel_outline_mode = save_polymodel_outline_mode;
 #endif
