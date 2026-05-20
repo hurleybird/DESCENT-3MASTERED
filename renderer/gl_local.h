@@ -189,7 +189,6 @@ class GL4Renderer : public IRenderer
 	GLint motionblur_velocity_source = -1;
 	GLint motionblur_depth_source = -1;
 	GLint motionblur_object_id_source = -1;
-	GLint motionblur_protection_mask = -1;
 	GLint motionblur_velocity_uv_origin = -1;
 	GLint motionblur_velocity_uv_scale = -1;
 	GLint motionblur_strength = -1;
@@ -202,7 +201,6 @@ class GL4Renderer : public IRenderer
 	GLint motionblur_previous_view_projection = -1;
 	GLint motionblur_has_static_reconstruction = -1;
 	GLint motionblur_has_dynamic_velocity = -1;
-	GLint motionblur_use_protection_mask = -1;
 	GLint ao_composite_final_source = -1;
 	GLint ao_composite_scene_source = -1;
 	GLint ao_composite_ao_scene_source = -1;
@@ -256,7 +254,6 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_dynamic_directional_uniforms[8] = {};
 	GLint drawshader_ao_suppression_uniforms[8] = {};
 	GLint drawshader_bloom_suppression_uniforms[8] = {};
-	GLint drawshader_motion_blur_suppression_uniforms[8] = {};
 	GLint drawshader_ao_class_uniforms[8] = {};
 	GLint drawshader_ao_weight_uniforms[8] = {};
 	GLint drawshader_ao_capture_weight_mode_uniforms[8] = {};
@@ -279,7 +276,6 @@ class GL4Renderer : public IRenderer
 	bool legacy_draw_uniforms_dirty = true;
 	float ao_suppression_draw_value = 0.0f;
 	float bloom_suppression_draw_value = 0.0f;
-	float motion_blur_suppression_draw_value = 0.0f;
 	int ao_class_draw_value = 0;
 	float ao_weight_draw_value = 1.0f;
 	renderer_cockpit_backing_effect cockpit_backing_effect = {};
@@ -310,6 +306,7 @@ class GL4Renderer : public IRenderer
 	int motion_vector_visible_width = 0;
 	int motion_vector_visible_height = 0;
 	bool cockpit_motion_object_active = false;
+	bool motion_object_force_capture = false;
 	unsigned int motion_object_id = 0;
 	float cockpit_previous_view_projection[16] = {};
 	bool have_cockpit_previous_view_projection = false;
@@ -624,11 +621,11 @@ public:
 	void EndMotionObject() override;
 	void SuspendMotionVectorWrites() override;
 	void ResumeMotionVectorWrites() override;
+	void FillMotionVectorRegion(int object_handle) override;
 	bool GetMotionVectorSample(const vector *current_world, const vector *previous_world,
 		float *current_u, float *current_v, float *velocity_u, float *velocity_v) override;
 	void SetAOSuppression(float value) override;
 	void SetBloomSuppression(float value) override;
-	void SetMotionBlurSuppression(float value) override;
 	void SetAOClass(int value) override;
 	void SetPostMaskOnly(int state) override;
 	void SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect) override;

@@ -189,6 +189,7 @@ public:
 	virtual void EndMotionObject() {}
 	virtual void SuspendMotionVectorWrites() {}
 	virtual void ResumeMotionVectorWrites() {}
+	virtual void FillMotionVectorRegion(int object_handle) {}
 	virtual bool GetMotionVectorSample(const vector *current_world, const vector *previous_world,
 		float *current_u, float *current_v, float *velocity_u, float *velocity_v)
 	{
@@ -196,7 +197,6 @@ public:
 	}
 	virtual void SetAOSuppression(float value) {}
 	virtual void SetBloomSuppression(float value) {}
-	virtual void SetMotionBlurSuppression(float value) {}
 	virtual void SetAOClass(int value) {}
 	virtual void SetPostMaskOnly(int state) {}
 	virtual void SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect) {}

@@ -152,6 +152,7 @@ void ResetSmallViews()
 
 //How long the static is visbile
 #define STATIC_TIME 0.25f
+constexpr int SMALL_VIEW_MOTION_OBJECT_HANDLE = 0x20000001;
 
 static void DrawSmallViewScanlineOverlay(int width, int height, bool cockpit_embedded)
 {
@@ -209,7 +210,6 @@ void RenderSmallWindow(int left, int top, int right, int bot, object* viewer, ve
 
 	//Set up for rendering
 	StartFrame(left, top, right, bot);
-	rend_SetMotionBlurSuppression(1.0f);
 
 	//	scale font according to screen size
 	float font_aspect_x = (float)Game_window_w / Max_window_w;
@@ -309,7 +309,7 @@ void RenderSmallWindow(int left, int top, int right, int bot, object* viewer, ve
 	}
 
 	//Done rendering
-	rend_SetMotionBlurSuppression(0.0f);
+	rend_FillMotionVectorRegion(SMALL_VIEW_MOTION_OBJECT_HANDLE);
 	EndFrame();
 }
 

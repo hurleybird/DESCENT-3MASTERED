@@ -340,6 +340,14 @@ void rend_ResumeMotionVectorWrites()
 	renderer_inst->ResumeMotionVectorWrites();
 }
 
+void rend_FillMotionVectorRegion(int object_handle)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->FillMotionVectorRegion(object_handle);
+}
+
 bool rend_GetMotionVectorSample(const vector *current_world, const vector *previous_world,
 	float *current_u, float *current_v, float *velocity_u, float *velocity_v)
 {
@@ -364,14 +372,6 @@ void rend_SetBloomSuppression(float value)
 		return;
 
 	renderer_inst->SetBloomSuppression(value);
-}
-
-void rend_SetMotionBlurSuppression(float value)
-{
-	if (!Renderer_initted)
-		return;
-
-	renderer_inst->SetMotionBlurSuppression(value);
 }
 
 void rend_SetAOClass(int value)

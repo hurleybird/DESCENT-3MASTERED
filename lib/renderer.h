@@ -326,7 +326,8 @@ enum renderer_ao_class
 enum renderer_motion_object_flags
 {
 	RENDERER_MOTION_OBJECT_DEFAULT = 0,
-	RENDERER_MOTION_OBJECT_LEGACY_BLUR = 1 << 0
+	RENDERER_MOTION_OBJECT_LEGACY_BLUR = 1 << 0,
+	RENDERER_MOTION_OBJECT_FORCE_CAPTURE = 1 << 1
 };
 
 struct renderer_lfb
@@ -463,11 +464,11 @@ void rend_BeginMotionObject(int object_handle,
 void rend_EndMotionObject();
 void rend_SuspendMotionVectorWrites();
 void rend_ResumeMotionVectorWrites();
+void rend_FillMotionVectorRegion(int object_handle);
 bool rend_GetMotionVectorSample(const vector *current_world, const vector *previous_world,
 	float *current_u, float *current_v, float *velocity_u, float *velocity_v);
 void rend_SetAOSuppression(float value);
 void rend_SetBloomSuppression(float value);
-void rend_SetMotionBlurSuppression(float value);
 void rend_SetAOClass(int value);
 void rend_SetPostMaskOnly(int state);
 

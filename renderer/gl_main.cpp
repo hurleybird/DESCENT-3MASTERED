@@ -1195,13 +1195,10 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		legacy_draw_uniforms_dirty = true;
 	if (bloom_suppression_draw_value != 0.0f)
 		legacy_draw_uniforms_dirty = true;
-	if (motion_blur_suppression_draw_value != 0.0f)
-		legacy_draw_uniforms_dirty = true;
 	if (ao_class_draw_value != 0)
 		legacy_draw_uniforms_dirty = true;
 	ao_suppression_draw_value = 0.0f;
 	bloom_suppression_draw_value = 0.0f;
-	motion_blur_suppression_draw_value = 0.0f;
 	ao_class_draw_value = 0;
 	ao_weight_draw_value = 1.0f;
 	if (framebuffer_ok && framebuffers[framebuffer_current_draw].Samples() >= 2)
@@ -1696,13 +1693,10 @@ void GL4Renderer::StartCockpitSceneFrame(int x1, int y1, int x2, int y2)
 		legacy_draw_uniforms_dirty = true;
 	if (bloom_suppression_draw_value != 0.0f)
 		legacy_draw_uniforms_dirty = true;
-	if (motion_blur_suppression_draw_value != 0.0f)
-		legacy_draw_uniforms_dirty = true;
 	if (ao_class_draw_value != 0)
 		legacy_draw_uniforms_dirty = true;
 	ao_suppression_draw_value = 0.0f;
 	bloom_suppression_draw_value = 0.0f;
-	motion_blur_suppression_draw_value = 0.0f;
 	ao_class_draw_value = 0;
 	ao_weight_draw_value = 1.0f;
 
@@ -2759,17 +2753,6 @@ void GL4Renderer::SetBloomSuppression(float value)
 		legacy_draw_uniforms_dirty = true;
 	bloom_suppression_draw_value = clamped_value;
 	if (bloom_suppression_draw_value > 0.0f)
-		post_protection_mask_dirty = true;
-}
-
-void GL4Renderer::SetMotionBlurSuppression(float value)
-{
-	float clamped_value = std::max(0.0f, std::min(value, 1.0f));
-	if (clamped_value == motion_blur_suppression_draw_value)
-		return;
-	legacy_draw_uniforms_dirty = true;
-	motion_blur_suppression_draw_value = clamped_value;
-	if (motion_blur_suppression_draw_value > 0.0f)
 		post_protection_mask_dirty = true;
 }
 

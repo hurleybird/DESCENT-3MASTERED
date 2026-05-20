@@ -27,7 +27,6 @@ uniform float dynamic_light_dot_ranges[8];
 uniform int dynamic_light_directional[8];
 uniform float ao_suppression;
 uniform float bloom_suppression;
-uniform float motion_blur_suppression;
 uniform int ao_class_value;
 uniform float ao_weight_value;
 uniform int ao_capture_weight_mode;
@@ -211,6 +210,6 @@ void main()
 		velocity = vec2(0.0);
 		motion_object_id = 0u;
 	}
-	post_mask = vec4(ao_mask, bloom_mask, clamp(motion_blur_suppression, 0.0, 1.0), 1.0);
+	post_mask = vec4(ao_mask, bloom_mask, 0.0, 1.0);
 	ao_class = float(clamp(ao_class_value, 0, 255)) / 255.0;
 }

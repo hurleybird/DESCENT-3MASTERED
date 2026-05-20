@@ -3258,6 +3258,7 @@ void BuildMirroredRoomList()
 
 vector mirror_dest_vecs[MAX_VERTS_PER_ROOM];
 g3Point mirror_save_points[MAX_VERTS_PER_ROOM];
+constexpr int MIRROR_MOTION_OBJECT_HANDLE = 0x20000002;
 // Renders a mirror flipped about the mirrored plane
 void RenderMirroredRoom(room* rp)
 {
@@ -3829,9 +3830,9 @@ void RenderMirrorRooms()
 				save_index = rp->wpb_index;
 				for (t = 0; t < fp->num_verts; t++)
 					save_points[t] = World_point_buffer[fp->face_verts[t]];
-				rend_SetMotionBlurSuppression(1.0f);
+				rend_BeginMotionObject(MIRROR_MOTION_OBJECT_HANDLE, RENDERER_MOTION_OBJECT_FORCE_CAPTURE);
 				DrawPostrenderFace(Mirror_rooms[i], rp->mirror_face, false);
-				rend_SetMotionBlurSuppression(0.0f);
+				rend_EndMotionObject();
 
 				rp->wpb_index = save_index;
 				for (t = 0; t < fp->num_verts; t++)
