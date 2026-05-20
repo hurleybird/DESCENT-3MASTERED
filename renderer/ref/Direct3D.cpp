@@ -2958,11 +2958,17 @@ void d3d_SetFiltering (sbyte state)
 	{
 		lpD3DDevice->SetTextureStageState(0,D3DTSS_MAGFILTER, D3DTFG_LINEAR);
 		lpD3DDevice->SetTextureStageState(0,D3DTSS_MINFILTER, D3DTFG_LINEAR );
+		if (d3d_CanMip && D3D_state.cur_mip_state)
+		{
+			lpD3DDevice->SetTextureStageState(0,D3DTSS_MIPFILTER, D3DTFP_LINEAR);
+		}
 	}
 	else
 	{
 		lpD3DDevice->SetTextureStageState(0,D3DTSS_MAGFILTER, D3DTFG_POINT );
 		lpD3DDevice->SetTextureStageState(0,D3DTSS_MINFILTER, D3DTFG_POINT );
+		if (d3d_CanMip && D3D_state.cur_mip_state)
+			lpD3DDevice->SetTextureStageState(0,D3DTSS_MIPFILTER, D3DTFP_POINT);
 	}
 }
 
@@ -3433,7 +3439,8 @@ void d3d_SetMipState (sbyte state)
 
 	if (d3d_CanMip && state)
 	{
-		lpD3DDevice->SetTextureStageState( 0, D3DTSS_MIPFILTER, D3DTFP_POINT );
+		lpD3DDevice->SetTextureStageState( 0, D3DTSS_MIPFILTER,
+			D3D_preferred_state.filtering ? D3DTFP_LINEAR : D3DTFP_POINT );
 	}
 	else
 	{

@@ -1943,6 +1943,49 @@ UIGadget* newuiSheet::GetGadget(short id)
 	return NULL;
 }
 
+bool newuiSheet::SetGadgetTitle(short id, const char* title)
+{
+	for (int i = 0; i < m_ngadgets; i++)
+	{
+		newuiSheet::t_gadget_desc* desc = &m_gadgetlist[i];
+		if (desc->id != id)
+			continue;
+
+		if (desc->title)
+			mem_free(desc->title);
+		desc->title = title ? mem_strdup(title) : NULL;
+
+		if (!m_realized || !desc->obj.gadget)
+			return true;
+
+		switch (desc->type)
+		{
+		case GADGET_BUTTON:
+		case GADGET_LBUTTON:
+			if (desc->obj.button->GetTitle())
+				*desc->obj.button->GetTitle() = UISnazzyTextItem(0, GADGET9_NEWUI_FONT,
+					title ? title : "", NEWUI_GADGETFONT_COLOR);
+			return true;
+		case GADGET_CHECKBOX:
+		case GADGET_LCHECKBOX:
+			if (desc->obj.chbox->GetTitle())
+				*desc->obj.chbox->GetTitle() = UISnazzyTextItem(0, GADGET9_NEWUI_FONT,
+					title ? title : "", NEWUI_GADGETFONT_COLOR);
+			return true;
+		case GADGET_RADIO:
+		case GADGET_LRADIO:
+			if (desc->obj.radio->GetTitle())
+				*desc->obj.radio->GetTitle() = UISnazzyTextItem(0, GADGET9_NEWUI_FONT,
+					title ? title : "", NEWUI_GADGETFONT_COLOR);
+			return true;
+		default:
+			return true;
+		}
+	}
+
+	return false;
+}
+
 
 newuiSheet::t_gadget_desc* newuiSheet::AddGadget(short id, sbyte type, const char* title)
 {

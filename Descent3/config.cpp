@@ -626,8 +626,14 @@ void config_gamma()
 #define ASPECTBUFFER_SIZE 32
 #define IDV_CHANGEWINDOW 10
 #define IDV_CHANGEASPECT 11
+#define IDV_FILTERING 18
 #define UID_RESOLUTION 110
 #define UID_ASPECT 111
+
+static const char* ConfigFilteringCheckboxTitle(bool mipmapping)
+{
+	return mipmapping ? "Trilinear Filtering" : TXT_BILINEAR;
+}
 
 static int ConfigRoundAspectWidth(int height, int aspect)
 {
@@ -1229,6 +1235,13 @@ struct video_menu
 			snprintf(aspect_buffer, ASPECTBUFFER_SIZE, "%5s", Config_aspect_ratios[window_aspect].name);
 	}
 
+	void update_filtering_title()
+	{
+		if (sheet)
+			sheet->SetGadgetTitle(IDV_FILTERING,
+				ConfigFilteringCheckboxTitle(Render_preferred_state.mipping != 0));
+	}
+
 	void init_display_bounds()
 	{
 		ConfigGetDesktopDisplaySize(&display_width, &display_height);
@@ -1318,6 +1331,7 @@ struct video_menu
 		if (mipmapping && sheet->HasChanged(mipmapping))
 		{
 			Render_preferred_state.mipping = (*mipmapping) ? 1 : 0;
+			update_filtering_title();
 			changed = true;
 		}
 		if (per_pixel_lighting && sheet->HasChanged(per_pixel_lighting))
@@ -1503,7 +1517,10 @@ struct video_menu
 
 		// video settings
 		sheet->NewGroup(TXT_TOGGLES, 0, 170);
-		filtering = sheet->AddLongCheckBox(TXT_BILINEAR, (Render_preferred_state.filtering != 0));
+		Render_preferred_state.filtering = Render_preferred_state.filtering ? 1 : 0;
+		filtering = sheet->AddLongCheckBox(
+			ConfigFilteringCheckboxTitle(Render_preferred_state.mipping != 0),
+			(Render_preferred_state.filtering != 0), IDV_FILTERING);
 		mipmapping = sheet->AddLongCheckBox(TXT_MIPMAPPING, (Render_preferred_state.mipping != 0));
 		per_pixel_lighting = sheet->AddLongCheckBox("Per-pixel lighting",
 			ConfigCanUsePerPixelLighting() && Render_preferred_state.per_pixel_lighting);

@@ -191,6 +191,7 @@ public:
 // obtain's pointer to gadget of respective item.  it is your responsibility to typecast the gadget
 // only works if you specified an ID!  Also the sheet must have been realized by now.
 	UIGadget *GetGadget(short id);
+	bool SetGadgetTitle(short id, const char *title);
 
 //	set focus on this gadget specified by id upon realization.
 	void SetInitialFocusedGadget(short id);

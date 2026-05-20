@@ -1512,7 +1512,7 @@ void opengl_MakeFilterTypeCurrent (int handle,int map_type,int tn)
 		if (map_type==MAP_TYPE_BITMAP && bm_mipped(handle))
 		{
 			dglTexParameteri (GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
-			dglTexParameteri (GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR_MIPMAP_NEAREST);
+			dglTexParameteri (GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR_MIPMAP_LINEAR);
 		}
 		else
 		{

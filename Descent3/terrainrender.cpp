@@ -219,6 +219,18 @@ static constexpr bool TERRAIN_ISSUE_LOGGING_ENABLED = false;
 static uint32_t Terrain_compute_renderer_generation = 0;
 static bool Terrain_compute_release_registered = false;
 
+static void SetTerrainComputeBaseTextureFilter()
+{
+	const int filtering = Render_preferred_state.filtering;
+	const bool mipmapped = Render_preferred_state.mipping != 0;
+	GLenum mag_filter = filtering ? GL_LINEAR : GL_NEAREST;
+	GLenum min_filter = mag_filter;
+	if (mipmapped)
+		min_filter = filtering ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST;
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, min_filter);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, mag_filter);
+}
+
 static void InvalidateTerrainComputeRendererCache()
 {
 	Terrain_legacy_compute_handle = 0xFFFFFFFFu;
@@ -561,8 +573,6 @@ static bool EnsureTerrainComputeBaseTextureArray()
 	{
 		glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, array_width, array_height, layer_count, 0,
 			GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
 		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
 		Terrain_compute_base_texture_array_width = array_width;
@@ -575,6 +585,8 @@ static bool EnsureTerrainComputeBaseTextureArray()
 	{
 		Terrain_compute_base_texture_opaque_counts.assign(bitmap_handles.size(), 0);
 	}
+
+	SetTerrainComputeBaseTextureFilter();
 
 	bool uploaded = false;
 	std::vector<uint32_t> pixels;

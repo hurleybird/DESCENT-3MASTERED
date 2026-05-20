@@ -733,6 +733,7 @@ void LoadGameSettings()
 		temp = D3_DEFAULT_FOV;
 	Render_FOV_desired = Render_FOV = temp;
 	Database->read_int("RS_bilear",&Render_preferred_state.filtering);
+	Render_preferred_state.filtering = Render_preferred_state.filtering ? 1 : 0;
 	Database->read_int("RS_mipping",&Render_preferred_state.mipping);
 	Database->read_int("RS_color_model",&Render_state.cur_color_model);
 	Database->read_int("RS_light",&Render_state.cur_light_state);
