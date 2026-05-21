@@ -328,6 +328,7 @@ struct GTAOResources
 	ColorFramebuffer ao_history_framebuffers[2];
 	int ao_history_index = 0;
 	bool ao_history_valid = false;
+	unsigned int ao_jitter_frame = 0;
 
 	GLuint noise_texture = 0;
 
@@ -365,6 +366,7 @@ struct GTAOResources
 	GLint ao_ao_inv_screen_size = -1;
 	GLint ao_screen_size = -1;      //width, height
 	GLint ao_noise_origin = -1;
+	GLint ao_noise_jitter = -1;
 	GLint ao_directions = -1;
 	GLint ao_steps = -1;
 	GLint ao_terrain_occlusion = -1;

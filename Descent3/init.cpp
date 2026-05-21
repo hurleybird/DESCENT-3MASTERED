@@ -801,7 +801,7 @@ void LoadGameSettings()
 	if (tempint > 150) tempint = 150;
 	Render_preferred_state.gtao_overscan_percent = (ushort)tempint;
 	Database->read("RS_gtao_debug_preview", &Render_preferred_state.gtao_debug_preview);
-	Database->read("RS_gtao_temporal_debug_preview", &Render_preferred_state.gtao_temporal_debug_preview);
+	Render_preferred_state.gtao_temporal_debug_preview = false;
 	tempint = Render_preferred_state.motion_vector_mode;
 	Database->read_int("RS_motion_vector_mode", &tempint);
 	if (tempint != RENDERER_MOTION_VECTOR_OFF && tempint != RENDERER_MOTION_VECTOR_PIXEL)

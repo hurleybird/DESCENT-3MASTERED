@@ -1214,7 +1214,6 @@ struct video_menu
 	bool* show_draw_calls;
 	bool* soft_vis_effects;
 	bool* motion_vector_debug;
-	bool* gtao_temporal_debug;
 
 	short* fov;
 	short* frame_limit;
@@ -1374,14 +1373,6 @@ struct video_menu
 				ConfigFinalizeMotionVectorUse();
 			changed = true;
 		}
-		if (gtao_temporal_debug && sheet->HasChanged(gtao_temporal_debug))
-		{
-			Render_preferred_state.gtao_temporal_debug_preview = *gtao_temporal_debug;
-			ConfigEnsureGTAOTemporalVectorMode();
-			if (!ConfigGTAOTemporalWantsMotionVectors())
-				ConfigFinalizeMotionVectorUse();
-			changed = true;
-		}
 		if (motion_vector_debug && sheet->HasChanged(motion_vector_debug))
 		{
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
@@ -1470,7 +1461,6 @@ struct video_menu
 		show_draw_calls = NULL;
 		soft_vis_effects = NULL;
 		motion_vector_debug = NULL;
-		gtao_temporal_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
 		buffer = NULL;
@@ -1561,10 +1551,6 @@ struct video_menu
 		*gtao = ConfigCanUseGTAO() ?
 			GTAOPresetToIndex(Render_preferred_state.gtao_enabled, Render_preferred_state.gtao_resolution) : 0;
 
-		sheet->NewGroup("GTAO debug", 184, 238);
-		gtao_temporal_debug = sheet->AddLongCheckBox("GTAO history debug",
-			Render_preferred_state.gtao_temporal_debug_preview);
-
 		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
@@ -1592,8 +1578,6 @@ struct video_menu
 			else
 				ApplyGTAOPresetFromIndex(0);
 		}
-		if (gtao_temporal_debug)
-			Render_preferred_state.gtao_temporal_debug_preview = *gtao_temporal_debug;
 		if (motion_vector_debug)
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
 		ConfigEnsureCombinedMotionBlurVectorMode();

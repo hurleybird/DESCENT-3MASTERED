@@ -201,6 +201,7 @@ void GTAOResources::InitShaders()
 	ao_ao_inv_screen_size = ao_shader.FindUniform("ao_inv_screen_size");
 	ao_screen_size = ao_shader.FindUniform("screen_size");
 	ao_noise_origin = ao_shader.FindUniform("noise_origin");
+	ao_noise_jitter = ao_shader.FindUniform("noise_jitter");
 	ao_directions = ao_shader.FindUniform("directions");
 	ao_steps = ao_shader.FindUniform("steps");
 	ao_terrain_occlusion = ao_shader.FindUniform("terrain_ao_occlusion");
@@ -566,6 +567,22 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 			glUniform2f(ao_noise_origin,
 				(float)noise_origin_x * (float)ao_width / (float)source_width,
 				(float)noise_origin_y * (float)ao_height / (float)source_height);
+		}
+		if (ao_noise_jitter != -1)
+		{
+			float jitter_x = 0.0f;
+			float jitter_y = 0.0f;
+			if (!reset_temporal_history)
+			{
+				const unsigned int frame = ao_jitter_frame++;
+				jitter_x = fmodf((float)(frame + 1u) * 0.754877666f, 1.0f);
+				jitter_y = fmodf((float)(frame + 1u) * 0.569840291f, 1.0f);
+			}
+			else
+			{
+				ao_jitter_frame = 0;
+			}
+			glUniform2f(ao_noise_jitter, jitter_x, jitter_y);
 		}
 		glUniform1i(ao_directions, directions);
 		glUniform1i(ao_steps, steps);
