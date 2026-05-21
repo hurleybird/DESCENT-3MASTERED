@@ -72,8 +72,6 @@ extern int Game_frame_limit_fps;
 extern float Hud_text_scale;
 extern bool Render_draw_call_stats;
 extern bool Render_soft_vis_effects;
-extern bool Render_batched_smoke_trails;
-extern bool Render_soft_smoke_trails;
 extern bool Cockpit_alt_mode;
 //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
 extern int DesiredOpenGLProfile;

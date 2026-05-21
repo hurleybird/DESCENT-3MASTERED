@@ -2314,7 +2314,7 @@ static bool VisEffectBuildSmokeTrailBatchItem(vis_effect* vis, VisSmokeTrailBatc
 	key.bitmap_handle = bm_handle;
 	key.alpha_type = (GameTextures[texnum].flags & TF_SATURATE) ?
 		AT_SATURATE_TEXTURE_VERTEX : AT_TEXTURE_VERTEX;
-	key.soft_particles = Render_soft_smoke_trails && !(vis->flags & VF_NO_SOFT_PARTICLE);
+	key.soft_particles = Render_soft_vis_effects && !(vis->flags & VF_NO_SOFT_PARTICLE);
 
 	return VisEffectProjectBatchItemNoViewportClip(item, 0.0f, key.soft_particles);
 }
@@ -2604,8 +2604,7 @@ void DrawVisEffectMaybeBatched(vis_effect* vis)
 		}
 	}
 
-	if (Render_batched_smoke_trails && vis->type == VIS_FIREBALL &&
-		vis->id == BILLBOARD_SMOKETRAIL_INDEX)
+	if (vis->type == VIS_FIREBALL && vis->id == BILLBOARD_SMOKETRAIL_INDEX)
 	{
 		VisSmokeTrailBatchKey smoke_key = {};
 		VisFireballBatchItem smoke_item = {};
@@ -2938,7 +2937,7 @@ void DrawVisBillboardSmoketrail(vis_effect* vis)
 	pnts[3].p3_u = 0;
 	pnts[3].p3_v = 1;
 
-	rend_SetSoftParticleState(Render_soft_smoke_trails &&
+	rend_SetSoftParticleState(Render_soft_vis_effects &&
 		!(vis->flags & VF_NO_SOFT_PARTICLE) ? 1 : 0);
 	bool valid = true;
 	for (int i = 0; i < 4; i++)
