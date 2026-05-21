@@ -2684,6 +2684,8 @@ void RenderAllTerrainObjects()
 			else
 			{
 				FlushVisEffectBatches();
+				if (Objects[objnum].type == OBJ_POWERUP)
+					ForceFlushVisEffectBatches();
 				RenderObject(&Objects[objnum]);
 			}
 		}

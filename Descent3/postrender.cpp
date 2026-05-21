@@ -219,6 +219,8 @@ void PostRender(int roomnum)
 				if (first_object_time == 0.0)
 					first_object_time = object_start_time;
 				object* objp = &Objects[Postrender_list[i].objnum];
+				if (objp->type == OBJ_POWERUP)
+					ForceFlushVisEffectBatches();
 				bool object_outside = OBJECT_OUTSIDE(objp);
 
 				if (!object_outside)

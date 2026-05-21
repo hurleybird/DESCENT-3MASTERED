@@ -3631,6 +3631,8 @@ void RenderRoomObjects(room* rp)
 			{
 				FlushVisEffectBatches();
 				object* objp = &Objects[objnum];
+				if (objp->type == OBJ_POWERUP)
+					ForceFlushVisEffectBatches();
 
 				vector save_vec = objp->pos;
 				matrix save_orient = objp->orient;
@@ -3682,6 +3684,8 @@ void RenderRoomObjects(room* rp)
 		{
 			FlushVisEffectBatches();
 			object* objp = &Objects[objnum];
+			if (objp->type == OBJ_POWERUP)
+				ForceFlushVisEffectBatches();
 			if (objp == Viewer_object)
 				continue;
 			RenderObject(objp);
