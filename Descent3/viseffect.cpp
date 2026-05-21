@@ -30,6 +30,7 @@
 #include <memory.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include "PHYSICS.H"
 #include "weapon.h"
 #include "lighting.h"
@@ -1067,18 +1068,26 @@ struct VisFireballBatchItem
 struct VisFireballAtlasFrame
 {
 	int source_handle;
+	int atlas_handle;
 	int width;
 	int height;
+	int bitmap_format;
+	char source_name[BITMAP_NAME_LEN];
 	float u0;
 	float v0;
 	float u1;
 	float v1;
 };
 
-struct VisFireballVClipAtlas
+struct VisFireballSharedAtlas
 {
-	int vclip_handle;
 	int atlas_handle;
+	int cell_width;
+	int cell_height;
+	int bitmap_format;
+	int columns;
+	int rows;
+	int next_slot;
 	bool valid;
 	bool failed;
 	std::vector<VisFireballAtlasFrame> frames;
@@ -1087,7 +1096,7 @@ struct VisFireballVClipAtlas
 static bool VisFireball_batch_valid = false;
 static VisFireballBatchKey VisFireball_batch_key = {};
 static std::vector<VisFireballBatchItem> VisFireball_batch_items;
-static std::vector<VisFireballVClipAtlas> VisFireball_vclip_atlases;
+static std::vector<VisFireballSharedAtlas> VisFireball_shared_atlases;
 static const bool VIS_FIREBALL_BARRIER_FLUSHES_ENABLED = false;
 static const int VIS_FIREBALL_ATLAS_PADDING = 1;
 static const int VIS_FIREBALL_ATLAS_MAX_DIMENSION = 2048;
@@ -1160,45 +1169,36 @@ static int VisEffectNextPowerOfTwo(int value)
 	return power;
 }
 
-static VisFireballVClipAtlas* VisEffectFindVClipAtlas(int vclip_handle)
+static bool VisEffectAtlasFrameSourceMatches(const VisFireballAtlasFrame& frame, int source_handle)
 {
-	for (size_t i = 0; i < VisFireball_vclip_atlases.size(); i++)
-	{
-		if (VisFireball_vclip_atlases[i].vclip_handle == vclip_handle)
-			return &VisFireball_vclip_atlases[i];
-	}
-
-	return NULL;
-}
-
-static bool VisEffectAtlasMatchesVClip(const VisFireballVClipAtlas& atlas, int vclip_handle)
-{
-	if (vclip_handle < 0 || vclip_handle >= MAX_VCLIPS)
+	if (source_handle <= BAD_BITMAP_HANDLE || !GameBitmaps[source_handle].used)
 		return false;
 
-	vclip* vc = &GameVClips[vclip_handle];
-	if (!vc->used || !vc->frames || vc->num_frames <= 0 ||
-		vc->num_frames != (int)atlas.frames.size())
+	if (frame.source_handle != source_handle ||
+		frame.width != bm_w(source_handle, 0) ||
+		frame.height != bm_h(source_handle, 0) ||
+		frame.bitmap_format != GameBitmaps[source_handle].format)
 		return false;
 
-	for (int i = 0; i < vc->num_frames; i++)
-	{
-		if (atlas.frames[i].source_handle != vc->frames[i])
-			return false;
-	}
+	if (strncmp(frame.source_name, GameBitmaps[source_handle].name, BITMAP_NAME_LEN) != 0)
+		return false;
 
 	return true;
 }
 
-static void VisEffectFreeVClipAtlas(VisFireballVClipAtlas& atlas)
+static VisFireballAtlasFrame* VisEffectFindSharedAtlasFrame(int source_handle)
 {
-	if (atlas.atlas_handle > BAD_BITMAP_HANDLE && GameBitmaps[atlas.atlas_handle].used)
-		bm_FreeBitmap(atlas.atlas_handle);
+	for (size_t atlas_index = 0; atlas_index < VisFireball_shared_atlases.size(); atlas_index++)
+	{
+		VisFireballSharedAtlas& atlas = VisFireball_shared_atlases[atlas_index];
+		for (size_t frame_index = 0; frame_index < atlas.frames.size(); frame_index++)
+		{
+			if (VisEffectAtlasFrameSourceMatches(atlas.frames[frame_index], source_handle))
+				return &atlas.frames[frame_index];
+		}
+	}
 
-	atlas.atlas_handle = BAD_BITMAP_HANDLE;
-	atlas.valid = false;
-	atlas.failed = true;
-	atlas.frames.clear();
+	return NULL;
 }
 
 static void VisEffectCopyAtlasFrame(int atlas_handle, int dest_x, int dest_y, int source_handle)
@@ -1238,56 +1238,35 @@ static void VisEffectCopyAtlasFrame(int atlas_handle, int dest_x, int dest_y, in
 	dest_bottom[source_width] = src_bottom[source_width - 1];
 }
 
-static bool VisEffectBuildVClipAtlas(int vclip_handle, VisFireballVClipAtlas& atlas)
+static bool VisEffectBuildSharedAtlas(int source_width, int source_height, int bitmap_format,
+	VisFireballSharedAtlas& atlas)
 {
-	atlas.vclip_handle = vclip_handle;
+	atlas.cell_width = source_width;
+	atlas.cell_height = source_height;
+	atlas.bitmap_format = bitmap_format;
 	atlas.atlas_handle = BAD_BITMAP_HANDLE;
+	atlas.columns = 0;
+	atlas.rows = 0;
+	atlas.next_slot = 0;
 	atlas.valid = false;
 	atlas.failed = true;
 	atlas.frames.clear();
 
-	if (vclip_handle < 0 || vclip_handle >= MAX_VCLIPS)
+	if (source_width <= 0 || source_height <= 0)
 		return false;
 
-	vclip* vc = &GameVClips[vclip_handle];
-	if (!vc->used || !vc->frames || vc->num_frames <= 0)
+	const int padded_width = source_width + (VIS_FIREBALL_ATLAS_PADDING * 2);
+	const int padded_height = source_height + (VIS_FIREBALL_ATLAS_PADDING * 2);
+	if (padded_width > VIS_FIREBALL_ATLAS_MAX_DIMENSION ||
+		padded_height > VIS_FIREBALL_ATLAS_MAX_DIMENSION)
 		return false;
 
-	int max_width = 0;
-	int max_height = 0;
-	int bitmap_format = BITMAP_FORMAT_STANDARD;
-	for (int i = 0; i < vc->num_frames; i++)
-	{
-		const int frame_handle = vc->frames[i];
-		if (frame_handle <= BAD_BITMAP_HANDLE || !GameBitmaps[frame_handle].used)
-			return false;
-
-		if (i == 0)
-			bitmap_format = GameBitmaps[frame_handle].format;
-		else if (GameBitmaps[frame_handle].format != bitmap_format)
-			return false;
-
-		const int width = bm_w(frame_handle, 0);
-		const int height = bm_h(frame_handle, 0);
-		if (width <= 0 || height <= 0)
-			return false;
-
-		max_width = std::max(max_width, width);
-		max_height = std::max(max_height, height);
-	}
-
-	const int cell_width = max_width + (VIS_FIREBALL_ATLAS_PADDING * 2);
-	const int cell_height = max_height + (VIS_FIREBALL_ATLAS_PADDING * 2);
-	int columns = 1;
-	while (columns * columns < vc->num_frames)
-		columns++;
-
-	const int rows = (vc->num_frames + columns - 1) / columns;
-	const int atlas_width = VisEffectNextPowerOfTwo(columns * cell_width);
-	const int atlas_height = VisEffectNextPowerOfTwo(rows * cell_height);
-
-	if (atlas_width > VIS_FIREBALL_ATLAS_MAX_DIMENSION || atlas_height > VIS_FIREBALL_ATLAS_MAX_DIMENSION)
-		return false;
+	const int target_width = std::min(VIS_FIREBALL_ATLAS_MAX_DIMENSION,
+		VisEffectNextPowerOfTwo(padded_width * 16));
+	const int target_height = std::min(VIS_FIREBALL_ATLAS_MAX_DIMENSION,
+		VisEffectNextPowerOfTwo(padded_height * 16));
+	const int atlas_width = std::max(padded_width, target_width);
+	const int atlas_height = std::max(padded_height, target_height);
 
 	const int atlas_handle = bm_AllocBitmap(atlas_width, atlas_height, 0);
 	if (atlas_handle <= BAD_BITMAP_HANDLE)
@@ -1295,7 +1274,8 @@ static bool VisEffectBuildVClipAtlas(int vclip_handle, VisFireballVClipAtlas& at
 
 	GameBitmaps[atlas_handle].flags |= BF_TRANSPARENT | BF_CHANGED;
 	GameBitmaps[atlas_handle].format = bitmap_format;
-	snprintf(GameBitmaps[atlas_handle].name, BITMAP_NAME_LEN, "vfxatlas%d", vclip_handle);
+	snprintf(GameBitmaps[atlas_handle].name, BITMAP_NAME_LEN, "vfx%dx%d_%d",
+		source_width, source_height, bitmap_format);
 
 	ushort* atlas_data = bm_data(atlas_handle, 0);
 	if (!atlas_data)
@@ -1307,62 +1287,107 @@ static bool VisEffectBuildVClipAtlas(int vclip_handle, VisFireballVClipAtlas& at
 	for (int i = 0; i < atlas_width * atlas_height; i++)
 		atlas_data[i] = NEW_TRANSPARENT_COLOR;
 
-	atlas.frames.resize(vc->num_frames);
-	for (int i = 0; i < vc->num_frames; i++)
-	{
-		const int frame_handle = vc->frames[i];
-		const int frame_width = bm_w(frame_handle, 0);
-		const int frame_height = bm_h(frame_handle, 0);
-		const int cell_x = (i % columns) * cell_width;
-		const int cell_y = (i / columns) * cell_height;
-
-		VisEffectCopyAtlasFrame(atlas_handle, cell_x, cell_y, frame_handle);
-
-		VisFireballAtlasFrame& frame = atlas.frames[i];
-		frame.source_handle = frame_handle;
-		frame.width = frame_width;
-		frame.height = frame_height;
-		frame.u0 = (float)(cell_x + VIS_FIREBALL_ATLAS_PADDING) / (float)atlas_width;
-		frame.v0 = (float)(cell_y + VIS_FIREBALL_ATLAS_PADDING) / (float)atlas_height;
-		frame.u1 = (float)(cell_x + VIS_FIREBALL_ATLAS_PADDING + frame_width) / (float)atlas_width;
-		frame.v1 = (float)(cell_y + VIS_FIREBALL_ATLAS_PADDING + frame_height) / (float)atlas_height;
-	}
-
+	atlas.columns = atlas_width / padded_width;
+	atlas.rows = atlas_height / padded_height;
+	atlas.next_slot = 0;
 	atlas.atlas_handle = atlas_handle;
 	atlas.valid = true;
 	atlas.failed = false;
 	return true;
 }
 
-static bool VisEffectGetVClipAtlasFrame(int vclip_handle, int frame_index, int* bitmap_handle,
+static VisFireballSharedAtlas* VisEffectFindSharedAtlasWithSpace(int source_width, int source_height,
+	int bitmap_format)
+{
+	for (size_t i = 0; i < VisFireball_shared_atlases.size(); i++)
+	{
+		VisFireballSharedAtlas& atlas = VisFireball_shared_atlases[i];
+		if (!atlas.valid || atlas.failed ||
+			atlas.cell_width != source_width ||
+			atlas.cell_height != source_height ||
+			atlas.bitmap_format != bitmap_format)
+			continue;
+
+		if (atlas.next_slot < atlas.columns * atlas.rows)
+			return &atlas;
+	}
+
+	VisFireballSharedAtlas new_atlas = {};
+	if (!VisEffectBuildSharedAtlas(source_width, source_height, bitmap_format, new_atlas))
+		return NULL;
+	VisFireball_shared_atlases.push_back(new_atlas);
+	VisFireballSharedAtlas& atlas = VisFireball_shared_atlases.back();
+	return &atlas;
+}
+
+static bool VisEffectAddSharedAtlasFrame(int source_handle, int* bitmap_handle,
 	int* width, int* height, float* u0, float* v0, float* u1, float* v1)
 {
-	VisFireballVClipAtlas* atlas = VisEffectFindVClipAtlas(vclip_handle);
-	if (!atlas)
-	{
-		VisFireballVClipAtlas new_atlas;
-		VisEffectBuildVClipAtlas(vclip_handle, new_atlas);
-		VisFireball_vclip_atlases.push_back(new_atlas);
-		atlas = &VisFireball_vclip_atlases.back();
-	}
-	else if (!VisEffectAtlasMatchesVClip(*atlas, vclip_handle))
-	{
-		VisEffectFreeVClipAtlas(*atlas);
-		VisEffectBuildVClipAtlas(vclip_handle, *atlas);
-	}
-
-	if (!atlas->valid || atlas->failed || frame_index < 0 || frame_index >= (int)atlas->frames.size())
+	if (source_handle <= BAD_BITMAP_HANDLE || !GameBitmaps[source_handle].used)
 		return false;
 
-	const VisFireballAtlasFrame& frame = atlas->frames[frame_index];
+	const int source_width = bm_w(source_handle, 0);
+	const int source_height = bm_h(source_handle, 0);
+	const int bitmap_format = GameBitmaps[source_handle].format;
+	if (source_width <= 0 || source_height <= 0)
+		return false;
+
+	VisFireballSharedAtlas* atlas = VisEffectFindSharedAtlasWithSpace(source_width, source_height, bitmap_format);
+	if (!atlas)
+		return false;
+
+	const int padded_width = source_width + (VIS_FIREBALL_ATLAS_PADDING * 2);
+	const int padded_height = source_height + (VIS_FIREBALL_ATLAS_PADDING * 2);
+	const int slot = atlas->next_slot++;
+	const int cell_x = (slot % atlas->columns) * padded_width;
+	const int cell_y = (slot / atlas->columns) * padded_height;
+	VisEffectCopyAtlasFrame(atlas->atlas_handle, cell_x, cell_y, source_handle);
+	GameBitmaps[atlas->atlas_handle].flags |= BF_CHANGED;
+
+	VisFireballAtlasFrame frame = {};
+	frame.source_handle = source_handle;
+	frame.atlas_handle = atlas->atlas_handle;
+	frame.width = source_width;
+	frame.height = source_height;
+	frame.bitmap_format = bitmap_format;
+	strncpy(frame.source_name, GameBitmaps[source_handle].name, BITMAP_NAME_LEN - 1);
+	frame.source_name[BITMAP_NAME_LEN - 1] = '\0';
+	frame.u0 = (float)(cell_x + VIS_FIREBALL_ATLAS_PADDING) / (float)bm_w(atlas->atlas_handle, 0);
+	frame.v0 = (float)(cell_y + VIS_FIREBALL_ATLAS_PADDING) / (float)bm_h(atlas->atlas_handle, 0);
+	frame.u1 = (float)(cell_x + VIS_FIREBALL_ATLAS_PADDING + source_width) / (float)bm_w(atlas->atlas_handle, 0);
+	frame.v1 = (float)(cell_y + VIS_FIREBALL_ATLAS_PADDING + source_height) / (float)bm_h(atlas->atlas_handle, 0);
+	atlas->frames.push_back(frame);
+
 	*bitmap_handle = atlas->atlas_handle;
-	*width = frame.width;
-	*height = frame.height;
+	*width = source_width;
+	*height = source_height;
 	*u0 = frame.u0;
 	*v0 = frame.v0;
 	*u1 = frame.u1;
 	*v1 = frame.v1;
 	return true;
+}
+
+static bool VisEffectGetSharedAtlasFrame(int source_handle, int* bitmap_handle,
+	int* width, int* height, float* u0, float* v0, float* u1, float* v1)
+{
+	VisFireballAtlasFrame* frame = VisEffectFindSharedAtlasFrame(source_handle);
+	if (frame)
+	{
+		if (frame->atlas_handle > BAD_BITMAP_HANDLE && GameBitmaps[frame->atlas_handle].used)
+		{
+			*bitmap_handle = frame->atlas_handle;
+			*width = frame->width;
+			*height = frame->height;
+			*u0 = frame->u0;
+			*v0 = frame->v0;
+			*u1 = frame->u1;
+			*v1 = frame->v1;
+			return true;
+		}
+	}
+
+	return VisEffectAddSharedAtlasFrame(source_handle, bitmap_handle, width, height, u0, v0, u1, v1);
 }
 
 static void VisEffectApplyBatchUVs(VisFireballBatchItem& item, float u0, float v0, float u1, float v1)
@@ -1375,6 +1400,28 @@ static void VisEffectApplyBatchUVs(VisFireballBatchItem& item, float u0, float v
 	item.points[2].p3_v = v1;
 	item.points[3].p3_u = u0;
 	item.points[3].p3_v = v1;
+}
+
+static void VisEffectSelectBitmapForBatch(int source_handle, int* bitmap_handle,
+	int* width, int* height, float* u0, float* v0, float* u1, float* v1)
+{
+	*bitmap_handle = BAD_BITMAP_HANDLE;
+	*width = 0;
+	*height = 0;
+	*u0 = 0.0f;
+	*v0 = 0.0f;
+	*u1 = 1.0f;
+	*v1 = 1.0f;
+
+	if (source_handle <= BAD_BITMAP_HANDLE || !GameBitmaps[source_handle].used)
+		return;
+
+	if (VisEffectGetSharedAtlasFrame(source_handle, bitmap_handle, width, height, u0, v0, u1, v1))
+		return;
+
+	*bitmap_handle = source_handle;
+	*width = bm_w(source_handle, 0);
+	*height = bm_h(source_handle, 0);
 }
 
 static void VisEffectSelectVClipBitmap(int vclip_handle, int frame_index, int* bitmap_handle,
@@ -1400,12 +1447,7 @@ static void VisEffectSelectVClipBitmap(int vclip_handle, int frame_index, int* b
 	if (frame_index >= vc->num_frames)
 		frame_index = vc->num_frames - 1;
 
-	if (VisEffectGetVClipAtlasFrame(vclip_handle, frame_index, bitmap_handle, width, height, u0, v0, u1, v1))
-		return;
-
-	*bitmap_handle = vc->frames[frame_index];
-	*width = bm_w(*bitmap_handle, 0);
-	*height = bm_h(*bitmap_handle, 0);
+	VisEffectSelectBitmapForBatch(vc->frames[frame_index], bitmap_handle, width, height, u0, v0, u1, v1);
 }
 
 
@@ -1688,7 +1730,7 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 	if (vis->flags & VF_EXPAND)
 		size = (vis->size / 2) + ((vis->size * norm_time) / 2);
 
-	int bm_handle;
+	int bm_handle = BAD_BITMAP_HANDLE;
 	int bitmap_width = 0;
 	int bitmap_height = 0;
 	float u0 = 0.0f;
@@ -1726,7 +1768,8 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 			select_vclip_bitmap(vnum, (vis->flags & VF_ATTACHED) != 0);
 		}
 		else
-			bm_handle = GameTextures[texnum].bm_handle;
+			VisEffectSelectBitmapForBatch(GameTextures[texnum].bm_handle, &bm_handle,
+				&bitmap_width, &bitmap_height, &u0, &v0, &u1, &v1);
 	}
 	else if (vis->id == SPRAY_INDEX)
 	{
@@ -1741,17 +1784,20 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 			select_vclip_bitmap(vnum, (vis->flags & VF_ATTACHED) != 0);
 		}
 		else
-			bm_handle = GetTextureBitmap(vis->custom_handle, 0);
+			VisEffectSelectBitmapForBatch(GetTextureBitmap(vis->custom_handle, 0), &bm_handle,
+				&bitmap_width, &bitmap_height, &u0, &v0, &u1, &v1);
 	}
 	else if (fb->type == FT_SPARK)
 	{
-		bm_handle = fb->bm_handle;
+		VisEffectSelectBitmapForBatch(fb->bm_handle, &bm_handle, &bitmap_width, &bitmap_height,
+			&u0, &v0, &u1, &v1);
 		size *= (1.0f - norm_time);
 	}
 	else if (vis->id == SUN_CORONA_INDEX || vis->id == MUZZLE_FLASH_INDEX ||
 		vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX)
 	{
-		bm_handle = fb->bm_handle;
+		VisEffectSelectBitmapForBatch(fb->bm_handle, &bm_handle, &bitmap_width, &bitmap_height,
+			&u0, &v0, &u1, &v1);
 	}
 	else
 	{
