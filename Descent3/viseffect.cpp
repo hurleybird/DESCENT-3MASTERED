@@ -831,8 +831,7 @@ void DrawVisSnowflake(vis_effect* vis)
 	rend_SetAlphaType(AT_SATURATE_TEXTURE);
 
 	ddgr_color color = GR_16_TO_COLOR(vis->lighting_color);
-	rend_SetSoftParticleState(Render_soft_vis_effects &&
-		!(vis->flags & VF_NO_SOFT_PARTICLE) ? 1 : 0);
+	rend_SetSoftParticleState(Render_soft_vis_effects ? 1 : 0);
 	g3_DrawBitmap(&vis->pos, size, (size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle, color);
 	rend_SetSoftParticleState(0);
 
@@ -1187,16 +1186,14 @@ static bool VisEffectHasQueuedSmokeTrailBatch()
 	return VisSmokeTrail_batch_valid && !VisSmokeTrail_batch_items.empty();
 }
 
-static bool VisEffectShouldUseSoftParticles(const vis_effect* vis)
+static bool VisEffectShouldUseSoftParticles()
 {
-	return Render_soft_vis_effects && !(vis->flags & VF_NO_SOFT_PARTICLE);
+	return Render_soft_vis_effects;
 }
 
-static bool VisEffectShouldUseSoftSnowParticles(const vis_effect* vis, bool zbuffer_state)
+static bool VisEffectShouldUseSoftSnowParticles(bool zbuffer_state)
 {
-	return Render_soft_vis_effects &&
-		zbuffer_state &&
-		!(vis->flags & VF_NO_SOFT_PARTICLE);
+	return Render_soft_vis_effects && zbuffer_state;
 }
 
 struct VisEffectVClipFrameBlend
@@ -1995,7 +1992,7 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 
 	key.bitmap_handle = bm_handle;
 	key.alpha_type = batch_alpha_type;
-	key.soft_particles = VisEffectShouldUseSoftParticles(vis);
+	key.soft_particles = VisEffectShouldUseSoftParticles();
 
 	blend_key = key;
 	blend_key.bitmap_handle = blend_bm_handle;
@@ -2225,7 +2222,7 @@ static bool VisEffectBuildWeatherQuadBatchItem(vis_effect* vis, VisWeatherBatchK
 	key.bitmap_handle = bm_handle;
 	key.alpha_type = AT_SATURATE_TEXTURE_VERTEX;
 	key.soft_particles = (vis->id == SNOWFLAKE_INDEX) ?
-		VisEffectShouldUseSoftSnowParticles(vis, zbuffer_state) : false;
+		VisEffectShouldUseSoftSnowParticles(zbuffer_state) : false;
 	key.zbuffer_state = zbuffer_state;
 
 	return VisEffectClipAndProjectBatchItem(item, 0.0f, key.soft_particles);
@@ -2314,7 +2311,7 @@ static bool VisEffectBuildSmokeTrailBatchItem(vis_effect* vis, VisSmokeTrailBatc
 	key.bitmap_handle = bm_handle;
 	key.alpha_type = (GameTextures[texnum].flags & TF_SATURATE) ?
 		AT_SATURATE_TEXTURE_VERTEX : AT_TEXTURE_VERTEX;
-	key.soft_particles = Render_soft_vis_effects && !(vis->flags & VF_NO_SOFT_PARTICLE);
+	key.soft_particles = Render_soft_vis_effects;
 
 	return VisEffectProjectBatchItemNoViewportClip(item, 0.0f, key.soft_particles);
 }
@@ -2937,8 +2934,7 @@ void DrawVisBillboardSmoketrail(vis_effect* vis)
 	pnts[3].p3_u = 0;
 	pnts[3].p3_v = 1;
 
-	rend_SetSoftParticleState(Render_soft_vis_effects &&
-		!(vis->flags & VF_NO_SOFT_PARTICLE) ? 1 : 0);
+	rend_SetSoftParticleState(Render_soft_vis_effects ? 1 : 0);
 	bool valid = true;
 	for (int i = 0; i < 4; i++)
 	{
@@ -3374,7 +3370,7 @@ void DrawVisEffect(vis_effect* vis)
 	rend_SetWrapType(WT_CLAMP);
 	rend_SetLighting(LS_NONE);
 	rend_SetAOSuppression(1.0f);
-	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles(vis) ? 1 : 0);
+	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles() ? 1 : 0);
 
 	auto draw_frame = [&](int frame_bm_handle) {
 		if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX || vis->id == GRAY_SPARK_INDEX)

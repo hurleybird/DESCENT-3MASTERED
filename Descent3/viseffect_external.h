@@ -40,7 +40,6 @@
 #define VF_ATTACHED				64
 #define VF_NO_Z_ADJUST			128
 #define VF_LINK_TO_VIEWER		256	// Always link into the room that the viewer is in
-#define VF_NO_SOFT_PARTICLE		512	// This effect is already depth-protected by placement.
 
 extern ushort max_vis_effects;
 

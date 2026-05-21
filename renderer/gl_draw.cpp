@@ -36,6 +36,11 @@ static float GL4DepthFromEyeZ(float z)
 	return std::max(0.f, std::min(1.0f, 1.0f - (1.0f / clamped_z)));
 }
 
+static float GL4SoftParticleDepthFromPoint(const g3Point* pnt)
+{
+	return GL4DepthFromEyeZ(pnt->p3_z + Z_bias);
+}
+
 static bool GL4DrawTargetIsFramebuffer(GLuint framebuffer)
 {
 	GLint current_draw = 0;
@@ -755,11 +760,7 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 	}
 
 	if (soft_particle_draw_enabled)
-	{
-		const float particle_z = pnt->p3_motion_world_valid == 2 ?
-			pnt->p3_motion_world_pos.z : pnt->p3_z;
-		vert.normal.w = GL4DepthFromEyeZ(particle_z);
-	}
+		vert.normal.w = GL4SoftParticleDepthFromPoint(pnt);
 
 	vert.vert.x = pnt->p3_sx;
 	vert.vert.y = pnt->p3_sy;
@@ -1530,11 +1531,7 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 		}
 
 		if (soft_particle_draw_enabled)
-		{
-			const float particle_z = pnt->p3_motion_world_valid == 2 ?
-				pnt->p3_motion_world_pos.z : pnt->p3_z;
-			vertp->normal.w = GL4DepthFromEyeZ(particle_z);
-		}
+			vertp->normal.w = GL4SoftParticleDepthFromPoint(pnt);
 
 		// Finally, specify a vertex
 		vertp->vert.x = pnt->p3_sx;
@@ -2341,7 +2338,7 @@ void GL4Renderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 
 		vertp->vert.x = pnt->p3_sx; vertp->vert.y = pnt->p3_sy; vertp->vert.z = -z;
 		if (soft_particle_draw_enabled)
-			vertp->normal.w = GL4DepthFromEyeZ(pnt->p3_z);
+			vertp->normal.w = GL4SoftParticleDepthFromPoint(pnt);
 		vertp->motion_world_position.x = 0.0f;
 		vertp->motion_world_position.y = 0.0f;
 		vertp->motion_world_position.z = 0.0f;
@@ -2418,7 +2415,7 @@ void GL4Renderer::DrawSpecialLineBatch(const renderer_line_batch_item *items, in
 			vertex.vert.y = pnt->p3_sy;
 			vertex.vert.z = -z;
 			if (soft_particle_draw_enabled)
-				vertex.normal.w = GL4DepthFromEyeZ(pnt->p3_z);
+				vertex.normal.w = GL4SoftParticleDepthFromPoint(pnt);
 			vertex.motion_world_position.x = 0.0f;
 			vertex.motion_world_position.y = 0.0f;
 			vertex.motion_world_position.z = 0.0f;
