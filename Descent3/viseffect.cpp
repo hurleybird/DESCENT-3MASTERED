@@ -1102,6 +1102,56 @@ static bool VisEffectShouldUseSoftParticles(const vis_effect* vis)
 	return Render_soft_vis_effects && !(vis->flags & VF_NO_SOFT_PARTICLE);
 }
 
+struct VisEffectVClipFrameBlend
+{
+	int frame0;
+	int frame1;
+	float frame1_weight;
+	bool has_frame1;
+};
+
+static VisEffectVClipFrameBlend VisEffectCalcVClipFrameBlend(const vclip* vc, float norm_time, bool loop)
+{
+	VisEffectVClipFrameBlend blend = {};
+	blend.frame0 = 0;
+	blend.frame1 = 0;
+	blend.frame1_weight = 0.0f;
+	blend.has_frame1 = false;
+
+	if (!vc || vc->num_frames <= 0)
+		return blend;
+
+	float frame_pos = vc->num_frames * norm_time;
+	if (frame_pos < 0.0f)
+		frame_pos = 0.0f;
+	if (frame_pos >= vc->num_frames)
+		frame_pos = vc->num_frames - 0.00001f;
+
+	blend.frame0 = (int)frame_pos;
+	if (blend.frame0 < 0)
+		blend.frame0 = 0;
+	if (blend.frame0 >= vc->num_frames)
+		blend.frame0 = vc->num_frames - 1;
+
+	if (vc->num_frames <= 1)
+		return blend;
+
+	blend.frame1_weight = frame_pos - blend.frame0;
+	if (blend.frame1_weight <= 0.001f)
+		return blend;
+
+	blend.frame1 = blend.frame0 + 1;
+	if (blend.frame1 >= vc->num_frames)
+	{
+		if (!loop)
+			return blend;
+		blend.frame1 = 0;
+	}
+
+	blend.has_frame1 = true;
+	return blend;
+}
+
 static int VisEffectNextPowerOfTwo(int value)
 {
 	int power = 1;
@@ -1587,8 +1637,11 @@ static bool VisEffectIsSpecialFireball(int id)
 }
 
 static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey& key,
-	VisFireballBatchItem& item)
+	VisFireballBatchItem& item, VisFireballBatchKey& blend_key, VisFireballBatchItem& blend_item,
+	bool& has_blend_item)
 {
+	has_blend_item = false;
+
 	if (vis->type != VIS_FIREBALL || VisEffectIsSpecialFireball(vis->id))
 		return false;
 
@@ -1642,16 +1695,35 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 	float v0 = 0.0f;
 	float u1 = 1.0f;
 	float v1 = 1.0f;
+	int blend_bm_handle = BAD_BITMAP_HANDLE;
+	int blend_bitmap_width = 0;
+	int blend_bitmap_height = 0;
+	float blend_u0 = 0.0f;
+	float blend_v0 = 0.0f;
+	float blend_u1 = 1.0f;
+	float blend_v1 = 1.0f;
+	float frame1_weight = 0.0f;
+	auto select_vclip_bitmap = [&](int vnum, bool loop) {
+		vclip* vc = &GameVClips[vnum];
+		VisEffectVClipFrameBlend frame_blend = VisEffectCalcVClipFrameBlend(vc, norm_time, loop);
+		VisEffectSelectVClipBitmap(vnum, frame_blend.frame0, &bm_handle, &bitmap_width, &bitmap_height,
+			&u0, &v0, &u1, &v1);
+		if (frame_blend.has_frame1)
+		{
+			VisEffectSelectVClipBitmap(vnum, frame_blend.frame1, &blend_bm_handle,
+				&blend_bitmap_width, &blend_bitmap_height, &blend_u0, &blend_v0, &blend_u1, &blend_v1);
+			if (blend_bm_handle > BAD_BITMAP_HANDLE)
+				frame1_weight = frame_blend.frame1_weight;
+		}
+	};
+
 	if (vis->id == SMOKE_TRAIL_INDEX)
 	{
 		int texnum = vis->custom_handle;
 		if (GameTextures[texnum].flags & TF_ANIMATED)
 		{
 			int vnum = GameTextures[texnum].bm_handle;
-			vclip* vc = &GameVClips[vnum];
-			int int_frame = vc->num_frames * norm_time;
-			VisEffectSelectVClipBitmap(vnum, int_frame, &bm_handle, &bitmap_width, &bitmap_height,
-				&u0, &v0, &u1, &v1);
+			select_vclip_bitmap(vnum, (vis->flags & VF_ATTACHED) != 0);
 		}
 		else
 			bm_handle = GameTextures[texnum].bm_handle;
@@ -1659,20 +1731,14 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 	else if (vis->id == SPRAY_INDEX)
 	{
 		int vnum = vis->custom_handle;
-		vclip* vc = &GameVClips[vnum];
-		int int_frame = vc->num_frames * norm_time;
-		VisEffectSelectVClipBitmap(vnum, int_frame, &bm_handle, &bitmap_width, &bitmap_height,
-			&u0, &v0, &u1, &v1);
+		select_vclip_bitmap(vnum, (vis->flags & VF_ATTACHED) != 0);
 	}
 	else if (vis->id == CUSTOM_EXPLOSION_INDEX || vis->id == PARTICLE_INDEX)
 	{
 		if (GameTextures[vis->custom_handle].flags & TF_ANIMATED)
 		{
 			int vnum = GameTextures[vis->custom_handle].bm_handle;
-			vclip* vc = &GameVClips[vnum];
-			int int_frame = vc->num_frames * norm_time;
-			VisEffectSelectVClipBitmap(vnum, int_frame, &bm_handle, &bitmap_width, &bitmap_height,
-				&u0, &v0, &u1, &v1);
+			select_vclip_bitmap(vnum, (vis->flags & VF_ATTACHED) != 0);
 		}
 		else
 			bm_handle = GetTextureBitmap(vis->custom_handle, 0);
@@ -1690,10 +1756,7 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 	else
 	{
 		int vnum = fb->bm_handle;
-		vclip* vc = &GameVClips[vnum];
-		int int_frame = vc->num_frames * norm_time;
-		VisEffectSelectVClipBitmap(vnum, int_frame, &bm_handle, &bitmap_width, &bitmap_height,
-			&u0, &v0, &u1, &v1);
+		select_vclip_bitmap(vnum, (vis->flags & VF_ATTACHED) != 0);
 	}
 
 	if (bitmap_width <= 0 || bitmap_height <= 0)
@@ -1775,6 +1838,9 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 	key.alpha_type = batch_alpha_type;
 	key.soft_particles = VisEffectShouldUseSoftParticles(vis);
 
+	blend_key = key;
+	blend_key.bitmap_handle = blend_bm_handle;
+
 	float vertex_red = 1.0f;
 	float vertex_green = 1.0f;
 	float vertex_blue = 1.0f;
@@ -1797,9 +1863,23 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 
 	if (built)
 	{
+		const bool blend_valid = frame1_weight > 0.001f && blend_bm_handle > BAD_BITMAP_HANDLE &&
+			blend_bitmap_width > 0 && blend_bitmap_height > 0;
+		if (blend_valid)
+		{
+			blend_item = item;
+			VisEffectApplyBatchUVs(blend_item, blend_u0, blend_v0, blend_u1, blend_v1);
+			VisEffectApplyBatchVertexColor(blend_item, vertex_red, vertex_green, vertex_blue,
+				vertex_alpha * frame1_weight);
+			has_blend_item = true;
+		}
+
 		VisEffectApplyBatchUVs(item, u0, v0, u1, v1);
-		VisEffectApplyBatchVertexColor(item, vertex_red, vertex_green, vertex_blue, vertex_alpha);
+		VisEffectApplyBatchVertexColor(item, vertex_red, vertex_green, vertex_blue,
+			vertex_alpha * (blend_valid ? (1.0f - frame1_weight) : 1.0f));
 		built = VisEffectClipAndProjectBatchItem(item, z_bias, key.soft_particles);
+		if (built && has_blend_item)
+			built = VisEffectClipAndProjectBatchItem(blend_item, z_bias, blend_key.soft_particles);
 	}
 
 	return built;
@@ -1876,15 +1956,12 @@ static void QueueVisEffectBatchItem(const VisFireballBatchKey& key, const VisFir
 
 void DrawVisEffectMaybeBatched(vis_effect* vis)
 {
-	if (!Render_batched_vis_effects)
-	{
-		DrawVisEffect(vis);
-		return;
-	}
-
 	VisFireballBatchKey key = {};
 	VisFireballBatchItem item = {};
-	if (!VisEffectBuildFireballBatchItem(vis, key, item))
+	VisFireballBatchKey blend_key = {};
+	VisFireballBatchItem blend_item = {};
+	bool has_blend_item = false;
+	if (!VisEffectBuildFireballBatchItem(vis, key, item, blend_key, blend_item, has_blend_item))
 	{
 		FlushVisEffectBatchesNow();
 		DrawVisEffect(vis);
@@ -1892,6 +1969,8 @@ void DrawVisEffectMaybeBatched(vis_effect* vis)
 	}
 
 	QueueVisEffectBatchItem(key, item);
+	if (has_blend_item)
+		QueueVisEffectBatchItem(blend_key, blend_item);
 }
 
 
@@ -2456,6 +2535,8 @@ void DrawVisEffect(vis_effect* vis)
 	int visnum = vis - VisEffects;
 	int rot_angle;
 	int bm_handle;
+	int blend_bm_handle = BAD_BITMAP_HANDLE;
+	float frame1_weight = 0.0f;
 
 	fireball* fb = &Fireballs[vis->id];
 
@@ -2490,14 +2571,23 @@ void DrawVisEffect(vis_effect* vis)
 		size = (vis->size / 2) + ((vis->size * norm_time) / 2);
 	}
 
+	auto select_vclip_frame = [&](int vnum, bool loop) {
+		vclip* vc = &GameVClips[vnum];
+		VisEffectVClipFrameBlend frame_blend = VisEffectCalcVClipFrameBlend(vc, norm_time, loop);
+		bm_handle = vc->frames[frame_blend.frame0];
+		if (frame_blend.has_frame1)
+		{
+			blend_bm_handle = vc->frames[frame_blend.frame1];
+			frame1_weight = frame_blend.frame1_weight;
+		}
+	};
+
 	if (vis->id == SMOKE_TRAIL_INDEX) // If its a smoke trail, get image from texture
 	{
 		int texnum = vis->custom_handle;
 		if (GameTextures[texnum].flags & TF_ANIMATED)
 		{
-			vclip* vc = &GameVClips[GameTextures[texnum].bm_handle];
-			int int_frame = vc->num_frames * norm_time;
-			bm_handle = vc->frames[int_frame];
+			select_vclip_frame(GameTextures[texnum].bm_handle, (vis->flags & VF_ATTACHED) != 0);
 		}
 		else
 			bm_handle = GameTextures[texnum].bm_handle;
@@ -2505,9 +2595,7 @@ void DrawVisEffect(vis_effect* vis)
 	else if (vis->id == SPRAY_INDEX)
 	{
 		int vnum = vis->custom_handle;
-		vclip* vc = &GameVClips[vnum];
-		int int_frame = vc->num_frames * norm_time;
-		bm_handle = vc->frames[int_frame];
+		select_vclip_frame(vnum, (vis->flags & VF_ATTACHED) != 0);
 
 		//	if (norm_time<.5)
 				//size=1+((vis->size-1)*(norm_time));
@@ -2517,9 +2605,7 @@ void DrawVisEffect(vis_effect* vis)
 		if ((GameTextures[vis->custom_handle].flags & TF_ANIMATED))
 		{
 			int vnum = GameTextures[vis->custom_handle].bm_handle;
-			vclip* vc = &GameVClips[vnum];
-			int int_frame = vc->num_frames * norm_time;
-			bm_handle = vc->frames[int_frame];
+			select_vclip_frame(vnum, (vis->flags & VF_ATTACHED) != 0);
 		}
 		else
 			bm_handle = GetTextureBitmap(vis->custom_handle, 0);
@@ -2536,9 +2622,7 @@ void DrawVisEffect(vis_effect* vis)
 	}
 	else
 	{
-		vclip* vc = &GameVClips[fb->bm_handle];
-		int int_frame = vc->num_frames * norm_time;
-		bm_handle = vc->frames[int_frame];
+		select_vclip_frame(fb->bm_handle, (vis->flags & VF_ATTACHED) != 0);
 	}
 
 
@@ -2587,18 +2671,22 @@ void DrawVisEffect(vis_effect* vis)
 	if ((vis->id != BIG_EXPLOSION_INDEX && vis->id != BLUE_EXPLOSION_INDEX) && size > (MAX_FIREBALL_SIZE / 2))
 		size = MAX_FIREBALL_SIZE / 2;
 
+	float base_alpha;
 	if (vis->id == SMOKE_TRAIL_INDEX || vis->id == CUSTOM_EXPLOSION_INDEX || vis->id == PARTICLE_INDEX)
-		rend_SetAlphaValue(val * GameTextures[vis->custom_handle].alpha * 255);
+		base_alpha = val * GameTextures[vis->custom_handle].alpha * 255;
 	else if (fb->type == FT_SMOKE)
-		rend_SetAlphaValue(val * SMOKE_ALPHA * 255);
+		base_alpha = val * SMOKE_ALPHA * 255;
 	else if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX)
-		rend_SetAlphaValue(255);
+		base_alpha = 255;
 	else if (vis->id == MUZZLE_FLASH_INDEX)
-		rend_SetAlphaValue(128);
+		base_alpha = 128;
 	else if (vis->flags & VF_ATTACHED)
-		rend_SetAlphaValue(FIREBALL_ALPHA * 255);
+		base_alpha = FIREBALL_ALPHA * 255;
 	else
-		rend_SetAlphaValue(val * FIREBALL_ALPHA * 255);
+		base_alpha = val * FIREBALL_ALPHA * 255;
+
+	const bool blend_frame = frame1_weight > 0.001f && blend_bm_handle > BAD_BITMAP_HANDLE;
+	rend_SetAlphaValue(VisEffectClampAlpha(base_alpha * (blend_frame ? (1.0f - frame1_weight) : 1.0f)));
 
 	rend_SetOverlayType(OT_NONE);
 
@@ -2611,18 +2699,29 @@ void DrawVisEffect(vis_effect* vis)
 	rend_SetAOSuppression(1.0f);
 	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles(vis) ? 1 : 0);
 
-	// Draw!!
-	if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX || vis->id == GRAY_SPARK_INDEX)
-	{
-		int color = GR_16_TO_COLOR(vis->lighting_color);
-		g3_DrawRotatedBitmap(&vis->pos, rot_angle, size, (size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle, color);
-	}
-	else
-	{
-		if (vis->flags & VF_PLANAR)
-			g3_DrawPlanarRotatedBitmap(&vis->pos, &vis->end_pos, rot_angle, size, (size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle);
+	auto draw_frame = [&](int frame_bm_handle) {
+		if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX || vis->id == GRAY_SPARK_INDEX)
+		{
+			int color = GR_16_TO_COLOR(vis->lighting_color);
+			g3_DrawRotatedBitmap(&vis->pos, rot_angle, size,
+				(size * bm_h(frame_bm_handle, 0)) / bm_w(frame_bm_handle, 0), frame_bm_handle, color);
+		}
 		else
-			g3_DrawRotatedBitmap(&vis->pos, rot_angle, size, (size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle);
+		{
+			if (vis->flags & VF_PLANAR)
+				g3_DrawPlanarRotatedBitmap(&vis->pos, &vis->end_pos, rot_angle, size,
+					(size * bm_h(frame_bm_handle, 0)) / bm_w(frame_bm_handle, 0), frame_bm_handle);
+			else
+				g3_DrawRotatedBitmap(&vis->pos, rot_angle, size,
+					(size * bm_h(frame_bm_handle, 0)) / bm_w(frame_bm_handle, 0), frame_bm_handle);
+		}
+	};
+
+	draw_frame(bm_handle);
+	if (blend_frame)
+	{
+		rend_SetAlphaValue(VisEffectClampAlpha(base_alpha * frame1_weight));
+		draw_frame(blend_bm_handle);
 	}
 
 	rend_SetSoftParticleState(0);
