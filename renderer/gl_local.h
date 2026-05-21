@@ -465,6 +465,7 @@ private:
 	void ApplyDeferredBloom(GLuint alpha_occlusion_mask_texture);
 	void CompositeDeferredBloomOverPostPresent();
 	void GammaCorrectPostPresent();
+	void BindScreenshotSourceForRead(int& read_x, int& read_y);
 	int SupersamplingFactor() const;
 	int FramebufferWidth() const;
 	int FramebufferHeight() const;

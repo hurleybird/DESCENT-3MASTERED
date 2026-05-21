@@ -1281,15 +1281,16 @@ struct video_menu
 		return GetFunctionMode() == GAME_MODE || GetFunctionMode() == EDITOR_GAME_MODE;
 	}
 
-	bool apply_display_settings(bool allow_menu)
+	bool apply_display_settings(bool allow_menu, bool apply_fullscreen)
 	{
 		if (!fullscreen)
 			return false;
 
+		const bool desired_fullscreen = apply_fullscreen ? *fullscreen : Game_fullscreen;
 		if (window_width == Game_window_res_width &&
 			window_height == Game_window_res_height &&
 			window_aspect == Game_window_aspect &&
-			*fullscreen == Game_fullscreen)
+			desired_fullscreen == Game_fullscreen)
 		{
 			return false;
 		}
@@ -1300,7 +1301,7 @@ struct video_menu
 		void (*old_callback)() = GetUICallback();
 		bool old_cursor_visible = ui_IsCursorVisible();
 
-		Game_fullscreen = *fullscreen;
+		Game_fullscreen = desired_fullscreen;
 		Game_window_res_width = window_width;
 		Game_window_res_height = window_height;
 		Game_window_aspect = window_aspect;
@@ -1314,6 +1315,7 @@ struct video_menu
 		if (GetScreenMode() == SM_GAME)
 			PersistCurrentPilotGameWindowSize(true);
 		recenter_parent_menu();
+		*fullscreen = Game_fullscreen;
 
 		return true;
 	}
@@ -1436,7 +1438,7 @@ struct video_menu
 			rend_SetPreferredState(&Render_preferred_state);
 		}
 
-		bool display_applied = apply_display_settings(display_changed);
+		bool display_applied = apply_display_settings(display_changed, display_changed);
 		if (changed || fov_changed || display_applied || ui_changed)
 			sheet->UpdateChanges();
 	}
@@ -1624,7 +1626,7 @@ struct video_menu
 		if (Render_FOV != Render_FOV_desired)
 			Render_FOV = Render_FOV_desired; //this may cause discontinuities if FOV is changed while zoomed. hmm.
 
-		if (!apply_display_settings(true))
+		if (!apply_display_settings(true, fullscreen && sheet->HasChanged(fullscreen)))
 		{
 			//Hopefully this doesn't do anything cursed..
 			rend_SetPreferredState(&Render_preferred_state);
@@ -1732,7 +1734,7 @@ struct video_menu
 			menu.Close();
 			menu.Destroy();
 			if (display_settings_changed)
-				apply_display_settings(true);
+				apply_display_settings(true, fullscreen && sheet->HasChanged(fullscreen));
 
 		}
 		break;
@@ -1778,7 +1780,7 @@ struct video_menu
 			menu.Close();
 			menu.Destroy();
 			if (display_settings_changed)
-				apply_display_settings(true);
+				apply_display_settings(true, fullscreen && sheet->HasChanged(fullscreen));
 		}
 		break;
 		case IDV_AUTOGAMMA:

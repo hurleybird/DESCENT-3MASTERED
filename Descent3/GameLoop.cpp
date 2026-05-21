@@ -2164,6 +2164,9 @@ static void GetMainViewOverscanFrame(int* x1, int* y1, int* x2, int* y2, int* an
 	*anchor_x = 0;
 	*anchor_y = 0;
 
+	if (Cinematic_inuse)
+		return;
+
 	if (!Render_preferred_state.gtao_enabled)
 		return;
 
