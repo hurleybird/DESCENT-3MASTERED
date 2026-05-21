@@ -424,6 +424,37 @@ private:
 	std::vector<PolymodelBaseFaceBatch> m_batches;
 };
 
+class PolymodelFogFaceBatcher
+{
+public:
+	void Add(const PolymodelBatchedFace& face)
+	{
+		m_faces.push_back(face);
+	}
+
+	void Flush()
+	{
+		if (m_faces.empty())
+			return;
+
+		std::vector<renderer_poly_batch_item> items(m_faces.size());
+		for (size_t face_index = 0; face_index < m_faces.size(); face_index++)
+		{
+			m_faces[face_index].RefreshPointList();
+			items[face_index].pointlist = m_faces[face_index].pointlist;
+			items[face_index].nv = m_faces[face_index].nv;
+		}
+
+		rend_DrawPolygon3DBatch(0, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
+		if (Perf_markers_enabled)
+			Polymodel_perf_draw_poly_count++;
+		m_faces.clear();
+	}
+
+private:
+	std::vector<PolymodelBatchedFace> m_faces;
+};
+
 static PolymodelBaseFaceBatcher *Polymodel_active_opaque_batcher = nullptr;
 static PolymodelBaseFaceBatcher *Polymodel_active_alpha_batcher = nullptr;
 
@@ -1206,6 +1237,44 @@ inline void RenderSubmodelFaceFogged (poly_model *pm,bsp_info *sm,int facenum)
 
 }
 
+static bool TryBatchSubmodelFaceFogged(poly_model *pm, bsp_info *sm, int facenum,
+	PolymodelFogFaceBatcher& batcher)
+{
+	if (PolymodelShouldSkipTransparentCockpitFace(pm, sm, facenum))
+		return true;
+
+	polyface *fp=&sm->faces[facenum];
+	if (fp->nverts < 3 || fp->nverts >= 100)
+		return false;
+	if (triangulated_faces[facenum])
+		return false;
+
+	g3Point	*pointlist[100];
+	for (int t=0;t<fp->nverts;t++) 
+	{
+		g3Point *p = &Robot_points[fp->vertnums[t]];
+		pointlist[t] = p;
+
+		float mag = GetPolymodelFogMagnitude(p);
+		float scalar=mag/Polymodel_effect.fog_depth;
+
+		if (scalar>1)
+			scalar=1;
+		if (scalar<0)
+			scalar=0;
+		p->p3_a=scalar;
+ 					
+		p->p3_flags |= PF_RGBA;
+	}
+
+	PolymodelBatchedFace batched_face;
+	CopyPolymodelBatchPoints(batched_face, pointlist, fp->nverts);
+	batcher.Add(batched_face);
+	if (Perf_markers_enabled)
+		Polymodel_perf_fog_face_count++;
+	return true;
+}
+
 inline void RenderSubmodelFaceSpecular (poly_model *pm,bsp_info *sm,int facenum)
 {
 	double face_start_time = PolymodelPerfNow();
@@ -1607,6 +1676,8 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 	if (Polymodel_use_effect && Polymodel_effect.type & PEF_FOGGED_MODEL)
 	{
 		double fog_start_time = PolymodelPerfNow();
+		PolymodelFogFaceBatcher fog_face_batcher;
+		const bool batch_fog = UseHardware && !StateLimited;
 
 		if (Polymodel_effect.fog_plane_check!=1)
 			SetupPolymodelFogViewPlane();
@@ -1628,9 +1699,14 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 			if (!g3_CheckNormalFacing(&sm->verts[fp->vertnums[0]],&fp->normal))	
 				continue;
 
+			if (batch_fog && TryBatchSubmodelFaceFogged(pm, sm, i, fog_face_batcher))
+				continue;
+
+			fog_face_batcher.Flush();
 			RenderSubmodelFaceFogged (pm,sm,i);
 		}
 		
+		fog_face_batcher.Flush();
 		rend_SetCoplanarPolygonOffset(0);
 		rend_SetZBufferWriteMask (1);
 		PolymodelPerfAdd(Polymodel_perf_fog_pass_time, fog_start_time);

@@ -1707,11 +1707,43 @@ static void QueueDeferredFogAOFaces(room* rp)
 		Deferred_fog_ao_faces.push_back({ roomnum, Fog_faces[i] });
 }
 
+struct RoomFogBatchedFace
+{
+	int nv;
+	g3Point point_storage[MAX_VERTS_PER_FACE];
+	g3Point* pointlist[MAX_VERTS_PER_FACE];
+
+	void RefreshPointList()
+	{
+		for (int i = 0; i < nv; i++)
+			pointlist[i] = &point_storage[i];
+	}
+};
+
+static void FlushRoomFogFaceBatch(std::vector<RoomFogBatchedFace>& faces)
+{
+	if (faces.empty())
+		return;
+
+	std::vector<renderer_poly_batch_item> items(faces.size());
+	for (size_t face_index = 0; face_index < faces.size(); face_index++)
+	{
+		faces[face_index].RefreshPointList();
+		items[face_index].pointlist = faces[face_index].pointlist;
+		items[face_index].nv = faces[face_index].nv;
+	}
+
+	rend_DrawPolygon3DBatch(0, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
+	faces.clear();
+}
+
 // Render a fog layer on top of a face
 void RenderFogFaces(room* rp, bool suppress_ao)
 {
 	g3Point* pointlist[MAX_VERTS_PER_FACE];
 	g3Point  pointbuffer[MAX_VERTS_PER_FACE];
+	std::vector<RoomFogBatchedFace> batched_faces;
+	const bool batch_fog = UseHardware && rend_CanUseNewrender();
 	rend_SetOverlayType(OT_NONE);
 	rend_SetTextureType(TT_FLAT);
 	rend_SetLighting(LS_NONE);
@@ -1767,6 +1799,17 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 
 			p->p3_flags |= PF_RGBA;
 		}
+		if (batch_fog && !(fp->flags & FF_TRIANGULATED))
+		{
+			RoomFogBatchedFace batched_face = {};
+			batched_face.nv = fp->num_verts;
+			for (int vn = 0; vn < fp->num_verts; vn++)
+				batched_face.point_storage[vn] = pointbuffer[vn];
+			batched_faces.push_back(batched_face);
+			continue;
+		}
+
+		FlushRoomFogFaceBatch(batched_faces);
 		if (fp->flags & FF_TRIANGULATED)
 			g3_SetTriangulationTest(1);
 		g3_DrawPoly(fp->num_verts, pointlist, 0);
@@ -1774,6 +1817,7 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 			g3_SetTriangulationTest(0);
 	}
 
+	FlushRoomFogFaceBatch(batched_faces);
 	if (suppress_ao)
 		rend_SetAOSuppression(0.0f);
 	rend_SetCoplanarPolygonOffset(0);
