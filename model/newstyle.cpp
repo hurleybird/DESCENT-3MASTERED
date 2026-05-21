@@ -321,7 +321,9 @@ struct PolymodelBatchedFace
 struct PolymodelBaseFaceBatchKey
 {
 	int bitmap_handle;
+	int overlay_map;
 	texture_type texture_type_value;
+	ubyte overlay_type;
 	light_state lighting;
 	color_model color_model_value;
 	sbyte alpha_type;
@@ -332,7 +334,9 @@ struct PolymodelBaseFaceBatchKey
 	bool Equals(const PolymodelBaseFaceBatchKey& other) const
 	{
 		return bitmap_handle == other.bitmap_handle &&
+			overlay_map == other.overlay_map &&
 			texture_type_value == other.texture_type_value &&
+			overlay_type == other.overlay_type &&
 			lighting == other.lighting &&
 			color_model_value == other.color_model_value &&
 			alpha_type == other.alpha_type &&
@@ -380,7 +384,9 @@ public:
 				continue;
 
 			double state_setup_start_time = PolymodelPerfNow();
-			rend_SetOverlayType(OT_NONE);
+			rend_SetOverlayType(batch.key.overlay_type);
+			if (batch.key.overlay_type != OT_NONE)
+				rend_SetOverlayMap(batch.key.overlay_map);
 			rend_SetColorModel(batch.key.color_model_value);
 			rend_SetTextureType(batch.key.texture_type_value);
 			if (batch.key.lighting == LS_PHONG)
@@ -536,8 +542,9 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	if (fp->nverts < 3 || fp->nverts >= 100)
 		return false;
 
-	if (StateLimited || Polymodel_light_type == POLYMODEL_LIGHTING_LIGHTMAP)
+	if (StateLimited)
 		return false;
+	const bool lightmap_lit = Polymodel_light_type == POLYMODEL_LIGHTING_LIGHTMAP;
 
 	if (Polymodel_use_effect && (Polymodel_effect.type & PEF_ALPHA))
 		return false;
@@ -557,7 +564,9 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 
 	PolymodelBaseFaceBatchKey key = {};
 	key.bitmap_handle = 0;
+	key.overlay_map = 0;
 	key.texture_type_value = TT_FLAT;
+	key.overlay_type = OT_NONE;
 	key.lighting = LS_NONE;
 	key.color_model_value = CM_RGB;
 	key.alpha_type = ATF_CONSTANT + ATF_VERTEX;
@@ -565,6 +574,23 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	key.flat_color = GetPolymodelCustomFlatColor(fp->color);
 	if (Polymodel_light_direction)
 		key.light_direction = *Polymodel_light_direction;
+
+	int modelnum = sm - pm->submodel;
+	int lightmap_lmi_handle = -1;
+	if (lightmap_lit)
+	{
+		lightmap_lmi_handle = Polylighting_lightmap_object->lightmap_faces[modelnum][facenum].lmi_handle;
+		key.overlay_type = OT_BLEND;
+		key.overlay_map = LightmapInfo[lightmap_lmi_handle].lm_handle;
+		if (UsePerPixelPolymodelLighting())
+		{
+			renderer_per_pixel_light per_pixel_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
+			int per_pixel_light_count = GetPerPixelLightmapLights((ushort)lightmap_lmi_handle, per_pixel_lights,
+				RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+			if (per_pixel_light_count > 0)
+				return false;
+		}
+	}
 
 	if (texp)
 	{
@@ -628,6 +654,13 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 			p->p3_uvl.v = fp->v[t] + vchange;
 			p->p3_uvl.a = sm->alpha[fp->vertnums[t]];
 			p->p3_flags |= PF_UV + PF_RGBA + PF_L;
+		}
+
+		if (lightmap_lit)
+		{
+			p->p3_flags |= PF_UV2;
+			p->p3_uvl.u2 = Polylighting_lightmap_object->lightmap_faces[modelnum][facenum].u2[t];
+			p->p3_uvl.v2 = Polylighting_lightmap_object->lightmap_faces[modelnum][facenum].v2[t];
 		}
 
 		face_cc.cc_or |= p->p3_codes;
