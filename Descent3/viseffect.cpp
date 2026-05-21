@@ -634,6 +634,8 @@ void DrawVisFadingLine(vis_effect* vis)
 
 }
 
+static bool VisEffectShouldUseSoftParticles();
+
 // Draws a blast ring vis effect
 void DrawVisBlastRing(vis_effect* vis)
 {
@@ -679,6 +681,7 @@ void DrawVisBlastRing(vis_effect* vis)
 	rend_SetZBias(-1.0);
 	rend_SetZBufferWriteMask(0);
 	rend_SetAOSuppression(1.0f);
+	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles() ? 1 : 0);
 
 	ring_angle = 0;
 
@@ -728,6 +731,7 @@ void DrawVisBlastRing(vis_effect* vis)
 		g3_DrawPoly(4, pntlist, vis->custom_handle);
 	}
 
+	rend_SetSoftParticleState(0);
 	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBias(0);
@@ -2678,6 +2682,7 @@ void DrawVisThickLightning(vis_effect* vis)
 	rend_SetAlphaValue(255 * alpha_norm);
 	rend_SetZBufferWriteMask(0);
 	rend_SetAOSuppression(1.0f);
+	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles() ? 1 : 0);
 
 	for (i = 0, codes_and = 0xff; i < 4; i++)
 	{
@@ -2725,6 +2730,7 @@ void DrawVisThickLightning(vis_effect* vis)
 		g3_DrawPoly(4, pntlist, bm_handle);
 	}
 
+	rend_SetSoftParticleState(0);
 	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 }
@@ -2814,6 +2820,7 @@ void DrawVisAxisBillboard(vis_effect* vis)
 
 	rend_SetZBufferWriteMask(0);
 	rend_SetAOSuppression(1.0f);
+	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles() ? 1 : 0);
 
 	if (uchange == 0 && vchange == 0)
 		rend_SetWrapType(WT_CLAMP);
@@ -2844,6 +2851,7 @@ void DrawVisAxisBillboard(vis_effect* vis)
 
 	g3_DrawPoly(4, pntlist, bm_handle);
 
+	rend_SetSoftParticleState(0);
 	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 

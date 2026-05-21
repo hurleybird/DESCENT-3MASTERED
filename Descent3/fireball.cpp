@@ -47,6 +47,7 @@
 #include "BOA.h"
 #include "demofile.h"
 #include "ObjScript.h"
+#include "config.h"
 #include <stdlib.h>
 #include <string.h>
 #include "psrand.h"
@@ -54,6 +55,11 @@
 
 // If an objects size is bigger than this, we create size/threshold extra explosions
 #define EXTRA_EXPLOSION_THRESHOLD	15
+
+static bool FireballUseSoftParticles()
+{
+	return Render_soft_vis_effects;
+}
 fireball Fireballs[NUM_FIREBALLS] =
 { {"ExplosionAA.oaf",FT_EXPLOSION,SMALL_TEXTURE,.9f,3.0},			//	MED_EXPLOSION2
 {"ExplosionBB.oaf",FT_EXPLOSION,SMALL_TEXTURE,.9f,2.0},			//	SMALL_EXPLOSION2
@@ -268,12 +274,14 @@ void DrawFireballObject(object* obj)
 	rend_SetZBufferWriteMask(0);
 	rend_SetWrapType(WT_CLAMP);
 	rend_SetLighting(LS_NONE);
+	rend_SetSoftParticleState(FireballUseSoftParticles() ? 1 : 0);
 	// Cap size
 	if (size > MAX_FIREBALL_SIZE)
 		size = MAX_FIREBALL_SIZE;
 
 	// Draw!!
 	g3_DrawRotatedBitmap(&obj->pos, rot_angle, size, (size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle);
+	rend_SetSoftParticleState(0);
 	rend_SetZBias(0);
 	rend_SetZBufferWriteMask(1);
 }
@@ -1866,6 +1874,7 @@ void DrawBlastRingObject(object* obj)
 	if (obj->id == GRAVITY_FIELD_INDEX)
 	{
 		rend_SetZBias(-(cur_size / 2));
+		rend_SetSoftParticleState(FireballUseSoftParticles() ? 1 : 0);
 		DrawColoredDisk(&obj->pos, .3f, .5f, 1, .9f, 0, disk_size, 1, 0);
 		// Set states for the ring
 		rend_SetOverlayType(OT_NONE);
@@ -1887,6 +1896,7 @@ void DrawBlastRingObject(object* obj)
 		rend_SetAlphaValue(sphere_alpha * 255.0);
 		rend_SetZBufferWriteMask(0);
 		rend_SetZBias(-(cur_size / 2));
+		rend_SetSoftParticleState(FireballUseSoftParticles() ? 1 : 0);
 		if (sphere_norm >= 0.0)
 			g3_DrawRotatedBitmap(&obj->pos, rot_angle, disk_size, (disk_size * bm_h(disk_handle, 0)) / bm_w(disk_handle, 0), disk_handle);
 	}
@@ -1943,6 +1953,7 @@ void DrawBlastRingObject(object* obj)
 		pntlist[3] = &inner_points[i];
 		g3_DrawPoly(4, pntlist, bm_handle);
 	}
+	rend_SetSoftParticleState(0);
 	rend_SetZBias(0);
 	rend_SetZBufferWriteMask(1);
 }
