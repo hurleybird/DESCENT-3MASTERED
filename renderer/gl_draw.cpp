@@ -125,16 +125,27 @@ void GL4Renderer::RestoreLegacy()
 	glBindVertexArray(drawvao);
 }
 
+bool GL4Renderer::PixelMotionVectorConsumerActive() const
+{
+	const bool gtao_temporal_vectors =
+		OpenGL_preferred_state.gtao_enabled &&
+		(OpenGL_preferred_state.gtao_temporal_blend > 0.0f ||
+			OpenGL_preferred_state.gtao_temporal_debug_preview);
+	const bool new_motion_blur_vectors =
+		OpenGL_preferred_state.combined_motion_blur &&
+		(OpenGL_preferred_state.pixel_motion_blur_strength > 0.0f ||
+			OpenGL_preferred_state.pixel_motion_blur_legacy_object_strength > 0.0f);
+	return gtao_temporal_vectors || new_motion_blur_vectors;
+}
+
 bool GL4Renderer::MotionVectorTargetEnabled() const
 {
-	return OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_OFF &&
-		motion_vectors.velocity_texture != 0;
+	return PixelMotionVectorConsumerActive() && motion_vectors.velocity_texture != 0;
 }
 
 bool GL4Renderer::PixelMotionVectorModeEnabled() const
 {
-	return OpenGL_preferred_state.motion_vector_mode == RENDERER_MOTION_VECTOR_PIXEL &&
-		motion_vectors.velocity_texture != 0;
+	return MotionVectorTargetEnabled();
 }
 
 bool GL4Renderer::MotionVectorsFrozen() const
@@ -226,7 +237,6 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 	scene_strength *= afterburner_blur_scale;
 	legacy_object_strength *= afterburner_blur_scale;
 	if ((scene_strength <= 0.0f && legacy_object_strength <= 0.0f) ||
-		OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_PIXEL ||
 		motionblurshader.Handle() == 0 || post_present_framebuffer.Handle() == 0 ||
 		!MotionVectorTargetEnabled())
 	{
@@ -346,7 +356,8 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 void GL4Renderer::DrawMotionVectorDebugPreview(int supersampling_factor)
 {
 	renderer_motion_vector_debug_sample debug_sample = {};
-	debug_sample.mode = OpenGL_preferred_state.motion_vector_mode;
+	debug_sample.mode = PixelMotionVectorConsumerActive() ?
+		RENDERER_MOTION_VECTOR_PIXEL : RENDERER_MOTION_VECTOR_OFF;
 
 	if (!OpenGL_preferred_state.motion_vector_debug_preview || Game_mode == GM_NONE ||
 		!MotionVectorTargetEnabled() || motionvectordebugshader.Handle() == 0 ||
@@ -1767,7 +1778,7 @@ void GL4Renderer::BeginMotionObject(int object_handle, int motion_object_flags)
 	motion_object_active = object_handle >= 0 && framebuffer_ok &&
 		!post_present_pending_swap &&
 		(!motion_vectors_capture_locked || cockpit_draw) &&
-		OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_OFF &&
+		PixelMotionVectorConsumerActive() &&
 		motion_vectors.velocity_texture != 0;
 	if (motion_object_active && cockpit_draw)
 		cockpit_motion_object_active = true;

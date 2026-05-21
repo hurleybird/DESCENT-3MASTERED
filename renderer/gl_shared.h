@@ -324,6 +324,10 @@ struct GTAOResources
 	//Scratch used as ping-pong for the separable bilateral blur.
 	ColorFramebuffer ao_blur_framebuffer;
 	ColorFramebuffer suppression_framebuffer;
+	//Ping-pong history for temporal GTAO (RGBA16F: x=AO, y=depth, z=history weight).
+	ColorFramebuffer ao_history_framebuffers[2];
+	int ao_history_index = 0;
+	bool ao_history_valid = false;
 
 	GLuint noise_texture = 0;
 
@@ -331,6 +335,7 @@ struct GTAOResources
 	ShaderProgram ao_shader;
 	ShaderProgram blur_x_shader;
 	ShaderProgram blur_y_shader;
+	ShaderProgram temporal_shader;
 	ShaderProgram suppression_shader;
 	ShaderProgram apply_shader;
 
@@ -375,6 +380,24 @@ struct GTAOResources
 	GLint blur_y_sharpness = -1;
 	GLint blur_y_radius = -1;
 
+	//Temporal shader uniforms.
+	GLint temporal_current_ao = -1;
+	GLint temporal_history_ao = -1;
+	GLint temporal_velocity_source = -1;
+	GLint temporal_depth_source = -1;
+	GLint temporal_object_id_source = -1;
+	GLint temporal_history_valid = -1;
+	GLint temporal_has_dynamic_velocity = -1;
+	GLint temporal_has_static_reconstruction = -1;
+	GLint temporal_history_blend = -1;
+	GLint temporal_depth_reject = -1;
+	GLint temporal_velocity_reject = -1;
+	GLint temporal_source_size = -1;
+	GLint temporal_velocity_uv_scale = -1;
+	GLint temporal_current_projection = -1;
+	GLint temporal_current_inverse_modelview = -1;
+	GLint temporal_previous_view_projection = -1;
+
 	//Suppression mask shader uniforms.
 	GLint suppression_existing_mask = -1;
 	GLint suppression_existing_mask_ms = -1;
@@ -396,6 +419,7 @@ struct GTAOResources
 	GLint apply_has_mask = -1;
 	GLint apply_ao_uv_origin = -1;
 	GLint apply_ao_uv_scale = -1;
+	GLint apply_debug_channel = -1;
 
 	void InitShaders();
 	void DestroyShaders();
@@ -411,7 +435,14 @@ struct GTAOResources
 		bool ao_weight_is_direct,
 		int source_visible_x = 0, int source_visible_y = 0,
 		int source_visible_w = 0, int source_visible_h = 0,
-		int noise_origin_x = 0, int noise_origin_y = 0);
+		int noise_origin_x = 0, int noise_origin_y = 0,
+		GLuint velocity_texture = 0, GLuint object_id_texture = 0,
+		int velocity_width = 0, int velocity_height = 0, int velocity_scale = 1,
+		const float* current_projection = nullptr,
+		const float* current_inverse_modelview = nullptr,
+		const float* previous_view_projection = nullptr,
+		bool has_static_reconstruction = false, bool has_dynamic_velocity = false,
+		bool reset_temporal_history = false);
 };
 
 inline int RendererSupersamplingFactor(const renderer_preferred_state& state)

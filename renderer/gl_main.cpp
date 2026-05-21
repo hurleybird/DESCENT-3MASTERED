@@ -730,6 +730,18 @@ static int GL4OverscanPercent(const renderer_preferred_state& state)
 	return state.gtao_overscan_percent;
 }
 
+static bool GL4StateWantsPixelMotionVectors(const renderer_preferred_state& state)
+{
+	const bool gtao_temporal_vectors =
+		state.gtao_enabled &&
+		(state.gtao_temporal_blend > 0.0f || state.gtao_temporal_debug_preview);
+	const bool new_motion_blur_vectors =
+		state.combined_motion_blur &&
+		(state.pixel_motion_blur_strength > 0.0f ||
+			state.pixel_motion_blur_legacy_object_strength > 0.0f);
+	return gtao_temporal_vectors || new_motion_blur_vectors;
+}
+
 int GL4Renderer::FramebufferWidth() const
 {
 	int logical_width = OpenGL_state.screen_width;
@@ -994,6 +1006,8 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 		else
 		{*/
 
+		const bool old_motion_vectors_needed = GL4StateWantsPixelMotionVectors(old_state);
+		const bool new_motion_vectors_needed = GL4StateWantsPixelMotionVectors(*pref_state);
 		bool framebuffer_state_changed =
 			pref_state->width != old_state.width || pref_state->height != old_state.height
 			|| pref_state->window_width != old_state.window_width || pref_state->window_height != old_state.window_height
@@ -1001,12 +1015,12 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 			|| pref_state->supersampling_factor != old_state.supersampling_factor
 			|| pref_state->msaa_samples != old_state.msaa_samples
 			|| GL4OverscanPercent(*pref_state) != GL4OverscanPercent(old_state)
-			|| pref_state->motion_vector_mode != old_state.motion_vector_mode;
+			|| new_motion_vectors_needed != old_motion_vectors_needed;
 		if (pref_state->msaa_samples != old_state.msaa_samples ||
 			pref_state->supersampling_factor != old_state.supersampling_factor ||
 			pref_state->bloom_enabled != old_state.bloom_enabled ||
 			pref_state->gtao_enabled != old_state.gtao_enabled ||
-			pref_state->motion_vector_mode != old_state.motion_vector_mode)
+			new_motion_vectors_needed != old_motion_vectors_needed)
 		{
 			mprintf((0, "GL4 SetPreferredState: msaa %u->%u aa %d->%d ssaa %u->%u bloom %d->%d gtao %d->%d motion %u->%u.\n",
 				(unsigned)old_state.msaa_samples, (unsigned)pref_state->msaa_samples,
@@ -1030,13 +1044,13 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 
 		if (framebuffer_state_changed)
 		{
-			if (pref_state->motion_vector_mode != old_state.motion_vector_mode)
+			if (new_motion_vectors_needed != old_motion_vectors_needed)
 			{
 				have_previous_view_projection = false;
 				have_cockpit_previous_view_projection = false;
 				frozen_static_motion_valid = false;
 			}
-			else if (pref_state->motion_vector_mode != RENDERER_MOTION_VECTOR_OFF)
+			else if (new_motion_vectors_needed)
 			{
 				preserve_motion_vectors_on_next_framebuffer_update = true;
 			}
@@ -1050,7 +1064,7 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 				glFinish();
 			gtao.DestroyFramebuffers();
 		}
-		if (old_state.motion_vector_mode != pref_state->motion_vector_mode)
+		if (new_motion_vectors_needed != old_motion_vectors_needed)
 			legacy_draw_uniforms_dirty = true;
 
 	if (old_state.per_pixel_lighting != pref_state->per_pixel_lighting)
@@ -1117,7 +1131,7 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 			OpenGL_preferred_state = msaa_deferred_preferred_state;
 			msaa_deferred_preferred_state_valid = false;
 		}
-		if (OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_OFF)
+		if (PixelMotionVectorConsumerActive())
 			preserve_motion_vectors_on_next_framebuffer_update = true;
 		UpdateWindow();
 		SetViewport();
@@ -1425,6 +1439,33 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 			bloom_source_framebuffer.Handle() != 0 &&
 			bloom_source_framebuffer.Width() == present_framebuffer->Width() &&
 			bloom_source_framebuffer.Height() == present_framebuffer->Height();
+		const bool gtao_temporal_wants_motion =
+			OpenGL_preferred_state.gtao_temporal_blend > 0.0f ||
+			OpenGL_preferred_state.gtao_temporal_debug_preview;
+		const bool gtao_reset_temporal_history = MotionVectorsFrozen();
+		GLuint gtao_velocity_texture = 0;
+		GLuint gtao_object_id_texture = 0;
+		bool gtao_has_dynamic_velocity = false;
+		if (gtao_temporal_wants_motion && MotionVectorTargetEnabled() &&
+			motion_vectors.width > 0 && motion_vectors.height > 0 && motion_vectors_dirty)
+		{
+			gtao_velocity_texture = motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
+			gtao_object_id_texture = motion_vectors.ObjectIdTextureForRead(framebuffers[framebuffer_current_draw].Handle());
+			gtao_has_dynamic_velocity = gtao_velocity_texture != 0 && gtao_object_id_texture != 0;
+		}
+		const bool use_frozen_static_motion = MotionVectorsFrozen() && frozen_static_motion_valid;
+		const float* gtao_motion_projection = use_frozen_static_motion ? frozen_static_motion_projection :
+			(captured_scene_projection_valid ? captured_scene_projection : current_projection);
+		const float* gtao_motion_inverse_modelview = use_frozen_static_motion ?
+			frozen_static_motion_inverse_modelview :
+			(captured_scene_inverse_modelview_valid ? captured_scene_inverse_modelview : current_inverse_modelview);
+		const float* gtao_motion_previous_view_projection = use_frozen_static_motion ?
+			frozen_static_motion_previous_view_projection : previous_view_projection;
+		const bool gtao_has_static_reconstruction = gtao_temporal_wants_motion &&
+			(use_frozen_static_motion || have_previous_view_projection) &&
+			(use_frozen_static_motion ||
+				(captured_scene_projection_valid && captured_scene_inverse_modelview_valid) ||
+				(have_current_projection && have_current_inverse_modelview));
 
 		if (deferred_ao)
 		{
@@ -1440,7 +1481,12 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 			gtao.Apply(&ao_scene_framebuffer, &ao_scene_framebuffer, OpenGL_preferred_state,
 				OpenGL_state, gtao_projection, near_z, far_z, ao_suppression_mask_texture,
 				gtao_ao_weight_texture, gtao_ao_weight_is_direct, 0, 0, 0, 0,
-				gtao_noise_origin_x, gtao_noise_origin_y);
+				gtao_noise_origin_x, gtao_noise_origin_y,
+				gtao_velocity_texture, gtao_object_id_texture,
+				(int)motion_vectors.width, (int)motion_vectors.height, supersampling_factor,
+				gtao_motion_projection, gtao_motion_inverse_modelview,
+				gtao_motion_previous_view_projection, gtao_has_static_reconstruction,
+				gtao_has_dynamic_velocity, gtao_reset_temporal_history);
 			GL4PerfGpuDrain("GPU.GTAO.Apply");
 
 			ao_composite_framebuffer.Update(present_framebuffer->Width(), present_framebuffer->Height(), 0);
@@ -1474,7 +1520,12 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 			gtao.Apply(present_framebuffer, present_framebuffer, OpenGL_preferred_state,
 				OpenGL_state, gtao_projection, near_z, far_z, ao_suppression_mask_texture,
 				gtao_ao_weight_texture, gtao_ao_weight_is_direct, 0, 0, 0, 0,
-				gtao_noise_origin_x, gtao_noise_origin_y);
+				gtao_noise_origin_x, gtao_noise_origin_y,
+				gtao_velocity_texture, gtao_object_id_texture,
+				(int)motion_vectors.width, (int)motion_vectors.height, supersampling_factor,
+				gtao_motion_projection, gtao_motion_inverse_modelview,
+				gtao_motion_previous_view_projection, gtao_has_static_reconstruction,
+				gtao_has_dynamic_velocity, gtao_reset_temporal_history);
 			GL4PerfGpuDrain("GPU.GTAO.Apply");
 		}
 	}
@@ -3243,7 +3294,7 @@ void GL4Renderer::UpdateFramebuffer(void)
 		(framebuffers[0].RequestedSamples() != (uint32_t)target_samples ||
 		 framebuffers[0].Width() != (uint32_t)target_width ||
 		 framebuffers[0].Height() != (uint32_t)target_height);
-	const bool motion_vectors_enabled = OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_OFF;
+	const bool motion_vectors_enabled = PixelMotionVectorConsumerActive();
 	GL4MotionVectorPreserveSnapshot preserved_motion_vectors;
 	if (framebuffer_state_changed && motion_vectors_enabled && motion_vectors.velocity_texture != 0)
 	{

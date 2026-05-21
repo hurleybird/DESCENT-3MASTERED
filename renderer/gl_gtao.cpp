@@ -162,6 +162,7 @@ void GTAOResources::InitShaders()
 	extern const char* gtaoDepthFragmentSrc;
 	extern const char* gtaoAOFragmentSrc;
 	extern const char* gtaoBlurFragmentSrc;
+	extern const char* gtaoTemporalFragmentSrc;
 	extern const char* gtaoSuppressionFragmentSrc;
 	extern const char* gtaoApplyFragmentSrc;
 
@@ -223,6 +224,30 @@ void GTAOResources::InitShaders()
 	blur_y_sharpness = blur_y_shader.FindUniform("sharpness");
 	blur_y_radius = blur_y_shader.FindUniform("kernel_radius");
 
+	temporal_shader.AttachSource(blitVertexSrc, gtaoTemporalFragmentSrc);
+	temporal_shader.Use();
+	temporal_current_ao = temporal_shader.FindUniform("current_ao");
+	temporal_history_ao = temporal_shader.FindUniform("history_ao");
+	temporal_velocity_source = temporal_shader.FindUniform("velocity_source");
+	temporal_depth_source = temporal_shader.FindUniform("depth_source");
+	temporal_object_id_source = temporal_shader.FindUniform("object_id_source");
+	if (temporal_current_ao != -1) glUniform1i(temporal_current_ao, 0);
+	if (temporal_history_ao != -1) glUniform1i(temporal_history_ao, 1);
+	if (temporal_velocity_source != -1) glUniform1i(temporal_velocity_source, 2);
+	if (temporal_depth_source != -1) glUniform1i(temporal_depth_source, 3);
+	if (temporal_object_id_source != -1) glUniform1i(temporal_object_id_source, 4);
+	temporal_history_valid = temporal_shader.FindUniform("history_valid");
+	temporal_has_dynamic_velocity = temporal_shader.FindUniform("has_dynamic_velocity");
+	temporal_has_static_reconstruction = temporal_shader.FindUniform("has_static_reconstruction");
+	temporal_history_blend = temporal_shader.FindUniform("history_blend");
+	temporal_depth_reject = temporal_shader.FindUniform("depth_reject");
+	temporal_velocity_reject = temporal_shader.FindUniform("velocity_reject_pixels");
+	temporal_source_size = temporal_shader.FindUniform("source_size");
+	temporal_velocity_uv_scale = temporal_shader.FindUniform("velocity_uv_scale");
+	temporal_current_projection = temporal_shader.FindUniform("current_projection");
+	temporal_current_inverse_modelview = temporal_shader.FindUniform("current_inverse_modelview");
+	temporal_previous_view_projection = temporal_shader.FindUniform("previous_view_projection");
+
 	suppression_shader.AttachSource(blitVertexSrc, gtaoSuppressionFragmentSrc);
 	suppression_shader.Use();
 	suppression_existing_mask = suppression_shader.FindUniform("existing_mask");
@@ -254,6 +279,7 @@ void GTAOResources::InitShaders()
 	apply_has_mask = apply_shader.FindUniform("has_suppression_mask");
 	apply_ao_uv_origin = apply_shader.FindUniform("ao_uv_origin");
 	apply_ao_uv_scale = apply_shader.FindUniform("ao_uv_scale");
+	apply_debug_channel = apply_shader.FindUniform("debug_channel");
 
 	ShaderProgram::ClearBinding();
 
@@ -286,6 +312,7 @@ void GTAOResources::DestroyShaders()
 	ao_shader.Destroy();
 	blur_x_shader.Destroy();
 	blur_y_shader.Destroy();
+	temporal_shader.Destroy();
 	suppression_shader.Destroy();
 	apply_shader.Destroy();
 	if (noise_texture)
@@ -300,7 +327,9 @@ bool GTAOResources::HasFramebuffers() const
 	return ao_depth_framebuffer.Handle() != 0 ||
 		ao_framebuffer.Handle() != 0 ||
 		ao_blur_framebuffer.Handle() != 0 ||
-		suppression_framebuffer.Handle() != 0;
+		suppression_framebuffer.Handle() != 0 ||
+		ao_history_framebuffers[0].Handle() != 0 ||
+		ao_history_framebuffers[1].Handle() != 0;
 }
 
 void GTAOResources::DestroyFramebuffers()
@@ -309,6 +338,10 @@ void GTAOResources::DestroyFramebuffers()
 	ao_framebuffer.Destroy();
 	ao_blur_framebuffer.Destroy();
 	suppression_framebuffer.Destroy();
+	ao_history_framebuffers[0].Destroy();
+	ao_history_framebuffers[1].Destroy();
+	ao_history_index = 0;
+	ao_history_valid = false;
 }
 
 void GTAOResources::Destroy()
@@ -322,7 +355,13 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	float nearz, float farz, GLuint suppression_mask_texture, GLuint ao_weight_texture,
 	bool ao_weight_is_direct,
 	int source_visible_x, int source_visible_y, int source_visible_w, int source_visible_h,
-	int noise_origin_x, int noise_origin_y)
+	int noise_origin_x, int noise_origin_y,
+	GLuint velocity_texture, GLuint object_id_texture,
+	int velocity_width, int velocity_height, int velocity_scale,
+	const float* current_projection, const float* current_inverse_modelview,
+	const float* previous_view_projection,
+	bool has_static_reconstruction, bool has_dynamic_velocity,
+	bool reset_temporal_history)
 {
 	if (!source || !pref_state.gtao_enabled)
 	{
@@ -589,7 +628,106 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	ColorFramebuffer* apply_source = blurred;
 
 	//-------------------------------------------------------------------------
-	// Pass 4: Build the final AO suppression mask.
+	// Pass 4: Optional temporal reprojection/accumulation.
+	//-------------------------------------------------------------------------
+	if (reset_temporal_history)
+		ao_history_valid = false;
+
+	const float temporal_blend = ClampFloat(pref_state.gtao_temporal_blend, 0.0f, 0.995f);
+	const bool temporal_debug = pref_state.gtao_temporal_debug_preview && Game_mode != GM_NONE;
+	const bool use_temporal = temporal_shader.Handle() != 0 && (temporal_blend > 0.0f || temporal_debug);
+	if (use_temporal)
+	{
+		const bool history_size_changed =
+			ao_history_framebuffers[0].Handle() == 0 ||
+			ao_history_framebuffers[1].Handle() == 0 ||
+			ao_history_framebuffers[0].Width() != (uint32_t)ao_width ||
+			ao_history_framebuffers[0].Height() != (uint32_t)ao_height ||
+			ao_history_framebuffers[1].Width() != (uint32_t)ao_width ||
+			ao_history_framebuffers[1].Height() != (uint32_t)ao_height;
+		if (history_size_changed)
+		{
+			ao_history_valid = false;
+			ao_history_index = 0;
+		}
+		ao_history_framebuffers[0].Update(ao_width, ao_height, GL_RGBA16F, GL_RGBA, GL_FLOAT);
+		ao_history_framebuffers[1].Update(ao_width, ao_height, GL_RGBA16F, GL_RGBA, GL_FLOAT);
+
+		int history_read = ao_history_index;
+		int history_write = 1 - history_read;
+		ColorFramebuffer* history_source = ao_history_valid ?
+			&ao_history_framebuffers[history_read] : apply_source;
+		ColorFramebuffer* temporal_target = &ao_history_framebuffers[history_write];
+
+		if (velocity_scale < 1)
+			velocity_scale = 1;
+		const bool use_dynamic_velocity =
+			has_dynamic_velocity && velocity_texture != 0 && object_id_texture != 0 &&
+			velocity_width > 0 && velocity_height > 0;
+		const bool use_static_velocity =
+			has_static_reconstruction && depth_texture != 0 &&
+			current_projection != nullptr && current_inverse_modelview != nullptr &&
+			previous_view_projection != nullptr;
+		const float velocity_uv_scale_x = velocity_width > 0 ?
+			(float)(source_width * velocity_scale) / (float)velocity_width : 1.0f;
+		const float velocity_uv_scale_y = velocity_height > 0 ?
+			(float)(source_height * velocity_scale) / (float)velocity_height : 1.0f;
+
+		PERF_MARKER_SCOPE("GTAO.Temporal");
+		temporal_shader.Use();
+		if (temporal_history_valid != -1)
+			glUniform1i(temporal_history_valid, ao_history_valid ? 1 : 0);
+		if (temporal_has_dynamic_velocity != -1)
+			glUniform1i(temporal_has_dynamic_velocity, use_dynamic_velocity ? 1 : 0);
+		if (temporal_has_static_reconstruction != -1)
+			glUniform1i(temporal_has_static_reconstruction, use_static_velocity ? 1 : 0);
+		if (temporal_history_blend != -1)
+			glUniform1f(temporal_history_blend, temporal_blend);
+		if (temporal_depth_reject != -1)
+			glUniform1f(temporal_depth_reject,
+				ClampFloat(pref_state.gtao_temporal_depth_reject, 0.0f, 0.10f));
+		if (temporal_velocity_reject != -1)
+			glUniform1f(temporal_velocity_reject,
+				ClampFloat(pref_state.gtao_temporal_velocity_reject, 0.0f, 1024.0f));
+		if (temporal_source_size != -1)
+			glUniform2f(temporal_source_size, (float)source_width, (float)source_height);
+		if (temporal_velocity_uv_scale != -1)
+			glUniform2f(temporal_velocity_uv_scale, velocity_uv_scale_x, velocity_uv_scale_y);
+		if (use_static_velocity)
+		{
+			if (temporal_current_projection != -1)
+				glUniformMatrix4fv(temporal_current_projection, 1, GL_FALSE, current_projection);
+			if (temporal_current_inverse_modelview != -1)
+				glUniformMatrix4fv(temporal_current_inverse_modelview, 1, GL_FALSE,
+					current_inverse_modelview);
+			if (temporal_previous_view_projection != -1)
+				glUniformMatrix4fv(temporal_previous_view_projection, 1, GL_FALSE,
+					previous_view_projection);
+		}
+
+		rend_ClearBoundTextures();
+		GL_BindFramebufferTexture(apply_source->ColorTextureForRead(), 0, GL_NEAREST);
+		GL_BindFramebufferTexture(history_source->ColorTextureForRead(), 1, GL_LINEAR);
+		if (use_dynamic_velocity)
+		{
+			GL_BindFramebufferTexture(velocity_texture, 2, GL_NEAREST);
+			GL_BindFramebufferTexture(object_id_texture, 4, GL_NEAREST);
+		}
+		if (use_static_velocity)
+			GL_BindFramebufferTexture(depth_texture, 3, GL_NEAREST);
+
+		AODrawFullscreen(temporal_target->Handle(), ao_width, ao_height);
+		apply_source = temporal_target;
+		ao_history_index = history_write;
+		ao_history_valid = true;
+	}
+	else
+	{
+		ao_history_valid = false;
+	}
+
+	//-------------------------------------------------------------------------
+	// Pass 5: Build the final AO suppression mask.
 	//-------------------------------------------------------------------------
 	GLuint final_suppression_mask = 0;
 	GLuint ao_exclusion_mask_texture = suppression_mask_texture;
@@ -631,18 +769,22 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	}
 
 	//-------------------------------------------------------------------------
-	// Pass 5: Modulate target scene color in-place.
+	// Pass 6: Modulate target scene color in-place.
 	//
 	// Draw a fullscreen quad to the target framebuffer with blend mode
 	// (DST_COLOR, ZERO) so the destination is multiplied by our AO factor.
 	//-------------------------------------------------------------------------
 	{
 		PERF_MARKER_SCOPE("GTAO.Composite");
-		const bool debug_display_ao_only = pref_state.gtao_debug_preview && Game_mode != GM_NONE;
+		const bool debug_display_ao_only =
+			(pref_state.gtao_debug_preview || pref_state.gtao_temporal_debug_preview) &&
+			Game_mode != GM_NONE;
 		apply_shader.Use();
 		glUniform1f(apply_intensity, debug_display_ao_only ? 1.0f : intensity);
 		if (apply_has_mask != -1)
 			glUniform1i(apply_has_mask, !debug_display_ao_only && final_suppression_mask != 0 ? 1 : 0);
+		if (apply_debug_channel != -1)
+			glUniform1i(apply_debug_channel, pref_state.gtao_temporal_debug_preview ? 2 : 0);
 		if (apply_ao_uv_origin != -1)
 			glUniform2f(apply_ao_uv_origin,
 				(float)source_visible_x / (float)source_width,

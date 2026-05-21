@@ -1081,19 +1081,17 @@ static int ConfigNormalizePixelMotionBlurSamples(int samples)
 	return samples;
 }
 
-static int ConfigNormalizeMotionVectorMode(int mode)
+static bool ConfigGTAOTemporalWantsMotionVectors()
 {
-	return mode == RENDERER_MOTION_VECTOR_PIXEL ? RENDERER_MOTION_VECTOR_PIXEL : RENDERER_MOTION_VECTOR_OFF;
+	return ConfigCanUseGTAO() && Render_preferred_state.gtao_enabled &&
+		(Render_preferred_state.gtao_temporal_blend > 0.0f ||
+			Render_preferred_state.gtao_temporal_debug_preview);
 }
 
-static int ConfigMotionVectorModeToIndex(int mode)
+static void ConfigEnsureGTAOTemporalVectorMode()
 {
-	return ConfigNormalizeMotionVectorMode(mode) == RENDERER_MOTION_VECTOR_PIXEL ? 1 : 0;
-}
-
-static int ConfigMotionVectorIndexToMode(int index)
-{
-	return index == 1 ? RENDERER_MOTION_VECTOR_PIXEL : RENDERER_MOTION_VECTOR_OFF;
+	if (ConfigGTAOTemporalWantsMotionVectors())
+		Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_PIXEL;
 }
 
 static bool MotionBlurLegacyMatchesPreset(float copy_density, int max_iterations, float alpha_exponent)
@@ -1165,9 +1163,10 @@ static void ConfigEnsureCombinedMotionBlurVectorMode()
 
 static bool ConfigMotionVectorsHaveActiveConsumer()
 {
-	return Render_preferred_state.motion_vector_debug_preview ||
-		Render_preferred_state.pixel_motion_blur_strength > 0.0f ||
-		Render_preferred_state.pixel_motion_blur_legacy_object_strength > 0.0f;
+	return ConfigGTAOTemporalWantsMotionVectors() ||
+		(Render_preferred_state.combined_motion_blur &&
+			(Render_preferred_state.pixel_motion_blur_strength > 0.0f ||
+				Render_preferred_state.pixel_motion_blur_legacy_object_strength > 0.0f));
 }
 
 static void ConfigFinalizeMotionVectorUse()
@@ -1197,6 +1196,8 @@ static void ApplyMotionBlurPresetFromIndex(int index)
 	}
 
 	ConfigEnsureCombinedMotionBlurVectorMode();
+	ConfigEnsureGTAOTemporalVectorMode();
+	ConfigFinalizeMotionVectorUse();
 }
 
 struct video_menu
@@ -1213,6 +1214,7 @@ struct video_menu
 	bool* show_draw_calls;
 	bool* soft_vis_effects;
 	bool* motion_vector_debug;
+	bool* gtao_temporal_debug;
 
 	short* fov;
 	short* frame_limit;
@@ -1222,7 +1224,6 @@ struct video_menu
 	int* antialiasing;
 	int* supersampling;
 	int* gtao;
-	int* motion_vectors;
 	int* backend;
 
 	int window_width, window_height;
@@ -1358,6 +1359,7 @@ struct video_menu
 			if (ConfigCanUseGTAO())
 			{
 				ApplyGTAOPresetFromIndex(*gtao);
+				ConfigEnsureGTAOTemporalVectorMode();
 			}
 			else
 			{
@@ -1368,16 +1370,16 @@ struct video_menu
 					sheet->UpdateChanges();
 				}
 			}
+			if (!ConfigGTAOTemporalWantsMotionVectors())
+				ConfigFinalizeMotionVectorUse();
 			changed = true;
 		}
-		if (motion_vectors && sheet->HasChanged(motion_vectors))
+		if (gtao_temporal_debug && sheet->HasChanged(gtao_temporal_debug))
 		{
-			Render_preferred_state.motion_vector_mode = (ubyte)ConfigMotionVectorIndexToMode(*motion_vectors);
-			ConfigEnsureCombinedMotionBlurVectorMode();
-			if (Render_preferred_state.combined_motion_blur)
-			{
-				*motion_vectors = ConfigMotionVectorModeToIndex(Render_preferred_state.motion_vector_mode);
-			}
+			Render_preferred_state.gtao_temporal_debug_preview = *gtao_temporal_debug;
+			ConfigEnsureGTAOTemporalVectorMode();
+			if (!ConfigGTAOTemporalWantsMotionVectors())
+				ConfigFinalizeMotionVectorUse();
 			changed = true;
 		}
 		if (motion_vector_debug && sheet->HasChanged(motion_vector_debug))
@@ -1468,6 +1470,7 @@ struct video_menu
 		show_draw_calls = NULL;
 		soft_vis_effects = NULL;
 		motion_vector_debug = NULL;
+		gtao_temporal_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
 		buffer = NULL;
@@ -1476,7 +1479,6 @@ struct video_menu
 		antialiasing = NULL;
 		supersampling = NULL;
 		gtao = NULL;
-		motion_vectors = NULL;
 		backend = NULL;
 		window_width = window_height = 0;
 		window_aspect = CONFIG_ASPECT_16_9;
@@ -1559,10 +1561,9 @@ struct video_menu
 		*gtao = ConfigCanUseGTAO() ?
 			GTAOPresetToIndex(Render_preferred_state.gtao_enabled, Render_preferred_state.gtao_resolution) : 0;
 
-		sheet->NewGroup("Motion vectors", 184, 238);
-		motion_vectors = sheet->AddFirstRadioButton(TXT_OFF);
-		sheet->AddRadioButton("Pixel");
-		*motion_vectors = ConfigMotionVectorModeToIndex(Render_preferred_state.motion_vector_mode);
+		sheet->NewGroup("GTAO debug", 184, 238);
+		gtao_temporal_debug = sheet->AddLongCheckBox("GTAO history debug",
+			Render_preferred_state.gtao_temporal_debug_preview);
 
 		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
@@ -1591,11 +1592,13 @@ struct video_menu
 			else
 				ApplyGTAOPresetFromIndex(0);
 		}
-		if (motion_vectors)
-			Render_preferred_state.motion_vector_mode = (ubyte)ConfigMotionVectorIndexToMode(*motion_vectors);
+		if (gtao_temporal_debug)
+			Render_preferred_state.gtao_temporal_debug_preview = *gtao_temporal_debug;
 		if (motion_vector_debug)
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
 		ConfigEnsureCombinedMotionBlurVectorMode();
+		ConfigEnsureGTAOTemporalVectorMode();
+		ConfigFinalizeMotionVectorUse();
 		if (perf_markers)
 			PerfMarkersSetEnabled(*perf_markers);
 		if (show_fps)
@@ -1645,7 +1648,10 @@ struct video_menu
 			if (DesiredOpenGLProfile != GLPROFILE_CORE)
 				Render_preferred_state.per_pixel_lighting = false;
 			if (DesiredOpenGLProfile != GLPROFILE_CORE)
+			{
 				ApplyGTAOPresetFromIndex(0);
+				ConfigFinalizeMotionVectorUse();
+			}
 		}
 
 		sheet = NULL;

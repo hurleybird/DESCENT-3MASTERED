@@ -292,6 +292,10 @@ struct renderer_preferred_state
 	float gtao_bias;
 	ushort gtao_overscan_percent;
 	bool gtao_debug_preview;
+	float gtao_temporal_blend;
+	float gtao_temporal_depth_reject;
+	float gtao_temporal_velocity_reject;
+	bool gtao_temporal_debug_preview;
 	float gtao_terrain_occlusion;
 	float gtao_polyobject_occlusion;
 	float gtao_mine_rock_occlusion;

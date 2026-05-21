@@ -387,6 +387,7 @@ void SaveGameSettings()
 	Database->write("RS_gtao_resolution", Render_preferred_state.gtao_resolution);
 	Database->write("RS_gtao_overscan_percent", Render_preferred_state.gtao_overscan_percent);
 	Database->write("RS_gtao_debug_preview", Render_preferred_state.gtao_debug_preview);
+	Database->write("RS_gtao_temporal_debug_preview", Render_preferred_state.gtao_temporal_debug_preview);
 	Database->write("RS_motion_vector_mode", Render_preferred_state.motion_vector_mode);
 	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
 	Database->write("RS_soft_vis_effects", Render_soft_vis_effects);
@@ -580,13 +581,17 @@ void LoadGameSettings()
 	Render_preferred_state.bloom_spread = 0.75f;
 	Render_preferred_state.gtao_enabled = false;
 	Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
-	Render_preferred_state.gtao_sample_count = 128;
+	Render_preferred_state.gtao_sample_count = 32;
 	Render_preferred_state.gtao_blur_radius = 6;
 	Render_preferred_state.gtao_radius = 4.0f;
 	Render_preferred_state.gtao_intensity = 2.5f;
 	Render_preferred_state.gtao_bias = 0.25f;
 	Render_preferred_state.gtao_overscan_percent = 107;
 	Render_preferred_state.gtao_debug_preview = false;
+	Render_preferred_state.gtao_temporal_blend = 0.9f;
+	Render_preferred_state.gtao_temporal_depth_reject = 0.03f;
+	Render_preferred_state.gtao_temporal_velocity_reject = 128.0f;
+	Render_preferred_state.gtao_temporal_debug_preview = false;
 	Render_preferred_state.gtao_terrain_occlusion = 0.5f;
 	Render_preferred_state.gtao_polyobject_occlusion = 0.5f;
 	Render_preferred_state.gtao_mine_rock_occlusion = 0.5f;
@@ -796,6 +801,7 @@ void LoadGameSettings()
 	if (tempint > 150) tempint = 150;
 	Render_preferred_state.gtao_overscan_percent = (ushort)tempint;
 	Database->read("RS_gtao_debug_preview", &Render_preferred_state.gtao_debug_preview);
+	Database->read("RS_gtao_temporal_debug_preview", &Render_preferred_state.gtao_temporal_debug_preview);
 	tempint = Render_preferred_state.motion_vector_mode;
 	Database->read_int("RS_motion_vector_mode", &tempint);
 	if (tempint != RENDERER_MOTION_VECTOR_OFF && tempint != RENDERER_MOTION_VECTOR_PIXEL)
@@ -1074,6 +1080,17 @@ void LoadGameSettings()
 			Legacy_motion_blur_alpha_exponent = 1.0f;
 		}
 	}
+	const bool gtao_temporal_vectors =
+		Render_preferred_state.gtao_enabled &&
+		(Render_preferred_state.gtao_temporal_blend > 0.0f ||
+			Render_preferred_state.gtao_temporal_debug_preview);
+	const bool new_motion_blur_vectors =
+		Render_preferred_state.combined_motion_blur &&
+		(Render_preferred_state.pixel_motion_blur_strength > 0.0f ||
+			Render_preferred_state.pixel_motion_blur_legacy_object_strength > 0.0f);
+	Render_preferred_state.motion_vector_mode =
+		(gtao_temporal_vectors || new_motion_blur_vectors) ?
+			RENDERER_MOTION_VECTOR_PIXEL : RENDERER_MOTION_VECTOR_OFF;
 
 	Render_powerup_sparkles = false;
 	if(Katmai && !FindArg("-nosparkles"))
