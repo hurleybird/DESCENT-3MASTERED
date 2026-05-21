@@ -254,6 +254,11 @@ public:
 
 	// Draws a line using the states of the renderer
 	virtual void DrawSpecialLine(g3Point* p0, g3Point* p1) = 0;
+	virtual void DrawSpecialLineBatch(const renderer_line_batch_item *items, int count)
+	{
+		for (int i = 0; i < count; i++)
+			DrawSpecialLine(items[i].p0, items[i].p1);
+	}
 
 	//OTHER TRANSFERS
 

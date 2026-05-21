@@ -401,6 +401,12 @@ struct renderer_poly_batch_item
 	int nv;
 };
 
+struct renderer_line_batch_item
+{
+	g3Point *p0;
+	g3Point *p1;
+};
+
 enum renderer_gpu_scene_mark
 {
 	RENDERER_GPU_SCENE_AFTER_MAIN_WORLD = 0,
@@ -642,6 +648,7 @@ void rend_DrawScaledChunkedBitmap(chunked_bitmap *chunk, int x, int y, int neww,
 
 // Draws a line using the states of the renderer
 void rend_DrawSpecialLine (g3Point *p0,g3Point *p1);
+void rend_DrawSpecialLineBatch(const renderer_line_batch_item *items,int count);
 
 // Sets some global preferences for the renderer
 // Returns -1 if it had to use the default resolution/bitdepth

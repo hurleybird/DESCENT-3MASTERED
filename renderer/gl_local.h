@@ -696,6 +696,7 @@ public:
 
 	// Draws a line using the states of the renderer
 	void DrawSpecialLine(g3Point* p0, g3Point* p1) override;
+	void DrawSpecialLineBatch(const renderer_line_batch_item *items, int count) override;
 
 	//OTHER TRANSFERS
 

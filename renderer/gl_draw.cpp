@@ -2329,6 +2329,8 @@ void GL4Renderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 		float z = std::max(0., std::min(1.0, 1.0 - (1.0 / (pnt->p3_z + Z_bias))));
 
 		vertp->vert.x = pnt->p3_sx; vertp->vert.y = pnt->p3_sy; vertp->vert.z = -z;
+		if (soft_particle_draw_enabled)
+			vertp->normal.w = GL4DepthFromEyeZ(pnt->p3_z);
 		vertp->motion_world_position.x = 0.0f;
 		vertp->motion_world_position.y = 0.0f;
 		vertp->motion_world_position.z = 0.0f;
@@ -2346,6 +2348,86 @@ void GL4Renderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 	glLineWidth(line_width);
 	rend_RecordDrawCall(RENDERER_DRAW_CALL_PRIMITIVE);
 	glDrawArrays(GL_LINES, offset, 2);
+	glLineWidth(1.0f);
+}
+
+void GL4Renderer::DrawSpecialLineBatch(const renderer_line_batch_item *items, int count)
+{
+	if (!items || count <= 0)
+		return;
+
+	ubyte fr = GR_COLOR_RED(OpenGL_state.cur_color);
+	ubyte fg = GR_COLOR_GREEN(OpenGL_state.cur_color);
+	ubyte fb = GR_COLOR_BLUE(OpenGL_state.cur_color);
+
+	SelectDrawShader();
+
+	std::vector<gl_vertex> vertices;
+	vertices.reserve(count * 2);
+
+	for (int i = 0; i < count; i++)
+	{
+		g3Point* points[2] = { items[i].p0, items[i].p1 };
+		for (int v = 0; v < 2; v++)
+		{
+			g3Point* pnt = points[v];
+			if (!pnt)
+				continue;
+
+			gl_vertex vertex = {};
+			color_array* colorp = &vertex.color;
+			ubyte alpha = (ubyte)(Alpha_multiplier * OpenGL_Alpha_factor);
+			if (OpenGL_state.cur_alpha_type & ATF_VERTEX)
+				alpha = (ubyte)(pnt->p3_a * Alpha_multiplier * OpenGL_Alpha_factor);
+
+			if (OpenGL_state.cur_light_state != LS_NONE)
+			{
+				if (OpenGL_state.cur_light_state == LS_FLAT_GOURAUD)
+				{
+					colorp->r = fr; colorp->g = fg; colorp->b = fb; colorp->a = alpha;
+				}
+				else if (OpenGL_state.cur_color_model == CM_MONO)
+				{
+					colorp->r = pnt->p3_uvl.l * 255; colorp->g = pnt->p3_uvl.l * 255;
+					colorp->b = pnt->p3_uvl.l * 255; colorp->a = alpha;
+				}
+				else
+				{
+					colorp->r = pnt->p3_uvl.r * 255; colorp->g = pnt->p3_uvl.g * 255;
+					colorp->b = pnt->p3_uvl.b * 255; colorp->a = alpha;
+				}
+			}
+			else
+			{
+				colorp->r = fr; colorp->g = fg; colorp->b = fb; colorp->a = alpha;
+			}
+
+			float z = std::max(0., std::min(1.0, 1.0 - (1.0 / (pnt->p3_z + Z_bias))));
+			vertex.vert.x = pnt->p3_sx;
+			vertex.vert.y = pnt->p3_sy;
+			vertex.vert.z = -z;
+			if (soft_particle_draw_enabled)
+				vertex.normal.w = GL4DepthFromEyeZ(pnt->p3_z);
+			vertex.motion_world_position.x = 0.0f;
+			vertex.motion_world_position.y = 0.0f;
+			vertex.motion_world_position.z = 0.0f;
+			vertex.motion_world_position.w = 0.0f;
+			vertex.motion_previous_world_position.x = 0.0f;
+			vertex.motion_previous_world_position.y = 0.0f;
+			vertex.motion_previous_world_position.z = 0.0f;
+			vertex.motion_previous_world_position.w = 0.0f;
+			vertices.push_back(vertex);
+		}
+	}
+
+	if (vertices.empty())
+		return;
+
+	int offset = CopyVertices(vertices.data(), (int)vertices.size());
+	GLfloat line_width = std::max(1.0f, std::min((GLfloat)SupersamplingFactor(), max_line_width));
+	glLineWidth(line_width);
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_PRIMITIVE);
+	glDrawArrays(GL_LINES, offset, (GLsizei)vertices.size());
 	glLineWidth(1.0f);
 }
 

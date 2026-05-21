@@ -869,6 +869,14 @@ void rend_DrawSpecialLine(g3Point* p0, g3Point* p1)
 	renderer_inst->DrawSpecialLine(p0, p1);
 }
 
+void rend_DrawSpecialLineBatch(const renderer_line_batch_item *items, int count)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->DrawSpecialLineBatch(items, count);
+}
+
 // Sets some global preferences for the renderer
 // Returns -1 if it had to use the default resolution/bitdepth
 int rend_SetPreferredState(renderer_preferred_state* pref_state)

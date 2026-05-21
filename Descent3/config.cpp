@@ -108,6 +108,8 @@ int Game_frame_limit_fps = 0;
 float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
 bool Render_soft_vis_effects = false;
+bool Render_batched_smoke_trails = false;
+bool Render_soft_smoke_trails = false;
 bool Cockpit_alt_mode = true;
 float Render_FOV_desired = 72;
 
@@ -1212,6 +1214,8 @@ struct video_menu
 	bool* show_fps;
 	bool* show_draw_calls;
 	bool* soft_vis_effects;
+	bool* batch_smoke_trails;
+	bool* soft_smoke_trails;
 	bool* motion_vector_debug;
 
 	short* fov;
@@ -1406,6 +1410,16 @@ struct video_menu
 			Render_soft_vis_effects = *soft_vis_effects;
 			ui_changed = true;
 		}
+		if (batch_smoke_trails && sheet->HasChanged(batch_smoke_trails))
+		{
+			Render_batched_smoke_trails = *batch_smoke_trails;
+			ui_changed = true;
+		}
+		if (soft_smoke_trails && sheet->HasChanged(soft_smoke_trails))
+		{
+			Render_soft_smoke_trails = *soft_smoke_trails;
+			ui_changed = true;
+		}
 		if (antialiasing && sheet->HasChanged(antialiasing))
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1465,6 +1479,8 @@ struct video_menu
 		show_fps = NULL;
 		show_draw_calls = NULL;
 		soft_vis_effects = NULL;
+		batch_smoke_trails = NULL;
+		soft_smoke_trails = NULL;
 		motion_vector_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
@@ -1567,6 +1583,8 @@ struct video_menu
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
 		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats);
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
+		batch_smoke_trails = sheet->AddLongCheckBox("Batch smoke trails", Render_batched_smoke_trails);
+		soft_smoke_trails = sheet->AddLongCheckBox("Soft smoke trails", Render_soft_smoke_trails);
 
 		return sheet;
 	};
@@ -1607,6 +1625,10 @@ struct video_menu
 			Render_draw_call_stats = *show_draw_calls;
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
+		if (batch_smoke_trails)
+			Render_batched_smoke_trails = *batch_smoke_trails;
+		if (soft_smoke_trails)
+			Render_soft_smoke_trails = *soft_smoke_trails;
 		if (antialiasing)
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);

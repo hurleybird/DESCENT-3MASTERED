@@ -980,6 +980,57 @@ void GLCompatibilityRenderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 	glLineWidth(1.0f);
 }
 
+void GLCompatibilityRenderer::DrawSpecialLineBatch(const renderer_line_batch_item *items, int count)
+{
+	if (!items || count <= 0)
+		return;
+
+	int x_add = OpenGL_state.clip_x1;
+	int y_add = OpenGL_state.clip_y1;
+	float fr = GR_COLOR_RED(OpenGL_state.cur_color) / 255.0f;
+	float fg = GR_COLOR_GREEN(OpenGL_state.cur_color) / 255.0f;
+	float fb = GR_COLOR_BLUE(OpenGL_state.cur_color) / 255.0f;
+
+	GLfloat line_width = std::max(1.0f, std::min((GLfloat)SupersamplingFactor(), max_line_width));
+	glLineWidth(line_width);
+	glBegin(GL_LINES);
+
+	for (int i = 0; i < count; i++)
+	{
+		g3Point* points[2] = { items[i].p0, items[i].p1 };
+		for (int v = 0; v < 2; v++)
+		{
+			g3Point* pnt = points[v];
+			if (!pnt)
+				continue;
+
+			float alpha = Alpha_multiplier * OpenGL_Alpha_factor;
+			if (OpenGL_state.cur_alpha_type & ATF_VERTEX)
+				alpha = pnt->p3_a * Alpha_multiplier * OpenGL_Alpha_factor;
+
+			if (OpenGL_state.cur_light_state != LS_NONE)
+			{
+				if (OpenGL_state.cur_light_state == LS_FLAT_GOURAUD)
+					glColor4f(fr, fg, fb, alpha);
+				else if (OpenGL_state.cur_color_model == CM_MONO)
+					glColor4f(pnt->p3_l, pnt->p3_l, pnt->p3_l, alpha);
+				else
+					glColor4f(pnt->p3_r, pnt->p3_g, pnt->p3_b, alpha);
+			}
+			else
+			{
+				glColor4f(fr, fg, fb, alpha);
+			}
+
+			float z = std::max(0., std::min(1.0, 1.0 - (1.0 / (pnt->p3_z + Z_bias))));
+			glVertex3f(pnt->p3_sx + x_add, pnt->p3_sy + y_add, -z);
+		}
+	}
+
+	glEnd();
+	glLineWidth(1.0f);
+}
+
 //	given a chunked bitmap, renders it.
 void GLCompatibilityRenderer::DrawChunkedBitmap(chunked_bitmap* chunk, int x, int y, ubyte alpha)
 {

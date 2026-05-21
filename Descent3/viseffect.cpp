@@ -40,6 +40,7 @@
 #include "weather.h"
 #include "polymodel.h"
 #include "renderer.h"
+#include "../renderer/HardwareInternal.h"
 #include "psrand.h"
 #include "mem.h"
 
@@ -52,6 +53,17 @@ ushort max_vis_effects = 0;
 int NumVisDead = 0;
 int Highest_vis_effect_index = 0;
 int Num_vis_effects = 0;
+
+static const float SNOW_FADE_IN_TIME = 0.1f;
+
+static float VisEffectSnowFadeInFactor(float time_live)
+{
+	if (time_live <= 0.0f)
+		return 0.0f;
+	if (time_live >= SNOW_FADE_IN_TIME)
+		return 1.0f;
+	return time_live / SNOW_FADE_IN_TIME;
+}
 
 void ShutdownVisEffects()
 {
@@ -809,7 +821,7 @@ void DrawVisSnowflake(vis_effect* vis)
 
 	float val;
 
-	val = 1.0 - (norm_time);
+	val = (1.0 - (norm_time)) * VisEffectSnowFadeInFactor(time_live);
 
 	rend_SetAlphaValue(val * .6 * 255);
 	rend_SetOverlayType(OT_NONE);
@@ -819,7 +831,10 @@ void DrawVisSnowflake(vis_effect* vis)
 	rend_SetAlphaType(AT_SATURATE_TEXTURE);
 
 	ddgr_color color = GR_16_TO_COLOR(vis->lighting_color);
+	rend_SetSoftParticleState(Render_soft_vis_effects &&
+		!(vis->flags & VF_NO_SOFT_PARTICLE) ? 1 : 0);
 	g3_DrawBitmap(&vis->pos, size, (size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle, color);
+	rend_SetSoftParticleState(0);
 
 	//rend_SetZBufferState (1);
 	//rend_SetWrapType (WT_WRAP);
@@ -1065,6 +1080,48 @@ struct VisFireballBatchItem
 	}
 };
 
+struct VisWeatherBatchKey
+{
+	int bitmap_handle;
+	sbyte alpha_type;
+	bool soft_particles;
+	bool zbuffer_state;
+
+	bool Equals(const VisWeatherBatchKey& other) const
+	{
+		return bitmap_handle == other.bitmap_handle &&
+			alpha_type == other.alpha_type &&
+			soft_particles == other.soft_particles &&
+			zbuffer_state == other.zbuffer_state;
+	}
+};
+
+struct VisWeatherLineBatchItem
+{
+	g3Point points[2];
+	renderer_line_batch_item item;
+
+	void RefreshItem()
+	{
+		item.p0 = &points[0];
+		item.p1 = &points[1];
+	}
+};
+
+struct VisSmokeTrailBatchKey
+{
+	int bitmap_handle;
+	sbyte alpha_type;
+	bool soft_particles;
+
+	bool Equals(const VisSmokeTrailBatchKey& other) const
+	{
+		return bitmap_handle == other.bitmap_handle &&
+			alpha_type == other.alpha_type &&
+			soft_particles == other.soft_particles;
+	}
+};
+
 struct VisFireballAtlasFrame
 {
 	int source_handle;
@@ -1097,6 +1154,15 @@ static bool VisFireball_batch_valid = false;
 static VisFireballBatchKey VisFireball_batch_key = {};
 static std::vector<VisFireballBatchItem> VisFireball_batch_items;
 static std::vector<VisFireballSharedAtlas> VisFireball_shared_atlases;
+static bool VisWeather_quad_batch_valid = false;
+static VisWeatherBatchKey VisWeather_quad_batch_key = {};
+static std::vector<VisFireballBatchItem> VisWeather_quad_batch_items;
+static bool VisWeather_line_batch_valid = false;
+static bool VisWeather_line_batch_soft = false;
+static std::vector<VisWeatherLineBatchItem> VisWeather_line_batch_items;
+static bool VisSmokeTrail_batch_valid = false;
+static VisSmokeTrailBatchKey VisSmokeTrail_batch_key = {};
+static std::vector<VisFireballBatchItem> VisSmokeTrail_batch_items;
 static const bool VIS_FIREBALL_BARRIER_FLUSHES_ENABLED = false;
 static const int VIS_FIREBALL_ATLAS_PADDING = 1;
 static const int VIS_FIREBALL_ATLAS_MAX_DIMENSION = 2048;
@@ -1106,9 +1172,31 @@ static bool VisEffectHasQueuedBatch()
 	return VisFireball_batch_valid && !VisFireball_batch_items.empty();
 }
 
+static bool VisEffectHasQueuedWeatherQuadBatch()
+{
+	return VisWeather_quad_batch_valid && !VisWeather_quad_batch_items.empty();
+}
+
+static bool VisEffectHasQueuedWeatherLineBatch()
+{
+	return VisWeather_line_batch_valid && !VisWeather_line_batch_items.empty();
+}
+
+static bool VisEffectHasQueuedSmokeTrailBatch()
+{
+	return VisSmokeTrail_batch_valid && !VisSmokeTrail_batch_items.empty();
+}
+
 static bool VisEffectShouldUseSoftParticles(const vis_effect* vis)
 {
 	return Render_soft_vis_effects && !(vis->flags & VF_NO_SOFT_PARTICLE);
+}
+
+static bool VisEffectShouldUseSoftSnowParticles(const vis_effect* vis, bool zbuffer_state)
+{
+	return Render_soft_vis_effects &&
+		zbuffer_state &&
+		!(vis->flags & VF_NO_SOFT_PARTICLE);
 }
 
 struct VisEffectVClipFrameBlend
@@ -1551,6 +1639,31 @@ static bool VisEffectClipAndProjectBatchItem(VisFireballBatchItem& item, float z
 	return true;
 }
 
+static bool VisEffectProjectBatchItemNoViewportClip(VisFireballBatchItem& item, float z_bias,
+	bool soft_particles)
+{
+	if (item.nv < 3 || item.nv > VIS_FIREBALL_BATCH_MAX_VERTS)
+		return false;
+
+	item.RefreshPointList();
+
+	for (int i = 0; i < item.nv; i++)
+	{
+		if (item.points[i].p3_codes & CC_BEHIND)
+			return false;
+		if (!(item.points[i].p3_flags & PF_PROJECTED))
+			g3_ProjectPoint(&item.points[i]);
+		if (soft_particles)
+		{
+			item.points[i].p3_motion_world_pos.z = item.points[i].p3_z;
+			item.points[i].p3_motion_world_valid = 2;
+		}
+		item.points[i].p3_z += z_bias;
+	}
+
+	return true;
+}
+
 static void VisEffectColorToFloat(int color, float* red, float* green, float* blue)
 {
 	*red = GR_COLOR_RED(color) / 255.0f;
@@ -1931,7 +2044,282 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 	return built;
 }
 
-static void FlushVisEffectBatchesNow()
+static bool VisEffectIsWeatherBatchCandidate(int id)
+{
+	return id == RAINDROP_INDEX ||
+		id == PUDDLEDROP_INDEX ||
+		id == SNOWFLAKE_INDEX ||
+		id == FADING_LINE_INDEX;
+}
+
+static bool VisEffectClipAndProjectLineBatchItem(VisWeatherLineBatchItem& item)
+{
+	g3Point* p0 = &item.points[0];
+	g3Point* p1 = &item.points[1];
+
+	if (p0->p3_codes & p1->p3_codes)
+		return false;
+
+	const ubyte codes_or = p0->p3_codes | p1->p3_codes;
+	bool was_clipped = false;
+	if (codes_or)
+	{
+		ClipLine(&p0, &p1, codes_or);
+		was_clipped = true;
+	}
+
+	if (!(p0->p3_flags & PF_PROJECTED))
+		g3_ProjectPoint(p0);
+	if (!(p1->p3_flags & PF_PROJECTED))
+		g3_ProjectPoint(p1);
+
+	g3Point clipped_points[2] = { *p0, *p1 };
+	clipped_points[0].p3_flags &= ~PF_TEMP_POINT;
+	clipped_points[1].p3_flags &= ~PF_TEMP_POINT;
+
+	if (was_clipped)
+	{
+		if (p0->p3_flags & PF_TEMP_POINT)
+			FreeTempPoint(p0);
+		if (p1->p3_flags & PF_TEMP_POINT)
+			FreeTempPoint(p1);
+		CheckTempPoints();
+	}
+
+	item.points[0] = clipped_points[0];
+	item.points[1] = clipped_points[1];
+	return true;
+}
+
+static bool VisEffectBuildWeatherLineBatchItem(vis_effect* vis, VisWeatherLineBatchItem& item,
+	bool& soft_particles)
+{
+	if (vis->id != FADING_LINE_INDEX)
+		return false;
+
+	float time_live = Gametime - vis->creation_time;
+	if (time_live < 0.0f)
+		time_live = 0.0f;
+	float norm_time = time_live / vis->lifetime;
+	if (norm_time >= 1.0f)
+		norm_time = 0.99999f;
+
+	vector vecs[2];
+	vecs[0] = vis->pos;
+	vecs[1] = vis->end_pos;
+
+	if (!(vis->flags & VF_WINDSHIELD_EFFECT))
+	{
+		vector vel = -vis->velocity;
+		vm_NormalizeVectorFast(&vel);
+		vecs[1] = vis->pos + (vel * vis->size);
+	}
+
+	ddgr_color color = GR_16_TO_COLOR(vis->lighting_color);
+	const float red = GR_COLOR_RED(color) / 255.0f;
+	const float green = GR_COLOR_GREEN(color) / 255.0f;
+	const float blue = GR_COLOR_BLUE(color) / 255.0f;
+
+	for (int i = 0; i < 2; i++)
+	{
+		g3_RotatePoint(&item.points[i], &vecs[i]);
+		item.points[i].p3_flags |= PF_RGBA;
+		item.points[i].p3_r = red;
+		item.points[i].p3_g = green;
+		item.points[i].p3_b = blue;
+	}
+
+	item.points[0].p3_a = (vis->flags & VF_WINDSHIELD_EFFECT) ? 0.3f : (1.0f - norm_time);
+	item.points[1].p3_a = 0.0f;
+
+	soft_particles = false;
+	return VisEffectClipAndProjectLineBatchItem(item);
+}
+
+static bool VisEffectBuildWeatherQuadBatchItem(vis_effect* vis, VisWeatherBatchKey& key,
+	VisFireballBatchItem& item)
+{
+	if (vis->id != RAINDROP_INDEX && vis->id != PUDDLEDROP_INDEX && vis->id != SNOWFLAKE_INDEX)
+		return false;
+
+	float time_live = Gametime - vis->creation_time;
+	if (time_live < 0.0f)
+		time_live = 0.0f;
+	float norm_time = time_live / vis->lifetime;
+	if (norm_time >= 1.0f)
+		norm_time = 0.99999f;
+
+	fireball* fb = &Fireballs[vis->id];
+	int bm_handle = BAD_BITMAP_HANDLE;
+	int bitmap_width = 0;
+	int bitmap_height = 0;
+	float u0 = 0.0f;
+	float v0 = 0.0f;
+	float u1 = 1.0f;
+	float v1 = 1.0f;
+	VisEffectSelectBitmapForBatch(fb->bm_handle, &bm_handle, &bitmap_width, &bitmap_height,
+		&u0, &v0, &u1, &v1);
+
+	if (bm_handle <= BAD_BITMAP_HANDLE || bitmap_width <= 0 || bitmap_height <= 0)
+		return false;
+
+	vector pos = vis->pos;
+	float size = vis->size;
+	float alpha = 1.0f;
+	bool zbuffer_state = true;
+	bool built = false;
+
+	if (vis->id == RAINDROP_INDEX || vis->id == PUDDLEDROP_INDEX)
+	{
+		size *= (1.0f - (norm_time / 2.0f));
+		float val;
+		if (norm_time > 0.5f)
+			val = 1.0f - ((norm_time - 0.5f) / 0.5f);
+		else if (norm_time < 0.1f)
+			val = norm_time / 0.1f;
+		else
+			val = 1.0f;
+
+		if (vis->id == RAINDROP_INDEX)
+		{
+			zbuffer_state = false;
+			alpha = val * 0.4f;
+			pos = Viewer_object->pos;
+			pos += Viewer_object->orient.rvec * vis->pos.x;
+			pos += Viewer_object->orient.uvec * vis->pos.y;
+			pos += Viewer_object->orient.fvec * vis->pos.z;
+			const float width = size;
+			const float height = (size * bitmap_height) / bitmap_width;
+			built = VisEffectBuildRotatedBatchItem(item, &pos, 0, width, height);
+		}
+		else
+		{
+			zbuffer_state = true;
+			alpha = val * 0.2f;
+			ASSERT(!((vis->end_pos.x == 0.0) && (vis->end_pos.y == 0.0) && (vis->end_pos.z == 0.0)));
+			const float width = size;
+			const float height = (size * bitmap_height) / bitmap_width;
+			built = VisEffectBuildPlanarBatchItem(item, &pos, &vis->end_pos, 0, width, height);
+		}
+	}
+	else
+	{
+		alpha = (1.0f - norm_time) * 0.6f * VisEffectSnowFadeInFactor(time_live);
+		const float width = size;
+		const float height = (size * bitmap_height) / bitmap_width;
+		built = VisEffectBuildRotatedBatchItem(item, &pos, 0, width, height);
+	}
+
+	if (!built)
+		return false;
+
+	VisEffectApplyBatchUVs(item, u0, v0, u1, v1);
+
+	float red = 1.0f;
+	float green = 1.0f;
+	float blue = 1.0f;
+	if (vis->id == SNOWFLAKE_INDEX)
+		VisEffectColorToFloat(GR_16_TO_COLOR(vis->lighting_color), &red, &green, &blue);
+	VisEffectApplyBatchVertexColor(item, red, green, blue, alpha);
+
+	key.bitmap_handle = bm_handle;
+	key.alpha_type = AT_SATURATE_TEXTURE_VERTEX;
+	key.soft_particles = (vis->id == SNOWFLAKE_INDEX) ?
+		VisEffectShouldUseSoftSnowParticles(vis, zbuffer_state) : false;
+	key.zbuffer_state = zbuffer_state;
+
+	return VisEffectClipAndProjectBatchItem(item, 0.0f, key.soft_particles);
+}
+
+static bool VisEffectBuildSmokeTrailBatchItem(vis_effect* vis, VisSmokeTrailBatchKey& key,
+	VisFireballBatchItem& item)
+{
+	if (vis->type != VIS_FIREBALL || vis->id != BILLBOARD_SMOKETRAIL_INDEX)
+		return false;
+	if (vis->lifetime <= 0.0f)
+		return false;
+
+	const float time_live = Gametime - vis->creation_time;
+	float norm_time = time_live / vis->lifetime;
+	if (norm_time >= 1.0f)
+		norm_time = 0.99999f;
+	if (norm_time < 0.0f)
+		norm_time = 0.0f;
+
+	float alpha_norm = vis->lifeleft / vis->lifetime;
+	if (alpha_norm <= 0.0f)
+		return false;
+
+	float width = vis->billboard_info.width * alpha_norm;
+	if (alpha_norm > 0.8f)
+	{
+		float newnorm = 1.0f - ((alpha_norm - 0.8f) / 0.2f);
+		width *= newnorm;
+	}
+	if (width <= 0.0f)
+		return false;
+
+	alpha_norm *= 0.7f;
+
+	g3Point top_point;
+	g3Point bot_point;
+	g3_RotatePoint(&top_point, &vis->pos);
+	g3_RotatePoint(&bot_point, &vis->end_pos);
+
+	if (!GetBillboardCorners(item.points, &top_point, &bot_point, width))
+		return false;
+	item.nv = 4;
+
+	int texnum = vis->custom_handle;
+	if (texnum < 0 || texnum >= MAX_TEXTURES || !GameTextures[texnum].used)
+		return false;
+
+	int source_bm_handle = BAD_BITMAP_HANDLE;
+	if (GameTextures[texnum].flags & TF_ANIMATED)
+	{
+		vclip* vc = &GameVClips[GameTextures[texnum].bm_handle];
+		if (!vc->used || !vc->frames || vc->num_frames <= 0)
+			return false;
+		int int_frame = vc->num_frames * norm_time;
+		if (int_frame < 0)
+			int_frame = 0;
+		if (int_frame >= vc->num_frames)
+			int_frame = vc->num_frames - 1;
+		source_bm_handle = vc->frames[int_frame];
+	}
+	else
+	{
+		source_bm_handle = GetTextureBitmap(texnum, 0);
+	}
+
+	int bm_handle = BAD_BITMAP_HANDLE;
+	int bitmap_width = 0;
+	int bitmap_height = 0;
+	float u0 = 0.0f;
+	float v0 = 0.0f;
+	float u1 = 1.0f;
+	float v1 = 1.0f;
+	VisEffectSelectBitmapForBatch(source_bm_handle, &bm_handle, &bitmap_width, &bitmap_height,
+		&u0, &v0, &u1, &v1);
+	if (bm_handle <= BAD_BITMAP_HANDLE || bitmap_width <= 0 || bitmap_height <= 0)
+		return false;
+
+	VisEffectApplyBatchUVs(item, u0, v0, u1, v1);
+	float red = 1.0f;
+	float green = 1.0f;
+	float blue = 1.0f;
+	VisEffectColorToFloat(GR_16_TO_COLOR(vis->lighting_color), &red, &green, &blue);
+	VisEffectApplyBatchVertexColor(item, red, green, blue, alpha_norm);
+
+	key.bitmap_handle = bm_handle;
+	key.alpha_type = (GameTextures[texnum].flags & TF_SATURATE) ?
+		AT_SATURATE_TEXTURE_VERTEX : AT_TEXTURE_VERTEX;
+	key.soft_particles = Render_soft_smoke_trails && !(vis->flags & VF_NO_SOFT_PARTICLE);
+
+	return VisEffectProjectBatchItemNoViewportClip(item, 0.0f, key.soft_particles);
+}
+
+static void FlushVisFireballBatchesNow()
 {
 	if (!VisEffectHasQueuedBatch())
 	{
@@ -1975,6 +2363,143 @@ static void FlushVisEffectBatchesNow()
 	VisFireball_batch_valid = false;
 }
 
+static void FlushVisSmokeTrailBatchesNow()
+{
+	if (!VisEffectHasQueuedSmokeTrailBatch())
+		return;
+
+	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
+
+	rend_SetAlphaType(VisSmokeTrail_batch_key.alpha_type);
+	rend_SetAlphaValue(255);
+	rend_SetOverlayType(OT_NONE);
+	rend_SetZBias(0.0f);
+	rend_SetZBufferWriteMask(0);
+	rend_SetWrapType(WT_CLAMP);
+	rend_SetLighting(LS_GOURAUD);
+	rend_SetColorModel(CM_RGB);
+	rend_SetAOSuppression(1.0f);
+	rend_SetTextureType(TT_LINEAR);
+	rend_SetSoftParticleState(VisSmokeTrail_batch_key.soft_particles ? 1 : 0);
+
+	std::vector<renderer_poly_batch_item> renderer_items(VisSmokeTrail_batch_items.size());
+	for (size_t i = 0; i < VisSmokeTrail_batch_items.size(); i++)
+	{
+		VisSmokeTrail_batch_items[i].RefreshPointList();
+		renderer_items[i].pointlist = VisSmokeTrail_batch_items[i].pointlist;
+		renderer_items[i].nv = VisSmokeTrail_batch_items[i].nv;
+	}
+
+	rend_DrawPolygon3DBatch(VisSmokeTrail_batch_key.bitmap_handle, renderer_items.data(),
+		(int)renderer_items.size(), MAP_TYPE_BITMAP);
+
+	rend_SetSoftParticleState(0);
+	rend_SetAOSuppression(0.0f);
+	rend_SetZBias(0.0f);
+	rend_SetZBufferWriteMask(1);
+	rend_SetWrapType(WT_WRAP);
+	rend_SetLighting(LS_NONE);
+	rend_SetColorModel(CM_MONO);
+
+	VisSmokeTrail_batch_items.clear();
+	VisSmokeTrail_batch_valid = false;
+}
+
+static void FlushVisWeatherQuadBatchesNow()
+{
+	if (!VisEffectHasQueuedWeatherQuadBatch())
+		return;
+
+	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
+
+	rend_SetAlphaType(VisWeather_quad_batch_key.alpha_type);
+	rend_SetAlphaValue(255);
+	rend_SetOverlayType(OT_NONE);
+	rend_SetZBias(0.0f);
+	rend_SetZBufferState(VisWeather_quad_batch_key.zbuffer_state ? 1 : 0);
+	rend_SetZBufferWriteMask(0);
+	rend_SetWrapType(WT_CLAMP);
+	rend_SetLighting(LS_GOURAUD);
+	rend_SetColorModel(CM_RGB);
+	rend_SetAOSuppression(1.0f);
+	rend_SetTextureType(TT_LINEAR);
+	rend_SetSoftParticleState(VisWeather_quad_batch_key.soft_particles ? 1 : 0);
+
+	std::vector<renderer_poly_batch_item> renderer_items(VisWeather_quad_batch_items.size());
+	for (size_t i = 0; i < VisWeather_quad_batch_items.size(); i++)
+	{
+		VisWeather_quad_batch_items[i].RefreshPointList();
+		renderer_items[i].pointlist = VisWeather_quad_batch_items[i].pointlist;
+		renderer_items[i].nv = VisWeather_quad_batch_items[i].nv;
+	}
+
+	rend_DrawPolygon3DBatch(VisWeather_quad_batch_key.bitmap_handle, renderer_items.data(),
+		(int)renderer_items.size(), MAP_TYPE_BITMAP);
+
+	rend_SetSoftParticleState(0);
+	rend_SetAOSuppression(0.0f);
+	rend_SetZBias(0.0f);
+	rend_SetZBufferState(1);
+	rend_SetZBufferWriteMask(1);
+	rend_SetWrapType(WT_WRAP);
+	rend_SetLighting(LS_NONE);
+	rend_SetColorModel(CM_MONO);
+
+	VisWeather_quad_batch_items.clear();
+	VisWeather_quad_batch_valid = false;
+}
+
+static void FlushVisWeatherLineBatchesNow()
+{
+	if (!VisEffectHasQueuedWeatherLineBatch())
+		return;
+
+	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
+
+	rend_SetAlphaType(AT_SATURATE_VERTEX);
+	rend_SetTextureType(TT_FLAT);
+	rend_SetLighting(LS_GOURAUD);
+	rend_SetColorModel(CM_RGB);
+	rend_SetOverlayType(OT_NONE);
+	rend_SetZBias(0.0f);
+	rend_SetZBufferState(1);
+	rend_SetZBufferWriteMask(0);
+	rend_SetAOSuppression(1.0f);
+	rend_SetSoftParticleState(VisWeather_line_batch_soft ? 1 : 0);
+
+	std::vector<renderer_line_batch_item> renderer_items(VisWeather_line_batch_items.size());
+	for (size_t i = 0; i < VisWeather_line_batch_items.size(); i++)
+	{
+		VisWeather_line_batch_items[i].RefreshItem();
+		renderer_items[i] = VisWeather_line_batch_items[i].item;
+	}
+
+	rend_DrawSpecialLineBatch(renderer_items.data(), (int)renderer_items.size());
+
+	rend_SetSoftParticleState(0);
+	rend_SetAOSuppression(0.0f);
+	rend_SetZBias(0.0f);
+	rend_SetZBufferWriteMask(1);
+	rend_SetLighting(LS_NONE);
+	rend_SetColorModel(CM_MONO);
+
+	VisWeather_line_batch_items.clear();
+	VisWeather_line_batch_valid = false;
+}
+
+static void FlushVisWeatherBatchesNow()
+{
+	FlushVisWeatherQuadBatchesNow();
+	FlushVisWeatherLineBatchesNow();
+}
+
+static void FlushVisEffectBatchesNow()
+{
+	FlushVisFireballBatchesNow();
+	FlushVisWeatherBatchesNow();
+	FlushVisSmokeTrailBatchesNow();
+}
+
 void FlushVisEffectBatches()
 {
 	if (VIS_FIREBALL_BARRIER_FLUSHES_ENABLED)
@@ -1989,7 +2514,7 @@ void ForceFlushVisEffectBatches()
 static void QueueVisEffectBatchItem(const VisFireballBatchKey& key, const VisFireballBatchItem& item)
 {
 	if (VisFireball_batch_valid && !VisFireball_batch_key.Equals(key))
-		FlushVisEffectBatchesNow();
+		FlushVisFireballBatchesNow();
 
 	if (!VisFireball_batch_valid)
 	{
@@ -2000,8 +2525,100 @@ static void QueueVisEffectBatchItem(const VisFireballBatchKey& key, const VisFir
 	VisFireball_batch_items.push_back(item);
 }
 
+static void QueueVisWeatherQuadBatchItem(const VisWeatherBatchKey& key, const VisFireballBatchItem& item)
+{
+	FlushVisFireballBatchesNow();
+	FlushVisSmokeTrailBatchesNow();
+	FlushVisWeatherLineBatchesNow();
+
+	if (VisWeather_quad_batch_valid && !VisWeather_quad_batch_key.Equals(key))
+		FlushVisWeatherQuadBatchesNow();
+
+	if (!VisWeather_quad_batch_valid)
+	{
+		VisWeather_quad_batch_key = key;
+		VisWeather_quad_batch_valid = true;
+	}
+
+	VisWeather_quad_batch_items.push_back(item);
+}
+
+static void QueueVisWeatherLineBatchItem(bool soft_particles, const VisWeatherLineBatchItem& item)
+{
+	FlushVisFireballBatchesNow();
+	FlushVisSmokeTrailBatchesNow();
+	FlushVisWeatherQuadBatchesNow();
+
+	if (VisWeather_line_batch_valid && VisWeather_line_batch_soft != soft_particles)
+		FlushVisWeatherLineBatchesNow();
+
+	if (!VisWeather_line_batch_valid)
+	{
+		VisWeather_line_batch_soft = soft_particles;
+		VisWeather_line_batch_valid = true;
+	}
+
+	VisWeather_line_batch_items.push_back(item);
+}
+
+static void QueueVisSmokeTrailBatchItem(const VisSmokeTrailBatchKey& key, const VisFireballBatchItem& item)
+{
+	FlushVisFireballBatchesNow();
+	FlushVisWeatherBatchesNow();
+
+	if (VisSmokeTrail_batch_valid && !VisSmokeTrail_batch_key.Equals(key))
+		FlushVisSmokeTrailBatchesNow();
+
+	if (!VisSmokeTrail_batch_valid)
+	{
+		VisSmokeTrail_batch_key = key;
+		VisSmokeTrail_batch_valid = true;
+	}
+
+	VisSmokeTrail_batch_items.push_back(item);
+}
+
 void DrawVisEffectMaybeBatched(vis_effect* vis)
 {
+	if (vis->type == VIS_FIREBALL && VisEffectIsWeatherBatchCandidate(vis->id))
+	{
+		if (vis->id == FADING_LINE_INDEX)
+		{
+			VisWeatherLineBatchItem line_item = {};
+			bool soft_particles = false;
+			if (VisEffectBuildWeatherLineBatchItem(vis, line_item, soft_particles))
+			{
+				QueueVisWeatherLineBatchItem(soft_particles, line_item);
+				return;
+			}
+		}
+		else
+		{
+			VisWeatherBatchKey weather_key = {};
+			VisFireballBatchItem weather_item = {};
+			if (VisEffectBuildWeatherQuadBatchItem(vis, weather_key, weather_item))
+			{
+				QueueVisWeatherQuadBatchItem(weather_key, weather_item);
+				return;
+			}
+		}
+	}
+
+	if (Render_batched_smoke_trails && vis->type == VIS_FIREBALL &&
+		vis->id == BILLBOARD_SMOKETRAIL_INDEX)
+	{
+		VisSmokeTrailBatchKey smoke_key = {};
+		VisFireballBatchItem smoke_item = {};
+		if (VisEffectBuildSmokeTrailBatchItem(vis, smoke_key, smoke_item))
+		{
+			QueueVisSmokeTrailBatchItem(smoke_key, smoke_item);
+			return;
+		}
+	}
+
+	FlushVisWeatherBatchesNow();
+	FlushVisSmokeTrailBatchesNow();
+
 	VisFireballBatchKey key = {};
 	VisFireballBatchItem item = {};
 	VisFireballBatchKey blend_key = {};
@@ -2321,7 +2938,22 @@ void DrawVisBillboardSmoketrail(vis_effect* vis)
 	pnts[3].p3_u = 0;
 	pnts[3].p3_v = 1;
 
-	g3_DrawPoly(4, pntlist, bm_handle);
+	rend_SetSoftParticleState(Render_soft_smoke_trails &&
+		!(vis->flags & VF_NO_SOFT_PARTICLE) ? 1 : 0);
+	bool valid = true;
+	for (int i = 0; i < 4; i++)
+	{
+		if (pnts[i].p3_codes & CC_BEHIND)
+		{
+			valid = false;
+			break;
+		}
+		if (!(pnts[i].p3_flags & PF_PROJECTED))
+			g3_ProjectPoint(&pnts[i]);
+	}
+	if (valid)
+		rend_DrawPolygon3D(bm_handle, pntlist, 4, MAP_TYPE_BITMAP);
+	rend_SetSoftParticleState(0);
 
 	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
