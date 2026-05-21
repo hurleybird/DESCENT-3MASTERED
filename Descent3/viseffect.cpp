@@ -1047,14 +1047,17 @@ struct VisFireballBatchKey
 	}
 };
 
+static const int VIS_FIREBALL_BATCH_MAX_VERTS = 16;
+
 struct VisFireballBatchItem
 {
-	g3Point points[4];
-	g3Point* pointlist[4];
+	g3Point points[VIS_FIREBALL_BATCH_MAX_VERTS];
+	g3Point* pointlist[VIS_FIREBALL_BATCH_MAX_VERTS];
+	int nv;
 
 	void RefreshPointList()
 	{
-		for (int i = 0; i < 4; i++)
+		for (int i = 0; i < nv; i++)
 			pointlist[i] = &points[i];
 	}
 };
@@ -1084,7 +1087,7 @@ static VisFireballBatchKey VisFireball_batch_key = {};
 static std::vector<VisFireballBatchItem> VisFireball_batch_items;
 static std::vector<VisFireballVClipAtlas> VisFireball_vclip_atlases;
 static const bool VIS_FIREBALL_BARRIER_FLUSHES_ENABLED = false;
-static const bool VIS_FIREBALL_BATCH_DEBUG_TINT = true;
+static const bool VIS_FIREBALL_BATCH_DEBUG_TINT = false;
 static const int VIS_FIREBALL_BATCH_DEBUG_TINT_COLOR = GR_RGB(0, 255, 96);
 static const int VIS_FIREBALL_ATLAS_PADDING = 1;
 static const int VIS_FIREBALL_ATLAS_MAX_DIMENSION = 2048;
@@ -1413,19 +1416,61 @@ static sbyte VisEffectBatchAlphaType(sbyte alpha_type, ubyte alpha_value, float*
 	return alpha_type;
 }
 
-static bool VisEffectProjectBatchPoints(VisFireballBatchItem& item, float z_bias, float vertex_alpha)
+static bool VisEffectClipAndProjectBatchItem(VisFireballBatchItem& item, float z_bias)
 {
-	for (int i = 0; i < 4; i++)
-	{
-		item.points[i].p3_flags |= PF_RGBA;
-		item.points[i].p3_a = vertex_alpha;
+	if (item.nv < 3 || item.nv > VIS_FIREBALL_BATCH_MAX_VERTS)
+		return false;
 
-		if (item.points[i].p3_codes)
+	item.RefreshPointList();
+
+	g3Codes clip_codes = {};
+	clip_codes.cc_or = 0;
+	clip_codes.cc_and = 0xff;
+	for (int i = 0; i < item.nv; i++)
+	{
+		const ubyte code = item.points[i].p3_codes;
+		clip_codes.cc_or |= code;
+		clip_codes.cc_and &= code;
+	}
+
+	if (clip_codes.cc_and)
+		return false;
+
+	if (clip_codes.cc_or)
+	{
+		int clipped_nv = item.nv;
+		g3Point** clipped_points = g3_ClipPolygon(item.pointlist, &clipped_nv, &clip_codes);
+		const bool clipped_valid = clipped_nv >= 3 &&
+			clipped_nv <= VIS_FIREBALL_BATCH_MAX_VERTS &&
+			!(clip_codes.cc_or & CC_BEHIND) &&
+			!clip_codes.cc_and;
+
+		g3Point copied_points[VIS_FIREBALL_BATCH_MAX_VERTS];
+		if (clipped_valid)
+		{
+			for (int i = 0; i < clipped_nv; i++)
+			{
+				copied_points[i] = *clipped_points[i];
+				copied_points[i].p3_flags &= ~PF_TEMP_POINT;
+			}
+		}
+
+		g3_FreeTempPoints(clipped_points, clipped_nv);
+
+		if (!clipped_valid)
 			return false;
 
+		item.nv = clipped_nv;
+		for (int i = 0; i < item.nv; i++)
+			item.points[i] = copied_points[i];
+	}
+
+	for (int i = 0; i < item.nv; i++)
+	{
+		if (item.points[i].p3_codes & CC_BEHIND)
+			return false;
 		if (!(item.points[i].p3_flags & PF_PROJECTED))
 			g3_ProjectPoint(&item.points[i]);
-
 		item.points[i].p3_z += z_bias;
 	}
 
@@ -1442,7 +1487,7 @@ static void VisEffectColorToFloat(int color, float* red, float* green, float* bl
 static void VisEffectApplyBatchVertexColor(VisFireballBatchItem& item, float red, float green,
 	float blue, float alpha)
 {
-	for (int i = 0; i < 4; i++)
+	for (int i = 0; i < item.nv; i++)
 	{
 		item.points[i].p3_flags |= PF_RGBA;
 		item.points[i].p3_r = red;
@@ -1453,7 +1498,7 @@ static void VisEffectApplyBatchVertexColor(VisFireballBatchItem& item, float red
 }
 
 static bool VisEffectBuildRotatedBatchItem(VisFireballBatchItem& item, const vector* pos, angle rot_angle,
-	float width, float height, float z_bias, float vertex_alpha)
+	float width, float height)
 {
 	g3Point center;
 	if (g3_RotatePoint(&center, const_cast<vector*>(pos)) & CC_BEHIND)
@@ -1476,6 +1521,7 @@ static bool VisEffectBuildRotatedBatchItem(VisFireballBatchItem& item, const vec
 	rot_vectors[3].x = -width;
 	rot_vectors[3].y = -height;
 
+	item.nv = 4;
 	for (int i = 0; i < 4; i++)
 	{
 		rot_vectors[i].z = 0;
@@ -1495,11 +1541,11 @@ static bool VisEffectBuildRotatedBatchItem(VisFireballBatchItem& item, const vec
 	item.points[3].p3_u = 0.0f;
 	item.points[3].p3_v = 1.0f;
 
-	return VisEffectProjectBatchPoints(item, z_bias, vertex_alpha);
+	return true;
 }
 
 static bool VisEffectBuildPlanarBatchItem(VisFireballBatchItem& item, const vector* pos, const vector* norm,
-	angle rot_angle, float width, float height, float z_bias, float vertex_alpha)
+	angle rot_angle, float width, float height)
 {
 	matrix rot_matrix;
 	vm_VectorToMatrix(&rot_matrix, const_cast<vector*>(norm), NULL, NULL);
@@ -1518,6 +1564,7 @@ static bool VisEffectBuildPlanarBatchItem(VisFireballBatchItem& item, const vect
 	rot_vectors[3] = (twist_matrix.rvec * -width);
 	rot_vectors[3] -= (twist_matrix.uvec * height);
 
+	item.nv = 4;
 	for (int i = 0; i < 4; ++i)
 	{
 		vector temp_vec = rot_vectors[i];
@@ -1537,7 +1584,7 @@ static bool VisEffectBuildPlanarBatchItem(VisFireballBatchItem& item, const vect
 	item.points[3].p3_u = 0.0f;
 	item.points[3].p3_v = 1.0f;
 
-	return VisEffectProjectBatchPoints(item, z_bias, vertex_alpha);
+	return true;
 }
 
 static bool VisEffectIsSpecialFireball(int id)
@@ -1766,15 +1813,15 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 	bool built;
 
 	if (vis->flags & VF_PLANAR)
-		built = VisEffectBuildPlanarBatchItem(item, &vis->pos, &vis->end_pos, rot_angle, width, height,
-			z_bias, vertex_alpha);
+		built = VisEffectBuildPlanarBatchItem(item, &vis->pos, &vis->end_pos, rot_angle, width, height);
 	else
-		built = VisEffectBuildRotatedBatchItem(item, &vis->pos, rot_angle, width, height, z_bias, vertex_alpha);
+		built = VisEffectBuildRotatedBatchItem(item, &vis->pos, rot_angle, width, height);
 
 	if (built)
 	{
 		VisEffectApplyBatchUVs(item, u0, v0, u1, v1);
 		VisEffectApplyBatchVertexColor(item, vertex_red, vertex_green, vertex_blue, vertex_alpha);
+		built = VisEffectClipAndProjectBatchItem(item, z_bias);
 	}
 
 	return built;
@@ -1814,7 +1861,7 @@ static void FlushVisEffectBatchesNow()
 	{
 		VisFireball_batch_items[i].RefreshPointList();
 		renderer_items[i].pointlist = VisFireball_batch_items[i].pointlist;
-		renderer_items[i].nv = 4;
+		renderer_items[i].nv = VisFireball_batch_items[i].nv;
 	}
 
 	rend_DrawPolygon3DBatch(VisFireball_batch_key.bitmap_handle, renderer_items.data(),
