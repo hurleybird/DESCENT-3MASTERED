@@ -148,6 +148,7 @@ void VertexBuffer::Draw(PrimitiveType mode) const
 {
 	rend_RecordDrawCall(RENDERER_DRAW_CALL_MESH);
 	glDrawArrays(GetGLPrimitiveType(mode), 0, m_vertexcount);
+	rend_NotifyDepthBufferWrite();
 }
 
 void VertexBuffer::Draw(PrimitiveType mode, ElementRange range) const
@@ -155,12 +156,14 @@ void VertexBuffer::Draw(PrimitiveType mode, ElementRange range) const
 	assert(range.offset + range.count <= m_vertexcount);
 	rend_RecordDrawCall(RENDERER_DRAW_CALL_MESH);
 	glDrawArrays(GetGLPrimitiveType(mode), range.offset, range.count);
+	rend_NotifyDepthBufferWrite();
 }
 
 void VertexBuffer::DrawIndexed(PrimitiveType mode, ElementRange range) const
 {
 	rend_RecordDrawCall(RENDERER_DRAW_CALL_MESH);
 	glDrawElements(GetGLPrimitiveType(mode), range.count, GL_UNSIGNED_INT, (const void*)(range.offset * sizeof(uint32_t)));
+	rend_NotifyDepthBufferWrite();
 }
 
 void VertexBuffer::Destroy()

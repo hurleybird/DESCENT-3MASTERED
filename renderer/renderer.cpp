@@ -398,6 +398,14 @@ void rend_SetSoftParticleState(int state)
 	renderer_inst->SetSoftParticleState(state);
 }
 
+void rend_NotifyDepthBufferWrite()
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->NotifyDepthBufferWrite();
+}
+
 void rend_SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect)
 {
 	if (!Renderer_initted)

@@ -202,12 +202,14 @@ void main()
 	if (soft_particle_enabled != 0 && color.a > 0.0 &&
 		soft_particle_screen_size.x > 0.0 && soft_particle_screen_size.y > 0.0)
 	{
-		vec2 depth_uv = clamp(gl_FragCoord.xy / soft_particle_screen_size, vec2(0.0), vec2(1.0));
-		float scene_depth = texture(soft_particle_depth, depth_uv).r;
+		ivec2 depth_size = max(ivec2(soft_particle_screen_size), ivec2(1));
+		ivec2 depth_pixel = clamp(ivec2(gl_FragCoord.xy), ivec2(0), depth_size - ivec2(1));
+		float scene_depth = texelFetch(soft_particle_depth, depth_pixel, 0).r;
 		if (scene_depth < 0.9999)
 		{
 			float scene_eye = SoftParticleEyeDepth(scene_depth);
-			float particle_eye = SoftParticleEyeDepth(gl_FragCoord.z);
+			float particle_depth = outnormal.w >= 0.0 ? outnormal.w : gl_FragCoord.z;
+			float particle_eye = SoftParticleEyeDepth(particle_depth);
 			float fade = clamp((scene_eye - particle_eye) / max(soft_particle_depth_range, 0.0001), 0.0, 1.0);
 			color.a *= fade;
 		}

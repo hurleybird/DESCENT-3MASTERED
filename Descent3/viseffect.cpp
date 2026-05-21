@@ -1471,6 +1471,11 @@ static bool VisEffectClipAndProjectBatchItem(VisFireballBatchItem& item, float z
 			return false;
 		if (!(item.points[i].p3_flags & PF_PROJECTED))
 			g3_ProjectPoint(&item.points[i]);
+		if (Render_soft_vis_effects)
+		{
+			item.points[i].p3_motion_world_pos.z = item.points[i].p3_z;
+			item.points[i].p3_motion_world_valid = 2;
+		}
 		item.points[i].p3_z += z_bias;
 	}
 

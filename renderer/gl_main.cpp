@@ -1207,6 +1207,8 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		glEnable(GL_MULTISAMPLE);
 	else
 		glDisable(GL_MULTISAMPLE);
+	depth_write_enabled = true;
+	glDepthMask(GL_TRUE);
 	if (framebuffer_state_snapshot_pending && framebuffer_ok)
 	{
 		framebuffer_state_snapshot_pending = false;
@@ -1706,6 +1708,8 @@ void GL4Renderer::StartCockpitSceneFrame(int x1, int y1, int x2, int y2)
 		glEnable(GL_MULTISAMPLE);
 	else
 		glDisable(GL_MULTISAMPLE);
+	depth_write_enabled = true;
+	glDepthMask(GL_TRUE);
 
 	OpenGL_state.clip_x1 = x1;
 	OpenGL_state.clip_y1 = y1;
@@ -2888,6 +2892,7 @@ void GL4Renderer::SetZBias(float z_bias)
 void GL4Renderer::SetZBufferWriteMask(int state)
 {
 	OpenGL_sets_this_frame[5]++;
+	depth_write_enabled = state != 0;
 	if (state)
 	{
 		glDepthMask(GL_TRUE);

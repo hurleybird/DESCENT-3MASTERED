@@ -393,6 +393,8 @@ void g3_DrawRotatedBitmap(vector *pos,angle rot_angle,float width,float height,i
 		vm_MatrixMulVector(&rot_points[i].p3_vec, &rot_vectors[i], &rot_matrix);
 
 		rot_points[i].p3_flags = PF_UV | PF_RGBA;
+		rot_points[i].p3_motion_world_valid = 0;
+		rot_points[i].p3_motion_prev_world_valid = 0;
 		rot_points[i].p3_l = 1.0;
 		rot_points[i].p3_vec += pnt.p3_vec;
 
@@ -464,6 +466,8 @@ void g3_DrawPlanarRotatedBitmap(vector *pos,vector *norm,angle rot_angle,float w
 
 		g3_RotatePoint( &rot_points[i], &rot_vectors[i] );
 		rot_points[i].p3_flags |= PF_UV|PF_L;
+		rot_points[i].p3_motion_world_valid = 0;
+		rot_points[i].p3_motion_prev_world_valid = 0;
 		rot_points[i].p3_l     = 1.0f;
 
 		pntlist[i] = &rot_points[i];

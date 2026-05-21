@@ -30,6 +30,12 @@ constexpr int NUM_VERTS_PER_BUFFER = 640000;
 constexpr float PIXEL_MOTION_BLUR_REFERENCE_FRAME_TIME = 1.0f / 60.0f;
 constexpr unsigned int GL4_MOTION_OBJECT_LEGACY_BLUR_MASK = 0x80000000u;
 
+static float GL4DepthFromEyeZ(float z)
+{
+	const float clamped_z = std::max(z, 0.0001f);
+	return std::max(0.f, std::min(1.0f, 1.0f - (1.0f / clamped_z)));
+}
+
 static bool GL4DrawTargetIsFramebuffer(GLuint framebuffer)
 {
 	GLint current_draw = 0;
@@ -659,6 +665,11 @@ int GL4Renderer::CopyVertices(const gl_vertex* vertices, int numvertices)
 void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xscalar, float yscalar,
 	ubyte fr, ubyte fg, ubyte fb)
 {
+	vert.normal.x = 0.0f;
+	vert.normal.y = 0.0f;
+	vert.normal.z = 0.0f;
+	vert.normal.w = -1.0f;
+
 	float alpha = Alpha_multiplier * OpenGL_Alpha_factor;
 	if (OpenGL_state.cur_alpha_type & ATF_VERTEX)
 		alpha = pnt->p3_a * Alpha_multiplier * OpenGL_Alpha_factor;
@@ -732,6 +743,13 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 		vert.normal.w = payloadw;
 	}
 
+	if (soft_particle_draw_enabled)
+	{
+		const float particle_z = pnt->p3_motion_world_valid == 2 ?
+			pnt->p3_motion_world_pos.z : pnt->p3_z;
+		vert.normal.w = GL4DepthFromEyeZ(particle_z);
+	}
+
 	vert.vert.x = pnt->p3_sx;
 	vert.vert.y = pnt->p3_sy;
 	vert.motion_world_position.x = 0.0f;
@@ -788,7 +806,7 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 		}
 	}
 
-	float z = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / (pnt->p3_z + Z_bias))));
+	float z = GL4DepthFromEyeZ(pnt->p3_z + Z_bias);
 	vert.vert.z = -z;
 }
 
@@ -1215,6 +1233,22 @@ GLuint GL4Renderer::PrepareSoftParticleDepthTexture()
 	return soft_particle_depth_framebuffer.DepthTextureRaw();
 }
 
+void GL4Renderer::InvalidateSoftParticleDepthTexture()
+{
+	soft_particle_depth_copy_valid = false;
+	soft_particle_depth_source_framebuffer = 0;
+}
+
+void GL4Renderer::NotifyDepthBufferWrite()
+{
+	if (framebuffer_ok && OpenGL_state.cur_zbuffer_state != 0 && depth_write_enabled &&
+		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle()))
+	{
+		framebuffers[framebuffer_current_draw].MarkDepthDirty();
+		InvalidateSoftParticleDepthTexture();
+	}
+}
+
 void GL4Renderer::SelectDrawShader()
 {
 	int shader_index = 0;
@@ -1402,6 +1436,11 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 	{
 		pnt = p[i];
 
+		vertp->normal.x = 0.0f;
+		vertp->normal.y = 0.0f;
+		vertp->normal.z = 0.0f;
+		vertp->normal.w = -1.0f;
+
 		if (OpenGL_state.cur_alpha_type & ATF_VERTEX)
 		{
 			alpha = pnt->p3_a * Alpha_multiplier * OpenGL_Alpha_factor;
@@ -1479,6 +1518,13 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 			vertp->normal.w = payloadw;
 		}
 
+		if (soft_particle_draw_enabled)
+		{
+			const float particle_z = pnt->p3_motion_world_valid == 2 ?
+				pnt->p3_motion_world_pos.z : pnt->p3_z;
+			vertp->normal.w = GL4DepthFromEyeZ(particle_z);
+		}
+
 		// Finally, specify a vertex
 		vertp->vert.x = pnt->p3_sx;
 		vertp->vert.y = pnt->p3_sy;
@@ -1536,7 +1582,7 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 			}
 		}
 
-		float z = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / (pnt->p3_z + Z_bias))));
+		float z = GL4DepthFromEyeZ(pnt->p3_z + Z_bias);
 		vertp->vert.z = -z;
 	}
 
@@ -1561,6 +1607,7 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 	}
 	rend_RecordDrawCall(draw_call_category);
 	glDrawArrays(GL_TRIANGLE_FAN, offset, nv);
+	NotifyDepthBufferWrite();
 	if (include_motion_vectors || include_motion_object_ids)
 	{
 		motion_vectors_dirty = true;
@@ -1679,6 +1726,7 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 	}
 	rend_RecordDrawCall(draw_call_category);
 	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)vertices.size());
+	NotifyDepthBufferWrite();
 	if (include_motion_vectors || include_motion_object_ids)
 	{
 		motion_vectors_dirty = true;

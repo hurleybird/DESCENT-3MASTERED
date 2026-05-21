@@ -473,6 +473,7 @@ void rend_SetBloomSuppression(float value);
 void rend_SetAOClass(int value);
 void rend_SetPostMaskOnly(int state);
 void rend_SetSoftParticleState(int state);
+void rend_NotifyDepthBufferWrite();
 
 struct renderer_cockpit_backing_effect
 {
