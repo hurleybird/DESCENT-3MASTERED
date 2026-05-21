@@ -1100,9 +1100,6 @@ inline void RenderSubmodelLightmapFace (poly_model *pm,bsp_info *sm,int facenum)
 
 static void SetupPolymodelFogViewPlane()
 {
-	g3Point portal_point;
-	g3_RotatePoint(&portal_point, &Polymodel_fog_portal_vert);
-
 	g3_RotateDeltaVec(&Fog_plane, &Polymodel_fog_plane);
 	if (vm_NormalizeVector(&Fog_plane) <= 0.0001f)
 	{
@@ -1111,8 +1108,8 @@ static void SetupPolymodelFogViewPlane()
 		return;
 	}
 
-	Fog_distance = -(Fog_plane * portal_point.p3_vec);
-	Fog_eye_distance = Fog_distance;
+	Fog_distance = Polymodel_effect.fog_eye_distance;
+	Fog_eye_distance = Polymodel_effect.fog_eye_distance;
 }
 
 static float GetPolymodelFogMagnitude(g3Point *point)
@@ -1121,10 +1118,6 @@ static float GetPolymodelFogMagnitude(g3Point *point)
 		return point->p3_z;
 
 	float dist = (point->p3_vec * Fog_plane) + Fog_distance;
-	if (Fog_eye_distance == 0.0f || dist == 0.0f ||
-		((Fog_eye_distance > 0.0f) == (dist > 0.0f)))
-		return 0.0f;
-
 	float denom = Fog_eye_distance - dist;
 	if (denom > -0.0001f && denom < 0.0001f)
 		return 0.0f;
