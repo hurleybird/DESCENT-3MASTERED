@@ -1111,6 +1111,9 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_motion_vector_has_previous_uniforms[i] = drawshaders[i].FindUniform("motion_vector_has_previous");
 		drawshader_motion_vector_payload_type_uniforms[i] = drawshaders[i].FindUniform("motion_vector_payload_type");
 		drawshader_motion_vector_object_id_uniforms[i] = drawshaders[i].FindUniform("motion_vector_object_id");
+		drawshader_soft_particle_enabled_uniforms[i] = drawshaders[i].FindUniform("soft_particle_enabled");
+		drawshader_soft_particle_screen_size_uniforms[i] = drawshaders[i].FindUniform("soft_particle_screen_size");
+		drawshader_soft_particle_depth_range_uniforms[i] = drawshaders[i].FindUniform("soft_particle_depth_range");
 	}
 
 	lastdrawshader = -1;
@@ -1166,6 +1169,52 @@ void GL4Renderer::SetDrawDefaults()
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
+GLuint GL4Renderer::PrepareSoftParticleDepthTexture()
+{
+	if (!framebuffer_ok)
+		return 0;
+
+	Framebuffer& source = framebuffers[framebuffer_current_draw];
+	if (source.Handle() == 0 || source.Width() == 0 || source.Height() == 0 ||
+		!GL4DrawTargetIsFramebuffer(source.Handle()))
+	{
+		return 0;
+	}
+
+	if (soft_particle_depth_copy_valid &&
+		soft_particle_depth_source_framebuffer == source.Handle() &&
+		soft_particle_depth_framebuffer.Width() == source.Width() &&
+		soft_particle_depth_framebuffer.Height() == source.Height() &&
+		soft_particle_depth_framebuffer.Handle() != 0)
+	{
+		return soft_particle_depth_framebuffer.DepthTextureRaw();
+	}
+
+	GLint old_read = 0;
+	GLint old_draw = 0;
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+
+	soft_particle_depth_framebuffer.Update(source.Width(), source.Height(), 0);
+	if (soft_particle_depth_framebuffer.Handle() == 0)
+	{
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+		return 0;
+	}
+
+	source.BlitDepthTo(soft_particle_depth_framebuffer.Handle(), 0, 0,
+		soft_particle_depth_framebuffer.Width(), soft_particle_depth_framebuffer.Height());
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+
+	soft_particle_depth_copy_valid = true;
+	soft_particle_depth_source_framebuffer = source.Handle();
+
+	return soft_particle_depth_framebuffer.DepthTextureRaw();
+}
+
 void GL4Renderer::SelectDrawShader()
 {
 	int shader_index = 0;
@@ -1203,7 +1252,7 @@ void GL4Renderer::SelectDrawShader()
 	const bool shader_changed = shader_index != lastdrawshader;
 	drawshaders[shader_index].Use();
 	if (!shader_changed && !legacy_draw_uniforms_dirty && !CurrentDrawUsesPixelMotionTarget() &&
-		!CurrentDrawWritesMotionObjectId())
+		!CurrentDrawWritesMotionObjectId() && !soft_particle_draw_enabled)
 		return;
 
 	if (drawshader_ao_suppression_uniforms[shader_index] != -1)
@@ -1260,6 +1309,25 @@ void GL4Renderer::SelectDrawShader()
 	if (drawshader_motion_vector_object_id_uniforms[shader_index] != -1)
 		glUniform1ui(drawshader_motion_vector_object_id_uniforms[shader_index],
 			CurrentDrawWritesMotionObjectId() ? motion_object_id : 0u);
+	if (drawshader_soft_particle_enabled_uniforms[shader_index] != -1)
+	{
+		GLuint soft_depth = soft_particle_draw_enabled ? PrepareSoftParticleDepthTexture() : 0;
+		glUniform1i(drawshader_soft_particle_enabled_uniforms[shader_index],
+			soft_depth != 0 ? 1 : 0);
+		if (soft_depth != 0)
+		{
+			if (drawshader_soft_particle_screen_size_uniforms[shader_index] != -1)
+				glUniform2f(drawshader_soft_particle_screen_size_uniforms[shader_index],
+					(float)soft_particle_depth_framebuffer.Width(),
+					(float)soft_particle_depth_framebuffer.Height());
+			if (drawshader_soft_particle_depth_range_uniforms[shader_index] != -1)
+				glUniform1f(drawshader_soft_particle_depth_range_uniforms[shader_index],
+					soft_particle_depth_range);
+			GL_BindFramebufferTexture(soft_depth, 2, GL_NEAREST);
+			glActiveTexture(GL_TEXTURE0);
+			Last_texel_unit_set = 0;
+		}
+	}
 
 	const bool phong_enabled = OpenGL_state.cur_light_state == LS_PHONG;
 	if (drawshader_phong_enabled_uniforms[shader_index] != -1)

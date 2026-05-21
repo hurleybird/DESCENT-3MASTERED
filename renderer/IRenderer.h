@@ -199,6 +199,7 @@ public:
 	virtual void SetBloomSuppression(float value) {}
 	virtual void SetAOClass(int value) {}
 	virtual void SetPostMaskOnly(int state) {}
+	virtual void SetSoftParticleState(int state) {}
 	virtual void SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect) {}
 
 	// Draws a scaled 2d bitmap to our buffer

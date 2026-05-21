@@ -1855,6 +1855,7 @@ static void FlushVisEffectBatchesNow()
 	rend_SetColorModel(CM_RGB);
 	rend_SetAOSuppression(1.0f);
 	rend_SetTextureType(TT_LINEAR);
+	rend_SetSoftParticleState(Render_soft_vis_effects ? 1 : 0);
 
 	std::vector<renderer_poly_batch_item> renderer_items(VisFireball_batch_items.size());
 	for (size_t i = 0; i < VisFireball_batch_items.size(); i++)
@@ -1867,6 +1868,7 @@ static void FlushVisEffectBatchesNow()
 	rend_DrawPolygon3DBatch(VisFireball_batch_key.bitmap_handle, renderer_items.data(),
 		(int)renderer_items.size(), MAP_TYPE_BITMAP);
 
+	rend_SetSoftParticleState(0);
 	rend_SetAOSuppression(0.0f);
 	rend_SetZBias(0.0f);
 	rend_SetZBufferWriteMask(1);
@@ -2657,6 +2659,7 @@ void DrawVisEffect(vis_effect* vis)
 	rend_SetWrapType(WT_CLAMP);
 	rend_SetLighting(LS_NONE);
 	rend_SetAOSuppression(1.0f);
+	rend_SetSoftParticleState(Render_soft_vis_effects ? 1 : 0);
 
 	// Draw!!
 	if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX || vis->id == GRAY_SPARK_INDEX)
@@ -2672,6 +2675,7 @@ void DrawVisEffect(vis_effect* vis)
 			g3_DrawRotatedBitmap(&vis->pos, rot_angle, size, (size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle);
 	}
 
+	rend_SetSoftParticleState(0);
 	rend_SetAOSuppression(0.0f);
 	rend_SetZBias(0.0f);
 	rend_SetZBufferWriteMask(1);

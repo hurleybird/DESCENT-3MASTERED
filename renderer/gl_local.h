@@ -96,6 +96,7 @@ class GL4Renderer : public IRenderer
 	Framebuffer post_present_framebuffer;
 	Framebuffer post_composite_framebuffer;
 	Framebuffer motion_blur_framebuffer;
+	Framebuffer soft_particle_depth_framebuffer;
 	MotionVectorResources motion_vectors;
 	PostProtectionMaskResources post_protection_mask;
 	int framebuffer_current_draw = 0;
@@ -273,6 +274,9 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_motion_vector_has_previous_uniforms[8] = {};
 	GLint drawshader_motion_vector_payload_type_uniforms[8] = {};
 	GLint drawshader_motion_vector_object_id_uniforms[8] = {};
+	GLint drawshader_soft_particle_enabled_uniforms[8] = {};
+	GLint drawshader_soft_particle_screen_size_uniforms[8] = {};
+	GLint drawshader_soft_particle_depth_range_uniforms[8] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
 	float ao_suppression_draw_value = 0.0f;
@@ -294,6 +298,10 @@ class GL4Renderer : public IRenderer
 	GLfloat per_pixel_dynamic_directions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
 	GLfloat per_pixel_dynamic_dot_ranges[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
 	GLint per_pixel_dynamic_directional[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
+	bool soft_particle_draw_enabled = false;
+	float soft_particle_depth_range = 2.0f;
+	bool soft_particle_depth_copy_valid = false;
+	GLuint soft_particle_depth_source_framebuffer = 0;
 
 	GLuint drawvao = 0;
 	void* drawbuffermap = 0;
@@ -388,6 +396,7 @@ private:
 	int CopyVertices(const gl_vertex* vertices, int numvertices);
 	void SetDrawDefaults();
 	void SelectDrawShader();
+	GLuint PrepareSoftParticleDepthTexture();
 	void BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xscalar, float yscalar,
 		ubyte fr, ubyte fg, ubyte fb);
 	void FlushFontBatch();
@@ -630,6 +639,7 @@ public:
 	void SetBloomSuppression(float value) override;
 	void SetAOClass(int value) override;
 	void SetPostMaskOnly(int state) override;
+	void SetSoftParticleState(int state) override;
 	void SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect) override;
 
 	// Draws a scaled 2d bitmap to our buffer

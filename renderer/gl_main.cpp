@@ -1140,6 +1140,8 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 	if (framebuffer_ok)
 	{
 		framebuffers[framebuffer_current_draw].MarkAllDirty();
+		soft_particle_depth_copy_valid = false;
+		soft_particle_depth_source_framebuffer = 0;
 		GL4PerfFramebufferState("StartFrame", framebuffers[framebuffer_current_draw],
 			framebuffer_current_draw, SupersamplingFactor());
 		GL4PerfGpuFrameBegin(framebuffers[framebuffer_current_draw], SupersamplingFactor());
@@ -2830,6 +2832,16 @@ void GL4Renderer::SetPostMaskOnly(int state)
 	}
 }
 
+void GL4Renderer::SetSoftParticleState(int state)
+{
+	bool enabled = state != 0;
+	if (enabled == soft_particle_draw_enabled)
+		return;
+
+	soft_particle_draw_enabled = enabled;
+	legacy_draw_uniforms_dirty = true;
+}
+
 void GL4Renderer::SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect)
 {
 	renderer_cockpit_backing_effect next_effect = {};
@@ -3237,6 +3249,9 @@ void GL4Renderer::UpdateFramebuffer(void)
 		post_present_framebuffer.Destroy();
 		post_composite_framebuffer.Destroy();
 		motion_blur_framebuffer.Destroy();
+		soft_particle_depth_framebuffer.Destroy();
+		soft_particle_depth_copy_valid = false;
+		soft_particle_depth_source_framebuffer = 0;
 		motion_vectors.Destroy();
 		post_protection_mask.Destroy();
 		GL_UnbindFramebufferTextures();
@@ -3356,6 +3371,9 @@ void GL4Renderer::CloseFramebuffer(void)
 	post_present_framebuffer.Destroy();
 	post_composite_framebuffer.Destroy();
 	motion_blur_framebuffer.Destroy();
+	soft_particle_depth_framebuffer.Destroy();
+	soft_particle_depth_copy_valid = false;
+	soft_particle_depth_source_framebuffer = 0;
 	bloom_source_valid = false;
 	ao_scene_valid = false;
 	deferred_bloom_apply_pending = false;

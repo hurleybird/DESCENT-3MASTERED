@@ -390,6 +390,14 @@ void rend_SetPostMaskOnly(int state)
 	renderer_inst->SetPostMaskOnly(state);
 }
 
+void rend_SetSoftParticleState(int state)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->SetSoftParticleState(state);
+}
+
 void rend_SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect)
 {
 	if (!Renderer_initted)

@@ -46,6 +46,10 @@ uniform mat4 motion_vector_previous_view_projection;
 uniform int motion_vector_has_previous;
 uniform int motion_vector_payload_type;
 uniform uint motion_vector_object_id;
+uniform int soft_particle_enabled;
+uniform sampler2D soft_particle_depth;
+uniform vec2 soft_particle_screen_size;
+uniform float soft_particle_depth_range;
 
 in vec4 outcolor;
 in vec4 outnormal;
@@ -116,6 +120,11 @@ vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 	}
 
 	return clamp(lightmap_color + dynamic_color, vec3(0.0), vec3(1.0));
+}
+
+float SoftParticleEyeDepth(float depth)
+{
+	return 1.0 / max(1.0 - clamp(depth, 0.0, 0.9999), 0.0001);
 }
 
 void main()
@@ -189,6 +198,19 @@ void main()
 			darkness = clamp(darkness + stripe * cockpit_scanline_strength, 0.0, 1.0);
 		}
 		color = vec4(vec3(0.0), clamp(cockpit_backing_alpha, 0.0, 1.0) * darkness);
+	}
+	if (soft_particle_enabled != 0 && color.a > 0.0 &&
+		soft_particle_screen_size.x > 0.0 && soft_particle_screen_size.y > 0.0)
+	{
+		vec2 depth_uv = clamp(gl_FragCoord.xy / soft_particle_screen_size, vec2(0.0), vec2(1.0));
+		float scene_depth = texture(soft_particle_depth, depth_uv).r;
+		if (scene_depth < 0.9999)
+		{
+			float scene_eye = SoftParticleEyeDepth(scene_depth);
+			float particle_eye = SoftParticleEyeDepth(gl_FragCoord.z);
+			float fade = clamp((scene_eye - particle_eye) / max(soft_particle_depth_range, 0.0001), 0.0, 1.0);
+			color.a *= fade;
+		}
 	}
 	float suppression_alpha = clamp(color.a, 0.0, 1.0);
 	if (post_mask_use_luminance != 0)

@@ -486,6 +486,10 @@ void ShaderProgram::CreateCommonBindings(int bindindex)
 	if (index != -1)
 		glUniform1i(index, 1); //Set to GL_TEXTURE1
 
+	index = glGetUniformLocation(m_name, "soft_particle_depth");
+	if (index != -1)
+		glUniform1i(index, 2); //Set to GL_TEXTURE2
+
 	//Find CommonBlock
 	GLuint uboindex = glGetUniformBlockIndex(m_name, "CommonBlock");
 	if (uboindex != GL_INVALID_INDEX)
