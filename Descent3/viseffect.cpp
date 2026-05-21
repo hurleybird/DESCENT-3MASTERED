@@ -1039,11 +1039,13 @@ struct VisFireballBatchKey
 {
 	int bitmap_handle;
 	sbyte alpha_type;
+	bool soft_particles;
 
 	bool Equals(const VisFireballBatchKey& other) const
 	{
 		return bitmap_handle == other.bitmap_handle &&
-			alpha_type == other.alpha_type;
+			alpha_type == other.alpha_type &&
+			soft_particles == other.soft_particles;
 	}
 };
 
@@ -1087,35 +1089,17 @@ static VisFireballBatchKey VisFireball_batch_key = {};
 static std::vector<VisFireballBatchItem> VisFireball_batch_items;
 static std::vector<VisFireballVClipAtlas> VisFireball_vclip_atlases;
 static const bool VIS_FIREBALL_BARRIER_FLUSHES_ENABLED = false;
-static const bool VIS_FIREBALL_BATCH_DEBUG_TINT = false;
-static const int VIS_FIREBALL_BATCH_DEBUG_TINT_COLOR = GR_RGB(0, 255, 96);
 static const int VIS_FIREBALL_ATLAS_PADDING = 1;
 static const int VIS_FIREBALL_ATLAS_MAX_DIMENSION = 2048;
-
-static vis_fireball_batch_debug_stats VisFireball_batch_debug_stats = {};
-static int VisFireball_batch_debug_frame = -1;
-
-static void VisEffectResetBatchDebugStatsForFrame()
-{
-	if (VisFireball_batch_debug_frame == FrameCount)
-		return;
-
-	VisFireball_batch_debug_stats = {};
-	VisFireball_batch_debug_frame = FrameCount;
-}
 
 static bool VisEffectHasQueuedBatch()
 {
 	return VisFireball_batch_valid && !VisFireball_batch_items.empty();
 }
 
-void VisEffectGetBatchDebugStats(vis_fireball_batch_debug_stats* stats)
+static bool VisEffectShouldUseSoftParticles(const vis_effect* vis)
 {
-	if (!stats)
-		return;
-
-	VisEffectResetBatchDebugStatsForFrame();
-	*stats = VisFireball_batch_debug_stats;
+	return Render_soft_vis_effects && !(vis->flags & VF_NO_SOFT_PARTICLE);
 }
 
 static int VisEffectNextPowerOfTwo(int value)
@@ -1367,14 +1351,7 @@ static void VisEffectSelectVClipBitmap(int vclip_handle, int frame_index, int* b
 		frame_index = vc->num_frames - 1;
 
 	if (VisEffectGetVClipAtlasFrame(vclip_handle, frame_index, bitmap_handle, width, height, u0, v0, u1, v1))
-	{
-		VisEffectResetBatchDebugStatsForFrame();
-		VisFireball_batch_debug_stats.atlas_hits++;
 		return;
-	}
-
-	VisEffectResetBatchDebugStatsForFrame();
-	VisFireball_batch_debug_stats.atlas_fallbacks++;
 
 	*bitmap_handle = vc->frames[frame_index];
 	*width = bm_w(*bitmap_handle, 0);
@@ -1416,7 +1393,7 @@ static sbyte VisEffectBatchAlphaType(sbyte alpha_type, ubyte alpha_value, float*
 	return alpha_type;
 }
 
-static bool VisEffectClipAndProjectBatchItem(VisFireballBatchItem& item, float z_bias)
+static bool VisEffectClipAndProjectBatchItem(VisFireballBatchItem& item, float z_bias, bool soft_particles)
 {
 	if (item.nv < 3 || item.nv > VIS_FIREBALL_BATCH_MAX_VERTS)
 		return false;
@@ -1471,7 +1448,7 @@ static bool VisEffectClipAndProjectBatchItem(VisFireballBatchItem& item, float z
 			return false;
 		if (!(item.points[i].p3_flags & PF_PROJECTED))
 			g3_ProjectPoint(&item.points[i]);
-		if (Render_soft_vis_effects)
+		if (soft_particles)
 		{
 			item.points[i].p3_motion_world_pos.z = item.points[i].p3_z;
 			item.points[i].p3_motion_world_valid = 2;
@@ -1796,6 +1773,7 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 
 	key.bitmap_handle = bm_handle;
 	key.alpha_type = batch_alpha_type;
+	key.soft_particles = VisEffectShouldUseSoftParticles(vis);
 
 	float vertex_red = 1.0f;
 	float vertex_green = 1.0f;
@@ -1804,11 +1782,6 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 	if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX || vis->id == GRAY_SPARK_INDEX)
 	{
 		VisEffectColorToFloat(GR_16_TO_COLOR(vis->lighting_color), &vertex_red, &vertex_green,
-			&vertex_blue);
-	}
-	else if (VIS_FIREBALL_BATCH_DEBUG_TINT)
-	{
-		VisEffectColorToFloat(VIS_FIREBALL_BATCH_DEBUG_TINT_COLOR, &vertex_red, &vertex_green,
 			&vertex_blue);
 	}
 
@@ -1826,7 +1799,7 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 	{
 		VisEffectApplyBatchUVs(item, u0, v0, u1, v1);
 		VisEffectApplyBatchVertexColor(item, vertex_red, vertex_green, vertex_blue, vertex_alpha);
-		built = VisEffectClipAndProjectBatchItem(item, z_bias);
+		built = VisEffectClipAndProjectBatchItem(item, z_bias, key.soft_particles);
 	}
 
 	return built;
@@ -1838,15 +1811,6 @@ static void FlushVisEffectBatchesNow()
 	{
 		return;
 	}
-
-	VisEffectResetBatchDebugStatsForFrame();
-	const unsigned item_count = (unsigned)VisFireball_batch_items.size();
-	VisFireball_batch_debug_stats.flushes++;
-	VisFireball_batch_debug_stats.flushed_items += item_count;
-	if (item_count > VisFireball_batch_debug_stats.max_batch_items)
-		VisFireball_batch_debug_stats.max_batch_items = item_count;
-	if (item_count == 1)
-		VisFireball_batch_debug_stats.single_item_flushes++;
 
 	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
 
@@ -1860,7 +1824,7 @@ static void FlushVisEffectBatchesNow()
 	rend_SetColorModel(CM_RGB);
 	rend_SetAOSuppression(1.0f);
 	rend_SetTextureType(TT_LINEAR);
-	rend_SetSoftParticleState(Render_soft_vis_effects ? 1 : 0);
+	rend_SetSoftParticleState(VisFireball_batch_key.soft_particles ? 1 : 0);
 
 	std::vector<renderer_poly_batch_item> renderer_items(VisFireball_batch_items.size());
 	for (size_t i = 0; i < VisFireball_batch_items.size(); i++)
@@ -1893,23 +1857,13 @@ void FlushVisEffectBatches()
 
 void ForceFlushVisEffectBatches()
 {
-	if (VisEffectHasQueuedBatch())
-	{
-		VisEffectResetBatchDebugStatsForFrame();
-		VisFireball_batch_debug_stats.forced_flushes++;
-	}
-
 	FlushVisEffectBatchesNow();
 }
 
 static void QueueVisEffectBatchItem(const VisFireballBatchKey& key, const VisFireballBatchItem& item)
 {
 	if (VisFireball_batch_valid && !VisFireball_batch_key.Equals(key))
-	{
-		VisEffectResetBatchDebugStatsForFrame();
-		VisFireball_batch_debug_stats.key_flushes++;
 		FlushVisEffectBatchesNow();
-	}
 
 	if (!VisFireball_batch_valid)
 	{
@@ -1918,7 +1872,6 @@ static void QueueVisEffectBatchItem(const VisFireballBatchKey& key, const VisFir
 	}
 
 	VisFireball_batch_items.push_back(item);
-	VisFireball_batch_debug_stats.queued++;
 }
 
 void DrawVisEffectMaybeBatched(vis_effect* vis)
@@ -1929,23 +1882,15 @@ void DrawVisEffectMaybeBatched(vis_effect* vis)
 		return;
 	}
 
-	VisEffectResetBatchDebugStatsForFrame();
-	VisFireball_batch_debug_stats.attempts++;
-
 	VisFireballBatchKey key = {};
 	VisFireballBatchItem item = {};
 	if (!VisEffectBuildFireballBatchItem(vis, key, item))
 	{
-		VisFireball_batch_debug_stats.rejected++;
-		if (VisEffectHasQueuedBatch())
-			VisFireball_batch_debug_stats.fallback_flushes++;
-
 		FlushVisEffectBatchesNow();
 		DrawVisEffect(vis);
 		return;
 	}
 
-	VisFireball_batch_debug_stats.accepted++;
 	QueueVisEffectBatchItem(key, item);
 }
 
@@ -2664,7 +2609,7 @@ void DrawVisEffect(vis_effect* vis)
 	rend_SetWrapType(WT_CLAMP);
 	rend_SetLighting(LS_NONE);
 	rend_SetAOSuppression(1.0f);
-	rend_SetSoftParticleState(Render_soft_vis_effects ? 1 : 0);
+	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles(vis) ? 1 : 0);
 
 	// Draw!!
 	if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX || vis->id == GRAY_SPARK_INDEX)

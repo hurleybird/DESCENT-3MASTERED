@@ -2468,6 +2468,13 @@ void FireFlareFromPlayer(object* objp)
 // Creates a gravity field that sucks objects into it
 int CreateGravityField(vector* pos, int roomnum, float size, float time, int parent_handle);
 
+static void MarkWeaponExplosionVisEffect(int visnum)
+{
+	if (visnum < 0)
+		return;
+
+	VisEffects[visnum].flags |= VF_NO_SOFT_PARTICLE;
+}
 
 // Plays the animation that accompanies a weapon death
 void DoWeaponExploded(object* obj, vector* norm, vector* collision_point, object* hit_object)
@@ -2507,6 +2514,7 @@ void DoWeaponExploded(object* obj, vector* norm, vector* collision_point, object
 			int visnum = VisEffectCreate(VIS_FIREBALL, BLAST_RING_INDEX, obj->roomnum, &col_point);
 			if (visnum >= 0)
 			{
+				MarkWeaponExplosionVisEffect(visnum);
 				vis_effect* vis = &VisEffects[visnum];
 				vis->size = Weapons[obj->id].explode_size;
 				vis->lifetime = Weapons[obj->id].explode_time;
@@ -2527,6 +2535,7 @@ void DoWeaponExploded(object* obj, vector* norm, vector* collision_point, object
 				visnum = VisEffectCreate(VIS_FIREBALL, CUSTOM_EXPLOSION_INDEX, obj->roomnum, &col_point);
 				if (visnum >= 0)
 				{
+					MarkWeaponExplosionVisEffect(visnum);
 					vis_effect* vis = &VisEffects[visnum];
 					vis->size = Weapons[obj->id].explode_size;
 					vis->lifetime = Weapons[obj->id].explode_time;
@@ -2536,10 +2545,14 @@ void DoWeaponExploded(object* obj, vector* norm, vector* collision_point, object
 				}
 			}
 			else
+			{
 				visnum = VisEffectCreate(VIS_FIREBALL, GetRandomSmallExplosion(), obj->roomnum, &col_point);
+				MarkWeaponExplosionVisEffect(visnum);
+			}
 
 			if (visnum >= 0)
 			{
+				MarkWeaponExplosionVisEffect(visnum);
 				VisEffects[visnum].flags |= VF_PLANAR;
 				VisEffects[visnum].end_pos = normal;
 
@@ -2557,6 +2570,7 @@ void DoWeaponExploded(object* obj, vector* norm, vector* collision_point, object
 			int visnum = VisEffectCreate(VIS_FIREBALL, BLAST_RING_INDEX, obj->roomnum, &col_point);
 			if (visnum >= 0)
 			{
+				MarkWeaponExplosionVisEffect(visnum);
 				vis_effect* vis = &VisEffects[visnum];
 				vis->size = Weapons[obj->id].explode_size;
 				vis->lifetime = Weapons[obj->id].explode_time;
@@ -2573,6 +2587,7 @@ void DoWeaponExploded(object* obj, vector* norm, vector* collision_point, object
 				int visnum = VisEffectCreate(VIS_FIREBALL, CUSTOM_EXPLOSION_INDEX, obj->roomnum, &col_point);
 				if (visnum >= 0)
 				{
+					MarkWeaponExplosionVisEffect(visnum);
 					vis_effect* vis = &VisEffects[visnum];
 					vis->size = Weapons[obj->id].explode_size;
 					vis->lifetime = Weapons[obj->id].explode_time;
@@ -2586,7 +2601,10 @@ void DoWeaponExploded(object* obj, vector* norm, vector* collision_point, object
 				}
 			}
 			else
-				VisEffectCreate(VIS_FIREBALL, GetRandomSmallExplosion(), obj->roomnum, &col_point);
+			{
+				int visnum = VisEffectCreate(VIS_FIREBALL, GetRandomSmallExplosion(), obj->roomnum, &col_point);
+				MarkWeaponExplosionVisEffect(visnum);
+			}
 		}
 	}
 
