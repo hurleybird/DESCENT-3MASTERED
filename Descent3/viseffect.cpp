@@ -1125,6 +1125,26 @@ struct VisSmokeTrailBatchKey
 	}
 };
 
+struct VisMassDriverBatchKey
+{
+	int bitmap_handle;
+	sbyte alpha_type;
+	bool soft_particles;
+
+	bool Equals(const VisMassDriverBatchKey& other) const
+	{
+		return bitmap_handle == other.bitmap_handle &&
+			alpha_type == other.alpha_type &&
+			soft_particles == other.soft_particles;
+	}
+};
+
+struct VisMassDriverBatchPart
+{
+	VisMassDriverBatchKey key;
+	VisFireballBatchItem item;
+};
+
 struct VisFireballAtlasFrame
 {
 	int source_handle;
@@ -1166,6 +1186,9 @@ static std::vector<VisWeatherLineBatchItem> VisWeather_line_batch_items;
 static bool VisSmokeTrail_batch_valid = false;
 static VisSmokeTrailBatchKey VisSmokeTrail_batch_key = {};
 static std::vector<VisFireballBatchItem> VisSmokeTrail_batch_items;
+static bool VisMassDriver_batch_valid = false;
+static VisMassDriverBatchKey VisMassDriver_batch_key = {};
+static std::vector<VisFireballBatchItem> VisMassDriver_batch_items;
 static const bool VIS_FIREBALL_BARRIER_FLUSHES_ENABLED = false;
 static const int VIS_FIREBALL_ATLAS_PADDING = 1;
 static const int VIS_FIREBALL_ATLAS_MAX_DIMENSION = 2048;
@@ -1188,6 +1211,11 @@ static bool VisEffectHasQueuedWeatherLineBatch()
 static bool VisEffectHasQueuedSmokeTrailBatch()
 {
 	return VisSmokeTrail_batch_valid && !VisSmokeTrail_batch_items.empty();
+}
+
+static bool VisEffectHasQueuedMassDriverBatch()
+{
+	return VisMassDriver_batch_valid && !VisMassDriver_batch_items.empty();
 }
 
 static bool VisEffectShouldUseSoftParticles()
@@ -2320,6 +2348,178 @@ static bool VisEffectBuildSmokeTrailBatchItem(vis_effect* vis, VisSmokeTrailBatc
 	return VisEffectProjectBatchItemNoViewportClip(item, 0.0f, key.soft_particles);
 }
 
+static bool VisEffectIsMassDriverTrail(int id)
+{
+	return id == MASSDRIVER_EFFECT_INDEX || id == MERCBOSS_MASSDRIVER_EFFECT_INDEX;
+}
+
+static int VisEffectGetMassDriverTrailBitmap()
+{
+	static int masstrail = -1;
+
+	if (masstrail == -1)
+		masstrail = FindTextureName("MassTrail");
+	ASSERT(masstrail != -1);
+	if (masstrail == -1)
+		return BAD_BITMAP_HANDLE;
+
+	return GetTextureBitmap(masstrail, 0);
+}
+
+static void VisEffectSetBatchItemLighting(VisFireballBatchItem& item, int color, float alpha)
+{
+	float red = 1.0f;
+	float green = 1.0f;
+	float blue = 1.0f;
+	VisEffectColorToFloat(color, &red, &green, &blue);
+	for (int i = 0; i < item.nv; i++)
+	{
+		item.points[i].p3_flags |= PF_L;
+		item.points[i].p3_l = 1.0f;
+	}
+	VisEffectApplyBatchVertexColor(item, red, green, blue, alpha);
+}
+
+static void VisEffectAppendMassDriverTubeBatchParts(const vis_effect* vis, const matrix& orient,
+	float radius, float mag, int bm_handle, int color, float alpha,
+	std::vector<VisMassDriverBatchPart>& parts)
+{
+	const int circle_pieces = 16;
+	vector center_vecs[2];
+	g3Point arc_points[32];
+
+	center_vecs[0] = vis->pos;
+	center_vecs[1] = vis->end_pos;
+
+	for (int i = 0; i < 2; i++)
+	{
+		for (int t = 0; t < circle_pieces; t++)
+		{
+			float norm = (float)t / (float)circle_pieces;
+			vector arc_vec = center_vecs[i];
+
+			arc_vec += orient.uvec * radius * FixSin(norm * 65536);
+			arc_vec -= orient.rvec * radius * FixCos(norm * 65536);
+
+			g3_RotatePoint(&arc_points[i * circle_pieces + t], &arc_vec);
+			arc_points[i * circle_pieces + t].p3_flags |= PF_UV | PF_RGBA;
+		}
+	}
+
+	VisMassDriverBatchKey key = {};
+	key.bitmap_handle = bm_handle;
+	key.alpha_type = AT_SATURATE_TEXTURE_VERTEX;
+	key.soft_particles = false;
+
+	for (int k = 0; k < circle_pieces; k++)
+	{
+		int next = (k + 1) % circle_pieces;
+
+		VisMassDriverBatchPart part = {};
+		part.key = key;
+		part.item.nv = 4;
+		part.item.points[0] = arc_points[circle_pieces + k];
+		part.item.points[1] = arc_points[k];
+		part.item.points[2] = arc_points[next];
+		part.item.points[3] = arc_points[circle_pieces + next];
+
+		part.item.points[0].p3_u = 0.0f;
+		part.item.points[0].p3_v = 0.0f;
+		part.item.points[1].p3_u = 0.0f;
+		part.item.points[1].p3_v = mag / 2.0f;
+		part.item.points[2].p3_u = 1.0f;
+		part.item.points[2].p3_v = mag / 2.0f;
+		part.item.points[3].p3_u = 1.0f;
+		part.item.points[3].p3_v = 0.0f;
+
+		VisEffectSetBatchItemLighting(part.item, color, alpha);
+		if (VisEffectClipAndProjectBatchItem(part.item, 0.0f, part.key.soft_particles))
+			parts.push_back(part);
+	}
+}
+
+static bool VisEffectBuildMassDriverBatchParts(vis_effect* vis, std::vector<VisMassDriverBatchPart>& parts)
+{
+	if (vis->type != VIS_FIREBALL || !VisEffectIsMassDriverTrail(vis->id))
+		return false;
+	if (vis->lifetime <= 0.0f)
+		return false;
+
+	const bool f_boss = vis->id == MERCBOSS_MASSDRIVER_EFFECT_INDEX;
+	vector normvec = vis->end_pos - vis->pos;
+	const float mag = vm_VectorDistanceQuick(&vis->pos, &vis->end_pos);
+	if (mag <= 0.001f)
+		return false;
+
+	vector dir_norm = normvec / mag;
+	vm_NormalizeVector(&normvec);
+	matrix orient;
+	vm_VectorToMatrix(&orient, &normvec, NULL, NULL);
+
+	float size = ((float)vis->billboard_info.width) * 0.25f;
+	if (f_boss)
+		size *= 3.0f;
+
+	float alpha_norm = (vis->lifeleft / vis->lifetime) * 0.5f;
+	if (alpha_norm <= 0.0f)
+		return true;
+	if (alpha_norm > 1.0f)
+		alpha_norm = 1.0f;
+
+	int ring_bm_handle = GetTextureBitmap(vis->custom_handle, 0);
+	if (ring_bm_handle <= BAD_BITMAP_HANDLE)
+		return false;
+
+	int rings = (int)(mag / 3.0f);
+	if (rings > 400)
+		rings = 400;
+	parts.reserve(32 + (f_boss ? 0 : rings));
+
+	const int inner_color = f_boss ? GR_RGB(255, 170, 170) : GR_RGB(200, 200, 255);
+	VisEffectAppendMassDriverTubeBatchParts(vis, orient, size / 4.0f, mag, ring_bm_handle,
+		inner_color, alpha_norm, parts);
+	VisEffectAppendMassDriverTubeBatchParts(vis, orient, size, mag, ring_bm_handle,
+		GR_16_TO_COLOR(vis->lighting_color), alpha_norm, parts);
+
+	if (f_boss)
+		return true;
+
+	int trail_bm_handle = VisEffectGetMassDriverTrailBitmap();
+	if (trail_bm_handle <= BAD_BITMAP_HANDLE)
+		return false;
+
+	float fsize = 3.0f;
+	if (mag / 3.0f > 400.0f)
+		fsize = mag / 400.0f;
+
+	VisMassDriverBatchKey trail_key = {};
+	trail_key.bitmap_handle = trail_bm_handle;
+	trail_key.alpha_type = AT_SATURATE_TEXTURE_VERTEX;
+	trail_key.soft_particles = false;
+
+	const int int_gametime = (int)Gametime;
+	const int frameroll = (int)((Gametime - int_gametime) * -(65536 * 4));
+	for (int i = 1; i < rings; i++)
+	{
+		int rot_angle = (i * 2000) % 65536;
+		vector pos = vis->pos + (dir_norm * (i * fsize));
+		float new_size = 1.0f;
+		new_size += FixSin((i * 9000) + frameroll) * 0.3f;
+
+		VisMassDriverBatchPart part = {};
+		part.key = trail_key;
+		if (!VisEffectBuildPlanarBatchItem(part.item, &pos, &dir_norm, rot_angle, new_size,
+			(new_size * bm_h(trail_bm_handle, 0)) / bm_w(trail_bm_handle, 0)))
+			continue;
+
+		VisEffectSetBatchItemLighting(part.item, GR_RGB(255, 255, 255), alpha_norm);
+		if (VisEffectClipAndProjectBatchItem(part.item, 0.0f, part.key.soft_particles))
+			parts.push_back(part);
+	}
+
+	return true;
+}
+
 static void FlushVisFireballBatchesNow()
 {
 	if (!VisEffectHasQueuedBatch())
@@ -2404,6 +2604,48 @@ static void FlushVisSmokeTrailBatchesNow()
 
 	VisSmokeTrail_batch_items.clear();
 	VisSmokeTrail_batch_valid = false;
+}
+
+static void FlushVisMassDriverBatchesNow()
+{
+	if (!VisEffectHasQueuedMassDriverBatch())
+		return;
+
+	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
+
+	rend_SetAlphaType(VisMassDriver_batch_key.alpha_type);
+	rend_SetAlphaValue(255);
+	rend_SetOverlayType(OT_NONE);
+	rend_SetZBias(0.0f);
+	rend_SetZBufferWriteMask(0);
+	rend_SetWrapType(WT_WRAP);
+	rend_SetLighting(LS_GOURAUD);
+	rend_SetColorModel(CM_RGB);
+	rend_SetAOSuppression(1.0f);
+	rend_SetTextureType(TT_LINEAR);
+	rend_SetSoftParticleState(VisMassDriver_batch_key.soft_particles ? 1 : 0);
+
+	std::vector<renderer_poly_batch_item> renderer_items(VisMassDriver_batch_items.size());
+	for (size_t i = 0; i < VisMassDriver_batch_items.size(); i++)
+	{
+		VisMassDriver_batch_items[i].RefreshPointList();
+		renderer_items[i].pointlist = VisMassDriver_batch_items[i].pointlist;
+		renderer_items[i].nv = VisMassDriver_batch_items[i].nv;
+	}
+
+	rend_DrawPolygon3DBatch(VisMassDriver_batch_key.bitmap_handle, renderer_items.data(),
+		(int)renderer_items.size(), MAP_TYPE_BITMAP);
+
+	rend_SetSoftParticleState(0);
+	rend_SetAOSuppression(0.0f);
+	rend_SetZBias(0.0f);
+	rend_SetZBufferWriteMask(1);
+	rend_SetWrapType(WT_WRAP);
+	rend_SetLighting(LS_NONE);
+	rend_SetColorModel(CM_MONO);
+
+	VisMassDriver_batch_items.clear();
+	VisMassDriver_batch_valid = false;
 }
 
 static void FlushVisWeatherQuadBatchesNow()
@@ -2499,6 +2741,7 @@ static void FlushVisEffectBatchesNow()
 	FlushVisFireballBatchesNow();
 	FlushVisWeatherBatchesNow();
 	FlushVisSmokeTrailBatchesNow();
+	FlushVisMassDriverBatchesNow();
 }
 
 void FlushVisEffectBatches()
@@ -2514,6 +2757,8 @@ void ForceFlushVisEffectBatches()
 
 static void QueueVisEffectBatchItem(const VisFireballBatchKey& key, const VisFireballBatchItem& item)
 {
+	FlushVisMassDriverBatchesNow();
+
 	if (VisFireball_batch_valid && !VisFireball_batch_key.Equals(key))
 		FlushVisFireballBatchesNow();
 
@@ -2530,6 +2775,7 @@ static void QueueVisWeatherQuadBatchItem(const VisWeatherBatchKey& key, const Vi
 {
 	FlushVisFireballBatchesNow();
 	FlushVisSmokeTrailBatchesNow();
+	FlushVisMassDriverBatchesNow();
 	FlushVisWeatherLineBatchesNow();
 
 	if (VisWeather_quad_batch_valid && !VisWeather_quad_batch_key.Equals(key))
@@ -2548,6 +2794,7 @@ static void QueueVisWeatherLineBatchItem(bool soft_particles, const VisWeatherLi
 {
 	FlushVisFireballBatchesNow();
 	FlushVisSmokeTrailBatchesNow();
+	FlushVisMassDriverBatchesNow();
 	FlushVisWeatherQuadBatchesNow();
 
 	if (VisWeather_line_batch_valid && VisWeather_line_batch_soft != soft_particles)
@@ -2566,6 +2813,7 @@ static void QueueVisSmokeTrailBatchItem(const VisSmokeTrailBatchKey& key, const 
 {
 	FlushVisFireballBatchesNow();
 	FlushVisWeatherBatchesNow();
+	FlushVisMassDriverBatchesNow();
 
 	if (VisSmokeTrail_batch_valid && !VisSmokeTrail_batch_key.Equals(key))
 		FlushVisSmokeTrailBatchesNow();
@@ -2579,8 +2827,42 @@ static void QueueVisSmokeTrailBatchItem(const VisSmokeTrailBatchKey& key, const 
 	VisSmokeTrail_batch_items.push_back(item);
 }
 
+static void QueueVisMassDriverBatchItem(const VisMassDriverBatchKey& key,
+	const VisFireballBatchItem& item)
+{
+	FlushVisFireballBatchesNow();
+	FlushVisWeatherBatchesNow();
+	FlushVisSmokeTrailBatchesNow();
+
+	if (VisMassDriver_batch_valid && !VisMassDriver_batch_key.Equals(key))
+		FlushVisMassDriverBatchesNow();
+
+	if (!VisMassDriver_batch_valid)
+	{
+		VisMassDriver_batch_key = key;
+		VisMassDriver_batch_valid = true;
+	}
+
+	VisMassDriver_batch_items.push_back(item);
+}
+
 void DrawVisEffectMaybeBatched(vis_effect* vis)
 {
+	if (vis->type == VIS_FIREBALL && VisEffectIsMassDriverTrail(vis->id))
+	{
+		std::vector<VisMassDriverBatchPart> mass_driver_parts;
+		if (VisEffectBuildMassDriverBatchParts(vis, mass_driver_parts))
+		{
+			for (size_t i = 0; i < mass_driver_parts.size(); i++)
+				QueueVisMassDriverBatchItem(mass_driver_parts[i].key, mass_driver_parts[i].item);
+			return;
+		}
+
+		FlushVisEffectBatchesNow();
+		DrawVisEffect(vis);
+		return;
+	}
+
 	if (vis->type == VIS_FIREBALL && VisEffectIsWeatherBatchCandidate(vis->id))
 	{
 		if (vis->id == FADING_LINE_INDEX)
