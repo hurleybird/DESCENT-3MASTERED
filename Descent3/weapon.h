@@ -283,6 +283,9 @@ void DoSprayEffect (object *obj,otype_wb_info *static_wb,ubyte wb_index);
 // Plays the animation that accompanies a weapon death
 void DoWeaponExploded (object *,vector *norm=NULL,vector *collision_point=NULL,object *hit_object=NULL);
 
+// Flushes any queued batched weapon streamer lines.
+void FlushWeaponStreamerBatches();
+
 void TimeoutWeapon (object *);
 
 // Creates chidren from a dying weapon

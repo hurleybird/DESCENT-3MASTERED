@@ -90,6 +90,11 @@ static bool TextureLooksLikeMineRock(int tmap)
 		TextureNameContainsNoCase(GameTextures[tmap].name, "rubble");
 }
 
+static bool RenderObjectHasWeaponStreamer(const object* objp)
+{
+	return objp && objp->type == OBJ_WEAPON && (Weapons[objp->id].flags & WF_STREAMER);
+}
+
 static int RoomFaceAOClass(room* rp, face* fp)
 {
 	if (!rp || !fp || (rp->flags & RF_EXTERNAL))
@@ -3655,6 +3660,7 @@ void RenderRoomObjects(room* rp)
 			objnum = obj_sort_list[i].objnum;
 			if (obj_sort_list[i].vis_effect)
 			{
+				FlushWeaponStreamerBatches();
 				vis_effect* vis = &VisEffects[objnum];
 				vector save_vec = vis->pos;
 				vector save_end_vec = vis->end_pos;
@@ -3675,6 +3681,8 @@ void RenderRoomObjects(room* rp)
 			{
 				FlushVisEffectBatches();
 				object* objp = &Objects[objnum];
+				if (!RenderObjectHasWeaponStreamer(objp))
+					FlushWeaponStreamerBatches();
 				if (objp->type == OBJ_POWERUP)
 					ForceFlushVisEffectBatches();
 
@@ -3714,6 +3722,7 @@ void RenderRoomObjects(room* rp)
 			}
 		}
 		ForceFlushVisEffectBatches();
+		FlushWeaponStreamerBatches();
 		return;
 	}
 
@@ -3722,12 +3731,15 @@ void RenderRoomObjects(room* rp)
 		objnum = obj_sort_list[i].objnum;
 		if (obj_sort_list[i].vis_effect)
 		{
+			FlushWeaponStreamerBatches();
 			DrawVisEffectMaybeBatched(&VisEffects[objnum]);
 		}
 		else
 		{
 			FlushVisEffectBatches();
 			object* objp = &Objects[objnum];
+			if (!RenderObjectHasWeaponStreamer(objp))
+				FlushWeaponStreamerBatches();
 			if (objp->type == OBJ_POWERUP)
 				ForceFlushVisEffectBatches();
 			if (objp == Viewer_object)
@@ -3736,6 +3748,7 @@ void RenderRoomObjects(room* rp)
 		}
 	}
 	ForceFlushVisEffectBatches();
+	FlushWeaponStreamerBatches();
 #ifdef _DEBUG
 	Polymodel_outline_mode = save_polymodel_outline_mode;
 #endif

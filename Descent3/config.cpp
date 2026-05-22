@@ -628,6 +628,7 @@ void config_gamma()
 #define IDV_CHANGEWINDOW 10
 #define IDV_CHANGEASPECT 11
 #define IDV_FILTERING 18
+#define IDV_DRAW_CALL_STATS 19
 #define UID_RESOLUTION 110
 #define UID_ASPECT 111
 
@@ -1244,6 +1245,24 @@ struct video_menu
 				ConfigFilteringCheckboxTitle(Render_preferred_state.mipping != 0));
 	}
 
+	void update_draw_call_title()
+	{
+		if (!sheet || !show_draw_calls)
+			return;
+
+		if (!*show_draw_calls)
+		{
+			sheet->SetGadgetTitle(IDV_DRAW_CALL_STATS, "Show draw calls");
+			return;
+		}
+
+		renderer_draw_call_stats draw_stats = {};
+		rend_GetDrawCallStats(&draw_stats);
+		char title[32];
+		snprintf(title, sizeof(title), "%u calls", draw_stats.total);
+		sheet->SetGadgetTitle(IDV_DRAW_CALL_STATS, title);
+	}
+
 	void init_display_bounds()
 	{
 		ConfigGetDesktopDisplaySize(&display_width, &display_height);
@@ -1394,6 +1413,7 @@ struct video_menu
 		if (show_draw_calls && sheet->HasChanged(show_draw_calls))
 		{
 			Render_draw_call_stats = *show_draw_calls;
+			update_draw_call_title();
 			ui_changed = true;
 		}
 		if (soft_vis_effects && sheet->HasChanged(soft_vis_effects))
@@ -1554,7 +1574,8 @@ struct video_menu
 		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
-		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats);
+		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats, IDV_DRAW_CALL_STATS);
+		update_draw_call_title();
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
 
 		return sheet;
@@ -1678,6 +1699,7 @@ struct video_menu
 	void process(int res)
 	{
 		apply_live_settings();
+		update_draw_call_title();
 
 		switch (res)
 		{
@@ -1779,6 +1801,22 @@ struct video_menu
 		}
 	};
 };
+
+static video_menu* Config_active_video_menu = NULL;
+static newuiMenu* Config_active_options_menu = NULL;
+static void (*Config_options_old_ui_callback)() = NULL;
+
+static void ConfigOptionsUICallback()
+{
+	if (Config_options_old_ui_callback)
+		(*Config_options_old_ui_callback)();
+
+	if (Config_active_options_menu && Config_active_options_menu->GetCurrentOption() == IDV_VCONFIG &&
+		Config_active_video_menu)
+	{
+		Config_active_video_menu->update_draw_call_title();
+	}
+}
 
 //////////////////////////////////////////////////////////////////
 // SOUND MENU
@@ -2453,6 +2491,11 @@ void OptionsMenu()
 			DoWaitMessage(false);
 			ui_SuppressLeftMouseUntilRelease();
 
+			Config_active_video_menu = &video;
+			Config_active_options_menu = &menu;
+			Config_options_old_ui_callback = GetUICallback();
+			SetUICallback(ConfigOptionsUICallback);
+
 			// run menu
 			do
 			{
@@ -2490,6 +2533,11 @@ void OptionsMenu()
 				}
 				PerfMarkersEndFrame();
 			} while (1);
+
+			SetUICallback(Config_options_old_ui_callback);
+			Config_options_old_ui_callback = NULL;
+			Config_active_options_menu = NULL;
+			Config_active_video_menu = NULL;
 
 			// get settings
 			hud.finish();

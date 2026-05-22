@@ -78,6 +78,11 @@ int MinAllowableFramerate = 15;
 ubyte Fast_terrain = 1;
 float Far_fog_border;
 vector Terrain_viewer_eye;
+
+static bool TerrainObjectHasWeaponStreamer(const object* objp)
+{
+	return objp && objp->type == OBJ_WEAPON && (Weapons[objp->id].flags & WF_STREAMER);
+}
 ubyte Terrain_from_mine = 0;
 ubyte Show_invisible_terrain = 0;
 int Terrain_renderer_mode = TERRAIN_RENDERER_COMPUTE;
@@ -2680,24 +2685,33 @@ void RenderAllTerrainObjects()
 			int vis_effect = objs_to_render[i].vis_effect;
 			int objnum = objs_to_render[i].objnum;
 			if (vis_effect)
+			{
+				FlushWeaponStreamerBatches();
 				DrawVisEffectMaybeBatched(&VisEffects[objnum]);
+			}
 			else
 			{
 				FlushVisEffectBatches();
+				object* objp = &Objects[objnum];
+				if (!TerrainObjectHasWeaponStreamer(objp))
+					FlushWeaponStreamerBatches();
 				if (Objects[objnum].type == OBJ_POWERUP)
 					ForceFlushVisEffectBatches();
-				RenderObject(&Objects[objnum]);
+				RenderObject(objp);
 			}
 		}
 		ForceFlushVisEffectBatches();
+		FlushWeaponStreamerBatches();
 	}
 	// Render snows
 	rend_SetZBufferWriteMask(0);
 	{
 		PERF_MARKER_SCOPE("TerrainObjects.RenderSnow");
+		FlushWeaponStreamerBatches();
 		for (i = 0; i < num_snows; i++)
 			DrawVisEffectMaybeBatched(&VisEffects[snows[i]]);
 		ForceFlushVisEffectBatches();
+		FlushWeaponStreamerBatches();
 	}
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBufferState(1);

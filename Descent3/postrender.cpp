@@ -30,6 +30,7 @@
 #include "room.h"
 #include "postrender.h"
 #include "config.h"
+#include "weapon.h"
 #include "terrain.h"
 #include "renderer.h"
 #include "gameloop.h"
@@ -40,6 +41,11 @@ int Num_postrenders = 0;
 static vector Viewer_eye;
 static matrix Viewer_orient;
 static int Viewer_roomnum;
+
+static bool PostRenderObjectHasWeaponStreamer(const object* objp)
+{
+	return objp && objp->type == OBJ_WEAPON && (Weapons[objp->id].flags & WF_STREAMER);
+}
 
 static const char* PostRenderObjectTypeName(int type)
 {
@@ -204,6 +210,7 @@ void PostRender(int roomnum)
 
 			if (Postrender_list[i].type == PRT_VISEFFECT)
 			{
+				FlushWeaponStreamerBatches();
 				double start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;
 				if (first_vis_effect_time == 0.0)
 					first_vis_effect_time = start_time;
@@ -219,6 +226,8 @@ void PostRender(int roomnum)
 				if (first_object_time == 0.0)
 					first_object_time = object_start_time;
 				object* objp = &Objects[Postrender_list[i].objnum];
+				if (!PostRenderObjectHasWeaponStreamer(objp))
+					FlushWeaponStreamerBatches();
 				if (objp->type == OBJ_POWERUP)
 					ForceFlushVisEffectBatches();
 				bool object_outside = OBJECT_OUTSIDE(objp);
@@ -257,6 +266,7 @@ void PostRender(int roomnum)
 			else
 			{
 				FlushVisEffectBatches();
+				FlushWeaponStreamerBatches();
 				double start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;
 				if (first_face_time == 0.0)
 					first_face_time = start_time;
@@ -267,6 +277,7 @@ void PostRender(int roomnum)
 			}
 		}
 		ForceFlushVisEffectBatches();
+		FlushWeaponStreamerBatches();
 	}
 	if (Perf_markers_enabled)
 	{

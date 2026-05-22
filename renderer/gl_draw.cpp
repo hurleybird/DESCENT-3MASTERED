@@ -2402,7 +2402,7 @@ void GL4Renderer::DrawSpecialLineBatch(const renderer_line_batch_item *items, in
 				else
 				{
 					colorp->r = pnt->p3_uvl.r * 255; colorp->g = pnt->p3_uvl.g * 255;
-					colorp->b = pnt->p3_uvl.b * 255; colorp->a = alpha;
+					colorp->b = pnt->p3_uvl.r * 255; colorp->a = alpha;
 				}
 			}
 			else

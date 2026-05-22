@@ -56,6 +56,7 @@
 #include "BOA.h"
 #include "vibeinterface.h"
 #include "renderer.h"
+#include "../renderer/HardwareInternal.h"
 
 bool AreObjectsAttached(const object* obj1, const object* obj2)
 {
@@ -1983,6 +1984,108 @@ void DoSprayEffect(object* obj, otype_wb_info* static_wb, ubyte wb_index)
 
 }
 
+struct WeaponStreamerBatchItem
+{
+	g3Point points[2];
+	renderer_line_batch_item item;
+
+	void RefreshItem()
+	{
+		item.p0 = &points[0];
+		item.p1 = &points[1];
+	}
+};
+
+static std::vector<WeaponStreamerBatchItem> WeaponStreamer_batch_items;
+
+static bool ClipAndProjectWeaponStreamerBatchItem(WeaponStreamerBatchItem& item)
+{
+	g3Point* p0 = &item.points[0];
+	g3Point* p1 = &item.points[1];
+
+	if (p0->p3_codes & p1->p3_codes)
+		return false;
+
+	const ubyte codes_or = p0->p3_codes | p1->p3_codes;
+	bool was_clipped = false;
+	if (codes_or)
+	{
+		ClipLine(&p0, &p1, codes_or);
+		was_clipped = true;
+	}
+
+	if (!(p0->p3_flags & PF_PROJECTED))
+		g3_ProjectPoint(p0);
+	if (!(p1->p3_flags & PF_PROJECTED))
+		g3_ProjectPoint(p1);
+
+	g3Point clipped_points[2] = { *p0, *p1 };
+	clipped_points[0].p3_flags &= ~PF_TEMP_POINT;
+	clipped_points[1].p3_flags &= ~PF_TEMP_POINT;
+
+	if (was_clipped)
+	{
+		if (p0->p3_flags & PF_TEMP_POINT)
+			FreeTempPoint(p0);
+		if (p1->p3_flags & PF_TEMP_POINT)
+			FreeTempPoint(p1);
+		CheckTempPoints();
+	}
+
+	item.points[0] = clipped_points[0];
+	item.points[1] = clipped_points[1];
+	return true;
+}
+
+static bool QueueWeaponStreamerBatchItem(const g3Point* p0, const g3Point* p1)
+{
+	WeaponStreamerBatchItem item = {};
+	item.points[0] = *p0;
+	item.points[1] = *p1;
+
+	if (!ClipAndProjectWeaponStreamerBatchItem(item))
+		return false;
+
+	WeaponStreamer_batch_items.push_back(item);
+	return true;
+}
+
+void FlushWeaponStreamerBatches()
+{
+	if (WeaponStreamer_batch_items.empty())
+		return;
+
+	rend_SetAlphaType(AT_VERTEX);
+	rend_SetTextureType(TT_FLAT);
+	rend_SetLighting(LS_GOURAUD);
+	rend_SetColorModel(CM_RGB);
+	rend_SetZBufferWriteMask(0);
+	rend_SetAOSuppression(1.0f);
+
+	std::vector<renderer_line_batch_item> renderer_items(WeaponStreamer_batch_items.size());
+	for (size_t i = 0; i < WeaponStreamer_batch_items.size(); i++)
+	{
+		WeaponStreamer_batch_items[i].RefreshItem();
+		renderer_items[i] = WeaponStreamer_batch_items[i].item;
+	}
+
+	rend_DrawSpecialLineBatch(renderer_items.data(), (int)renderer_items.size());
+
+	rend_SetAOSuppression(0.0f);
+	rend_SetZBufferWriteMask(1);
+
+	WeaponStreamer_batch_items.clear();
+}
+
+static void DrawWeaponStreamerImmediate(g3Point* p0, g3Point* p1)
+{
+	rend_SetZBufferWriteMask(0);
+	rend_SetAOSuppression(1.0f);
+	g3_DrawSpecialLine(p0, p1);
+	rend_SetAOSuppression(0.0f);
+	rend_SetZBufferWriteMask(1);
+}
+
 // Draws a streamer behind a weapon
 void DrawWeaponStreamer(object* obj)
 {
@@ -2025,11 +2128,14 @@ void DrawWeaponStreamer(object* obj)
 	pnts[0].p3_a = (1.0 - norm_time) * .3f;
 	pnts[1].p3_a = 0;
 
-	rend_SetZBufferWriteMask(0);
-	rend_SetAOSuppression(1.0f);
-	g3_DrawSpecialLine(&pnts[0], &pnts[1]);
-	rend_SetAOSuppression(0.0f);
-	rend_SetZBufferWriteMask(1);
+	if (QueueWeaponStreamerBatchItem(&pnts[0], &pnts[1]))
+	{
+		rend_SetAOSuppression(0.0f);
+		rend_SetZBufferWriteMask(1);
+		return;
+	}
+
+	DrawWeaponStreamerImmediate(&pnts[0], &pnts[1]);
 }
 
 void DrawBlobbyWeaponRing(object* obj)
