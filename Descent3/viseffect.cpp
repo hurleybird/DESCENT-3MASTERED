@@ -1086,7 +1086,7 @@ void DrawVisSnowflake(vis_effect* vis)
 	rend_SetAlphaType(AT_SATURATE_TEXTURE);
 
 	ddgr_color color = GR_16_TO_COLOR(vis->lighting_color);
-	rend_SetSoftParticleState(Render_soft_vis_effects ? 1 : 0);
+	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles() ? 1 : 0);
 	g3_DrawBitmap(&vis->pos, size, (size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle, color);
 	rend_SetSoftParticleState(0);
 
@@ -2600,7 +2600,7 @@ static bool VisEffectBuildSmokeTrailBatchItem(vis_effect* vis, VisSmokeTrailBatc
 	key.bitmap_handle = bm_handle;
 	key.alpha_type = (GameTextures[texnum].flags & TF_SATURATE) ?
 		AT_SATURATE_TEXTURE_VERTEX : AT_TEXTURE_VERTEX;
-	key.soft_particles = Render_soft_vis_effects;
+	key.soft_particles = VisEffectShouldUseSoftParticles();
 
 	return VisEffectProjectBatchItemNoViewportClip(item, 0.0f, key.soft_particles);
 }
@@ -3276,6 +3276,7 @@ void VisEffectRenderCloseScreenEffectsPostAO()
 	const vector* view_pos = Close_screen_late_view_valid ? &Close_screen_late_view_pos : &Viewer_object->pos;
 	const matrix* view_orient = Close_screen_late_view_valid ? &Close_screen_late_view_orient : &Viewer_object->orient;
 	g3_StartFrame((vector*)view_pos, (matrix*)view_orient, Render_zoom);
+	rend_SetSoftParticleState(0);
 
 	Close_screen_rendering_late = true;
 	for (int i = (int)Close_screen_late_items.size() - 1; i >= 0; i--)
@@ -3311,6 +3312,7 @@ void VisEffectRenderCloseScreenEffectsPostAO()
 	}
 	ForceFlushVisEffectBatches();
 	FlushWeaponStreamerBatches();
+	rend_SetSoftParticleState(0);
 	Close_screen_rendering_late = false;
 
 	g3_EndFrame();
@@ -3624,7 +3626,7 @@ void DrawVisBillboardSmoketrail(vis_effect* vis)
 	pnts[3].p3_u = 0;
 	pnts[3].p3_v = 1;
 
-	rend_SetSoftParticleState(Render_soft_vis_effects ? 1 : 0);
+	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles() ? 1 : 0);
 	bool valid = true;
 	for (int i = 0; i < 4; i++)
 	{
