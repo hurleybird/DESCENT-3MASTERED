@@ -848,46 +848,6 @@ static bool WeaponIsNapalmDiagnosticSource(int weapon_num)
 	return weapon_num == napalm_id || (Weapons[weapon_num].flags & WF_NAPALM);
 }
 
-static bool WeaponViewerIsLocalPlayerView()
-{
-	if (Player_object == NULL || Viewer_object == NULL)
-		return false;
-
-	if (Viewer_object == Player_object)
-		return true;
-
-	return Player_camera_objnum >= 0 &&
-		Player_camera_objnum <= Highest_object_index &&
-		Viewer_object == &Objects[Player_camera_objnum];
-}
-
-static bool WeaponIsLocalPlayerViewSource(object* obj)
-{
-	if (obj == NULL || Player_object == NULL)
-		return false;
-
-	if (VisEffectIsLocalPlayerAttachedSourceObject(obj))
-		return true;
-
-	return Player_camera_objnum >= 0 &&
-		Player_camera_objnum <= Highest_object_index &&
-		obj == &Objects[Player_camera_objnum];
-}
-
-static bool WeaponIsNearLocalPlayerView(object* obj)
-{
-	if (obj == NULL || Player_object == NULL || Viewer_object == NULL)
-		return false;
-
-	float player_view_distance = vm_VectorDistanceQuick(&Player_object->pos, &Viewer_object->pos);
-	float player_envelope = player_view_distance + Player_object->size + obj->size + 30.0f;
-	if (vm_VectorDistanceQuick(&obj->pos, &Player_object->pos) <= player_envelope)
-		return true;
-
-	float viewer_envelope = obj->size + 30.0f;
-	return vm_VectorDistanceQuick(&obj->pos, &Viewer_object->pos) <= viewer_envelope;
-}
-
 static bool WeaponIsCloseScreenNapalmDiagnosticCandidate(object* obj)
 {
 	if (obj == NULL || obj->type != OBJ_WEAPON || Player_object == NULL)
@@ -900,10 +860,10 @@ static bool WeaponIsCloseScreenNapalmDiagnosticCandidate(object* obj)
 		return true;
 
 	object* parent_obj = ObjGet(obj->parent_handle);
-	if (!WeaponViewerIsLocalPlayerView() || !WeaponIsLocalPlayerViewSource(parent_obj))
+	if (!VisEffectViewerIsLocalPlayerView() || !VisEffectIsLocalPlayerViewSourceObject(parent_obj))
 		return false;
 
-	return WeaponIsNearLocalPlayerView(obj);
+	return VisEffectIsNearLocalPlayerView(obj);
 }
 
 void WeaponDoFrame(object* obj)

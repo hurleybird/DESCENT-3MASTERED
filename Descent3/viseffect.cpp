@@ -261,6 +261,46 @@ bool VisEffectIsLocalPlayerAttachedSourceObject(object* obj)
 	return (obj->flags & OF_ATTACHED) != 0 && ObjGet(obj->attach_ultimate_handle) == Player_object;
 }
 
+bool VisEffectViewerIsLocalPlayerView()
+{
+	if (Player_object == NULL || Viewer_object == NULL)
+		return false;
+
+	if (Viewer_object == Player_object)
+		return true;
+
+	return Player_camera_objnum >= 0 &&
+		Player_camera_objnum <= Highest_object_index &&
+		Viewer_object == &Objects[Player_camera_objnum];
+}
+
+bool VisEffectIsLocalPlayerViewSourceObject(object* obj)
+{
+	if (obj == NULL || Player_object == NULL)
+		return false;
+
+	if (VisEffectIsLocalPlayerAttachedSourceObject(obj))
+		return true;
+
+	return Player_camera_objnum >= 0 &&
+		Player_camera_objnum <= Highest_object_index &&
+		obj == &Objects[Player_camera_objnum];
+}
+
+bool VisEffectIsNearLocalPlayerView(object* obj, float padding)
+{
+	if (obj == NULL || Player_object == NULL || Viewer_object == NULL)
+		return false;
+
+	float player_view_distance = vm_VectorDistanceQuick(&Player_object->pos, &Viewer_object->pos);
+	float player_envelope = player_view_distance + Player_object->size + obj->size + padding;
+	if (vm_VectorDistanceQuick(&obj->pos, &Player_object->pos) <= player_envelope)
+		return true;
+
+	float viewer_envelope = obj->size + padding;
+	return vm_VectorDistanceQuick(&obj->pos, &Viewer_object->pos) <= viewer_envelope;
+}
+
 void VisEffectMarkCloseScreenWeaponObject(object* obj)
 {
 	if (obj == NULL || obj->handle == OBJECT_HANDLE_NONE)

@@ -39,6 +39,9 @@ int VisEffectCreate(ubyte type,ubyte id,int roomnum,vector *pos);
 // True when visuals associated with this object belong to the active viewer.
 bool VisEffectIsCloseScreenSourceObject(object *obj);
 bool VisEffectIsLocalPlayerAttachedSourceObject(object *obj);
+bool VisEffectViewerIsLocalPlayerView();
+bool VisEffectIsLocalPlayerViewSourceObject(object *obj);
+bool VisEffectIsNearLocalPlayerView(object *obj,float padding=30.0f);
 void VisEffectMarkCloseScreenWeaponObject(object *obj);
 bool VisEffectIsCloseScreenWeaponObject(object *obj);
 
