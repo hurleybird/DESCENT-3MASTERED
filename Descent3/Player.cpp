@@ -1485,7 +1485,11 @@ void DoNewPlayerDeathFrame(int slot)
 			smoke_pt = playerobj->pos + smoke_pt;
 			visnum = CreateFireball(&smoke_pt, BLACK_SMOKE_INDEX, playerobj->roomnum, VISUAL_FIREBALL);
 			if (visnum >= 0)
+			{
 				VisEffects[visnum].size = 1.0 + ((ps_rand() % 3) / 3.0);	// Make small!
+				if (VisEffectIsCloseScreenSourceObject(playerobj))
+					VisEffects[visnum].flags |= VF_CLOSE_SCREEN_EFFECT;
+			}
 		}
 
 		// Create an explosion that follows every now and then
@@ -1501,6 +1505,9 @@ void DoNewPlayerDeathFrame(int slot)
 
 			if (visnum >= 0) //DAJ added to pervent -1 array index
 			{
+				if (VisEffectIsCloseScreenSourceObject(playerobj))
+					VisEffects[visnum].flags |= VF_CLOSE_SCREEN_EFFECT;
+
 				VisEffects[visnum].size += ((ps_rand() % 20) / 20.0) * 3.0;
 
 				if ((ps_rand() % 2))

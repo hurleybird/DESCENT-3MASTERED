@@ -880,8 +880,10 @@ void DemoReadWeaponFire()
 	{
 		int visnum;
 		vector newpos;
+		const bool local_player_weapon = obj == &Objects[Players[Player_num].objnum];
+		const bool close_screen_weapon = VisEffectIsCloseScreenSourceObject(obj);
 
-		if (obj == &Objects[Players[Player_num].objnum])
+		if (local_player_weapon)
 		{
 			newpos = laser_pos + (laser_dir);
 			visnum = VisEffectCreate(VIS_FIREBALL, MUZZLE_FLASH_INDEX, obj->roomnum, &newpos);
@@ -903,6 +905,8 @@ void DemoReadWeaponFire()
 
 			vis->movement_type = MT_PHYSICS;
 			vis->velocity = obj->mtype.phys_info.velocity;
+			if (close_screen_weapon)
+				vis->flags |= VF_CLOSE_SCREEN_EFFECT;
 
 			// Make some smoke!
 			visnum = VisEffectCreate(VIS_FIREBALL, MED_SMOKE_INDEX, obj->roomnum, &newpos);
@@ -916,6 +920,8 @@ void DemoReadWeaponFire()
 				vis->movement_type = MT_PHYSICS;
 				vis->velocity = obj->mtype.phys_info.velocity;
 				vis->velocity.y += 10;
+				if (close_screen_weapon)
+					vis->flags |= VF_CLOSE_SCREEN_EFFECT;
 			}
 
 		}

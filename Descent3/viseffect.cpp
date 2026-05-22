@@ -37,6 +37,7 @@
 #include "dedicated_server.h"
 #include "player.h"
 #include "config.h"
+#include "gameloop.h"
 #include "weather.h"
 #include "polymodel.h"
 #include "renderer.h"
@@ -55,6 +56,7 @@ int Highest_vis_effect_index = 0;
 int Num_vis_effects = 0;
 
 static const float SNOW_FADE_IN_TIME = 0.1f;
+static std::vector<int> Close_screen_weapon_object_handles;
 
 static float VisEffectSnowFadeInFactor(float time_live)
 {
@@ -80,6 +82,7 @@ void InitVisEffects()
 {
 	static ushort old_max_vis = 0;
 	max_vis_effects = MAX_VIS_EFFECTS;		//always peg to max on PC
+	Close_screen_weapon_object_handles.clear();
 
 	if (old_max_vis == max_vis_effects)
 		return;
@@ -233,6 +236,53 @@ int VisEffectCreate(ubyte type, ubyte id, int roomnum, vector* pos)
 	return visnum;
 }
 
+bool VisEffectIsCloseScreenSourceObject(object* obj)
+{
+	if (obj == NULL)
+		return false;
+
+	if (obj == Viewer_object)
+		return true;
+
+	return obj == Player_object &&
+		Player_camera_objnum >= 0 &&
+		Player_camera_objnum <= Highest_object_index &&
+		Viewer_object == &Objects[Player_camera_objnum];
+}
+
+bool VisEffectIsLocalPlayerAttachedSourceObject(object* obj)
+{
+	if (obj == NULL || Player_object == NULL)
+		return false;
+
+	if (obj == Player_object)
+		return true;
+
+	return (obj->flags & OF_ATTACHED) != 0 && ObjGet(obj->attach_ultimate_handle) == Player_object;
+}
+
+void VisEffectMarkCloseScreenWeaponObject(object* obj)
+{
+	if (obj == NULL || obj->handle == OBJECT_HANDLE_NONE)
+		return;
+
+	if (std::find(Close_screen_weapon_object_handles.begin(), Close_screen_weapon_object_handles.end(), obj->handle) != Close_screen_weapon_object_handles.end())
+		return;
+
+	if (Close_screen_weapon_object_handles.size() >= MAX_OBJECTS)
+		Close_screen_weapon_object_handles.erase(Close_screen_weapon_object_handles.begin());
+
+	Close_screen_weapon_object_handles.push_back(obj->handle);
+}
+
+bool VisEffectIsCloseScreenWeaponObject(object* obj)
+{
+	if (obj == NULL || obj->type != OBJ_WEAPON)
+		return false;
+
+	return std::find(Close_screen_weapon_object_handles.begin(), Close_screen_weapon_object_handles.end(), obj->handle) != Close_screen_weapon_object_handles.end();
+}
+
 // Creates vis effects but has the caller set their parameters
 //initialize a new viseffect.  adds to the list for the given room
 //returns the vis number
@@ -292,6 +342,8 @@ int VisEffectCreateControlled(ubyte type, object* parent, ubyte id, int roomnum,
 				obj->mtype.phys_info.flags = phys_flags;
 
 			obj->ctype.laser_info.casts_light = false;
+			if (VisEffectIsLocalPlayerAttachedSourceObject(parent))
+				VisEffectMarkCloseScreenWeaponObject(obj);
 
 		}
 
@@ -326,6 +378,8 @@ int VisEffectCreateControlled(ubyte type, object* parent, ubyte id, int roomnum,
 		vis->phys_flags |= PF_NO_COLLIDE;
 
 	vis->flags |= VF_NO_Z_ADJUST;
+	if (VisEffectIsCloseScreenSourceObject(parent) || VisEffectIsLocalPlayerAttachedSourceObject(parent))
+		vis->flags |= VF_CLOSE_SCREEN_EFFECT;
 	vis->lighting_color &= ~(0x8000);
 
 
@@ -430,6 +484,7 @@ void VisEffectDelete(int visnum)
 // Frees all the objects that are currently in use
 void FreeAllVisEffects()
 {
+	Close_screen_weapon_object_handles.clear();
 
 	for (int i = 0; i < max_vis_effects; i++)
 		if (VisEffects[i].type != VIS_NONE)
@@ -530,7 +585,7 @@ void CreateRandomSparks(int num_sparks, vector* pos, int roomnum, int which_inde
 }
 
 // Creates a some particles that go in random directions
-void CreateRandomParticles(int num_sparks, vector* pos, int roomnum, int bm_handle, float size, float life)
+void CreateRandomParticles(int num_sparks, vector* pos, int roomnum, int bm_handle, float size, float life, bool close_screen_effect)
 {
 	// Create some sparks
 	float tenth_life = life / 10.0;
@@ -565,6 +620,8 @@ void CreateRandomParticles(int num_sparks, vector* pos, int roomnum, int bm_hand
 			vis->lifeleft = lifetime;
 			vis->lifetime = lifetime;
 			vis->custom_handle = bm_handle;
+			if (close_screen_effect)
+				vis->flags |= VF_CLOSE_SCREEN_EFFECT;
 		}
 	}
 }
@@ -2846,8 +2903,79 @@ static void QueueVisMassDriverBatchItem(const VisMassDriverBatchKey& key,
 	VisMassDriver_batch_items.push_back(item);
 }
 
+static bool VisEffectIsLineOrStreakForCloseScreenDiagnostic(int id)
+{
+	return id == FADING_LINE_INDEX ||
+		id == LIGHTNING_BOLT_INDEX ||
+		id == GRAY_LIGHTNING_BOLT_INDEX ||
+		id == THICK_LIGHTNING_INDEX ||
+		id == SINE_WAVE_INDEX ||
+		id == BILLBOARD_SMOKETRAIL_INDEX ||
+		VisEffectIsMassDriverTrail(id);
+}
+
+static bool VisEffectIsCloseScreenDiagnosticCandidate(vis_effect* vis)
+{
+	if (!Rendering_main_view)
+		return false;
+
+	if (vis->type != VIS_FIREBALL)
+		return (vis->flags & VF_CLOSE_SCREEN_EFFECT) != 0;
+
+	if ((vis->flags & VF_CLOSE_SCREEN_EFFECT) != 0)
+		return true;
+
+	if (VisEffectIsLineOrStreakForCloseScreenDiagnostic(vis->id))
+		return false;
+
+	if ((vis->flags & VF_WINDSHIELD_EFFECT) != 0 &&
+		(vis->id == RAINDROP_INDEX || vis->id == SNOWFLAKE_INDEX))
+		return true;
+
+	return false;
+}
+
+static bool VisEffectIsDisabledNapalmDiagnosticClass(vis_effect* vis)
+{
+	if (vis->type != VIS_FIREBALL)
+		return false;
+
+	switch (vis->id)
+	{
+	case SPRAY_INDEX:
+		return Render_disable_napalm_fx_spray;
+	case SMOKE_TRAIL_INDEX:
+	case BILLBOARD_SMOKETRAIL_INDEX:
+		return Render_disable_napalm_fx_smoke_trails;
+	case PARTICLE_INDEX:
+		return Render_disable_napalm_fx_particles;
+	case BLACK_SMOKE_INDEX:
+		return Render_disable_napalm_fx_black_smoke;
+	case SMALL_EXPLOSION_INDEX:
+	case SMALL_EXPLOSION_INDEX2:
+		return Render_disable_napalm_fx_small_explosions;
+	case BLAST_RING_INDEX:
+	case CUSTOM_EXPLOSION_INDEX:
+		return Render_disable_napalm_fx_impact_blasts;
+	case NAPALM_BALL_INDEX:
+	case BLUE_FIRE_INDEX:
+		return Render_disable_napalm_fx_fire_anims;
+	case MUZZLE_FLASH_INDEX:
+	case MED_SMOKE_INDEX:
+		return Render_disable_napalm_fx_muzzle;
+	default:
+		return false;
+	}
+}
+
 void DrawVisEffectMaybeBatched(vis_effect* vis)
 {
+	if (VisEffectIsDisabledNapalmDiagnosticClass(vis))
+		return;
+
+	if (Render_disable_close_screen_effects && VisEffectIsCloseScreenDiagnosticCandidate(vis))
+		return;
+
 	if (vis->type == VIS_FIREBALL && VisEffectIsMassDriverTrail(vis->id))
 	{
 		std::vector<VisMassDriverBatchPart> mass_driver_parts;
@@ -3954,8 +4082,15 @@ void AttachRandomNapalmEffectsToObject(object* obj)
 	vm_NormalizeVector(&velocity_norm);
 	vector pos = obj->pos - (velocity_norm * (obj->size / 2));
 
+	// Napalm effects here are attached to the burning object. Only napalm attached
+	// to the local player belongs to this diagnostic.
+	const bool close_screen_napalm = VisEffectIsLocalPlayerAttachedSourceObject(obj);
 	if (obj->movement_type == MT_PHYSICS && (OBJECT_OUTSIDE(obj) && (ps_rand() % 3) == 0) || (ps_rand() % 3) == 0)
-		CreateFireball(&pos, BLACK_SMOKE_INDEX, obj->roomnum, VISUAL_FIREBALL);
+	{
+		int visnum = CreateFireball(&pos, BLACK_SMOKE_INDEX, obj->roomnum, VISUAL_FIREBALL);
+		if (visnum >= 0 && close_screen_napalm)
+			VisEffects[visnum].flags |= VF_CLOSE_SCREEN_EFFECT;
+	}
 
 	float size_scalar = obj->size / 7.0;
 
@@ -3996,6 +4131,9 @@ void AttachRandomNapalmEffectsToObject(object* obj)
 			int visnum = VisEffectCreate(VIS_FIREBALL, GetRandomSmallExplosion(), obj->roomnum, &dest);
 			if (visnum == -1)
 				return;
+
+			if (close_screen_napalm)
+				VisEffects[visnum].flags |= VF_CLOSE_SCREEN_EFFECT;
 
 			VisEffects[visnum].size += ((ps_rand() % 20) / 20.0) * 1.0;
 

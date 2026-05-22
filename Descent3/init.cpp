@@ -391,6 +391,16 @@ void SaveGameSettings()
 	Database->write("RS_motion_vector_mode", Render_preferred_state.motion_vector_mode);
 	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
 	Database->write("RS_soft_vis_effects", Render_soft_vis_effects);
+	Database->write("RS_disable_close_screen_effects", Render_disable_close_screen_effects);
+	Database->write("RS_disable_napalm_fx_spray", Render_disable_napalm_fx_spray);
+	Database->write("RS_disable_napalm_fx_weapon_objects", Render_disable_napalm_fx_weapon_objects);
+	Database->write("RS_disable_napalm_fx_smoke_trails", Render_disable_napalm_fx_smoke_trails);
+	Database->write("RS_disable_napalm_fx_particles", Render_disable_napalm_fx_particles);
+	Database->write("RS_disable_napalm_fx_black_smoke", Render_disable_napalm_fx_black_smoke);
+	Database->write("RS_disable_napalm_fx_small_explosions", Render_disable_napalm_fx_small_explosions);
+	Database->write("RS_disable_napalm_fx_impact_blasts", Render_disable_napalm_fx_impact_blasts);
+	Database->write("RS_disable_napalm_fx_fire_anims", Render_disable_napalm_fx_fire_anims);
+	Database->write("RS_disable_napalm_fx_muzzle", Render_disable_napalm_fx_muzzle);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	Database->write("RS_combined_motion_blur", Render_preferred_state.combined_motion_blur);
 	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_strength",
@@ -599,6 +609,16 @@ void LoadGameSettings()
 	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_debug_preview = false;
 	Render_soft_vis_effects = false;
+	Render_disable_close_screen_effects = false;
+	Render_disable_napalm_fx_spray = false;
+	Render_disable_napalm_fx_weapon_objects = false;
+	Render_disable_napalm_fx_smoke_trails = false;
+	Render_disable_napalm_fx_particles = false;
+	Render_disable_napalm_fx_black_smoke = false;
+	Render_disable_napalm_fx_small_explosions = false;
+	Render_disable_napalm_fx_impact_blasts = false;
+	Render_disable_napalm_fx_fire_anims = false;
+	Render_disable_napalm_fx_muzzle = false;
 	Render_preferred_state.pixel_motion_blur_strength = 0.0f;
 	Render_preferred_state.combined_motion_blur = false;
 	Render_preferred_state.combined_motion_blur_legacy_strength = 1.0f;
@@ -809,6 +829,16 @@ void LoadGameSettings()
 	Render_preferred_state.motion_vector_mode = (ubyte)tempint;
 	Database->read("RS_motion_vector_debug_preview", &Render_preferred_state.motion_vector_debug_preview);
 	Database->read("RS_soft_vis_effects", &Render_soft_vis_effects);
+	Database->read("RS_disable_close_screen_effects", &Render_disable_close_screen_effects);
+	Database->read("RS_disable_napalm_fx_spray", &Render_disable_napalm_fx_spray);
+	Database->read("RS_disable_napalm_fx_weapon_objects", &Render_disable_napalm_fx_weapon_objects);
+	Database->read("RS_disable_napalm_fx_smoke_trails", &Render_disable_napalm_fx_smoke_trails);
+	Database->read("RS_disable_napalm_fx_particles", &Render_disable_napalm_fx_particles);
+	Database->read("RS_disable_napalm_fx_black_smoke", &Render_disable_napalm_fx_black_smoke);
+	Database->read("RS_disable_napalm_fx_small_explosions", &Render_disable_napalm_fx_small_explosions);
+	Database->read("RS_disable_napalm_fx_impact_blasts", &Render_disable_napalm_fx_impact_blasts);
+	Database->read("RS_disable_napalm_fx_fire_anims", &Render_disable_napalm_fx_fire_anims);
+	Database->read("RS_disable_napalm_fx_muzzle", &Render_disable_napalm_fx_muzzle);
 	READ_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	if (Render_preferred_state.pixel_motion_blur_strength < 0.0f)
 		Render_preferred_state.pixel_motion_blur_strength = 0.0f;

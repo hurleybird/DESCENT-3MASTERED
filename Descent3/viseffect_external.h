@@ -40,6 +40,7 @@
 #define VF_ATTACHED				64
 #define VF_NO_Z_ADJUST			128
 #define VF_LINK_TO_VIEWER		256	// Always link into the room that the viewer is in
+#define VF_CLOSE_SCREEN_EFFECT	512	// Render diagnostic: near/viewer-overlay transparent effect
 
 extern ushort max_vis_effects;
 

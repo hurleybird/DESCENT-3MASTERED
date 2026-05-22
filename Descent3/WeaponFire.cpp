@@ -838,9 +838,80 @@ void HomingDoFrame(object* obj)
 	HomingTurnTowardObj(obj, HomingAquireTarget(obj));
 }
 
+static bool WeaponIsNapalmDiagnosticSource(int weapon_num)
+{
+	static int napalm_id = -2;
+
+	if (napalm_id == -2)
+		napalm_id = FindWeaponName("Napalm");
+
+	return weapon_num == napalm_id || (Weapons[weapon_num].flags & WF_NAPALM);
+}
+
+static bool WeaponViewerIsLocalPlayerView()
+{
+	if (Player_object == NULL || Viewer_object == NULL)
+		return false;
+
+	if (Viewer_object == Player_object)
+		return true;
+
+	return Player_camera_objnum >= 0 &&
+		Player_camera_objnum <= Highest_object_index &&
+		Viewer_object == &Objects[Player_camera_objnum];
+}
+
+static bool WeaponIsLocalPlayerViewSource(object* obj)
+{
+	if (obj == NULL || Player_object == NULL)
+		return false;
+
+	if (VisEffectIsLocalPlayerAttachedSourceObject(obj))
+		return true;
+
+	return Player_camera_objnum >= 0 &&
+		Player_camera_objnum <= Highest_object_index &&
+		obj == &Objects[Player_camera_objnum];
+}
+
+static bool WeaponIsNearLocalPlayerView(object* obj)
+{
+	if (obj == NULL || Player_object == NULL || Viewer_object == NULL)
+		return false;
+
+	float player_view_distance = vm_VectorDistanceQuick(&Player_object->pos, &Viewer_object->pos);
+	float player_envelope = player_view_distance + Player_object->size + obj->size + 30.0f;
+	if (vm_VectorDistanceQuick(&obj->pos, &Player_object->pos) <= player_envelope)
+		return true;
+
+	float viewer_envelope = obj->size + 30.0f;
+	return vm_VectorDistanceQuick(&obj->pos, &Viewer_object->pos) <= viewer_envelope;
+}
+
+static bool WeaponIsCloseScreenNapalmDiagnosticCandidate(object* obj)
+{
+	if (obj == NULL || obj->type != OBJ_WEAPON || Player_object == NULL)
+		return false;
+
+	if (!WeaponIsNapalmDiagnosticSource(obj->id))
+		return false;
+
+	if (VisEffectIsLocalPlayerAttachedSourceObject(obj))
+		return true;
+
+	object* parent_obj = ObjGet(obj->parent_handle);
+	if (!WeaponViewerIsLocalPlayerView() || !WeaponIsLocalPlayerViewSource(parent_obj))
+		return false;
+
+	return WeaponIsNearLocalPlayerView(obj);
+}
+
 void WeaponDoFrame(object* obj)
 {
 	bool draw_effects = 1;
+	const bool close_screen_weapon =
+		VisEffectIsCloseScreenWeaponObject(obj) ||
+		WeaponIsCloseScreenNapalmDiagnosticCandidate(obj);
 
 	if (!Detail_settings.Weapon_coronas_enabled)
 		draw_effects = 0;
@@ -888,6 +959,8 @@ void WeaponDoFrame(object* obj)
 				vis->end_pos = obj->ctype.laser_info.last_smoke_pos;
 				vis->billboard_info.width = 4;
 				vis->lighting_color = GR_RGB16(Weapons[obj->id].lighting_info.red_light1 * 255.0, Weapons[obj->id].lighting_info.green_light1 * 255.0, Weapons[obj->id].lighting_info.blue_light1 * 255.0);
+				if (close_screen_weapon)
+					vis->flags |= VF_CLOSE_SCREEN_EFFECT;
 				obj->ctype.laser_info.last_smoke_pos = vis->pos;
 			}
 		}
@@ -925,6 +998,8 @@ void WeaponDoFrame(object* obj)
 
 					if (Weapons[obj->id].flags & WF_REVERSE_SMOKE)
 						vis->flags |= VF_REVERSE;
+					if (close_screen_weapon)
+						vis->flags |= VF_CLOSE_SCREEN_EFFECT;
 				}
 
 				new_blobpos -= delta_vec;
@@ -940,7 +1015,7 @@ void WeaponDoFrame(object* obj)
 
 		if (Gametime - obj->ctype.laser_info.last_drop_time > particle_interval)
 		{
-			CreateRandomParticles(1, &pos, obj->roomnum, weap->particle_handle, weap->particle_size, weap->particle_life);
+			CreateRandomParticles(1, &pos, obj->roomnum, weap->particle_handle, weap->particle_size, weap->particle_life, close_screen_weapon);
 			obj->ctype.laser_info.last_drop_time = Gametime;
 		}
 
@@ -1180,8 +1255,10 @@ int FireWeaponFromObject(object* obj, int weapon_num, int gun_num, bool f_force_
 	{
 		int visnum;
 		vector newpos;
+		const bool local_player_weapon = obj == &Objects[Players[Player_num].objnum];
+		const bool close_screen_weapon = VisEffectIsCloseScreenSourceObject(obj);
 
-		if (obj == &Objects[Players[Player_num].objnum])
+		if (local_player_weapon)
 		{
 			newpos = laser_pos + (laser_dir);
 			visnum = VisEffectCreate(VIS_FIREBALL, MUZZLE_FLASH_INDEX, obj->roomnum, &newpos);
@@ -1203,6 +1280,8 @@ int FireWeaponFromObject(object* obj, int weapon_num, int gun_num, bool f_force_
 
 			vis->movement_type = MT_PHYSICS;
 			vis->velocity = obj->mtype.phys_info.velocity;
+			if (close_screen_weapon)
+				vis->flags |= VF_CLOSE_SCREEN_EFFECT;
 
 			// Make some smoke!
 			visnum = VisEffectCreate(VIS_FIREBALL, MED_SMOKE_INDEX, obj->roomnum, &newpos);
@@ -1216,6 +1295,8 @@ int FireWeaponFromObject(object* obj, int weapon_num, int gun_num, bool f_force_
 				vis->movement_type = MT_PHYSICS;
 				vis->velocity = obj->mtype.phys_info.velocity;
 				vis->velocity.y += 10;
+				if (close_screen_weapon)
+					vis->flags |= VF_CLOSE_SCREEN_EFFECT;
 			}
 
 		}
@@ -1828,6 +1909,7 @@ void DoSprayEffect(object* obj, otype_wb_info* static_wb, ubyte wb_index)
 {
 	vector laser_pos, laser_dir;
 	int cur_m_bit;
+	const bool close_screen_source = VisEffectIsCloseScreenSourceObject(obj);
 
 	ASSERT(!(obj->flags & OF_DYING));
 
@@ -1840,6 +1922,8 @@ void DoSprayEffect(object* obj, otype_wb_info* static_wb, ubyte wb_index)
 		if (static_wb->gp_fire_masks[obj->dynamic_wb[wb_index].cur_firing_mask] & (0x01 << cur_m_bit))
 		{
 			int weapon_num = static_wb->gp_weapon_index[cur_m_bit];
+			const bool close_screen_weapon = close_screen_source ||
+				(WeaponIsNapalmDiagnosticSource(weapon_num) && VisEffectIsLocalPlayerAttachedSourceObject(obj));
 
 			WeaponCalcGun(&laser_pos, &laser_dir, obj, pm->poly_wb[0].gp_index[cur_m_bit]);
 			int visnum = VisEffectCreate(VIS_FIREBALL, SPRAY_INDEX, obj->roomnum, &laser_pos);
@@ -1878,6 +1962,8 @@ void DoSprayEffect(object* obj, otype_wb_info* static_wb, ubyte wb_index)
 			vis->size = Weapons[weapon_num].size;
 			vis->lifetime = Weapons[weapon_num].life_time;
 			vis->lifeleft = vis->lifetime;
+			if (close_screen_weapon)
+				vis->flags |= VF_CLOSE_SCREEN_EFFECT;
 
 			// Now create extras so that there are no gaps 
 
@@ -1936,6 +2022,8 @@ void DoSprayEffect(object* obj, otype_wb_info* static_wb, ubyte wb_index)
 						extravis->movement_type = MT_PHYSICS;
 						extravis->custom_handle = vis->custom_handle;
 						extravis->lifetime = vis->lifetime;
+						if (close_screen_weapon)
+							extravis->flags |= VF_CLOSE_SCREEN_EFFECT;
 
 						float life_adjust = ((Frametime / (float)extras) * (t + 1));
 
@@ -2287,6 +2375,10 @@ void DrawWeaponObject(object* obj)
 	ASSERT(obj->type == OBJ_WEAPON || obj->type == OBJ_POWERUP);
 	ASSERT(Weapons[obj->id].used > 0);
 
+	if ((Render_disable_close_screen_effects &&
+			(VisEffectIsCloseScreenWeaponObject(obj) || WeaponIsCloseScreenNapalmDiagnosticCandidate(obj))) ||
+		(Render_disable_napalm_fx_weapon_objects && obj->type == OBJ_WEAPON && WeaponIsNapalmDiagnosticSource(obj->id)))
+		return;
 
 	// Don't draw if spray
 	if (!(Weapons[obj->id].flags & WF_INVISIBLE))
@@ -2825,6 +2917,9 @@ void DoWeaponExploded(object* obj, vector* norm, vector* collision_point, object
 	weapon* w = &Weapons[obj->id];
 	light_info* li = &w->lighting_info;
 	vector col_point, normal;
+	const bool close_screen_weapon =
+		VisEffectIsCloseScreenWeaponObject(obj) ||
+		WeaponIsCloseScreenNapalmDiagnosticCandidate(obj);
 
 	if (w->flags & WF_ELECTRICAL)
 		return;
@@ -2894,6 +2989,8 @@ void DoWeaponExploded(object* obj, vector* norm, vector* collision_point, object
 			{
 				VisEffects[visnum].flags |= VF_PLANAR;
 				VisEffects[visnum].end_pos = normal;
+				if (close_screen_weapon)
+					VisEffects[visnum].flags |= VF_CLOSE_SCREEN_EFFECT;
 
 				if (Weapons[obj->id].flags & WF_EXPAND)
 					VisEffects[visnum].flags |= VF_EXPAND;
@@ -2931,6 +3028,8 @@ void DoWeaponExploded(object* obj, vector* norm, vector* collision_point, object
 					vis->lifeleft = Weapons[obj->id].explode_time;
 					vis->custom_handle = Weapons[obj->id].explode_image_handle;
 					vis->lighting_color = OPAQUE_FLAG | GR_RGB16(li->red_light2 * 255, li->green_light2 * 255, li->blue_light2 * 255);
+					if (close_screen_weapon)
+						vis->flags |= VF_CLOSE_SCREEN_EFFECT;
 
 					if (Weapons[obj->id].flags & WF_EXPAND)
 						VisEffects[visnum].flags |= VF_EXPAND;
@@ -2939,7 +3038,9 @@ void DoWeaponExploded(object* obj, vector* norm, vector* collision_point, object
 			}
 			else
 			{
-				VisEffectCreate(VIS_FIREBALL, GetRandomSmallExplosion(), obj->roomnum, &col_point);
+				int visnum = VisEffectCreate(VIS_FIREBALL, GetRandomSmallExplosion(), obj->roomnum, &col_point);
+				if (visnum >= 0 && close_screen_weapon)
+					VisEffects[visnum].flags |= VF_CLOSE_SCREEN_EFFECT;
 			}
 		}
 	}

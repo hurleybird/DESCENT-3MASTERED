@@ -36,6 +36,12 @@ int VisEffectInitType (vis_effect *vis);
 //returns the object number
 int VisEffectCreate(ubyte type,ubyte id,int roomnum,vector *pos);
 
+// True when visuals associated with this object belong to the active viewer.
+bool VisEffectIsCloseScreenSourceObject(object *obj);
+bool VisEffectIsLocalPlayerAttachedSourceObject(object *obj);
+void VisEffectMarkCloseScreenWeaponObject(object *obj);
+bool VisEffectIsCloseScreenWeaponObject(object *obj);
+
 //link the viseffect  into the list for its room
 // Does nothing for effects over terrain
 void VisEffectLink(int visnum,int roomnum);
@@ -83,7 +89,7 @@ void CreateRandomLineSparks (int num_sparks,vector *pos,int roomnum,ushort color
 int VisEffectCreateControlled(ubyte type,object *parent,ubyte id,int roomnum,vector *pos,float lifetime,vector *velocity,int phys_flags=0,float size=0,float mass=0.0f,float drag=0.0f,bool isreal=0);
 
 // Creates a some particles that go in random directions
-void CreateRandomParticles (int num_sparks,vector *pos,int roomnum,int bm_handle,float size,float life);
+void CreateRandomParticles (int num_sparks,vector *pos,int roomnum,int bm_handle,float size,float life,bool close_screen_effect=false);
 
 // Attaches viseffects that move with an object
 void AttachRandomNapalmEffectsToObject (object *obj);

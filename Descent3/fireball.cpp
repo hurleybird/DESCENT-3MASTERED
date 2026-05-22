@@ -60,6 +60,13 @@ static bool FireballUseSoftParticles()
 {
 	return Render_soft_vis_effects;
 }
+
+static void MarkCloseScreenEffectForObject(int visnum, object* obj)
+{
+	if (visnum >= 0 && VisEffectIsCloseScreenSourceObject(obj))
+		VisEffects[visnum].flags |= VF_CLOSE_SCREEN_EFFECT;
+}
+
 fireball Fireballs[NUM_FIREBALLS] =
 { {"ExplosionAA.oaf",FT_EXPLOSION,SMALL_TEXTURE,.9f,3.0},			//	MED_EXPLOSION2
 {"ExplosionBB.oaf",FT_EXPLOSION,SMALL_TEXTURE,.9f,2.0},			//	SMALL_EXPLOSION2
@@ -716,7 +723,10 @@ int CreateObjectFireball(object* objp, float size_scale)
 	float expl_size = objp->size * size_scale * 2.0;
 	int fireball_visnum = CreateFireball(&objp->pos, expl_type, objp->roomnum, VISUAL_FIREBALL);
 	if (fireball_visnum >= 0)
+	{
 		VisEffects[fireball_visnum].size = expl_size;
+		MarkCloseScreenEffectForObject(fireball_visnum, objp);
+	}
 	return fireball_visnum;
 }
 //	-------------------------------------------------------------------------------------------------------
@@ -989,7 +999,10 @@ void DoDyingFrame(object* objp)
 		vm_NormalizeVector(&velocity_norm);
 		vector pos = objp->pos - (velocity_norm * (objp->size / 2));
 		if (OBJECT_OUTSIDE(objp))
-			CreateFireball(&pos, BLACK_SMOKE_INDEX, objp->roomnum, VISUAL_FIREBALL);
+		{
+			int visnum = CreateFireball(&pos, BLACK_SMOKE_INDEX, objp->roomnum, VISUAL_FIREBALL);
+			MarkCloseScreenEffectForObject(visnum, objp);
+		}
 		// Create an explosion that follows every now and then
 		if ((Gametime - objp->ctype.dying_info.last_fireball_time > .01) && (ps_rand() % 3) == 0)
 		{
@@ -1004,6 +1017,7 @@ void DoDyingFrame(object* objp)
 			int visnum = CreateFireball(&dest, GetRandomSmallExplosion(), objp->roomnum, VISUAL_FIREBALL);
 			if (visnum >= 0) //DAJ this pervents a -1 array index
 			{
+				MarkCloseScreenEffectForObject(visnum, objp);
 				VisEffects[visnum].size += ((ps_rand() % 20) / 20.0) * 3.0;
 				if ((ps_rand() % 2))
 				{
@@ -1023,7 +1037,10 @@ void DoDyingFrame(object* objp)
 
 			//Make even less likely inside
 			if (OBJECT_OUTSIDE(objp) || ((ps_rand() % 2) == 0))
-				CreateFireball(&objp->pos, BLACK_SMOKE_INDEX, objp->roomnum, VISUAL_FIREBALL);
+			{
+				int visnum = CreateFireball(&objp->pos, BLACK_SMOKE_INDEX, objp->roomnum, VISUAL_FIREBALL);
+				MarkCloseScreenEffectForObject(visnum, objp);
+			}
 		}
 	}
 }

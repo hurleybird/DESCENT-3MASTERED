@@ -99,7 +99,7 @@ void DoRainEffect()
 				Sound_system.Play2dSound(SOUND_RAINDROP);
 			}
 
-			vis->flags |= VF_WINDSHIELD_EFFECT;
+			vis->flags |= VF_WINDSHIELD_EFFECT | VF_CLOSE_SCREEN_EFFECT;
 		}
 	}
 
@@ -235,7 +235,7 @@ void DoSnowEffect()
 				vis->lighting_color = GR_RGB16(200, 200, (ps_rand() % 50) + 200);
 				vis->size = ((ps_rand() % 1000) / 1000.0) + .5;
 
-				vis->flags |= VF_WINDSHIELD_EFFECT | VF_USES_LIFELEFT;
+				vis->flags |= VF_WINDSHIELD_EFFECT | VF_USES_LIFELEFT | VF_CLOSE_SCREEN_EFFECT;
 
 				vis->velocity = down_vec;
 			}
