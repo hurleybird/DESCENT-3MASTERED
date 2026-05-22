@@ -1607,8 +1607,6 @@ void DrawElectricalWeapon(object* obj)
 	ASSERT(bm_handle >= 0);
 
 	WeaponCalcGun(&src_vector, &dir, parent_obj, obj->ctype.laser_info.src_gun_num);
-	if (cockpit_omega)
-		src_vector -= parent_obj->orient.fvec * COCKPIT_OMEGA_START_OFFSET;
 
 	if (obj->ctype.laser_info.track_handle == OBJECT_HANDLE_NONE || ObjGet(obj->ctype.laser_info.track_handle) == NULL)
 	{
@@ -1657,7 +1655,11 @@ void DrawElectricalWeapon(object* obj)
 		CreateRandomSparks((ps_rand() % 4), &dest_vector, obj->roomnum, COOL_SPARK_INDEX);
 	}
 
-	line_norm = dest_vector - src_vector;
+	vector render_src_vector = src_vector;
+	if (cockpit_omega)
+		render_src_vector -= parent_obj->orient.fvec * COCKPIT_OMEGA_START_OFFSET;
+
+	line_norm = dest_vector - render_src_vector;
 	line_mag = vm_GetMagnitudeFast(&line_norm);
 
 	if (line_mag < .5)
@@ -1693,9 +1695,9 @@ void DrawElectricalWeapon(object* obj)
 
 	// Get the src and dest vectors in view space so we know how to compute z
 
-	center_vecs[0] = src_vector;	// Set first one equal to our origin
+	center_vecs[0] = render_src_vector;	// Set first one equal to our render origin
 	center_vecs[num_segments - 1] = dest_vector;
-	vector from = src_vector;
+	vector from = render_src_vector;
 	int cur_sin = FrameCount * 5000;
 
 	for (i = 1; i < num_segments - 1; i++, from += line_norm, cur_sin += 8000)
