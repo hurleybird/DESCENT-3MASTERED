@@ -37,7 +37,6 @@
 #include "dedicated_server.h"
 #include "player.h"
 #include "config.h"
-#include "gameloop.h"
 #include "weather.h"
 #include "polymodel.h"
 #include "renderer.h"
@@ -54,13 +53,8 @@ ushort max_vis_effects = 0;
 int NumVisDead = 0;
 int Highest_vis_effect_index = 0;
 int Num_vis_effects = 0;
-static std::vector<int> Vis_screen_overlay_queue;
-static bool Vis_screen_overlay_pass = false;
 
 static const float SNOW_FADE_IN_TIME = 0.1f;
-
-static bool VisEffectShouldUseSoftParticles();
-static float VisEffectAOSuppressionValue();
 
 static float VisEffectSnowFadeInFactor(float time_live)
 {
@@ -633,12 +627,14 @@ void DrawVisFadingLine(vis_effect* vis)
 	pnts[1].p3_a = 0.0;
 
 	rend_SetZBufferWriteMask(0);
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 	g3_DrawSpecialLine(&pnts[0], &pnts[1]);
 	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
 
 }
+
+static bool VisEffectShouldUseSoftParticles();
 
 // Draws a blast ring vis effect
 void DrawVisBlastRing(vis_effect* vis)
@@ -684,7 +680,7 @@ void DrawVisBlastRing(vis_effect* vis)
 	rend_SetLighting(LS_NONE);
 	rend_SetZBias(-1.0);
 	rend_SetZBufferWriteMask(0);
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles() ? 1 : 0);
 
 	ring_angle = 0;
@@ -904,7 +900,7 @@ void DrawVisLightningBolt(vis_effect* vis)
 	rend_SetAlphaType(AT_SATURATE_VERTEX);
 	rend_SetLighting(LS_NONE);
 	rend_SetZBufferWriteMask(0);
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 
 	if (vis->id == GRAY_LIGHTNING_BOLT_INDEX)
 	{
@@ -982,7 +978,7 @@ void DrawVisSineWave(vis_effect* vis)
 	rend_SetLighting(LS_NONE);
 	rend_SetZBufferWriteMask(0);
 	rend_SetFlatColor(GR_RGB(10, 60, 200));
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 	int cur_sin = (vis - VisEffects) * 5000;
 
 	cur_sin += (FrameCount * 2000);
@@ -1224,85 +1220,7 @@ static bool VisEffectHasQueuedMassDriverBatch()
 
 static bool VisEffectShouldUseSoftParticles()
 {
-	return Render_soft_vis_effects && !Vis_screen_overlay_pass;
-}
-static float VisEffectAOSuppressionValue()
-{
-	return Vis_screen_overlay_pass ? 0.0f : 1.0f;
-}
-
-static bool VisEffectCurrentViewCanUseScreenOverlay()
-{
-	return Render_screen_overlay_effects_post_ao &&
-		Rendering_main_view &&
-		Player_object != NULL &&
-		Viewer_object == Player_object &&
-		!(Players[Player_num].flags & PLAYER_FLAGS_REARVIEW);
-}
-
-static bool VisEffectIsScreenOverlayCandidate(const vis_effect* vis)
-{
-	return vis != NULL &&
-		vis->type != VIS_NONE &&
-		(vis->flags & (VF_WINDSHIELD_EFFECT | VF_SCREEN_OVERLAY)) != 0;
-}
-
-void ResetScreenOverlayVisEffects()
-{
-	Vis_screen_overlay_queue.clear();
-}
-
-bool QueueScreenOverlayVisEffect(vis_effect* vis)
-{
-	if (!VisEffectCurrentViewCanUseScreenOverlay() || !VisEffectIsScreenOverlayCandidate(vis))
-		return false;
-
-	Vis_screen_overlay_queue.push_back((int)(vis - VisEffects));
-	return true;
-}
-
-bool HasScreenOverlayVisEffects()
-{
-	return !Vis_screen_overlay_queue.empty();
-}
-
-void RenderScreenOverlayVisEffects()
-{
-	if (Vis_screen_overlay_queue.empty())
-		return;
-
-	const bool old_overlay_pass = Vis_screen_overlay_pass;
-	Vis_screen_overlay_pass = true;
-
-	rend_SetOverlayType(OT_NONE);
-	rend_SetZBufferState(0);
-	rend_SetZBufferWriteMask(0);
-	rend_SetAOSuppression(0.0f);
-	rend_SetSoftParticleState(0);
-
-	for (size_t i = 0; i < Vis_screen_overlay_queue.size(); i++)
-	{
-		const int visnum = Vis_screen_overlay_queue[i];
-		if (visnum < 0 || visnum > Highest_vis_effect_index)
-			continue;
-
-		vis_effect* vis = &VisEffects[visnum];
-		if (!VisEffectIsScreenOverlayCandidate(vis))
-			continue;
-
-		rend_SetZBufferState(0);
-		rend_SetZBufferWriteMask(0);
-		DrawVisEffectMaybeBatched(vis);
-	}
-	ForceFlushVisEffectBatches();
-
-	rend_SetSoftParticleState(0);
-	rend_SetAOSuppression(0.0f);
-	rend_SetZBufferWriteMask(1);
-	rend_SetZBufferState(1);
-
-	Vis_screen_overlay_pass = old_overlay_pass;
-	Vis_screen_overlay_queue.clear();
+	return Render_soft_vis_effects;
 }
 
 static bool VisEffectShouldUseSoftSnowParticles(bool zbuffer_state)
@@ -2619,7 +2537,7 @@ static void FlushVisFireballBatchesNow()
 	rend_SetWrapType(WT_CLAMP);
 	rend_SetLighting(LS_GOURAUD);
 	rend_SetColorModel(CM_RGB);
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 	rend_SetTextureType(TT_LINEAR);
 	rend_SetSoftParticleState(VisFireball_batch_key.soft_particles ? 1 : 0);
 
@@ -2661,7 +2579,7 @@ static void FlushVisSmokeTrailBatchesNow()
 	rend_SetWrapType(WT_CLAMP);
 	rend_SetLighting(LS_GOURAUD);
 	rend_SetColorModel(CM_RGB);
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 	rend_SetTextureType(TT_LINEAR);
 	rend_SetSoftParticleState(VisSmokeTrail_batch_key.soft_particles ? 1 : 0);
 
@@ -2703,7 +2621,7 @@ static void FlushVisMassDriverBatchesNow()
 	rend_SetWrapType(WT_WRAP);
 	rend_SetLighting(LS_GOURAUD);
 	rend_SetColorModel(CM_RGB);
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 	rend_SetTextureType(TT_LINEAR);
 	rend_SetSoftParticleState(VisMassDriver_batch_key.soft_particles ? 1 : 0);
 
@@ -2746,7 +2664,7 @@ static void FlushVisWeatherQuadBatchesNow()
 	rend_SetWrapType(WT_CLAMP);
 	rend_SetLighting(LS_GOURAUD);
 	rend_SetColorModel(CM_RGB);
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 	rend_SetTextureType(TT_LINEAR);
 	rend_SetSoftParticleState(VisWeather_quad_batch_key.soft_particles ? 1 : 0);
 
@@ -2789,7 +2707,7 @@ static void FlushVisWeatherLineBatchesNow()
 	rend_SetZBias(0.0f);
 	rend_SetZBufferState(1);
 	rend_SetZBufferWriteMask(0);
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 	rend_SetSoftParticleState(VisWeather_line_batch_soft ? 1 : 0);
 
 	std::vector<renderer_line_batch_item> renderer_items(VisWeather_line_batch_items.size());
@@ -3045,7 +2963,7 @@ void DrawVisThickLightning(vis_effect* vis)
 	rend_SetFlatColor(GR_16_TO_COLOR(vis->lighting_color));
 	rend_SetAlphaValue(255 * alpha_norm);
 	rend_SetZBufferWriteMask(0);
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles() ? 1 : 0);
 
 	for (i = 0, codes_and = 0xff; i < 4; i++)
@@ -3183,7 +3101,7 @@ void DrawVisAxisBillboard(vis_effect* vis)
 	rend_SetOverlayType(OT_NONE);
 
 	rend_SetZBufferWriteMask(0);
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles() ? 1 : 0);
 
 	if (uchange == 0 && vchange == 0)
@@ -3287,7 +3205,7 @@ void DrawVisBillboardSmoketrail(vis_effect* vis)
 	rend_SetOverlayType(OT_NONE);
 
 	rend_SetZBufferWriteMask(0);
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 
 	rend_SetFlatColor(GR_16_TO_COLOR(vis->lighting_color));
 	rend_SetColorModel(CM_MONO);
@@ -3366,7 +3284,7 @@ void DrawVisMassDriverEffect(vis_effect* vis, bool f_boss)
 	rend_SetTextureType(TT_LINEAR);
 	rend_SetLighting(LS_FLAT_GOURAUD);
 	rend_SetZBufferWriteMask(0);
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 	if (f_boss)
 		rend_SetFlatColor(GR_RGB(255, 170, 170));
 	else
@@ -3741,7 +3659,7 @@ void DrawVisEffect(vis_effect* vis)
 	rend_SetZBufferWriteMask(0);
 	rend_SetWrapType(WT_CLAMP);
 	rend_SetLighting(LS_NONE);
-	rend_SetAOSuppression(VisEffectAOSuppressionValue());
+	rend_SetAOSuppression(1.0f);
 	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles() ? 1 : 0);
 
 	auto draw_frame = [&](int frame_bm_handle) {
@@ -4036,14 +3954,8 @@ void AttachRandomNapalmEffectsToObject(object* obj)
 	vm_NormalizeVector(&velocity_norm);
 	vector pos = obj->pos - (velocity_norm * (obj->size / 2));
 
-	const bool local_player_overlay = obj == Player_object;
-
 	if (obj->movement_type == MT_PHYSICS && (OBJECT_OUTSIDE(obj) && (ps_rand() % 3) == 0) || (ps_rand() % 3) == 0)
-	{
-		int visnum = CreateFireball(&pos, BLACK_SMOKE_INDEX, obj->roomnum, VISUAL_FIREBALL);
-		if (local_player_overlay && visnum >= 0)
-			VisEffects[visnum].flags |= VF_SCREEN_OVERLAY;
-	}
+		CreateFireball(&pos, BLACK_SMOKE_INDEX, obj->roomnum, VISUAL_FIREBALL);
 
 	float size_scalar = obj->size / 7.0;
 
@@ -4084,8 +3996,6 @@ void AttachRandomNapalmEffectsToObject(object* obj)
 			int visnum = VisEffectCreate(VIS_FIREBALL, GetRandomSmallExplosion(), obj->roomnum, &dest);
 			if (visnum == -1)
 				return;
-			if (local_player_overlay)
-				VisEffects[visnum].flags |= VF_SCREEN_OVERLAY;
 
 			VisEffects[visnum].size += ((ps_rand() % 20) / 20.0) * 1.0;
 
@@ -4104,4 +4014,3 @@ void AttachRandomNapalmEffectsToObject(object* obj)
 		}
 	}
 }
-

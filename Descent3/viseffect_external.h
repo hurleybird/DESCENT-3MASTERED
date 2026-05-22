@@ -40,7 +40,6 @@
 #define VF_ATTACHED				64
 #define VF_NO_Z_ADJUST			128
 #define VF_LINK_TO_VIEWER		256	// Always link into the room that the viewer is in
-#define VF_SCREEN_OVERLAY		512	// First-person screen-space effect drawn after post
 
 extern ushort max_vis_effects;
 

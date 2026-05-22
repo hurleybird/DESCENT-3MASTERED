@@ -70,10 +70,6 @@ void DrawVisEffect (vis_effect *vis);
 void DrawVisEffectMaybeBatched(vis_effect *vis);
 void FlushVisEffectBatches();
 void ForceFlushVisEffectBatches();
-void ResetScreenOverlayVisEffects();
-bool QueueScreenOverlayVisEffect(vis_effect *vis);
-bool HasScreenOverlayVisEffects();
-void RenderScreenOverlayVisEffects();
 
 // Creates a some sparks that go in random directions
 void CreateRandomSparks (int num_sparks,vector *pos,int roomnum,int which_index=-1,float force_scalar=1);
