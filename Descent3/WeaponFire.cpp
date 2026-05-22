@@ -30,6 +30,7 @@
 #include "fireball.h"
 #include <string.h>
 #include <stdlib.h>
+#include <vector>
 #include "findintersection.h"
 #include "robotfire.h"
 #include "AIMain.h"
@@ -1281,8 +1282,292 @@ int FireWeaponFromObject(object* obj, int weapon_num, int gun_num, bool f_force_
 #define ELECTRICAL_WIDTH		.3f
 #define ELECTRICAL_ALPHA		.2
 constexpr float COCKPIT_OMEGA_START_OFFSET = 1.5f;
+constexpr int OMEGA_BATCH_MAX_POINTS = 16;
 
 #include "args.h"
+
+struct OmegaBatchItem
+{
+	int nv;
+	g3Point points[OMEGA_BATCH_MAX_POINTS];
+	g3Point* pointlist[OMEGA_BATCH_MAX_POINTS];
+
+	void RefreshPointList()
+	{
+		for (int i = 0; i < nv; i++)
+			pointlist[i] = &points[i];
+	}
+};
+
+static bool QueueOmegaBatchPolygon(std::vector<OmegaBatchItem>& batch_items, g3Point** pointlist, int nv)
+{
+	g3Codes cc;
+	cc.cc_or = 0;
+	cc.cc_and = 0xff;
+
+	for (int i = 0; i < nv; i++)
+	{
+		cc.cc_or |= pointlist[i]->p3_codes;
+		cc.cc_and &= pointlist[i]->p3_codes;
+	}
+
+	if (cc.cc_and)
+		return true;
+
+	bool was_clipped = false;
+	g3Point** draw_points = pointlist;
+	int draw_nv = nv;
+	if (cc.cc_or)
+	{
+		draw_points = g3_ClipPolygon(pointlist, &draw_nv, &cc);
+		was_clipped = true;
+		if (draw_nv == 0 || (cc.cc_or & CC_BEHIND) || cc.cc_and)
+		{
+			g3_FreeTempPoints(draw_points, draw_nv);
+			return true;
+		}
+		if (draw_nv > OMEGA_BATCH_MAX_POINTS)
+		{
+			g3_FreeTempPoints(draw_points, draw_nv);
+			return false;
+		}
+	}
+
+	OmegaBatchItem item = {};
+	item.nv = draw_nv;
+	for (int i = 0; i < draw_nv; i++)
+	{
+		item.points[i] = *draw_points[i];
+		item.points[i].p3_flags &= ~PF_TEMP_POINT;
+		if (!(item.points[i].p3_flags & PF_PROJECTED))
+			g3_ProjectPoint(&item.points[i]);
+	}
+
+	if (was_clipped)
+		g3_FreeTempPoints(draw_points, draw_nv);
+
+	batch_items.push_back(item);
+	return true;
+}
+
+static void FlushOmegaBatch(std::vector<OmegaBatchItem>& batch_items, int bm_handle)
+{
+	if (batch_items.empty())
+		return;
+
+	std::vector<renderer_poly_batch_item> renderer_items(batch_items.size());
+	for (size_t i = 0; i < batch_items.size(); i++)
+	{
+		batch_items[i].RefreshPointList();
+		renderer_items[i].pointlist = batch_items[i].pointlist;
+		renderer_items[i].nv = batch_items[i].nv;
+	}
+
+	rend_DrawPolygon3DBatch(bm_handle, renderer_items.data(), (int)renderer_items.size(), MAP_TYPE_BITMAP);
+	batch_items.clear();
+}
+
+static bool QueueOmegaColoredDiskBatch(std::vector<OmegaBatchItem>& batch_items, vector* pos, float r, float g, float b,
+	float inner_alpha, float outer_alpha, float size, ubyte lod)
+{
+	static vector circle_vecs[3][32];
+	static int lod_segments[3] = { 32, 16, 8 };
+	static bool first_call = true;
+
+	if (first_call)
+	{
+		first_call = false;
+		for (int lodi = 0; lodi < 3; ++lodi)
+		{
+			int num_segments = lod_segments[lodi];
+			int ring_increment = 65536 / num_segments;
+			int ring_angle = 0;
+			for (int i = 0; i < num_segments; ++i, ring_angle += ring_increment)
+			{
+				circle_vecs[lodi][i].x = FixCos(ring_angle);
+				circle_vecs[lodi][i].y = FixSin(ring_angle);
+				circle_vecs[lodi][i].z = 0.0f;
+			}
+		}
+	}
+
+	ASSERT(lod >= 0 && lod <= 2);
+	const int num_segments = lod_segments[lod];
+
+	matrix view_orient;
+	g3_GetUnscaledMatrix(&view_orient);
+	view_orient = ~view_orient;
+
+	g3Point inner_points[32];
+	g3Point outer_points[32];
+	for (int i = 0; i < num_segments; ++i)
+	{
+		vector world_space_circle_vec = circle_vecs[lod][i] * view_orient;
+		vector inner_pos = *pos;
+		vector outer_pos = (*pos) + (world_space_circle_vec * size);
+
+		g3_RotatePoint(&inner_points[i], &inner_pos);
+		PolymodelMotionSetObjectPoint(&inner_points[i], &inner_pos);
+		inner_points[i].p3_flags |= PF_RGBA;
+		inner_points[i].p3_a = inner_alpha;
+		inner_points[i].p3_r = r;
+		inner_points[i].p3_g = g;
+		inner_points[i].p3_b = b;
+
+		g3_RotatePoint(&outer_points[i], &outer_pos);
+		PolymodelMotionSetObjectPoint(&outer_points[i], &outer_pos);
+		outer_points[i].p3_flags |= PF_RGBA;
+		outer_points[i].p3_a = outer_alpha;
+		outer_points[i].p3_r = r;
+		outer_points[i].p3_g = g;
+		outer_points[i].p3_b = b;
+	}
+
+	g3Point* pntlist[4];
+	for (int i = 0; i < num_segments; ++i)
+	{
+		int next = (i + 1) % num_segments;
+		pntlist[0] = &outer_points[i];
+		pntlist[1] = &outer_points[next];
+		pntlist[2] = &inner_points[next];
+		pntlist[3] = &inner_points[i];
+		if (!QueueOmegaBatchPolygon(batch_items, pntlist, 4))
+			return false;
+	}
+
+	return true;
+}
+
+static void DrawOmegaImmediate(int num_segments, int circle_pieces, g3Point* arc_points, vector* center_vecs,
+	int bm_handle, bool sat, float view_dp, object* parent_obj)
+{
+	g3Point* pntlist[20];
+	float float_time = (Gametime * 300);
+	int int_time = float_time;
+	int_time %= 100;
+	float vchange = int_time / 100.0;
+
+	for (int t = (num_segments - 1) * circle_pieces, i = num_segments - 1; i >= 1; i--, t -= circle_pieces)
+	{
+		rend_SetTextureType(TT_LINEAR);
+		rend_SetAlphaType(sat ? AT_SATURATE_TEXTURE : AT_CONSTANT);
+		rend_SetZBufferWriteMask(0);
+		rend_SetLighting(LS_NONE);
+		rend_SetAlphaValue(ELECTRICAL_ALPHA * 255);
+
+		for (int k = 0; k < circle_pieces; k++)
+		{
+			int next = (k + 1) % circle_pieces;
+
+			arc_points[t + k].p3_u = 0;
+			arc_points[t + k].p3_v = 1;
+
+			arc_points[t + k - circle_pieces].p3_u = 0;
+			arc_points[t + k - circle_pieces].p3_v = 0;
+
+			arc_points[t + next - circle_pieces].p3_u = 1;
+			arc_points[t + next - circle_pieces].p3_v = 1;
+
+			arc_points[t + next].p3_u = 1;
+			arc_points[t + next].p3_v = 0;
+
+			pntlist[0] = &arc_points[t + k];
+			pntlist[1] = &arc_points[t + k - circle_pieces];
+			pntlist[2] = &arc_points[t + next - circle_pieces];
+			pntlist[3] = &arc_points[t + next];
+
+			g3_DrawPoly(4, pntlist, bm_handle);
+
+		}
+
+
+		if (i != num_segments - 1)
+		{
+			vector subvec = center_vecs[i + 1] - center_vecs[i];
+			subvec = center_vecs[i] + (subvec * vchange);
+
+			if (parent_obj == Viewer_object)
+			{
+				DrawColoredDisk(&subvec, .2f, .5f, 1, .6f, 0, ELECTRICAL_WIDTH * 4, sat, 2);
+			}
+			else
+			{
+				DrawColoredDisk(&subvec, .2f, .5f, 1, .6f * fabs(view_dp), 0, ELECTRICAL_WIDTH * 4, sat, 2);
+			}
+		}
+	}
+}
+
+static bool DrawOmegaBatched(int num_segments, int circle_pieces, g3Point* arc_points, vector* center_vecs,
+	int bm_handle, bool sat, float view_dp, object* parent_obj)
+{
+	std::vector<OmegaBatchItem> tube_items;
+	std::vector<OmegaBatchItem> disk_items;
+	g3Point* pntlist[4];
+	float float_time = (Gametime * 300);
+	int int_time = float_time;
+	int_time %= 100;
+	float vchange = int_time / 100.0;
+
+	tube_items.reserve((num_segments - 1) * circle_pieces);
+	disk_items.reserve((num_segments - 2) * 8);
+
+	for (int t = (num_segments - 1) * circle_pieces, i = num_segments - 1; i >= 1; i--, t -= circle_pieces)
+	{
+		for (int k = 0; k < circle_pieces; k++)
+		{
+			int next = (k + 1) % circle_pieces;
+
+			arc_points[t + k].p3_u = 0;
+			arc_points[t + k].p3_v = 1;
+
+			arc_points[t + k - circle_pieces].p3_u = 0;
+			arc_points[t + k - circle_pieces].p3_v = 0;
+
+			arc_points[t + next - circle_pieces].p3_u = 1;
+			arc_points[t + next - circle_pieces].p3_v = 1;
+
+			arc_points[t + next].p3_u = 1;
+			arc_points[t + next].p3_v = 0;
+
+			pntlist[0] = &arc_points[t + k];
+			pntlist[1] = &arc_points[t + k - circle_pieces];
+			pntlist[2] = &arc_points[t + next - circle_pieces];
+			pntlist[3] = &arc_points[t + next];
+
+			if (!QueueOmegaBatchPolygon(tube_items, pntlist, 4))
+				return false;
+		}
+
+		if (i != num_segments - 1)
+		{
+			vector subvec = center_vecs[i + 1] - center_vecs[i];
+			subvec = center_vecs[i] + (subvec * vchange);
+
+			const float alpha = parent_obj == Viewer_object ? .6f : .6f * fabs(view_dp);
+			if (!QueueOmegaColoredDiskBatch(disk_items, &subvec, .2f, .5f, 1.0f,
+				alpha, 0.0f, ELECTRICAL_WIDTH * 4, 2))
+				return false;
+		}
+	}
+
+	rend_SetTextureType(TT_LINEAR);
+	rend_SetAlphaType(sat ? AT_SATURATE_TEXTURE : AT_CONSTANT);
+	rend_SetZBufferWriteMask(0);
+	rend_SetLighting(LS_NONE);
+	rend_SetAlphaValue(ELECTRICAL_ALPHA * 255);
+	FlushOmegaBatch(tube_items, bm_handle);
+
+	rend_SetLighting(LS_GOURAUD);
+	rend_SetTextureType(TT_FLAT);
+	rend_SetOverlayType(OT_NONE);
+	rend_SetColorModel(CM_RGB);
+	rend_SetFlatColor(GR_RGB(.2f * 255, .5f * 255, 255));
+	rend_SetAlphaType(sat ? AT_SATURATE_VERTEX : AT_VERTEX);
+	FlushOmegaBatch(disk_items, 0);
+
+	return true;
+}
 
 // Draws a lighting like chain of electricity
 void DrawElectricalWeapon(object* obj)
@@ -1293,7 +1578,6 @@ void DrawElectricalWeapon(object* obj)
 	g3Point arc_points[100];
 	vector dest_vector, src_vector, line_norm;
 	float line_mag;
-	g3Point* pntlist[20];
 	vector dir;
 	object* parent_obj = ObjGet(obj->parent_handle);
 	float view_dp = 0;
@@ -1303,7 +1587,8 @@ void DrawElectricalWeapon(object* obj)
 		return;
 	if (omega_id == -2)
 		omega_id = FindWeaponName("Omega");
-	const bool cockpit_omega = omega_id >= 0 && obj->id == omega_id &&
+	const bool omega_weapon = omega_id >= 0 && obj->id == omega_id;
+	const bool cockpit_omega = omega_weapon &&
 		parent_obj == Player_object && Viewer_object == Player_object &&
 		Rendering_main_view && !(Players[Player_num].flags & PLAYER_FLAGS_REARVIEW);
 
@@ -1447,11 +1732,6 @@ void DrawElectricalWeapon(object* obj)
 	rend_SetLighting(LS_NONE);
 	rend_SetZBufferWriteMask(0);
 
-	float float_time = (Gametime * 300);
-	int int_time = float_time;
-	int_time %= 100;
-	float vchange = int_time / 100.0;
-
 	//Check for no sat flag
 	bool sat = true;
 	if (FindArg("-nosatomega"))
@@ -1459,55 +1739,9 @@ void DrawElectricalWeapon(object* obj)
 
 	// Form our vectors into points and draw!
 	rend_SetAOSuppression(1.0f);
-	for (t = (num_segments - 1) * circle_pieces, i = num_segments - 1; i >= 1; i--, t -= circle_pieces)
-	{
-		rend_SetTextureType(TT_LINEAR);
-		rend_SetAlphaType(sat ? AT_SATURATE_TEXTURE : AT_CONSTANT);
-		rend_SetZBufferWriteMask(0);
-		rend_SetLighting(LS_NONE);
-		rend_SetAlphaValue(ELECTRICAL_ALPHA * 255);
-
-		for (int k = 0; k < circle_pieces; k++)
-		{
-			int next = (k + 1) % circle_pieces;
-
-			arc_points[t + k].p3_u = 0;
-			arc_points[t + k].p3_v = 1;
-
-			arc_points[t + k - circle_pieces].p3_u = 0;
-			arc_points[t + k - circle_pieces].p3_v = 0;
-
-			arc_points[t + next - circle_pieces].p3_u = 1;
-			arc_points[t + next - circle_pieces].p3_v = 1;
-
-			arc_points[t + next].p3_u = 1;
-			arc_points[t + next].p3_v = 0;
-
-			pntlist[0] = &arc_points[t + k];
-			pntlist[1] = &arc_points[t + k - circle_pieces];
-			pntlist[2] = &arc_points[t + next - circle_pieces];
-			pntlist[3] = &arc_points[t + next];
-
-			g3_DrawPoly(4, pntlist, bm_handle);
-
-		}
-
-
-		if (i != num_segments - 1)
-		{
-			vector subvec = center_vecs[i + 1] - center_vecs[i];
-			subvec = center_vecs[i] + (subvec * vchange);
-
-			if (parent_obj == Viewer_object)
-			{
-				DrawColoredDisk(&subvec, .2f, .5f, 1, .6f, 0, ELECTRICAL_WIDTH * 4, sat, 2);
-			}
-			else
-			{
-				DrawColoredDisk(&subvec, .2f, .5f, 1, .6f * fabs(view_dp), 0, ELECTRICAL_WIDTH * 4, sat, 2);
-			}
-		}
-	}
+	if (!omega_weapon ||
+		!DrawOmegaBatched(num_segments, circle_pieces, arc_points, center_vecs, bm_handle, sat, view_dp, parent_obj))
+		DrawOmegaImmediate(num_segments, circle_pieces, arc_points, center_vecs, bm_handle, sat, view_dp, parent_obj);
 
 	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
