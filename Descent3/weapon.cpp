@@ -44,6 +44,7 @@
 #include "CFILE.H"
 #include "AIMain.h"
 #include "config.h"
+#include "viseffect.h"
 
 //#include "samirlog.h"
 #define LOGFILE(_s)
@@ -1313,7 +1314,7 @@ bool AutoSelectWeapon(int weapon_type, int new_wpn)
 // The r,g,b floats specify the color
 void DrawAlphaBlendedScreen(float r, float g, float b, float alpha)
 {
-	if (Render_disable_close_screen_effects)
+	if (VisEffectQueueCloseScreenAlpha(r, g, b, alpha))
 		return;
 
 	g3Point* pntlist[4], points[4];

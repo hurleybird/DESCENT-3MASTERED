@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <float.h>
 #include "PHYSICS.H"
 #include "weapon.h"
 #include "lighting.h"
@@ -39,6 +40,7 @@
 #include "config.h"
 #include "gameloop.h"
 #include "weather.h"
+#include "render.h"
 #include "polymodel.h"
 #include "renderer.h"
 #include "../renderer/HardwareInternal.h"
@@ -58,6 +60,36 @@ int Num_vis_effects = 0;
 static const float SNOW_FADE_IN_TIME = 0.1f;
 static std::vector<int> Close_screen_weapon_object_handles;
 
+enum
+{
+	CLOSE_SCREEN_LATE_VISEFFECT,
+	CLOSE_SCREEN_LATE_WEAPON_OBJECT,
+	CLOSE_SCREEN_LATE_ALPHA
+};
+
+struct CloseScreenLateRenderItem
+{
+	ubyte type;
+	short index;
+	int handle;
+	float z;
+	float r;
+	float g;
+	float b;
+	float alpha;
+	int sequence;
+};
+
+static std::vector<CloseScreenLateRenderItem> Close_screen_late_items;
+static std::vector<unsigned char> Close_screen_late_vis_queued;
+static std::vector<int> Close_screen_late_object_handles;
+static int Close_screen_late_sequence = 0;
+static bool Close_screen_collecting_late = false;
+static bool Close_screen_rendering_late = false;
+static vector Close_screen_late_view_pos;
+static matrix Close_screen_late_view_orient;
+static bool Close_screen_late_view_valid = false;
+
 static float VisEffectSnowFadeInFactor(float time_live)
 {
 	if (time_live <= 0.0f)
@@ -65,6 +97,52 @@ static float VisEffectSnowFadeInFactor(float time_live)
 	if (time_live >= SNOW_FADE_IN_TIME)
 		return 1.0f;
 	return time_live / SNOW_FADE_IN_TIME;
+}
+
+static bool VisEffectCanUseLateCloseScreenPass()
+{
+	return Render_close_screen_effects_post_ao &&
+		Renderer_type == RENDERER_OPENGL && OpenGLProfile == GLPROFILE_CORE;
+}
+
+static void VisEffectClearCloseScreenLateQueue()
+{
+	Close_screen_late_items.clear();
+	Close_screen_late_object_handles.clear();
+	if (!Close_screen_late_vis_queued.empty())
+		std::fill(Close_screen_late_vis_queued.begin(), Close_screen_late_vis_queued.end(), 0);
+	Close_screen_late_sequence = 0;
+	Close_screen_late_view_valid = false;
+}
+
+static float VisEffectLateRenderZ(const vector* pos)
+{
+	vector eye;
+	matrix orient;
+
+	g3_GetViewPosition(&eye);
+	g3_GetUnscaledMatrix(&orient);
+	if (!Close_screen_late_view_valid)
+	{
+		Close_screen_late_view_pos = eye;
+		Close_screen_late_view_orient = orient;
+		Close_screen_late_view_valid = true;
+	}
+
+	vector delta = *pos - eye;
+	return vm_DotProduct(&delta, &orient.fvec);
+}
+
+void VisEffectBeginCloseScreenFrame()
+{
+	VisEffectClearCloseScreenLateQueue();
+	Close_screen_rendering_late = false;
+	Close_screen_collecting_late = VisEffectCanUseLateCloseScreenPass();
+}
+
+void VisEffectEndCloseScreenCollection()
+{
+	Close_screen_collecting_late = false;
 }
 
 void ShutdownVisEffects()
@@ -83,6 +161,7 @@ void InitVisEffects()
 	static ushort old_max_vis = 0;
 	max_vis_effects = MAX_VIS_EFFECTS;		//always peg to max on PC
 	Close_screen_weapon_object_handles.clear();
+	VisEffectClearCloseScreenLateQueue();
 
 	if (old_max_vis == max_vis_effects)
 		return;
@@ -107,6 +186,7 @@ void InitVisEffects()
 		VisEffects[i].next = -1;
 		Vis_free_list[i] = i;
 	}
+	Close_screen_late_vis_queued.assign(max_vis_effects, 0);
 	old_max_vis = max_vis_effects;
 	Num_vis_effects = 0;
 	Highest_vis_effect_index = 0;
@@ -299,6 +379,80 @@ bool VisEffectIsNearLocalPlayerView(object* obj, float padding)
 
 	float viewer_envelope = obj->size + padding;
 	return vm_VectorDistanceQuick(&obj->pos, &Viewer_object->pos) <= viewer_envelope;
+}
+
+static bool VisEffectShouldQueueLateCloseScreenItem()
+{
+	return Close_screen_collecting_late && !Close_screen_rendering_late &&
+		!Render_mirror_for_room;
+}
+
+static bool VisEffectQueueCloseScreenVisEffect(vis_effect* vis)
+{
+	if (!VisEffectShouldQueueLateCloseScreenItem() || vis == NULL)
+		return false;
+
+	int visnum = vis - VisEffects;
+	if (visnum < 0 || visnum >= max_vis_effects)
+		return false;
+
+	if (Close_screen_late_vis_queued.size() != max_vis_effects)
+		Close_screen_late_vis_queued.assign(max_vis_effects, 0);
+
+	if (Close_screen_late_vis_queued[visnum])
+		return true;
+
+	Close_screen_late_vis_queued[visnum] = 1;
+	CloseScreenLateRenderItem item = {};
+	item.type = CLOSE_SCREEN_LATE_VISEFFECT;
+	item.index = (short)visnum;
+	item.handle = -1;
+	item.z = VisEffectLateRenderZ(&vis->pos);
+	item.sequence = Close_screen_late_sequence++;
+	Close_screen_late_items.push_back(item);
+	return true;
+}
+
+bool VisEffectQueueCloseScreenWeaponObject(object* obj)
+{
+	if (!VisEffectShouldQueueLateCloseScreenItem() || obj == NULL ||
+		obj->handle == OBJECT_HANDLE_NONE)
+		return false;
+
+	if (std::find(Close_screen_late_object_handles.begin(),
+			Close_screen_late_object_handles.end(), obj->handle) != Close_screen_late_object_handles.end())
+	{
+		return true;
+	}
+
+	Close_screen_late_object_handles.push_back(obj->handle);
+	CloseScreenLateRenderItem item = {};
+	item.type = CLOSE_SCREEN_LATE_WEAPON_OBJECT;
+	item.index = -1;
+	item.handle = obj->handle;
+	item.z = VisEffectLateRenderZ(&obj->pos);
+	item.sequence = Close_screen_late_sequence++;
+	Close_screen_late_items.push_back(item);
+	return true;
+}
+
+bool VisEffectQueueCloseScreenAlpha(float r, float g, float b, float alpha)
+{
+	if (!Close_screen_collecting_late || Close_screen_rendering_late)
+		return false;
+
+	CloseScreenLateRenderItem item = {};
+	item.type = CLOSE_SCREEN_LATE_ALPHA;
+	item.index = -1;
+	item.handle = -1;
+	item.z = -FLT_MAX;
+	item.r = r;
+	item.g = g;
+	item.b = b;
+	item.alpha = alpha;
+	item.sequence = Close_screen_late_sequence++;
+	Close_screen_late_items.push_back(item);
+	return true;
 }
 
 void VisEffectMarkCloseScreenWeaponObject(object* obj)
@@ -1317,11 +1471,17 @@ static bool VisEffectHasQueuedMassDriverBatch()
 
 static bool VisEffectShouldUseSoftParticles()
 {
+	if (Close_screen_rendering_late)
+		return false;
+
 	return Render_soft_vis_effects;
 }
 
 static bool VisEffectShouldUseSoftSnowParticles(bool zbuffer_state)
 {
+	if (Close_screen_rendering_late)
+		return false;
+
 	return Render_soft_vis_effects && zbuffer_state;
 }
 
@@ -3013,7 +3173,8 @@ void DrawVisEffectMaybeBatched(vis_effect* vis)
 	if (VisEffectIsDisabledNapalmDiagnosticClass(vis))
 		return;
 
-	if (Render_disable_close_screen_effects && VisEffectIsCloseScreenDiagnosticCandidate(vis))
+	const bool close_screen_effect = VisEffectIsCloseScreenDiagnosticCandidate(vis);
+	if (close_screen_effect && VisEffectQueueCloseScreenVisEffect(vis))
 		return;
 
 	if (vis->type == VIS_FIREBALL && VisEffectIsMassDriverTrail(vis->id))
@@ -3084,6 +3245,77 @@ void DrawVisEffectMaybeBatched(vis_effect* vis)
 	QueueVisEffectBatchItem(key, item);
 	if (has_blend_item)
 		QueueVisEffectBatchItem(blend_key, blend_item);
+}
+
+void VisEffectRenderCloseScreenEffectsPostAO()
+{
+	VisEffectEndCloseScreenCollection();
+	if (Close_screen_late_items.empty())
+		return;
+
+	if (Viewer_object == NULL || !rend_BeginPostPresentFrame())
+	{
+		VisEffectClearCloseScreenLateQueue();
+		return;
+	}
+
+	PERF_MARKER_SCOPE("CloseScreenEffects.PostAO");
+
+	std::stable_sort(Close_screen_late_items.begin(), Close_screen_late_items.end(),
+		[](const CloseScreenLateRenderItem& left, const CloseScreenLateRenderItem& right)
+		{
+			if (left.z != right.z)
+				return left.z < right.z;
+
+			return left.sequence > right.sequence;
+		});
+
+	rend_StartPostPresentFrame(Game_window_x, Game_window_y,
+		Game_window_x + Game_window_w, Game_window_y + Game_window_h, RF_CLEAR_ZBUFFER);
+
+	const vector* view_pos = Close_screen_late_view_valid ? &Close_screen_late_view_pos : &Viewer_object->pos;
+	const matrix* view_orient = Close_screen_late_view_valid ? &Close_screen_late_view_orient : &Viewer_object->orient;
+	g3_StartFrame((vector*)view_pos, (matrix*)view_orient, Render_zoom);
+
+	Close_screen_rendering_late = true;
+	for (int i = (int)Close_screen_late_items.size() - 1; i >= 0; i--)
+	{
+		const CloseScreenLateRenderItem& item = Close_screen_late_items[i];
+		if (item.type == CLOSE_SCREEN_LATE_VISEFFECT)
+		{
+			if (item.index < 0 || item.index > Highest_vis_effect_index)
+				continue;
+
+			vis_effect* vis = &VisEffects[item.index];
+			if (vis->type == VIS_NONE || (vis->flags & VF_DEAD))
+				continue;
+
+			FlushWeaponStreamerBatches();
+			DrawVisEffectMaybeBatched(vis);
+		}
+		else if (item.type == CLOSE_SCREEN_LATE_WEAPON_OBJECT)
+		{
+			object* obj = ObjGet(item.handle);
+			if (obj == NULL || obj->type != OBJ_WEAPON)
+				continue;
+
+			ForceFlushVisEffectBatches();
+			DrawWeaponObject(obj);
+		}
+		else if (item.type == CLOSE_SCREEN_LATE_ALPHA)
+		{
+			ForceFlushVisEffectBatches();
+			FlushWeaponStreamerBatches();
+			DrawAlphaBlendedScreen(item.r, item.g, item.b, item.alpha);
+		}
+	}
+	ForceFlushVisEffectBatches();
+	FlushWeaponStreamerBatches();
+	Close_screen_rendering_late = false;
+
+	g3_EndFrame();
+	rend_EndFrame();
+	VisEffectClearCloseScreenLateQueue();
 }
 
 

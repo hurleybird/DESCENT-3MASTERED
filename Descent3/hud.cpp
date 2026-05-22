@@ -45,6 +45,7 @@
 #include "gamecinematics.h"
 #include "CtlCfgElem.h"
 #include "ctlconfig.h"
+#include "viseffect.h"
 
 //////////////////////////////////////////////////////////////////////////////
 //	constants
@@ -1015,6 +1016,8 @@ void RenderHUDFrame(float zoom)
 	{
 		const bool post_world_frame =
 			render_cockpit_geometry ? rend_BeginCockpitFrame() : rend_BeginPostPresentFrame();
+		if (post_world_frame)
+			VisEffectRenderCloseScreenEffectsPostAO();
 		if (render_post_world_hud)
 		{
 			if (post_world_frame)

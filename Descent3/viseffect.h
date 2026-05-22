@@ -42,6 +42,11 @@ bool VisEffectIsLocalPlayerAttachedSourceObject(object *obj);
 bool VisEffectViewerIsLocalPlayerView();
 bool VisEffectIsLocalPlayerViewSourceObject(object *obj);
 bool VisEffectIsNearLocalPlayerView(object *obj,float padding=30.0f);
+void VisEffectBeginCloseScreenFrame();
+void VisEffectEndCloseScreenCollection();
+bool VisEffectQueueCloseScreenWeaponObject(object *obj);
+bool VisEffectQueueCloseScreenAlpha(float r,float g,float b,float alpha);
+void VisEffectRenderCloseScreenEffectsPostAO();
 void VisEffectMarkCloseScreenWeaponObject(object *obj);
 bool VisEffectIsCloseScreenWeaponObject(object *obj);
 

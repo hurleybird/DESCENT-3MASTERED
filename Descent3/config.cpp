@@ -108,7 +108,7 @@ int Game_frame_limit_fps = 0;
 float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
 bool Render_soft_vis_effects = false;
-bool Render_disable_close_screen_effects = false;
+bool Render_close_screen_effects_post_ao = true;
 bool Render_disable_napalm_fx_spray = false;
 bool Render_disable_napalm_fx_weapon_objects = false;
 bool Render_disable_napalm_fx_smoke_trails = false;
@@ -1224,7 +1224,7 @@ struct video_menu
 	bool* show_fps;
 	bool* show_draw_calls;
 	bool* soft_vis_effects;
-	bool* disable_close_screen_effects;
+	bool* close_screen_effects_post_ao;
 	bool* disable_napalm_fx_spray;
 	bool* disable_napalm_fx_weapon_objects;
 	bool* disable_napalm_fx_smoke_trails;
@@ -1441,9 +1441,9 @@ struct video_menu
 			Render_soft_vis_effects = *soft_vis_effects;
 			ui_changed = true;
 		}
-		if (disable_close_screen_effects && sheet->HasChanged(disable_close_screen_effects))
+		if (close_screen_effects_post_ao && sheet->HasChanged(close_screen_effects_post_ao))
 		{
-			Render_disable_close_screen_effects = *disable_close_screen_effects;
+			Render_close_screen_effects_post_ao = *close_screen_effects_post_ao;
 			ui_changed = true;
 		}
 		if (disable_napalm_fx_spray && sheet->HasChanged(disable_napalm_fx_spray))
@@ -1550,7 +1550,7 @@ struct video_menu
 		show_fps = NULL;
 		show_draw_calls = NULL;
 		soft_vis_effects = NULL;
-		disable_close_screen_effects = NULL;
+		close_screen_effects_post_ao = NULL;
 		disable_napalm_fx_spray = NULL;
 		disable_napalm_fx_weapon_objects = NULL;
 		disable_napalm_fx_smoke_trails = NULL;
@@ -1657,8 +1657,8 @@ struct video_menu
 		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats, IDV_DRAW_CALL_STATS);
 		update_draw_call_title();
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
-		disable_close_screen_effects = sheet->AddLongCheckBox("Hide close-screen FX",
-			Render_disable_close_screen_effects);
+		close_screen_effects_post_ao = sheet->AddLongCheckBox("Post-AO close-screen FX",
+			Render_close_screen_effects_post_ao);
 
 		sheet->NewGroup("Napalm FX", 184, 254);
 		disable_napalm_fx_spray = sheet->AddLongCheckBox("Spray blobs", Render_disable_napalm_fx_spray);
@@ -1710,8 +1710,8 @@ struct video_menu
 			Render_draw_call_stats = *show_draw_calls;
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
-		if (disable_close_screen_effects)
-			Render_disable_close_screen_effects = *disable_close_screen_effects;
+		if (close_screen_effects_post_ao)
+			Render_close_screen_effects_post_ao = *close_screen_effects_post_ao;
 		if (disable_napalm_fx_spray)
 			Render_disable_napalm_fx_spray = *disable_napalm_fx_spray;
 		if (disable_napalm_fx_weapon_objects)

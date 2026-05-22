@@ -866,12 +866,16 @@ static bool WeaponIsCloseScreenNapalmDiagnosticCandidate(object* obj)
 	return VisEffectIsNearLocalPlayerView(obj);
 }
 
+bool WeaponIsCloseScreenEffectObject(object* obj)
+{
+	return VisEffectIsCloseScreenWeaponObject(obj) ||
+		WeaponIsCloseScreenNapalmDiagnosticCandidate(obj);
+}
+
 void WeaponDoFrame(object* obj)
 {
 	bool draw_effects = 1;
-	const bool close_screen_weapon =
-		VisEffectIsCloseScreenWeaponObject(obj) ||
-		WeaponIsCloseScreenNapalmDiagnosticCandidate(obj);
+	const bool close_screen_weapon = WeaponIsCloseScreenEffectObject(obj);
 
 	if (!Detail_settings.Weapon_coronas_enabled)
 		draw_effects = 0;
@@ -2335,9 +2339,11 @@ void DrawWeaponObject(object* obj)
 	ASSERT(obj->type == OBJ_WEAPON || obj->type == OBJ_POWERUP);
 	ASSERT(Weapons[obj->id].used > 0);
 
-	if ((Render_disable_close_screen_effects &&
-			(VisEffectIsCloseScreenWeaponObject(obj) || WeaponIsCloseScreenNapalmDiagnosticCandidate(obj))) ||
-		(Render_disable_napalm_fx_weapon_objects && obj->type == OBJ_WEAPON && WeaponIsNapalmDiagnosticSource(obj->id)))
+	const bool close_screen_effect = WeaponIsCloseScreenEffectObject(obj);
+	if (Render_disable_napalm_fx_weapon_objects && obj->type == OBJ_WEAPON && WeaponIsNapalmDiagnosticSource(obj->id))
+		return;
+
+	if (close_screen_effect && VisEffectQueueCloseScreenWeaponObject(obj))
 		return;
 
 	// Don't draw if spray
@@ -2877,9 +2883,7 @@ void DoWeaponExploded(object* obj, vector* norm, vector* collision_point, object
 	weapon* w = &Weapons[obj->id];
 	light_info* li = &w->lighting_info;
 	vector col_point, normal;
-	const bool close_screen_weapon =
-		VisEffectIsCloseScreenWeaponObject(obj) ||
-		WeaponIsCloseScreenNapalmDiagnosticCandidate(obj);
+	const bool close_screen_weapon = WeaponIsCloseScreenEffectObject(obj);
 
 	if (w->flags & WF_ELECTRICAL)
 		return;

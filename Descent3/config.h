@@ -72,7 +72,7 @@ extern int Game_frame_limit_fps;
 extern float Hud_text_scale;
 extern bool Render_draw_call_stats;
 extern bool Render_soft_vis_effects;
-extern bool Render_disable_close_screen_effects;
+extern bool Render_close_screen_effects_post_ao;
 extern bool Render_disable_napalm_fx_spray;
 extern bool Render_disable_napalm_fx_weapon_objects;
 extern bool Render_disable_napalm_fx_smoke_trails;

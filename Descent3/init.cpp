@@ -391,7 +391,7 @@ void SaveGameSettings()
 	Database->write("RS_motion_vector_mode", Render_preferred_state.motion_vector_mode);
 	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
 	Database->write("RS_soft_vis_effects", Render_soft_vis_effects);
-	Database->write("RS_disable_close_screen_effects", Render_disable_close_screen_effects);
+	Database->write("RS_close_screen_effects_post_ao", Render_close_screen_effects_post_ao);
 	Database->write("RS_disable_napalm_fx_spray", Render_disable_napalm_fx_spray);
 	Database->write("RS_disable_napalm_fx_weapon_objects", Render_disable_napalm_fx_weapon_objects);
 	Database->write("RS_disable_napalm_fx_smoke_trails", Render_disable_napalm_fx_smoke_trails);
@@ -609,7 +609,7 @@ void LoadGameSettings()
 	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_debug_preview = false;
 	Render_soft_vis_effects = false;
-	Render_disable_close_screen_effects = false;
+	Render_close_screen_effects_post_ao = true;
 	Render_disable_napalm_fx_spray = false;
 	Render_disable_napalm_fx_weapon_objects = false;
 	Render_disable_napalm_fx_smoke_trails = false;
@@ -829,7 +829,7 @@ void LoadGameSettings()
 	Render_preferred_state.motion_vector_mode = (ubyte)tempint;
 	Database->read("RS_motion_vector_debug_preview", &Render_preferred_state.motion_vector_debug_preview);
 	Database->read("RS_soft_vis_effects", &Render_soft_vis_effects);
-	Database->read("RS_disable_close_screen_effects", &Render_disable_close_screen_effects);
+	Database->read("RS_close_screen_effects_post_ao", &Render_close_screen_effects_post_ao);
 	Database->read("RS_disable_napalm_fx_spray", &Render_disable_napalm_fx_spray);
 	Database->read("RS_disable_napalm_fx_weapon_objects", &Render_disable_napalm_fx_weapon_objects);
 	Database->read("RS_disable_napalm_fx_smoke_trails", &Render_disable_napalm_fx_smoke_trails);

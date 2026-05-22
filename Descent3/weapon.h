@@ -222,6 +222,7 @@ int FireWeaponFromObject (object *obj,int weapon_num,int gun_num=-1,bool f_force
 
 // Draws a weapon
 void DrawWeaponObject (object *obj);
+bool WeaponIsCloseScreenEffectObject(object *obj);
 
 //	unconditionally adds a weapon and ammo to a player.
 int AddWeaponToPlayer(int slot,int weap_index, int ammo);

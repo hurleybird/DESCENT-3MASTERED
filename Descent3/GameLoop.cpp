@@ -89,6 +89,7 @@
 #include "renderobject.h"
 #include "vibeinterface.h"
 #include "gamespy.h"
+#include "viseffect.h"
 
 #ifdef EDITOR
 #include "editor\d3edit.h"
@@ -2209,6 +2210,7 @@ void GameDrawMainView()
 	int main_view_anchor_x, main_view_anchor_y;
 	GetMainViewOverscanFrame(&main_view_x1, &main_view_y1, &main_view_x2, &main_view_y2,
 		&main_view_anchor_x, &main_view_anchor_y);
+	VisEffectBeginCloseScreenFrame();
 	{
 		PERF_MARKER_SCOPE("StartFrame.MainView");
 		StartFrame(main_view_x1, main_view_y1, main_view_x2, main_view_y2, true);
@@ -2257,6 +2259,7 @@ void GameDrawMainView()
 		ProcessRenderEvents();
 	}
 	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_RENDER_EVENTS);
+	VisEffectEndCloseScreenCollection();
 
 	{
 		PERF_MARKER_SCOPE("CaptureBloomSource.MainView");
@@ -2317,6 +2320,7 @@ static void GameDrawPostPresentFrame(bool force_backbuffer_frame)
 {
 	const bool draw_cockpit = !HUD_disabled && CockpitHasPostPostElements();
 	const bool draw_message_consoles = !HUD_disabled && AreHUDMessageConsolesOpen();
+	VisEffectRenderCloseScreenEffectsPostAO();
 	if (!force_backbuffer_frame && !draw_cockpit && !draw_message_consoles)
 		return;
 
