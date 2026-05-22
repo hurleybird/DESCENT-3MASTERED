@@ -210,11 +210,13 @@ void PostRender(int roomnum)
 
 			if (Postrender_list[i].type == PRT_VISEFFECT)
 			{
-				FlushWeaponStreamerBatches();
 				double start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;
 				if (first_vis_effect_time == 0.0)
 					first_vis_effect_time = start_time;
 				index = Postrender_list[i].visnum;
+				if (QueueScreenOverlayVisEffect(&VisEffects[index]))
+					continue;
+				FlushWeaponStreamerBatches();
 				DrawVisEffectMaybeBatched(&VisEffects[index]);
 				if (Perf_markers_enabled)
 					vis_effect_time += PerfMarkersNow() - start_time;

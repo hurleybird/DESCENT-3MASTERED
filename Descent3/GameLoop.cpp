@@ -60,6 +60,7 @@
 #include "Mission.h"
 #include "object_lighting.h"
 #include "fireball.h"
+#include "viseffect.h"
 #include "weather.h"
 #include "stringtable.h"
 #include "streamaudio.h"
@@ -2213,6 +2214,7 @@ void GameDrawMainView()
 		PERF_MARKER_SCOPE("StartFrame.MainView");
 		StartFrame(main_view_x1, main_view_y1, main_view_x2, main_view_y2, true);
 	}
+	ResetScreenOverlayVisEffects();
 
 	// Set guided view
 	if (!Cinematic_inuse && Players[Player_num].guided_obj != NULL && !Guided_missile_smallview)

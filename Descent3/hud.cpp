@@ -37,6 +37,7 @@
 #include "stringtable.h"
 #include "pstring.h"
 #include "config.h"
+#include "viseffect.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1007,15 +1008,17 @@ void RenderHUDFrame(float zoom)
 	}
 
 	const bool render_post_world_hud = render_hud_items_after_world_post || render_reticle_after_world_post;
+	const bool render_screen_overlay_effects =
+		Render_screen_overlay_effects_post_ao && HasScreenOverlayVisEffects();
 	const bool render_cockpit_geometry =
 		must_render_cockpit && IsValidCockpit() && CockpitState() != COCKPIT_STATE_DORMANT;
 
 	// [ISB] extra pass to render the cockpit so it always uses correct window
-	if (render_post_world_hud || render_cockpit_geometry)
+	if (render_post_world_hud || render_screen_overlay_effects || render_cockpit_geometry)
 	{
 		const bool post_world_frame =
 			render_cockpit_geometry ? rend_BeginCockpitFrame() : rend_BeginPostPresentFrame();
-		if (render_post_world_hud)
+		if (render_post_world_hud || render_screen_overlay_effects)
 		{
 			if (post_world_frame)
 			{
@@ -1038,6 +1041,12 @@ void RenderHUDFrame(float zoom)
 			Game_window_h = post_world_hud_window_h;
 			Game_window_x = post_world_hud_window_x;
 			Game_window_y = post_world_hud_window_y;
+			if (render_screen_overlay_effects)
+			{
+				g3_StartFrame(&Viewer_object->pos, &Viewer_object->orient, zoom);
+				RenderScreenOverlayVisEffects();
+				g3_EndFrame();
+			}
 			if (render_hud_items_after_world_post)
 				RenderHUDItems(post_world_hud_stat_mask);
 			if (render_reticle_after_world_post)

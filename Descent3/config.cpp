@@ -108,6 +108,7 @@ int Game_frame_limit_fps = 0;
 float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
 bool Render_soft_vis_effects = false;
+bool Render_screen_overlay_effects_post_ao = false;
 bool Cockpit_alt_mode = true;
 float Render_FOV_desired = 72;
 
@@ -1214,6 +1215,7 @@ struct video_menu
 	bool* show_fps;
 	bool* show_draw_calls;
 	bool* soft_vis_effects;
+	bool* screen_overlay_effects_post_ao;
 	bool* motion_vector_debug;
 
 	short* fov;
@@ -1421,6 +1423,11 @@ struct video_menu
 			Render_soft_vis_effects = *soft_vis_effects;
 			ui_changed = true;
 		}
+		if (screen_overlay_effects_post_ao && sheet->HasChanged(screen_overlay_effects_post_ao))
+		{
+			Render_screen_overlay_effects_post_ao = *screen_overlay_effects_post_ao;
+			ui_changed = true;
+		}
 		if (antialiasing && sheet->HasChanged(antialiasing))
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1480,6 +1487,7 @@ struct video_menu
 		show_fps = NULL;
 		show_draw_calls = NULL;
 		soft_vis_effects = NULL;
+		screen_overlay_effects_post_ao = NULL;
 		motion_vector_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
@@ -1577,6 +1585,7 @@ struct video_menu
 		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats, IDV_DRAW_CALL_STATS);
 		update_draw_call_title();
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
+		screen_overlay_effects_post_ao = sheet->AddLongCheckBox("Post-AO screen FX", Render_screen_overlay_effects_post_ao);
 
 		return sheet;
 	};
@@ -1617,6 +1626,8 @@ struct video_menu
 			Render_draw_call_stats = *show_draw_calls;
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
+		if (screen_overlay_effects_post_ao)
+			Render_screen_overlay_effects_post_ao = *screen_overlay_effects_post_ao;
 		if (antialiasing)
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
