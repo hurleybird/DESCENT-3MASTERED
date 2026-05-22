@@ -1280,6 +1280,7 @@ int FireWeaponFromObject(object* obj, int weapon_num, int gun_num, bool f_force_
 // This define determines how wide this arc is
 #define ELECTRICAL_WIDTH		.3f
 #define ELECTRICAL_ALPHA		.2
+constexpr float COCKPIT_OMEGA_START_OFFSET = 1.5f;
 
 #include "args.h"
 
@@ -1296,9 +1297,15 @@ void DrawElectricalWeapon(object* obj)
 	vector dir;
 	object* parent_obj = ObjGet(obj->parent_handle);
 	float view_dp = 0;
+	static int omega_id = -2;
 
 	if (!parent_obj)
 		return;
+	if (omega_id == -2)
+		omega_id = FindWeaponName("Omega");
+	const bool cockpit_omega = omega_id >= 0 && obj->id == omega_id &&
+		parent_obj == Player_object && Viewer_object == Player_object &&
+		Rendering_main_view && !(Players[Player_num].flags & PLAYER_FLAGS_REARVIEW);
 
 	if (parent_obj->type == OBJ_PLAYER)
 	{
@@ -1315,6 +1322,8 @@ void DrawElectricalWeapon(object* obj)
 	ASSERT(bm_handle >= 0);
 
 	WeaponCalcGun(&src_vector, &dir, parent_obj, obj->ctype.laser_info.src_gun_num);
+	if (cockpit_omega)
+		src_vector -= parent_obj->orient.fvec * COCKPIT_OMEGA_START_OFFSET;
 
 	if (obj->ctype.laser_info.track_handle == OBJECT_HANDLE_NONE || ObjGet(obj->ctype.laser_info.track_handle) == NULL)
 	{
