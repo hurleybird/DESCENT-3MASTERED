@@ -166,6 +166,9 @@ void ConsolidateMineMirrors();
 //Builds static meshes for all level geometry
 void MeshRooms();
 
+// Precomputes per-face borrowed specular sources after level geometry is loaded.
+void PrecomputeMineSpecularSources();
+
 extern int Num_specular_faces_to_render,Num_fog_faces_to_render;
 
 #endif

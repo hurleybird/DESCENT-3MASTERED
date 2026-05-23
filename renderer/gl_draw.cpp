@@ -699,8 +699,8 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 	vert.normal.y = 0.0f;
 	vert.normal.z = 0.0f;
 	vert.normal.w = -1.0f;
-	const bool per_pixel_specular_draw = OpenGL_state.cur_alpha_type == AT_SPECULAR &&
-		OpenGL_preferred_state.per_pixel_lighting;
+	const bool per_pixel_specular_draw = (OpenGL_state.cur_alpha_type == AT_SPECULAR ||
+		per_pixel_specular_mode != 0) && OpenGL_preferred_state.per_pixel_lighting;
 
 	float alpha = Alpha_multiplier * OpenGL_Alpha_factor;
 	if (OpenGL_state.cur_alpha_type & ATF_VERTEX)
@@ -1300,10 +1300,13 @@ void GL4Renderer::SelectDrawShader()
 {
 	int shader_index = 0;
 
+	const bool specular_shader = OpenGL_state.cur_alpha_type == AT_SPECULAR ||
+		(per_pixel_specular_mode != 0 && OpenGL_preferred_state.per_pixel_lighting);
+
 	if (OpenGL_state.cur_fog_state)
 	{
 		post_protection_mask_dirty = true;
-		if (OpenGL_state.cur_alpha_type == AT_SPECULAR)
+		if (specular_shader)
 			shader_index = 7;
 		else if (OpenGL_state.cur_texture_quality == 0)
 			shader_index = 4;
@@ -1317,7 +1320,7 @@ void GL4Renderer::SelectDrawShader()
 	}
 	else
 	{
-		if (OpenGL_state.cur_alpha_type == AT_SPECULAR)
+		if (specular_shader)
 			shader_index = 3;
 		else if (OpenGL_state.cur_texture_quality == 0)
 			shader_index = 0;
@@ -1417,8 +1420,15 @@ void GL4Renderer::SelectDrawShader()
 		glUniform3f(drawshader_light_direction_uniforms[shader_index], per_pixel_light_direction.x,
 			per_pixel_light_direction.y, per_pixel_light_direction.z);
 	if (drawshader_per_pixel_specular_enabled_uniforms[shader_index] != -1)
+	{
+		int shader_specular_mode = 0;
+		if (OpenGL_state.cur_alpha_type == AT_SPECULAR && OpenGL_preferred_state.per_pixel_lighting)
+			shader_specular_mode = 1;
+		else if (OpenGL_preferred_state.per_pixel_lighting)
+			shader_specular_mode = per_pixel_specular_mode;
 		glUniform1i(drawshader_per_pixel_specular_enabled_uniforms[shader_index],
-			(OpenGL_state.cur_alpha_type == AT_SPECULAR && OpenGL_preferred_state.per_pixel_lighting) ? 1 : 0);
+			shader_specular_mode);
+	}
 
 	drawshaders[shader_index].ApplyDynamicLighting(per_pixel_dynamic_light_count,
 		&per_pixel_dynamic_face_normal.x, &per_pixel_dynamic_positions[0][0],
@@ -1475,11 +1485,18 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 			MakeWrapTypeCurrent(Overlay_map, MAP_TYPE_LIGHTMAP, 1);
 			MakeFilterTypeCurrent(Overlay_map, MAP_TYPE_LIGHTMAP, 1);
 		}
+
+		if (per_pixel_specular_mode == 2 && per_pixel_specular_map >= 0)
+		{
+			MakeBitmapCurrent(per_pixel_specular_map, MAP_TYPE_BITMAP, 3);
+			MakeWrapTypeCurrent(per_pixel_specular_map, MAP_TYPE_BITMAP, 3);
+			MakeFilterTypeCurrent(per_pixel_specular_map, MAP_TYPE_BITMAP, 3);
+		}
 	}
 
 	float alpha = Alpha_multiplier * OpenGL_Alpha_factor;
-	const bool per_pixel_specular_draw = OpenGL_state.cur_alpha_type == AT_SPECULAR &&
-		OpenGL_preferred_state.per_pixel_lighting;
+	const bool per_pixel_specular_draw = (OpenGL_state.cur_alpha_type == AT_SPECULAR ||
+		per_pixel_specular_mode != 0) && OpenGL_preferred_state.per_pixel_lighting;
 
 	gl_vertex* vertp = GL_vertices;
 
@@ -1729,6 +1746,13 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 			MakeBitmapCurrent(Overlay_map, MAP_TYPE_LIGHTMAP, 1);
 			MakeWrapTypeCurrent(Overlay_map, MAP_TYPE_LIGHTMAP, 1);
 			MakeFilterTypeCurrent(Overlay_map, MAP_TYPE_LIGHTMAP, 1);
+		}
+
+		if (per_pixel_specular_mode == 2 && per_pixel_specular_map >= 0)
+		{
+			MakeBitmapCurrent(per_pixel_specular_map, MAP_TYPE_BITMAP, 3);
+			MakeWrapTypeCurrent(per_pixel_specular_map, MAP_TYPE_BITMAP, 3);
+			MakeFilterTypeCurrent(per_pixel_specular_map, MAP_TYPE_BITMAP, 3);
 		}
 	}
 

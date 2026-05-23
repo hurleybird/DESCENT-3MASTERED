@@ -3237,6 +3237,7 @@ int LoadLevel(char* filename, void (*cb_fn)(const char*, int, int))
 
 	// aabbs
 	LoadLevelProgress(LOAD_PROGRESS_LOADING_LEVEL, 1.0f, NULL);
+	PrecomputeMineSpecularSources();
 
 	//Compute the bounding boxes
 	if (!f_read_AABB)

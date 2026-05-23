@@ -291,6 +291,142 @@ static inline bool FaceIsRenderable(room* rp, face* fp)
 	return true;
 }
 
+struct SplitSpecularTexturePair
+{
+	int base_tmap;
+	int spec_tmap;
+	int base_bm;
+	int spec_bm;
+	bool valid;
+};
+
+static bool SplitSpecularTexturePathEnabled()
+{
+	return Render_split_specular_textures && Render_preferred_state.per_pixel_lighting &&
+		UseHardware && rend_CanUseNewrender();
+}
+
+static SplitSpecularTexturePair ComputeSplitSpecularTexturePair(int tmap)
+{
+	SplitSpecularTexturePair pair = { -1, -1, -1, -1, false };
+	if (tmap < 0 || tmap >= MAX_TEXTURES || !GameTextures[tmap].used)
+		return pair;
+	if (GameTextures[tmap].flags & (TF_ANIMATED | TF_PROCEDURAL))
+		return pair;
+
+	char base_name[PAGENAME_LEN];
+	char spec_name[PAGENAME_LEN];
+	strncpy(base_name, GameTextures[tmap].name, sizeof(base_name));
+	base_name[sizeof(base_name) - 1] = '\0';
+	strncpy(spec_name, GameTextures[tmap].name, sizeof(spec_name));
+	spec_name[sizeof(spec_name) - 1] = '\0';
+
+	const size_t name_len = strlen(GameTextures[tmap].name);
+	if (name_len == 0)
+		return pair;
+
+	if (GameTextures[tmap].name[name_len - 1] == 'S' || GameTextures[tmap].name[name_len - 1] == 's')
+	{
+		base_name[name_len - 1] = '\0';
+	}
+	else
+	{
+		if (name_len + 1 >= sizeof(spec_name))
+			return pair;
+		spec_name[name_len] = 'S';
+		spec_name[name_len + 1] = '\0';
+	}
+
+	int base_tmap = FindTextureName(base_name);
+	int spec_tmap = FindTextureName(spec_name);
+	if (base_tmap < 0 || spec_tmap < 0 || base_tmap == spec_tmap)
+		return pair;
+	if ((GameTextures[base_tmap].flags | GameTextures[spec_tmap].flags) & (TF_ANIMATED | TF_PROCEDURAL))
+		return pair;
+
+	int base_bm = GetTextureBitmap(base_tmap, 0);
+	int spec_bm = GetTextureBitmap(spec_tmap, 0);
+	if (base_bm < 0 || spec_bm < 0)
+		return pair;
+	if (bm_format(base_bm) != BITMAP_FORMAT_1555 || bm_format(spec_bm) != BITMAP_FORMAT_4444)
+		return pair;
+
+	pair.base_tmap = base_tmap;
+	pair.spec_tmap = spec_tmap;
+	pair.base_bm = base_bm;
+	pair.spec_bm = spec_bm;
+	pair.valid = true;
+	return pair;
+}
+
+static SplitSpecularTexturePair Split_specular_cached_pairs[MAX_TEXTURES];
+static ubyte Split_specular_cached_pair_valid[MAX_TEXTURES] = {};
+
+static void ResetSplitSpecularTexturePairCache()
+{
+	memset(Split_specular_cached_pairs, 0, sizeof(Split_specular_cached_pairs));
+	memset(Split_specular_cached_pair_valid, 0, sizeof(Split_specular_cached_pair_valid));
+}
+
+static SplitSpecularTexturePair FindSplitSpecularTexturePair(int tmap)
+{
+	SplitSpecularTexturePair empty_pair = { -1, -1, -1, -1, false };
+	if (tmap < 0 || tmap >= MAX_TEXTURES)
+		return empty_pair;
+
+	if (!Split_specular_cached_pair_valid[tmap])
+	{
+		Split_specular_cached_pairs[tmap] = ComputeSplitSpecularTexturePair(tmap);
+		Split_specular_cached_pair_valid[tmap] = 1;
+	}
+
+	return Split_specular_cached_pairs[tmap];
+}
+
+static bool FaceCanUseSplitSpecularTextures(face* fp, SplitSpecularTexturePair* out_pair = nullptr)
+{
+	if (!SplitSpecularTexturePathEnabled())
+		return false;
+	if ((fp->flags & FF_DESTROYED) && (GameTextures[fp->tmap].flags & TF_DESTROYABLE))
+		return false;
+
+	SplitSpecularTexturePair pair = FindSplitSpecularTexturePair(fp->tmap);
+	if (!pair.valid)
+		return false;
+
+	if (out_pair)
+		*out_pair = pair;
+	return true;
+}
+
+static int BaseTextureTmapForFace(face* fp)
+{
+	SplitSpecularTexturePair pair;
+	if (FaceCanUseSplitSpecularTextures(fp, &pair))
+		return pair.base_tmap;
+	return fp->tmap;
+}
+
+static int SpecularTextureTmapForFace(face* fp)
+{
+	SplitSpecularTexturePair pair;
+	if (FaceCanUseSplitSpecularTextures(fp, &pair))
+		return pair.spec_tmap;
+	return fp->tmap;
+}
+
+static int BaseBitmapHandleForFace(face* fp)
+{
+	if ((fp->flags & FF_DESTROYED) && (GameTextures[fp->tmap].flags & TF_DESTROYABLE))
+		return GetTextureBitmap(GameTextures[fp->tmap].destroy_handle, 0);
+
+	SplitSpecularTexturePair pair;
+	if (FaceCanUseSplitSpecularTextures(fp, &pair))
+		return pair.base_bm;
+
+	return GetTextureBitmap(fp->tmap, 0);
+}
+
 //Determines if a face draws with alpha blending
 //Parameters:	fp - pointer to the face in question
 //					bm_handle - the handle for the bitmap for this frame, or -1 if don't care about transparence
@@ -299,18 +435,20 @@ static inline bool FaceIsRenderable(room* rp, face* fp)
 static inline int GetFaceAlpha(face* fp, int bm_handle)
 {
 	int ret = AT_ALWAYS;
-	if (GameTextures[fp->tmap].flags & TF_SATURATE)
+	int alpha_tmap = BaseTextureTmapForFace(fp);
+	if (GameTextures[alpha_tmap].flags & TF_SATURATE)
 	{
 		ret = AT_SATURATE_TEXTURE;
 	}
 	else
 	{
 		//Check the face's texture for an alpha value
-		if (GameTextures[fp->tmap].alpha < 1.0)
+		if (GameTextures[alpha_tmap].alpha < 1.0)
 			ret |= ATF_CONSTANT;
 
 		//Check for transparency
-		if (bm_handle >= 0 && GameBitmaps[bm_handle].format != BITMAP_FORMAT_4444 && GameTextures[fp->tmap].flags & TF_TMAP2)
+		if (bm_handle >= 0 && GameBitmaps[bm_handle].format != BITMAP_FORMAT_4444 &&
+			GameTextures[alpha_tmap].flags & TF_TMAP2)
 			ret |= ATF_TEXTURE;
 	}
 	return ret;
@@ -330,7 +468,7 @@ inline bool RenderPastPortal(room* rp, portal* pp)
 	face* fp = &rp->faces[pp->portal_face];
 	if (GameTextures[fp->tmap].flags & TF_PROCEDURAL)
 		return 1;
-	int bm_handle = GetTextureBitmap(fp->tmap, 0);
+	int bm_handle = BaseBitmapHandleForFace(fp);
 	if (GetFaceAlpha(fp, bm_handle))
 		return 1;	  	//Face has alpha or transparency, so we can see through it
 	else
@@ -1463,9 +1601,10 @@ static void AddDynamicSpecularContribution(const renderer_per_pixel_light& light
 
 static int SpecularMaterialType(face* fp)
 {
-	if (GameTextures[fp->tmap].flags & TF_PLASTIC)
+	int spec_tmap = SpecularTextureTmapForFace(fp);
+	if (GameTextures[spec_tmap].flags & TF_PLASTIC)
 		return 1;
-	if (GameTextures[fp->tmap].flags & TF_MARBLE)
+	if (GameTextures[spec_tmap].flags & TF_MARBLE)
 		return 2;
 	return 0;
 }
@@ -1507,7 +1646,17 @@ static int SpecularBitmapHandle(face* fp)
 {
 	if ((fp->flags & FF_DESTROYED) && (GameTextures[fp->tmap].flags & TF_DESTROYABLE))
 		return GetTextureBitmap(GameTextures[fp->tmap].destroy_handle, 0);
+
+	SplitSpecularTexturePair pair;
+	if (FaceCanUseSplitSpecularTextures(fp, &pair))
+		return pair.spec_bm;
+
 	return GetTextureBitmap(fp->tmap, 0);
+}
+
+static bool SpecularFaceHasSplitTexturePair(face* fp)
+{
+	return FaceCanUseSplitSpecularTextures(fp);
 }
 
 static bool SpecularTextureHasMask(face* fp)
@@ -1545,7 +1694,23 @@ static bool SpecularCanForceFace(room* rp, face* fp)
 		return false;
 	if (fp->lmi_handle == BAD_LMI_INDEX || !(fp->flags & FF_LIGHTMAP))
 		return false;
-	if (!(GameTextures[fp->tmap].flags & TF_SPECULAR))
+	if (!(GameTextures[fp->tmap].flags & TF_SPECULAR) && !SpecularFaceHasSplitTexturePair(fp))
+		return false;
+	if (!SpecularTextureHasMask(fp))
+		return false;
+
+	return GetFaceAlpha(fp, SpecularBitmapHandle(fp)) == AT_ALWAYS;
+}
+
+static bool SpecularCanUseSplitTextureFace(room* rp, face* fp)
+{
+	if (!SplitSpecularTexturePathEnabled())
+		return false;
+	if (rp->flags & RF_EXTERNAL)
+		return false;
+	if (fp->lmi_handle == BAD_LMI_INDEX || !(fp->flags & FF_LIGHTMAP))
+		return false;
+	if (!SpecularFaceHasSplitTexturePair(fp))
 		return false;
 	if (!SpecularTextureHasMask(fp))
 		return false;
@@ -1576,6 +1741,8 @@ static bool SpecularShouldQueueFace(room* rp, face* fp)
 	if (!Detail_settings.Specular_lighting)
 		return false;
 	if ((GameTextures[fp->tmap].flags & TF_SPECULAR) && SpecularFaceHasAuthoredPath(rp, fp))
+		return true;
+	if (SpecularCanUseSplitTextureFace(rp, fp))
 		return true;
 	return SpecularCanForceFace(rp, fp);
 }
@@ -1642,6 +1809,30 @@ struct SpecularSourceCandidate
 	specular_instance source;
 };
 
+struct PrecomputedSpecularSourceSet
+{
+	int count;
+	specular_instance sources[MAX_SPECULARS];
+};
+
+struct PrecomputedSpecularFaceSources
+{
+	PrecomputedSpecularSourceSet exact;
+	PrecomputedSpecularSourceSet split;
+};
+
+struct SpecularDonorFace
+{
+	int room_index;
+	int face_index;
+	int exact_tmap;
+	int split_tmap;
+	vector center;
+};
+
+static std::vector<std::vector<PrecomputedSpecularFaceSources>> Precomputed_specular_sources;
+static int Precomputed_specular_highest_room = -1;
+
 static vector SpecularFaceCenter(room* rp, face* fp)
 {
 	vector center = { 0, 0, 0 };
@@ -1652,20 +1843,38 @@ static vector SpecularFaceCenter(room* rp, face* fp)
 	return center;
 }
 
-static void SpecularAppendTextureSourceCandidates(std::vector<SpecularSourceCandidate>& candidates,
-	room* source_room, face* source_face, int current_tmap, const vector& current_center)
+static int SplitSpecularSourceMatchTmap(int tmap)
 {
-	if (source_face->tmap != current_tmap)
+	SplitSpecularTexturePair pair = FindSplitSpecularTexturePair(tmap);
+	return pair.valid ? pair.base_tmap : tmap;
+}
+
+static bool SpecularTextureHasOwnOrSplitMask(face* fp)
+{
+	int bm_handle = GetTextureBitmap(fp->tmap, 0);
+	if (bm_handle >= 0 && bm_format(bm_handle) == BITMAP_FORMAT_4444)
+		return true;
+
+	return FindSplitSpecularTexturePair(fp->tmap).valid;
+}
+
+static void SpecularAppendPrecomputedTextureSourceCandidates(std::vector<SpecularSourceCandidate>& candidates,
+	const SpecularDonorFace& donor, int target_room_index, int target_face_index, int target_tmap,
+	const vector& target_center, bool split_match)
+{
+	if (donor.room_index == target_room_index && donor.face_index == target_face_index)
 		return;
-	if (!SpecularFaceHasLocalSources(source_face))
-		return;
-	if (!SpecularTextureHasMask(source_face))
+	if ((split_match ? donor.split_tmap : donor.exact_tmap) != target_tmap)
 		return;
 
-	vector donor_center = SpecularFaceCenter(source_room, source_face);
-	const float dx = donor_center.x - current_center.x;
-	const float dy = donor_center.y - current_center.y;
-	const float dz = donor_center.z - current_center.z;
+	room* source_room = &Rooms[donor.room_index];
+	face* source_face = &source_room->faces[donor.face_index];
+	if (!SpecularFaceHasLocalSources(source_face))
+		return;
+
+	const float dx = donor.center.x - target_center.x;
+	const float dy = donor.center.y - target_center.y;
+	const float dz = donor.center.z - target_center.z;
 	const float distance_squared = dx * dx + dy * dy + dz * dz;
 
 	special_face* sf = &SpecialFaces[source_face->special_handle];
@@ -1681,31 +1890,11 @@ static void SpecularAppendTextureSourceCandidates(std::vector<SpecularSourceCand
 	}
 }
 
-static void SpecularBorrowTextureStaticSources(room* rp, int current_face_index,
-	SpecularBlock& specblock)
+static void SpecularStorePrecomputedSourceSet(PrecomputedSpecularSourceSet& set,
+	std::vector<SpecularSourceCandidate>& candidates)
 {
-	if (!Render_per_pixel_force_specular_faces || specblock.num_speculars > 0)
-		return;
-
-	face* current_face = &rp->faces[current_face_index];
-	std::vector<SpecularSourceCandidate> candidates;
-	const int current_tmap = current_face->tmap;
-	const vector current_center = SpecularFaceCenter(rp, current_face);
-
-	for (int room_index = 0; room_index <= Highest_room_index; room_index++)
-	{
-		room* source_room = &Rooms[room_index];
-		if (!source_room->used || (source_room->flags & RF_EXTERNAL))
-			continue;
-
-		for (int face_index = 0; face_index < source_room->num_faces; face_index++)
-		{
-			if (source_room == rp && face_index == current_face_index)
-				continue;
-			SpecularAppendTextureSourceCandidates(candidates, source_room,
-				&source_room->faces[face_index], current_tmap, current_center);
-		}
-	}
+	set.count = 0;
+	memset(set.sources, 0, sizeof(set.sources));
 
 	std::sort(candidates.begin(), candidates.end(),
 		[](const SpecularSourceCandidate& a, const SpecularSourceCandidate& b) {
@@ -1714,10 +1903,109 @@ static void SpecularBorrowTextureStaticSources(room* rp, int current_face_index,
 
 	for (const SpecularSourceCandidate& candidate : candidates)
 	{
-		if (specblock.num_speculars >= MAX_SPECULARS)
+		if (set.count >= MAX_SPECULARS)
 			break;
-		SpecularAddStaticSource(specblock, candidate.source);
+		set.sources[set.count++] = candidate.source;
 	}
+}
+
+void PrecomputeMineSpecularSources()
+{
+	ResetSplitSpecularTexturePairCache();
+	Precomputed_specular_sources.clear();
+	Precomputed_specular_highest_room = Highest_room_index;
+
+	if (Highest_room_index < 0)
+		return;
+
+	Precomputed_specular_sources.resize(Highest_room_index + 1);
+	std::vector<SpecularDonorFace> donors;
+
+	for (int room_index = 0; room_index <= Highest_room_index; room_index++)
+	{
+		room* rp = &Rooms[room_index];
+		if (!rp->used)
+			continue;
+
+		Precomputed_specular_sources[room_index].resize(rp->num_faces);
+		if (rp->flags & RF_EXTERNAL)
+			continue;
+
+		for (int face_index = 0; face_index < rp->num_faces; face_index++)
+		{
+			face* fp = &rp->faces[face_index];
+			if (!SpecularFaceHasLocalSources(fp))
+				continue;
+			if (!SpecularTextureHasOwnOrSplitMask(fp))
+				continue;
+
+			SpecularDonorFace donor = {};
+			donor.room_index = room_index;
+			donor.face_index = face_index;
+			donor.exact_tmap = fp->tmap;
+			donor.split_tmap = SplitSpecularSourceMatchTmap(fp->tmap);
+			donor.center = SpecularFaceCenter(rp, fp);
+			donors.push_back(donor);
+		}
+	}
+
+	for (int room_index = 0; room_index <= Highest_room_index; room_index++)
+	{
+		room* rp = &Rooms[room_index];
+		if (!rp->used || (rp->flags & RF_EXTERNAL))
+			continue;
+
+		for (int face_index = 0; face_index < rp->num_faces; face_index++)
+		{
+			face* fp = &rp->faces[face_index];
+			if (fp->lmi_handle == BAD_LMI_INDEX || !(fp->flags & FF_LIGHTMAP))
+				continue;
+
+			const vector target_center = SpecularFaceCenter(rp, fp);
+			std::vector<SpecularSourceCandidate> exact_candidates;
+			std::vector<SpecularSourceCandidate> split_candidates;
+
+			for (const SpecularDonorFace& donor : donors)
+			{
+				SpecularAppendPrecomputedTextureSourceCandidates(exact_candidates, donor, room_index,
+					face_index, fp->tmap, target_center, false);
+				SpecularAppendPrecomputedTextureSourceCandidates(split_candidates, donor, room_index,
+					face_index, SplitSpecularSourceMatchTmap(fp->tmap), target_center, true);
+			}
+
+			PrecomputedSpecularFaceSources& cached = Precomputed_specular_sources[room_index][face_index];
+			SpecularStorePrecomputedSourceSet(cached.exact, exact_candidates);
+			SpecularStorePrecomputedSourceSet(cached.split, split_candidates);
+		}
+	}
+}
+
+static void SpecularAddPrecomputedSourceSet(SpecularBlock& specblock, const PrecomputedSpecularSourceSet& set)
+{
+	for (int i = 0; i < set.count && specblock.num_speculars < MAX_SPECULARS; i++)
+		SpecularAddStaticSource(specblock, set.sources[i]);
+}
+
+static void SpecularBorrowTextureStaticSources(room* rp, int current_face_index,
+	SpecularBlock& specblock)
+{
+	if ((!Render_per_pixel_force_specular_faces && !Render_split_specular_textures) || specblock.num_speculars > 0)
+		return;
+
+	int room_index = rp - Rooms;
+	if (room_index < 0 || room_index > Precomputed_specular_highest_room ||
+		room_index >= (int)Precomputed_specular_sources.size())
+		return;
+	if (current_face_index < 0 ||
+		current_face_index >= (int)Precomputed_specular_sources[room_index].size())
+		return;
+
+	const PrecomputedSpecularFaceSources& cached =
+		Precomputed_specular_sources[room_index][current_face_index];
+	if (Render_split_specular_textures)
+		SpecularAddPrecomputedSourceSet(specblock, cached.split);
+	if (specblock.num_speculars <= 0 && Render_per_pixel_force_specular_faces)
+		SpecularAddPrecomputedSourceSet(specblock, cached.exact);
 }
 
 static void SpecularBuildStaticBlockSources(room* rp, int current_face_index, SpecularBlock& specblock)
@@ -1779,6 +2067,66 @@ static void PrepareSpecularDynamicLight(renderer_per_pixel_light& light)
 		light.direction[0] = view_direction.x;
 		light.direction[1] = view_direction.y;
 		light.direction[2] = view_direction.z;
+	}
+}
+
+static bool PerPixelSpecularMaterialEnabled()
+{
+	return Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender();
+}
+
+static bool UsePerPixelSpecularMaterialForFace(room* rp, face* fp)
+{
+	return PerPixelSpecularMaterialEnabled() && !Render_mirror_for_room &&
+		SpecularShouldQueueFace(rp, fp) && fp->lmi_handle != BAD_LMI_INDEX &&
+		SpecularTextureHasMask(fp);
+}
+
+static bool BuildPerPixelSpecularState(room* rp, int face_index, SpecularBlock& specblock,
+	renderer_per_pixel_light* dynamic_lights, int& dynamic_light_count)
+{
+	face* fp = &rp->faces[face_index];
+	const int material_type = SpecularMaterialType(fp);
+	const bool debug_tint = SpecularDebugTintFace(rp, fp);
+
+	specblock = {};
+	specblock.exponent = TunedSpecularMaterialExponent(material_type);
+	specblock.strength = Render_per_pixel_specular_strength *
+		GameTextures[SpecularTextureTmapForFace(fp)].reflectivity * 1.5f;
+	specblock.lightmap_mix = Render_per_pixel_specular_lightmap_mix;
+	specblock.alpha_strength = Render_per_pixel_specular_alpha_strength;
+	specblock.pad0 = 0.0f;
+	specblock.debug_tint = debug_tint ? 1.0f : 0.0f;
+	specblock.debug_authored = SpecularFaceHasLocalSources(fp) ? 1.0f : 0.0f;
+
+	SpecularBuildStaticBlockSources(rp, face_index, specblock);
+
+	dynamic_light_count = GetPerPixelLightmapLights(fp->lmi_handle, dynamic_lights,
+		RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+	for (int t = 0; t < dynamic_light_count; t++)
+	{
+		PrepareSpecularDynamicLight(dynamic_lights[t]);
+	}
+
+	return debug_tint || (specblock.strength > 0.0f &&
+		(specblock.num_speculars > 0 || dynamic_light_count > 0));
+}
+
+static void SetSpecularNormalsForFace(room* rp, face* fp, g3Point** pointlist)
+{
+	const bool has_smooth_normals = FaceHasSmoothSpecularNormals(fp);
+	for (int vn = 0; vn < fp->num_verts; vn++)
+	{
+		g3Point* p = pointlist[vn];
+		if (has_smooth_normals)
+		{
+			p->p3_specular_normal = SpecialFaces[fp->special_handle].vertnorms[vn];
+		}
+		else
+		{
+			p->p3_specular_normal = fp->normal;
+		}
+		p->p3_specular_normal_valid = 1;
 	}
 }
 
@@ -1845,33 +2193,12 @@ void RenderSpecularFacesFlat(room* rp)
 			if (!SpecularTextureHasMask(fp))
 				continue;
 
-			int material_type = SpecularMaterialType(fp);
 			SpecularBlock specblock = {};
-			const bool debug_tint = SpecularDebugTintFace(rp, fp);
-			specblock.exponent = TunedSpecularMaterialExponent(material_type);
-			specblock.strength = Render_per_pixel_specular_strength *
-				GameTextures[fp->tmap].reflectivity * 1.5f;
-			specblock.lightmap_mix = Render_per_pixel_specular_lightmap_mix;
-			specblock.alpha_strength = Render_per_pixel_specular_alpha_strength;
-			specblock.pad0 = 0.0f;
-			specblock.debug_tint = debug_tint ? 1.0f : 0.0f;
-			specblock.debug_authored = SpecularFaceHasLocalSources(fp) ? 1.0f : 0.0f;
-
-			SpecularBuildStaticBlockSources(rp, face_index, specblock);
-
 			renderer_per_pixel_light dynamic_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
-			int dynamic_light_count = GetPerPixelLightmapLights(fp->lmi_handle, dynamic_lights,
-				RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
-			for (int t = 0; t < dynamic_light_count; t++)
-			{
-				PrepareSpecularDynamicLight(dynamic_lights[t]);
-			}
-
-			if (!debug_tint && (specblock.strength <= 0.0f ||
-				(specblock.num_speculars == 0 && dynamic_light_count == 0)))
+			int dynamic_light_count = 0;
+			if (!BuildPerPixelSpecularState(rp, face_index, specblock, dynamic_lights, dynamic_light_count))
 				continue;
 
-			const bool has_smooth_normals = FaceHasSmoothSpecularNormals(fp);
 			for (int vn = 0; vn < fp->num_verts; vn++)
 			{
 				int vertnum = fp->face_verts[vn];
@@ -1886,17 +2213,9 @@ void RenderSpecularFacesFlat(room* rp)
 				p->p3_r = 1.0f;
 				p->p3_g = 1.0f;
 				p->p3_b = 1.0f;
-				if (has_smooth_normals)
-				{
-					p->p3_specular_normal = SpecialFaces[fp->special_handle].vertnorms[vn];
-				}
-				else
-				{
-					p->p3_specular_normal = fp->normal;
-				}
-				p->p3_specular_normal_valid = 1;
 				p->p3_flags |= PF_RGBA | PF_UV | PF_UV2;
 			}
+			SetSpecularNormalsForFace(rp, fp, pointlist);
 
 			rend_UpdateSpecular(&specblock);
 			rend_SetOverlayType(OT_BLEND);
@@ -2086,12 +2405,10 @@ void RenderSpecularFacesFlat(room* rp)
 			fp->flags &= ~(FF_SPEC_INVISIBLE);
 			continue;
 		}
-		int bm_handle = GetTextureBitmap(fp->tmap, 0);
-		if ((fp->flags & FF_DESTROYED) && (GameTextures[fp->tmap].flags & TF_DESTROYABLE))
-			bm_handle = GetTextureBitmap(GameTextures[fp->tmap].destroy_handle, 0);
+		int bm_handle = SpecularBitmapHandle(fp);
 		if (bm_format(bm_handle) != BITMAP_FORMAT_4444)
 			continue;
-		float reflect = GameTextures[fp->tmap].reflectivity * 1.5;
+		float reflect = GameTextures[SpecularTextureTmapForFace(fp)].reflectivity * 1.5;
 		for (int vn = 0; vn < fp->num_verts; vn++)
 		{
 			pointbuffer[vn] = World_point_buffer[rp->wpb_index + fp->face_verts[vn]];
@@ -2516,6 +2833,8 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 		return false;
 
 	bool spec_face = SpecularShouldQueueFace(rp, fp);
+	if (spec_face && UsePerPixelSpecularMaterialForFace(rp, fp))
+		return false;
 
 	float uchange = 0;
 	float vchange = 0;
@@ -2636,13 +2955,8 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	}
 
 	int bm_handle;
-	if ((fp->flags & FF_DESTROYED) && (GameTextures[fp->tmap].flags & TF_DESTROYABLE))
-	{
-		bm_handle = GetTextureBitmap(GameTextures[fp->tmap].destroy_handle, 0);
-		ASSERT(bm_handle != -1);
-	}
-	else
-		bm_handle = GetTextureBitmap(fp->tmap, 0);
+	bm_handle = BaseBitmapHandleForFace(fp);
+	ASSERT(bm_handle != -1);
 
 	sbyte alpha_type = (sbyte)GetFaceAlpha(fp, bm_handle);
 	if (alpha_type != AT_ALWAYS)
@@ -2669,7 +2983,7 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 
 	if (fp->flags & FF_LIGHTMAP)
 	{
-		if (!(GameTextures[fp->tmap].flags & TF_SATURATE))
+		if (!(GameTextures[BaseTextureTmapForFace(fp)].flags & TF_SATURATE))
 		{
 			key.overlay_type = OT_BLEND;
 			key.overlay_map = LightmapInfo[fp->lmi_handle].lm_handle;
@@ -2700,6 +3014,8 @@ void RenderFace(room* rp, int facenum)
 	static int first = 1;
 	static float lm_red[32], lm_green[32], lm_blue[32];
 	bool spec_face = 0;
+	bool specular_material_face = false;
+	SpecularBlock specblock = {};
 	face_cc.cc_and = 0xff;
 	face_cc.cc_or = 0;
 #ifdef EDITOR
@@ -2723,6 +3039,7 @@ void RenderFace(room* rp, int facenum)
 
 	if (!Render_mirror_for_room && SpecularShouldQueueFace(rp, fp))
 		spec_face = 1;
+	specular_material_face = spec_face && UsePerPixelSpecularMaterialForFace(rp, fp);
 
 	// Figure out if there is any texture sliding
 	if (GameTextures[fp->tmap].slide_u != 0)
@@ -2803,7 +3120,7 @@ void RenderFace(room* rp, int facenum)
 	}
 	if (face_cc.cc_and)	// This entire face is off the screen
 	{
-		if (spec_face && UseSmoothSpecularForFace(fp))
+		if (spec_face && !specular_material_face && UseSmoothSpecularForFace(fp))
 		{
 			fp->flags |= FF_SPEC_INVISIBLE;
 			UpdateSpecularFace(rp, fp);
@@ -2863,13 +3180,8 @@ void RenderFace(room* rp, int facenum)
 	}
 	//Get bitmap handle
 	int bm_handle;
-	if ((fp->flags & FF_DESTROYED) && (GameTextures[fp->tmap].flags & TF_DESTROYABLE))
-	{
-		bm_handle = GetTextureBitmap(GameTextures[fp->tmap].destroy_handle, 0);
-		ASSERT(bm_handle != -1);
-	}
-	else
-		bm_handle = GetTextureBitmap(fp->tmap, 0);
+	bm_handle = BaseBitmapHandleForFace(fp);
+	ASSERT(bm_handle != -1);
 
 	//Set alpha, transparency, & lighting for this face
 	rend_SetAlphaType(GetFaceAlpha(fp, bm_handle));
@@ -2880,7 +3192,7 @@ void RenderFace(room* rp, int facenum)
 	else if (Render_mirror_for_room && rp->mirror_face != -1 && fp->tmap == rp->faces[rp->mirror_face].tmap && rp != &Rooms[Mirror_room])
 		rend_SetAlphaValue(255);	// This prevents mirrors from rendering each other
 	else
-		rend_SetAlphaValue(GameTextures[fp->tmap].alpha * 255);
+		rend_SetAlphaValue(GameTextures[BaseTextureTmapForFace(fp)].alpha * 255);
 
 	rend_SetLighting(LS_GOURAUD);
 
@@ -2892,7 +3204,7 @@ void RenderFace(room* rp, int facenum)
 	// Set lighting map
 	if (fp->flags & FF_LIGHTMAP)
 	{
-		if (GameTextures[fp->tmap].flags & TF_SATURATE)
+		if (GameTextures[BaseTextureTmapForFace(fp)].flags & TF_SATURATE)
 			rend_SetOverlayType(OT_NONE);
 		else
 			rend_SetOverlayType(OT_BLEND);
@@ -2924,7 +3236,23 @@ void RenderFace(room* rp, int facenum)
 	}
 
 	//Draw the damn thing
-	if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender())
+	if (specular_material_face)
+	{
+		if (BuildPerPixelSpecularState(rp, facenum, specblock, per_pixel_lights, per_pixel_light_count))
+		{
+			SetSpecularNormalsForFace(rp, fp, pointlist);
+			rend_UpdateSpecular(&specblock);
+			rend_SetPerPixelSpecularMap(SpecularBitmapHandle(fp));
+			rend_SetPerPixelSpecularMode(2);
+			if (per_pixel_light_count > 0)
+				rend_SetPerPixelDynamicLighting(&fp->normal, per_pixel_light_count, per_pixel_lights);
+		}
+		else
+		{
+			specular_material_face = false;
+		}
+	}
+	else if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender())
 	{
 		per_pixel_light_count = GetPerPixelLightmapLights(fp->lmi_handle, per_pixel_lights,
 			RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
@@ -2935,6 +3263,11 @@ void RenderFace(room* rp, int facenum)
 	rend_SetAOClass(RoomFaceAOClass(rp, fp));
 	drawn = g3_DrawPoly(fp->num_verts, pointlist, bm_handle, MAP_TYPE_BITMAP, &face_cc);
 	rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
+	if (specular_material_face)
+	{
+		rend_SetPerPixelSpecularMode(0);
+		rend_SetPerPixelSpecularMap(-1);
+	}
 	if (per_pixel_light_count > 0)
 		rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 
@@ -2951,7 +3284,11 @@ void RenderFace(room* rp, int facenum)
 	// Draw a specular face
 	if (!Render_mirror_for_room && spec_face)
 	{
-		if (drawn)
+		if (specular_material_face)
+		{
+			// PPX specular was rendered with the opaque material pass.
+		}
+		else if (drawn)
 			UpdateSpecularFace(rp, fp);
 		else
 		{
@@ -3199,7 +3536,8 @@ void RenderRoomUnsorted(room* rp)
 		{
 			if (UseSmoothSpecularForFace(fp))
 			{
-				if (!Render_mirror_for_room && SpecularShouldQueueFace(rp, fp))
+				if (!Render_mirror_for_room && SpecularShouldQueueFace(rp, fp) &&
+					!UsePerPixelSpecularMaterialForFace(rp, fp))
 				{
 					fp->flags |= FF_SPEC_INVISIBLE;
 					UpdateSpecularFace(rp, fp);

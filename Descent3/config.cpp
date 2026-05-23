@@ -109,6 +109,7 @@ float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
 bool Render_face_probe = false;
 bool Render_soft_vis_effects = false;
+bool Render_split_specular_textures = false;
 float Render_per_pixel_specular_strength = 1.0f;
 float Render_per_pixel_static_specular_strength = 1.0f;
 float Render_per_pixel_dynamic_specular_strength = 1.0f;
@@ -1293,6 +1294,7 @@ struct video_menu
 	bool* show_draw_calls;
 	bool* face_probe;
 	bool* soft_vis_effects;
+	bool* split_specular_textures;
 	bool* motion_vector_debug;
 
 	short* fov;
@@ -1556,6 +1558,11 @@ struct video_menu
 			Render_soft_vis_effects = *soft_vis_effects;
 			ui_changed = true;
 		}
+		if (split_specular_textures && sheet->HasChanged(split_specular_textures))
+		{
+			Render_split_specular_textures = *split_specular_textures;
+			ui_changed = true;
+		}
 		if (per_pixel_specular_strength && sheet->HasChanged(per_pixel_specular_strength))
 		{
 			Render_per_pixel_specular_strength = ConfigNormalizePerPixelSpecularStrength(
@@ -1668,6 +1675,7 @@ struct video_menu
 		show_draw_calls = NULL;
 		face_probe = NULL;
 		soft_vis_effects = NULL;
+		split_specular_textures = NULL;
 		motion_vector_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
@@ -1775,6 +1783,7 @@ struct video_menu
 		update_draw_call_title();
 		face_probe = sheet->AddLongCheckBox("Face probe", Render_face_probe);
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
+		split_specular_textures = sheet->AddLongCheckBox("Split spec maps", Render_split_specular_textures);
 
 		tSliderSettings ppx_specular_slider = {};
 		ppx_specular_slider.type = SLIDER_UNITS_FLOAT;
@@ -1874,6 +1883,8 @@ struct video_menu
 			Render_face_probe = *face_probe;
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
+		if (split_specular_textures)
+			Render_split_specular_textures = *split_specular_textures;
 		if (per_pixel_specular_strength)
 			Render_per_pixel_specular_strength = ConfigNormalizePerPixelSpecularStrength(
 				slider_float_value(per_pixel_specular_strength, 0.0f, 32.0f));

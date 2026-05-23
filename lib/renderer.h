@@ -129,6 +129,8 @@ struct renderer_per_pixel_light
 void rend_SetLighting(light_state);
 void rend_SetPerPixelLightingDirection(const vector *lightdir);
 void rend_SetPerPixelDynamicLighting(const vector *face_normal, int count, const renderer_per_pixel_light *lights);
+void rend_SetPerPixelSpecularMode(int mode);
+void rend_SetPerPixelSpecularMap(int handle);
 
 enum color_model
 {

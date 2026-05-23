@@ -13,6 +13,9 @@ uniform sampler2D colortexture;
 #if defined(USE_LIGHTMAP)
 uniform sampler2D lightmaptexture;
 #endif
+#if defined(USE_SPECULAR)
+uniform sampler2D specularmasktexture;
+#endif
 #endif
 
 uniform int phong_enabled;
@@ -215,6 +218,46 @@ vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 	return clamp(lightmap_color + dynamic_color, vec3(0.0), vec3(1.0));
 }
 
+#if defined(USE_SPECULAR)
+vec3 ApplyDynamicLightmapLightingFromView(vec3 lightmap_color, vec3 view_position)
+{
+	if (dynamic_light_count == 0)
+		return lightmap_color;
+
+	vec3 dynamic_color = vec3(0.0);
+
+	for (int i = 0; i < 8; i++)
+	{
+		if (i >= dynamic_light_count)
+			break;
+
+		vec3 light_delta = view_position - dynamic_light_positions[i];
+		float radius = max(dynamic_light_radii[i], 0.0001);
+		float distance = length(light_delta);
+		vec3 light_vector = (distance > 0.0001) ? light_delta / distance : vec3(0.0, 0.0, 1.0);
+		float scalar = 1.0 - (distance / radius);
+		if (scalar <= 0.0)
+			continue;
+		scalar = pow(scalar, max(dynamic_light_falloffs[i], 0.0001));
+
+		if (dynamic_light_directional[i] != 0)
+		{
+			vec3 light_direction = normalize(dynamic_light_directions[i]);
+			float direction_dot = dot(light_vector, light_direction);
+			float dot_range = dynamic_light_dot_ranges[i];
+			if (direction_dot < dot_range)
+				continue;
+
+			scalar *= (direction_dot - dot_range) / max(1.0 - dot_range, 0.0001);
+		}
+
+		dynamic_color += dynamic_light_colors[i] * scalar;
+	}
+
+	return clamp(lightmap_color + dynamic_color, vec3(0.0), vec3(1.0));
+}
+#endif
+
 float SoftParticleEyeDepth(float depth)
 {
 	return 1.0 / max(1.0 - clamp(depth, 0.0, 0.9999), 0.0001);
@@ -273,8 +316,10 @@ void main()
 		vec4 base_color = texture(colortexture, outuv.xy / outuv.z);
 		if (specular_data.debug_tint > 0.5)
 		{
-			float mask_alpha = (base_color.a > 0.001) ?
-				clamp(base_color.a * 3.0, 0.35, 0.9) : 0.0;
+			float debug_mask = per_pixel_specular_enabled == 2 ?
+				texture(specularmasktexture, outuv.xy / outuv.z).a : base_color.a;
+			float mask_alpha = (debug_mask > 0.001) ?
+				clamp(debug_mask * 3.0, 0.35, 0.9) : 0.0;
 			vec3 tint_color = (specular_data.debug_authored > 0.5) ?
 				vec3(1.0, 0.85, 0.0) : vec3(0.0, 1.0, 0.0);
 			color = vec4(tint_color, mask_alpha);
@@ -282,8 +327,23 @@ void main()
 		else if (per_pixel_specular_enabled != 0)
 		{
 			vec3 lightmap_color = texture(lightmaptexture, outuv2.xy / outuv2.z).rgb;
-			color = vec4(ApplyPerPixelSpecular(lightmap_color),
-				clamp(base_color.a * vertex_color.a * specular_data.alpha_strength, 0.0, 1.0));
+			vec3 specular_color = ApplyPerPixelSpecular(lightmap_color);
+			float mask_alpha = base_color.a;
+			if (per_pixel_specular_enabled == 2)
+			{
+				mask_alpha = texture(specularmasktexture, outuv.xy / outuv.z).a;
+				vec3 view_position = out_motion_world_position.xyz / max(out_motion_world_position.w, 0.0001);
+				lightmap_color = ApplyDynamicLightmapLightingFromView(lightmap_color, view_position);
+				vec3 lit_base = base_color.rgb * lightmap_color * vertex_color.rgb;
+				float specular_alpha = clamp(mask_alpha * specular_data.alpha_strength, 0.0, 1.0);
+				color = vec4(clamp(lit_base + specular_color * specular_alpha, vec3(0.0), vec3(1.0)),
+					vertex_color.a);
+			}
+			else
+			{
+				float specular_alpha = clamp(mask_alpha * specular_data.alpha_strength, 0.0, 1.0);
+				color = vec4(specular_color, clamp(specular_alpha * vertex_color.a, 0.0, 1.0));
+			}
 		}
 		else
 		{

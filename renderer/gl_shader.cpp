@@ -490,6 +490,10 @@ void ShaderProgram::CreateCommonBindings(int bindindex)
 	if (index != -1)
 		glUniform1i(index, 2); //Set to GL_TEXTURE2
 
+	index = glGetUniformLocation(m_name, "specularmasktexture");
+	if (index != -1)
+		glUniform1i(index, 3); //Set to GL_TEXTURE3
+
 	//Find CommonBlock
 	GLuint uboindex = glGetUniformBlockIndex(m_name, "CommonBlock");
 	if (uboindex != GL_INVALID_INDEX)

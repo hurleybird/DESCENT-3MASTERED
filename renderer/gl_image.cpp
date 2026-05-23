@@ -46,7 +46,7 @@ GLuint texture_name_list[10000];
 int Cur_texture_object_num = 1;
 int Last_texel_unit_set = -1;
 
-int OpenGL_last_bound[2];
+	int OpenGL_last_bound[4];
 int OpenGL_sets_this_frame[10];
 int OpenGL_uploads;
 
@@ -943,5 +943,7 @@ void GL4Renderer::ClearBoundTextures()
 
 	OpenGL_last_bound[0] = -1;
 	OpenGL_last_bound[1] = -1;
+	OpenGL_last_bound[2] = -1;
+	OpenGL_last_bound[3] = -1;
 	Last_texel_unit_set = -1;
 }

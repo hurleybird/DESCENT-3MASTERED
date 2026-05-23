@@ -392,6 +392,7 @@ void SaveGameSettings()
 	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
 	Database->write("RS_face_probe", Render_face_probe);
 	Database->write("RS_soft_vis_effects", Render_soft_vis_effects);
+	Database->write("RS_split_specular_textures", Render_split_specular_textures);
 	WRITE_FLOAT_SETTING("RS_per_pixel_specular_strength", Render_per_pixel_specular_strength);
 	WRITE_FLOAT_SETTING("RS_per_pixel_static_specular_strength", Render_per_pixel_static_specular_strength);
 	WRITE_FLOAT_SETTING("RS_per_pixel_dynamic_specular_strength", Render_per_pixel_dynamic_specular_strength);
@@ -825,6 +826,7 @@ void LoadGameSettings()
 	Database->read("RS_motion_vector_debug_preview", &Render_preferred_state.motion_vector_debug_preview);
 	Database->read("RS_face_probe", &Render_face_probe);
 	Database->read("RS_soft_vis_effects", &Render_soft_vis_effects);
+	Database->read("RS_split_specular_textures", &Render_split_specular_textures);
 	READ_FLOAT_SETTING("RS_per_pixel_specular_strength", Render_per_pixel_specular_strength);
 	Render_per_pixel_specular_strength = ConfigNormalizePerPixelSpecularStrength(Render_per_pixel_specular_strength);
 	READ_FLOAT_SETTING("RS_per_pixel_static_specular_strength", Render_per_pixel_static_specular_strength);

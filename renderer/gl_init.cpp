@@ -84,6 +84,8 @@ void GL4Renderer::SetDefaults()
 	SetZValues(0, 3000);
 	OpenGL_last_bound[0] = 9999999;
 	OpenGL_last_bound[1] = 9999999;
+	OpenGL_last_bound[2] = 9999999;
+	OpenGL_last_bound[3] = 9999999;
 	Last_texel_unit_set = -1;
 	OpenGL_multitexture_state = false;
 

@@ -105,6 +105,8 @@ public:
 	virtual void SetPerPixelLightingDirection(const vector *lightdir) = 0;
 	virtual void SetPerPixelDynamicLighting(const vector *face_normal, int count,
 		const renderer_per_pixel_light *lights) = 0;
+	virtual void SetPerPixelSpecularMode(int mode) {}
+	virtual void SetPerPixelSpecularMap(int handle) {}
 
 	// Adds a bias to each coordinates z value.  This is useful for making 2d bitmaps
 	// get drawn without being clipped by the zbuffer

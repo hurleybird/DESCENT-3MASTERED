@@ -1203,6 +1203,22 @@ void rend_SetPerPixelDynamicLighting(const vector *face_normal, int count, const
 	renderer_inst->SetPerPixelDynamicLighting(face_normal, count, lights);
 }
 
+void rend_SetPerPixelSpecularMode(int mode)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->SetPerPixelSpecularMode(mode);
+}
+
+void rend_SetPerPixelSpecularMap(int handle)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->SetPerPixelSpecularMap(handle);
+}
+
 void rend_SetColorModel(color_model model)
 {
 	if (!Renderer_initted)

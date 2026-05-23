@@ -293,6 +293,8 @@ class GL4Renderer : public IRenderer
 	vector per_pixel_light_direction = { 0, 0, -1 };
 	vector per_pixel_dynamic_face_normal = { 0, 0, 1 };
 	int per_pixel_dynamic_light_count = 0;
+	int per_pixel_specular_mode = 0;
+	int per_pixel_specular_map = -1;
 	GLfloat per_pixel_dynamic_positions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
 	GLfloat per_pixel_dynamic_colors[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
 	GLfloat per_pixel_dynamic_radii[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
@@ -346,7 +348,7 @@ class GL4Renderer : public IRenderer
 	int Cur_texture_object_num = 1;
 	int Last_texel_unit_set = -1;
 
-	int OpenGL_last_bound[2];
+	int OpenGL_last_bound[4];
 	int OpenGL_sets_this_frame[10];
 	int OpenGL_uploads = 0;
 
@@ -560,6 +562,8 @@ public:
 	void SetPerPixelLightingDirection(const vector *lightdir) override;
 	void SetPerPixelDynamicLighting(const vector *face_normal, int count,
 		const renderer_per_pixel_light *lights) override;
+	void SetPerPixelSpecularMode(int mode) override;
+	void SetPerPixelSpecularMap(int handle) override;
 
 	// Adds a bias to each coordinates z value.  This is useful for making 2d bitmaps
 	// get drawn without being clipped by the zbuffer
