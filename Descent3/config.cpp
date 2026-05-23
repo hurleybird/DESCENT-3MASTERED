@@ -119,6 +119,8 @@ float Render_per_pixel_specular_lightmap_mix = 1.0f;
 float Render_per_pixel_specular_alpha_strength = 1.0f;
 float Render_per_pixel_specular_field_resolution = 24.0f;
 float Render_per_pixel_specular_field_sample_distance = 72.0f;
+bool Render_per_pixel_sparse_specular_field = true;
+bool Render_per_pixel_field_vertex_normals_only = false;
 bool Render_per_pixel_specular_ignore_lightmap = false;
 bool Render_per_pixel_field_static_specular = false;
 bool Render_per_pixel_field_lightmap_static_specular = false;
@@ -238,12 +240,12 @@ float ConfigNormalizePerPixelSpecularAlphaStrength(float strength)
 
 float ConfigNormalizePerPixelSpecularFieldResolution(float resolution)
 {
-	return ConfigNormalizeFloatRange(resolution, 6.0f, 64.0f);
+	return ConfigNormalizeFloatRange(resolution, 1.0f, 256.0f);
 }
 
 float ConfigNormalizePerPixelSpecularFieldSampleDistance(float distance)
 {
-	return ConfigNormalizeFloatRange(distance, 12.0f, 300.0f);
+	return ConfigNormalizeFloatRange(distance, 1.0f, 300.0f);
 }
 
 void ConfigResetPerPixelSpecularSettings()
@@ -257,6 +259,8 @@ void ConfigResetPerPixelSpecularSettings()
 	Render_per_pixel_specular_alpha_strength = 1.0f;
 	Render_per_pixel_specular_field_resolution = 24.0f;
 	Render_per_pixel_specular_field_sample_distance = 72.0f;
+	Render_per_pixel_sparse_specular_field = true;
+	Render_per_pixel_field_vertex_normals_only = false;
 	Render_per_pixel_specular_ignore_lightmap = false;
 	Render_per_pixel_field_static_specular = false;
 	Render_per_pixel_field_lightmap_static_specular = false;
@@ -1329,6 +1333,8 @@ struct video_menu
 	short* per_pixel_specular_field_resolution;
 	short* per_pixel_specular_field_sample_distance;
 	bool specular_field_slider_rebuild_pending;
+	bool* per_pixel_sparse_specular_field;
+	bool* per_pixel_field_vertex_normals_only;
 	bool* per_pixel_specular_ignore_lightmap;
 	bool* per_pixel_field_static_specular;
 	bool* per_pixel_field_lightmap_static_specular;
@@ -1451,10 +1457,14 @@ struct video_menu
 		set_slider_float_value(per_pixel_specular_alpha_strength,
 			ConfigNormalizePerPixelSpecularAlphaStrength(Render_per_pixel_specular_alpha_strength), 0.0f, 8.0f);
 		set_slider_float_value(per_pixel_specular_field_resolution,
-			ConfigNormalizePerPixelSpecularFieldResolution(Render_per_pixel_specular_field_resolution), 6.0f, 64.0f);
+			ConfigNormalizePerPixelSpecularFieldResolution(Render_per_pixel_specular_field_resolution), 1.0f, 256.0f);
 		set_slider_float_value(per_pixel_specular_field_sample_distance,
 			ConfigNormalizePerPixelSpecularFieldSampleDistance(Render_per_pixel_specular_field_sample_distance),
-			12.0f, 300.0f);
+			1.0f, 300.0f);
+		if (per_pixel_sparse_specular_field)
+			*per_pixel_sparse_specular_field = Render_per_pixel_sparse_specular_field;
+		if (per_pixel_field_vertex_normals_only)
+			*per_pixel_field_vertex_normals_only = Render_per_pixel_field_vertex_normals_only;
 		if (per_pixel_specular_ignore_lightmap)
 			*per_pixel_specular_ignore_lightmap = Render_per_pixel_specular_ignore_lightmap;
 		if (per_pixel_field_static_specular)
@@ -1648,7 +1658,7 @@ struct video_menu
 		if (per_pixel_specular_field_resolution && sheet->HasChanged(per_pixel_specular_field_resolution))
 		{
 			Render_per_pixel_specular_field_resolution = ConfigNormalizePerPixelSpecularFieldResolution(
-				slider_float_value(per_pixel_specular_field_resolution, 6.0f, 64.0f));
+				slider_float_value(per_pixel_specular_field_resolution, 1.0f, 256.0f));
 			specular_field_slider_rebuild_pending = true;
 			ui_changed = true;
 		}
@@ -1657,8 +1667,20 @@ struct video_menu
 		{
 			Render_per_pixel_specular_field_sample_distance =
 				ConfigNormalizePerPixelSpecularFieldSampleDistance(
-					slider_float_value(per_pixel_specular_field_sample_distance, 12.0f, 300.0f));
+					slider_float_value(per_pixel_specular_field_sample_distance, 1.0f, 300.0f));
 			specular_field_slider_rebuild_pending = true;
+			ui_changed = true;
+		}
+		if (per_pixel_sparse_specular_field && sheet->HasChanged(per_pixel_sparse_specular_field))
+		{
+			Render_per_pixel_sparse_specular_field = *per_pixel_sparse_specular_field;
+			rebuild_specular_field = true;
+			ui_changed = true;
+		}
+		if (per_pixel_field_vertex_normals_only && sheet->HasChanged(per_pixel_field_vertex_normals_only))
+		{
+			Render_per_pixel_field_vertex_normals_only = *per_pixel_field_vertex_normals_only;
+			rebuild_specular_field = true;
 			ui_changed = true;
 		}
 		if (per_pixel_specular_ignore_lightmap && sheet->HasChanged(per_pixel_specular_ignore_lightmap))
@@ -1772,6 +1794,8 @@ struct video_menu
 		per_pixel_specular_field_resolution = NULL;
 		per_pixel_specular_field_sample_distance = NULL;
 		specular_field_slider_rebuild_pending = false;
+		per_pixel_sparse_specular_field = NULL;
+		per_pixel_field_vertex_normals_only = NULL;
 		per_pixel_specular_ignore_lightmap = NULL;
 		per_pixel_field_static_specular = NULL;
 		per_pixel_field_lightmap_static_specular = NULL;
@@ -1925,15 +1949,15 @@ struct video_menu
 				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
 			&ppx_specular_slider);
 
-		ppx_specular_slider.min_val.f = 6.0f;
-		ppx_specular_slider.max_val.f = 64.0f;
+		ppx_specular_slider.min_val.f = 1.0f;
+		ppx_specular_slider.max_val.f = 256.0f;
 		per_pixel_specular_field_resolution = sheet->AddSlider("Field res", PPX_SPECULAR_SLIDER_UNITS,
 			CALC_SLIDER_POS_FLOAT(
 				ConfigNormalizePerPixelSpecularFieldResolution(Render_per_pixel_specular_field_resolution),
 				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
 			&ppx_specular_slider);
 
-		ppx_specular_slider.min_val.f = 12.0f;
+		ppx_specular_slider.min_val.f = 1.0f;
 		ppx_specular_slider.max_val.f = 300.0f;
 		per_pixel_specular_field_sample_distance = sheet->AddSlider("Field sample", PPX_SPECULAR_SLIDER_UNITS,
 			CALC_SLIDER_POS_FLOAT(
@@ -1941,6 +1965,10 @@ struct video_menu
 				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
 			&ppx_specular_slider);
 
+		per_pixel_sparse_specular_field = sheet->AddLongCheckBox("Sparse field",
+			Render_per_pixel_sparse_specular_field);
+		per_pixel_field_vertex_normals_only = sheet->AddLongCheckBox("Field verts only",
+			Render_per_pixel_field_vertex_normals_only);
 		per_pixel_specular_ignore_lightmap = sheet->AddLongCheckBox("Spec ignores LM",
 			Render_per_pixel_specular_ignore_lightmap);
 		per_pixel_field_static_specular = sheet->AddLongCheckBox("Field static spec",
@@ -2019,11 +2047,15 @@ struct video_menu
 				slider_float_value(per_pixel_specular_alpha_strength, 0.0f, 8.0f));
 		if (per_pixel_specular_field_resolution)
 			Render_per_pixel_specular_field_resolution = ConfigNormalizePerPixelSpecularFieldResolution(
-				slider_float_value(per_pixel_specular_field_resolution, 6.0f, 64.0f));
+				slider_float_value(per_pixel_specular_field_resolution, 1.0f, 256.0f));
 		if (per_pixel_specular_field_sample_distance)
 			Render_per_pixel_specular_field_sample_distance =
 				ConfigNormalizePerPixelSpecularFieldSampleDistance(
-					slider_float_value(per_pixel_specular_field_sample_distance, 12.0f, 300.0f));
+					slider_float_value(per_pixel_specular_field_sample_distance, 1.0f, 300.0f));
+		if (per_pixel_sparse_specular_field)
+			Render_per_pixel_sparse_specular_field = *per_pixel_sparse_specular_field;
+		if (per_pixel_field_vertex_normals_only)
+			Render_per_pixel_field_vertex_normals_only = *per_pixel_field_vertex_normals_only;
 		if (per_pixel_specular_ignore_lightmap)
 			Render_per_pixel_specular_ignore_lightmap = *per_pixel_specular_ignore_lightmap;
 		if (per_pixel_field_static_specular)

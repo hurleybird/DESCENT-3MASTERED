@@ -20,9 +20,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <queue>
+#include <thread>
+#include <unordered_map>
 #include <vector>
 #include "descent.h"
 #include "3d.h"
@@ -1946,7 +1949,9 @@ struct SpecularSpatialField
 	int x_cells;
 	int y_cells;
 	int z_cells;
-	std::vector<SpecularFieldCell> cells;
+	bool sparse;
+	std::unordered_map<int, SpecularFieldCell> cells;
+	std::vector<int> populated_cell_indices;
 	SpecularFieldCell global;
 };
 
@@ -2264,6 +2269,35 @@ static int SpecularFieldIndex(const SpecularSpatialField& field, int x, int y, i
 	return (z * field.y_cells + y) * field.x_cells + x;
 }
 
+static SpecularFieldCell& SpecularFieldEnsureCell(SpecularSpatialField& field, int x, int y, int z)
+{
+	const int index = SpecularFieldIndex(field, x, y, z);
+	auto result = field.cells.emplace(index, SpecularFieldCell{});
+	if (result.second)
+		field.populated_cell_indices.push_back(index);
+	return result.first->second;
+}
+
+static void SpecularFieldPopulateDenseCells(SpecularSpatialField& field)
+{
+	field.cells.reserve(field.x_cells * field.y_cells * field.z_cells);
+	field.populated_cell_indices.reserve(field.x_cells * field.y_cells * field.z_cells);
+	for (int z = 0; z < field.z_cells; z++)
+	{
+		for (int y = 0; y < field.y_cells; y++)
+		{
+			for (int x = 0; x < field.x_cells; x++)
+				SpecularFieldEnsureCell(field, x, y, z);
+		}
+	}
+}
+
+static const SpecularFieldCell* SpecularFieldFindCell(const SpecularSpatialField& field, int x, int y, int z)
+{
+	auto iter = field.cells.find(SpecularFieldIndex(field, x, y, z));
+	return iter == field.cells.end() ? nullptr : &iter->second;
+}
+
 static int SpecularFieldClampCell(int value, int max_value)
 {
 	if (value < 0)
@@ -2288,6 +2322,15 @@ static vector SpecularFieldCellCenter(const SpecularSpatialField& field, int x, 
 	center.y = field.min_bound.y + ((float)y + 0.5f) * field.cell_size;
 	center.z = field.min_bound.z + ((float)z + 0.5f) * field.cell_size;
 	return center;
+}
+
+static vector SpecularFieldCellCenterFromIndex(const SpecularSpatialField& field, int index)
+{
+	const int x = index % field.x_cells;
+	const int yz = index / field.x_cells;
+	const int y = yz % field.y_cells;
+	const int z = yz / field.y_cells;
+	return SpecularFieldCellCenter(field, x, y, z);
 }
 
 static float SpecularFieldSmoothKernel(float distance, float radius)
@@ -2400,20 +2443,51 @@ static void SpecularBuildSpatialField(SpecularSpatialField& field, const std::ve
 	const float max_extent = std::max(extent.x, std::max(extent.y, extent.z));
 	const float field_resolution =
 		ConfigNormalizePerPixelSpecularFieldResolution(Render_per_pixel_specular_field_resolution);
+	field.sparse = Render_per_pixel_sparse_specular_field;
 	field.cell_size = SpecularClamp(max_extent / field_resolution, 6.0f, 120.0f);
 	if (field.cell_size <= 0.0f)
 		field.cell_size = 20.0f;
 
-	field.x_cells = SpecularFieldClampCell((int)ceil(std::max(extent.x, 1.0f) / field.cell_size), 48) + 1;
-	field.y_cells = SpecularFieldClampCell((int)ceil(std::max(extent.y, 1.0f) / field.cell_size), 48) + 1;
-	field.z_cells = SpecularFieldClampCell((int)ceil(std::max(extent.z, 1.0f) / field.cell_size), 48) + 1;
+	const int max_axis_cells = field.sparse ? 256 : 48;
+	bool dense_cap_applied = false;
+	if (!field.sparse)
+	{
+		const int requested_x_cells = (int)ceil(std::max(extent.x, 1.0f) / field.cell_size) + 3;
+		const int requested_y_cells = (int)ceil(std::max(extent.y, 1.0f) / field.cell_size) + 3;
+		const int requested_z_cells = (int)ceil(std::max(extent.z, 1.0f) / field.cell_size) + 3;
+		if (requested_x_cells > max_axis_cells ||
+			requested_y_cells > max_axis_cells ||
+			requested_z_cells > max_axis_cells)
+		{
+			const float capped_resolution = (float)(max_axis_cells - 3);
+			field.cell_size = SpecularClamp(max_extent / capped_resolution, 6.0f, 120.0f);
+			dense_cap_applied = true;
+		}
+	}
+
+	field.x_cells = SpecularFieldClampCell((int)ceil(std::max(extent.x, 1.0f) / field.cell_size), max_axis_cells) + 1;
+	field.y_cells = SpecularFieldClampCell((int)ceil(std::max(extent.y, 1.0f) / field.cell_size), max_axis_cells) + 1;
+	field.z_cells = SpecularFieldClampCell((int)ceil(std::max(extent.z, 1.0f) / field.cell_size), max_axis_cells) + 1;
 	field.min_bound.x -= field.cell_size;
 	field.min_bound.y -= field.cell_size;
 	field.min_bound.z -= field.cell_size;
-	field.x_cells = std::max(1, std::min(field.x_cells + 2, 48));
-	field.y_cells = std::max(1, std::min(field.y_cells + 2, 48));
-	field.z_cells = std::max(1, std::min(field.z_cells + 2, 48));
-	field.cells.resize(field.x_cells * field.y_cells * field.z_cells);
+	field.x_cells = std::max(1, std::min(field.x_cells + 2, max_axis_cells));
+	field.y_cells = std::max(1, std::min(field.y_cells + 2, max_axis_cells));
+	field.z_cells = std::max(1, std::min(field.z_cells + 2, max_axis_cells));
+	if (field.sparse)
+	{
+		field.cells.reserve((faces.size() + samples.size()) * 8);
+		field.populated_cell_indices.reserve((faces.size() + samples.size()) * 8);
+	}
+	else
+	{
+		if (dense_cap_applied)
+		{
+			mprintf((0, "Warning: dense PPX specular field capped to %dx%dx%d cells; enable Sparse field for full %.1f resolution.\n",
+				field.x_cells, field.y_cells, field.z_cells, field_resolution));
+		}
+		SpecularFieldPopulateDenseCells(field);
+	}
 
 	for (const SpecularFaceInfo& info : faces)
 	{
@@ -2433,7 +2507,7 @@ static void SpecularBuildSpatialField(SpecularSpatialField& field, const std::ve
 					const float falloff = std::max(0.0f, 1.0f - distance / (field.cell_size * 2.25f));
 					if (falloff <= 0.0f)
 						continue;
-					SpecularFieldAddLightmap(field.cells[SpecularFieldIndex(field, x, y, z)].lightmap,
+					SpecularFieldAddLightmap(SpecularFieldEnsureCell(field, x, y, z).lightmap,
 						info.lightmap_r, info.lightmap_g, info.lightmap_b, info.field_weight * falloff * falloff);
 				}
 			}
@@ -2457,7 +2531,7 @@ static void SpecularBuildSpatialField(SpecularSpatialField& field, const std::ve
 					const float falloff = std::max(0.0f, 1.0f - distance / (field.cell_size * 1.75f));
 					if (falloff <= 0.0f)
 						continue;
-					SpecularFieldAddWeightedSample(field.cells[SpecularFieldIndex(field, x, y, z)],
+					SpecularFieldAddWeightedSample(SpecularFieldEnsureCell(field, x, y, z),
 						sample, sample.weight * falloff * falloff);
 				}
 			}
@@ -2483,8 +2557,11 @@ static void SpecularFieldLightmapForFace(const SpecularSpatialField& field, cons
 		{
 			for (int x = std::max(0, cx - 2); x <= std::min(field.x_cells - 1, cx + 2); x++)
 			{
-				const SpecularFieldLightmap& cell_lightmap =
-					field.cells[SpecularFieldIndex(field, x, y, z)].lightmap;
+				const SpecularFieldCell* cell = SpecularFieldFindCell(field, x, y, z);
+				if (cell == nullptr)
+					continue;
+
+				const SpecularFieldLightmap& cell_lightmap = cell->lightmap;
 				if (cell_lightmap.weight <= 0.0f)
 					continue;
 
@@ -2543,29 +2620,51 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set, const
 		return;
 
 	SpecularFieldCell output = {};
-	int cx, cy, cz;
-	SpecularFieldCellForPosition(field, target_position, cx, cy, cz);
 	const float query_radius =
 		ConfigNormalizePerPixelSpecularFieldSampleDistance(Render_per_pixel_specular_field_sample_distance);
-	const int query_radius_cells = std::max(1,
-		std::min(24, (int)ceil(query_radius / std::max(field.cell_size, 0.001f))));
-	for (int z = std::max(0, cz - query_radius_cells);
-		z <= std::min(field.z_cells - 1, cz + query_radius_cells); z++)
+
+	auto add_cell_to_output = [&](int cell_index, const SpecularFieldCell& cell) {
+		vector delta = SpecularFieldCellCenterFromIndex(field, cell_index) - target_position;
+		const float distance = vm_GetMagnitude(&delta);
+		const float spatial_weight = SpecularFieldSmoothKernel(distance, query_radius);
+		if (spatial_weight <= 0.0f)
+			return;
+		for (int lobe_index = 0; lobe_index < MAX_SPECULARS; lobe_index++)
+			SpecularFieldAddLobeToOutput(output, cell.lobes[lobe_index], target_normal, spatial_weight);
+	};
+
+	if (field.sparse)
 	{
-		for (int y = std::max(0, cy - query_radius_cells);
-			y <= std::min(field.y_cells - 1, cy + query_radius_cells); y++)
+		for (int cell_index : field.populated_cell_indices)
 		{
-			for (int x = std::max(0, cx - query_radius_cells);
-				x <= std::min(field.x_cells - 1, cx + query_radius_cells); x++)
+			const auto cell_iter = field.cells.find(cell_index);
+			if (cell_iter == field.cells.end())
+				continue;
+
+			add_cell_to_output(cell_index, cell_iter->second);
+		}
+	}
+	else
+	{
+		int cx, cy, cz;
+		SpecularFieldCellForPosition(field, target_position, cx, cy, cz);
+		const int query_radius_cells = std::max(1,
+			std::min(24, (int)ceil(query_radius / std::max(field.cell_size, 0.001f))));
+		for (int z = std::max(0, cz - query_radius_cells);
+			z <= std::min(field.z_cells - 1, cz + query_radius_cells); z++)
+		{
+			for (int y = std::max(0, cy - query_radius_cells);
+				y <= std::min(field.y_cells - 1, cy + query_radius_cells); y++)
 			{
-				const SpecularFieldCell& cell = field.cells[SpecularFieldIndex(field, x, y, z)];
-				vector delta = SpecularFieldCellCenter(field, x, y, z) - target_position;
-				const float distance = vm_GetMagnitude(&delta);
-				const float spatial_weight = SpecularFieldSmoothKernel(distance, query_radius);
-				if (spatial_weight <= 0.0f)
-					continue;
-				for (int lobe_index = 0; lobe_index < MAX_SPECULARS; lobe_index++)
-					SpecularFieldAddLobeToOutput(output, cell.lobes[lobe_index], target_normal, spatial_weight);
+				for (int x = std::max(0, cx - query_radius_cells);
+					x <= std::min(field.x_cells - 1, cx + query_radius_cells); x++)
+				{
+					const SpecularFieldCell* cell = SpecularFieldFindCell(field, x, y, z);
+					if (cell == nullptr)
+						continue;
+
+					add_cell_to_output(SpecularFieldIndex(field, x, y, z), *cell);
+				}
 			}
 		}
 	}
@@ -2969,7 +3068,7 @@ void PrecomputeMineSpecularSources()
 	SpecularSpatialField spatial_field;
 	SpecularBuildSpatialField(spatial_field, faces, field_samples);
 
-	for (int face_info_index = 0; face_info_index < (int)faces.size(); face_info_index++)
+	auto build_precomputed_face = [&](int face_info_index)
 	{
 		const SpecularFaceInfo& info = faces[face_info_index];
 		PrecomputedSpecularFaceSources& cached =
@@ -2985,7 +3084,9 @@ void PrecomputeMineSpecularSources()
 		SpecularBuildResolvedSourceSet(cached.split, info, donors, selected);
 
 		SpecularBuildResolvedNormalsForFace(cached, info, adjacency, faces);
-		SpecularBuildFieldSourceSet(cached.field, info, spatial_field, info.basis.center, info.basis.normal);
+		cached.field = {};
+		if (!Render_per_pixel_field_vertex_normals_only)
+			SpecularBuildFieldSourceSet(cached.field, info, spatial_field, info.basis.center, info.basis.normal);
 
 		room* rp = &Rooms[info.room_index];
 		face* fp = &rp->faces[info.face_index];
@@ -3004,6 +3105,35 @@ void PrecomputeMineSpecularSources()
 			SpecularBuildFieldSourceSet(cached.field_vertices[vn], info, spatial_field,
 				rp->verts[fp->face_verts[vn]], vertex_normal);
 		}
+	};
+
+	const unsigned int hardware_threads = std::thread::hardware_concurrency();
+	const int thread_count = std::max(1, std::min((int)faces.size(),
+		std::min(hardware_threads > 0 ? (int)hardware_threads : 2, 16)));
+	if (thread_count <= 1 || faces.size() < 32)
+	{
+		for (int face_info_index = 0; face_info_index < (int)faces.size(); face_info_index++)
+			build_precomputed_face(face_info_index);
+	}
+	else
+	{
+		std::atomic<int> next_face_info_index(0);
+		std::vector<std::thread> workers;
+		workers.reserve(thread_count);
+		for (int thread_index = 0; thread_index < thread_count; thread_index++)
+		{
+			workers.emplace_back([&]() {
+				for (;;)
+				{
+					const int face_info_index = next_face_info_index.fetch_add(1);
+					if (face_info_index >= (int)faces.size())
+						break;
+					build_precomputed_face(face_info_index);
+				}
+			});
+		}
+		for (std::thread& worker : workers)
+			worker.join();
 	}
 }
 
@@ -3034,7 +3164,7 @@ int GetPrecomputedMineSpecularFieldSourceCount(int roomnum, int facenum)
 		return 0;
 
 	const PrecomputedSpecularFaceSources& cached = Precomputed_specular_sources[roomnum][facenum];
-	int count = cached.field.count;
+	int count = Render_per_pixel_field_vertex_normals_only ? 0 : cached.field.count;
 	for (const PrecomputedSpecularSourceSet& vertex_set : cached.field_vertices)
 		count = std::max(count, vertex_set.count);
 	return count;
@@ -3079,7 +3209,7 @@ static bool SpecularSetFieldStaticSourceCount(room* rp, int current_face_index, 
 
 	const PrecomputedSpecularFaceSources& cached =
 		Precomputed_specular_sources[room_index][current_face_index];
-	int count = cached.field.count;
+	int count = Render_per_pixel_field_vertex_normals_only ? 0 : cached.field.count;
 	for (const PrecomputedSpecularSourceSet& vertex_set : cached.field_vertices)
 		count = std::max(count, vertex_set.count);
 	specblock.num_speculars = std::min(count, MAX_SPECULARS);
