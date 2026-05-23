@@ -576,8 +576,7 @@ void GL4Renderer::InitPersistentDrawBuffer(size_t size)
 		Int3();
 #endif
 
-	//of course glVertexAttribBinding has to only be core in 4.3+
-	// because OpenGL makes only the best API design decisions at every step.
+	// Keep this path on the existing vertex attribute setup.
 
 	//attrib 0: position
 	glEnableVertexAttribArray(0);

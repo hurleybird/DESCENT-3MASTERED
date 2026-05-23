@@ -381,7 +381,7 @@ int GLCompatibilityRenderer::Init(oeApplication* app, renderer_preferred_state* 
 	framebuffer_ok = false;
 	if (glGenFramebuffers == nullptr)
 	{
-		Error("OpenGL implementation does not appear to expose OpenGL 3.3. ");
+		Error("OpenGL implementation does not appear to expose framebuffer object support. ");
 		return 0;
 	}
 	framebuffer_ok = true;

@@ -941,7 +941,7 @@ void LoadGameSettings()
 		DesiredOpenGLProfile = GLPROFILE_CORE;
 	if (FindArg("-glcompat") || FindArg("-gl1") || FindArg("-openglcompat"))
 		DesiredOpenGLProfile = GLPROFILE_COMPAT;
-	if (FindArg("-glcore") || FindArg("-gl4") || FindArg("-gl43") || FindArg("-gl3") || FindArg("-openglcore"))
+	if (FindArg("-glcore") || FindArg("-gl4") || FindArg("-gl45") || FindArg("-openglcore"))
 		DesiredOpenGLProfile = GLPROFILE_CORE;
 	Terrain_renderer_mode = DesiredOpenGLProfile == GLPROFILE_CORE ? TERRAIN_RENDERER_COMPUTE : TERRAIN_RENDERER_LEGACY;
 	if (DesiredOpenGLProfile != GLPROFILE_CORE)

@@ -886,9 +886,9 @@ static bool CompileTerrainComputeProgram()
 		return true;
 	if (Terrain_compute_unavailable)
 		return false;
-	if (!GLAD_GL_VERSION_4_3)
+	if (!GLAD_GL_VERSION_4_5)
 	{
-		SetTerrainComputeStatus("fallback no GL 4.3");
+		SetTerrainComputeStatus("fallback no GL 4.5");
 		Terrain_compute_unavailable = true;
 		return false;
 	}
