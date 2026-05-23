@@ -117,9 +117,12 @@ float Render_per_pixel_headlight_specular_strength = 1.0f;
 float Render_per_pixel_specular_sharpness = 1.0f;
 float Render_per_pixel_specular_lightmap_mix = 1.0f;
 float Render_per_pixel_specular_alpha_strength = 1.0f;
+float Render_per_pixel_specular_field_resolution = 24.0f;
 bool Render_per_pixel_force_specular_faces = false;
-bool Render_per_pixel_lightmap_static_specular = false;
+bool Render_per_pixel_specular_ignore_lightmap = false;
 bool Render_per_pixel_field_static_specular = false;
+bool Render_per_pixel_field_lightmap_static_specular = false;
+bool Render_per_pixel_field_missing_only_static_specular = false;
 bool Render_specular_map_debug_tint = false;
 bool Cockpit_alt_mode = true;
 float Render_FOV_desired = 72;
@@ -233,6 +236,11 @@ float ConfigNormalizePerPixelSpecularAlphaStrength(float strength)
 	return ConfigNormalizeFloatRange(strength, 0.0f, 8.0f);
 }
 
+float ConfigNormalizePerPixelSpecularFieldResolution(float resolution)
+{
+	return ConfigNormalizeFloatRange(resolution, 6.0f, 64.0f);
+}
+
 void ConfigResetPerPixelSpecularSettings()
 {
 	Render_per_pixel_specular_strength = 1.0f;
@@ -242,9 +250,12 @@ void ConfigResetPerPixelSpecularSettings()
 	Render_per_pixel_specular_sharpness = 1.0f;
 	Render_per_pixel_specular_lightmap_mix = 1.0f;
 	Render_per_pixel_specular_alpha_strength = 1.0f;
+	Render_per_pixel_specular_field_resolution = 24.0f;
 	Render_per_pixel_force_specular_faces = false;
-	Render_per_pixel_lightmap_static_specular = false;
+	Render_per_pixel_specular_ignore_lightmap = false;
 	Render_per_pixel_field_static_specular = false;
+	Render_per_pixel_field_lightmap_static_specular = false;
+	Render_per_pixel_field_missing_only_static_specular = false;
 	Render_specular_map_debug_tint = false;
 }
 
@@ -1310,9 +1321,12 @@ struct video_menu
 	short* per_pixel_specular_sharpness;
 	short* per_pixel_specular_lightmap_mix;
 	short* per_pixel_specular_alpha_strength;
+	short* per_pixel_specular_field_resolution;
 	bool* per_pixel_force_specular_faces;
-	bool* per_pixel_lightmap_static_specular;
+	bool* per_pixel_specular_ignore_lightmap;
 	bool* per_pixel_field_static_specular;
+	bool* per_pixel_field_lightmap_static_specular;
+	bool* per_pixel_field_missing_only_static_specular;
 	bool* specular_map_debug_tint;
 	char* buffer;
 	char* aspect_buffer;
@@ -1430,16 +1444,23 @@ struct video_menu
 			ConfigNormalizePerPixelSpecularLightmapMix(Render_per_pixel_specular_lightmap_mix), 0.0f, 1.0f);
 		set_slider_float_value(per_pixel_specular_alpha_strength,
 			ConfigNormalizePerPixelSpecularAlphaStrength(Render_per_pixel_specular_alpha_strength), 0.0f, 8.0f);
+		set_slider_float_value(per_pixel_specular_field_resolution,
+			ConfigNormalizePerPixelSpecularFieldResolution(Render_per_pixel_specular_field_resolution), 6.0f, 64.0f);
 		if (per_pixel_force_specular_faces)
 			*per_pixel_force_specular_faces = Render_per_pixel_force_specular_faces;
-		if (per_pixel_lightmap_static_specular)
-			*per_pixel_lightmap_static_specular = Render_per_pixel_lightmap_static_specular;
+		if (per_pixel_specular_ignore_lightmap)
+			*per_pixel_specular_ignore_lightmap = Render_per_pixel_specular_ignore_lightmap;
 		if (per_pixel_field_static_specular)
 			*per_pixel_field_static_specular = Render_per_pixel_field_static_specular;
+		if (per_pixel_field_lightmap_static_specular)
+			*per_pixel_field_lightmap_static_specular = Render_per_pixel_field_lightmap_static_specular;
+		if (per_pixel_field_missing_only_static_specular)
+			*per_pixel_field_missing_only_static_specular = Render_per_pixel_field_missing_only_static_specular;
 		if (specular_map_debug_tint)
 			*specular_map_debug_tint = Render_specular_map_debug_tint;
 		if (sheet)
 			sheet->UpdateChanges();
+		PrecomputeMineSpecularSources();
 	}
 
 	bool apply_display_settings(bool allow_menu, bool apply_fullscreen)
@@ -1615,14 +1636,22 @@ struct video_menu
 				slider_float_value(per_pixel_specular_alpha_strength, 0.0f, 8.0f));
 			ui_changed = true;
 		}
+		bool rebuild_specular_field = false;
+		if (per_pixel_specular_field_resolution && sheet->HasChanged(per_pixel_specular_field_resolution))
+		{
+			Render_per_pixel_specular_field_resolution = ConfigNormalizePerPixelSpecularFieldResolution(
+				slider_float_value(per_pixel_specular_field_resolution, 6.0f, 64.0f));
+			rebuild_specular_field = true;
+			ui_changed = true;
+		}
 		if (per_pixel_force_specular_faces && sheet->HasChanged(per_pixel_force_specular_faces))
 		{
 			Render_per_pixel_force_specular_faces = *per_pixel_force_specular_faces;
 			ui_changed = true;
 		}
-		if (per_pixel_lightmap_static_specular && sheet->HasChanged(per_pixel_lightmap_static_specular))
+		if (per_pixel_specular_ignore_lightmap && sheet->HasChanged(per_pixel_specular_ignore_lightmap))
 		{
-			Render_per_pixel_lightmap_static_specular = *per_pixel_lightmap_static_specular;
+			Render_per_pixel_specular_ignore_lightmap = *per_pixel_specular_ignore_lightmap;
 			ui_changed = true;
 		}
 		if (per_pixel_field_static_specular && sheet->HasChanged(per_pixel_field_static_specular))
@@ -1630,6 +1659,21 @@ struct video_menu
 			Render_per_pixel_field_static_specular = *per_pixel_field_static_specular;
 			ui_changed = true;
 		}
+		if (per_pixel_field_lightmap_static_specular && sheet->HasChanged(per_pixel_field_lightmap_static_specular))
+		{
+			Render_per_pixel_field_lightmap_static_specular = *per_pixel_field_lightmap_static_specular;
+			rebuild_specular_field = true;
+			ui_changed = true;
+		}
+		if (per_pixel_field_missing_only_static_specular &&
+			sheet->HasChanged(per_pixel_field_missing_only_static_specular))
+		{
+			Render_per_pixel_field_missing_only_static_specular =
+				*per_pixel_field_missing_only_static_specular;
+			ui_changed = true;
+		}
+		if (rebuild_specular_field)
+			PrecomputeMineSpecularSources();
 		if (specular_map_debug_tint && sheet->HasChanged(specular_map_debug_tint))
 		{
 			Render_specular_map_debug_tint = *specular_map_debug_tint;
@@ -1706,9 +1750,12 @@ struct video_menu
 		per_pixel_specular_sharpness = NULL;
 		per_pixel_specular_lightmap_mix = NULL;
 		per_pixel_specular_alpha_strength = NULL;
+		per_pixel_specular_field_resolution = NULL;
 		per_pixel_force_specular_faces = NULL;
-		per_pixel_lightmap_static_specular = NULL;
+		per_pixel_specular_ignore_lightmap = NULL;
 		per_pixel_field_static_specular = NULL;
+		per_pixel_field_lightmap_static_specular = NULL;
+		per_pixel_field_missing_only_static_specular = NULL;
 		specular_map_debug_tint = NULL;
 		buffer = NULL;
 		aspect_buffer = NULL;
@@ -1858,12 +1905,24 @@ struct video_menu
 				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
 			&ppx_specular_slider);
 
+		ppx_specular_slider.min_val.f = 6.0f;
+		ppx_specular_slider.max_val.f = 64.0f;
+		per_pixel_specular_field_resolution = sheet->AddSlider("Field res", PPX_SPECULAR_SLIDER_UNITS,
+			CALC_SLIDER_POS_FLOAT(
+				ConfigNormalizePerPixelSpecularFieldResolution(Render_per_pixel_specular_field_resolution),
+				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
+			&ppx_specular_slider);
+
 		per_pixel_force_specular_faces = sheet->AddLongCheckBox("Force spec faces",
 			Render_per_pixel_force_specular_faces);
-		per_pixel_lightmap_static_specular = sheet->AddLongCheckBox("LM static spec",
-			Render_per_pixel_lightmap_static_specular);
+		per_pixel_specular_ignore_lightmap = sheet->AddLongCheckBox("Spec ignores LM",
+			Render_per_pixel_specular_ignore_lightmap);
 		per_pixel_field_static_specular = sheet->AddLongCheckBox("Field static spec",
 			Render_per_pixel_field_static_specular);
+		per_pixel_field_lightmap_static_specular = sheet->AddLongCheckBox("Field bakes LM",
+			Render_per_pixel_field_lightmap_static_specular);
+		per_pixel_field_missing_only_static_specular = sheet->AddLongCheckBox("Field -1 only",
+			Render_per_pixel_field_missing_only_static_specular);
 		specular_map_debug_tint = sheet->AddLongCheckBox("Tint spec data",
 			Render_specular_map_debug_tint);
 		sheet->AddButton("Defaults", IDV_PPX_SPECULAR_DEFAULTS);
@@ -1932,12 +1991,20 @@ struct video_menu
 		if (per_pixel_specular_alpha_strength)
 			Render_per_pixel_specular_alpha_strength = ConfigNormalizePerPixelSpecularAlphaStrength(
 				slider_float_value(per_pixel_specular_alpha_strength, 0.0f, 8.0f));
+		if (per_pixel_specular_field_resolution)
+			Render_per_pixel_specular_field_resolution = ConfigNormalizePerPixelSpecularFieldResolution(
+				slider_float_value(per_pixel_specular_field_resolution, 6.0f, 64.0f));
 		if (per_pixel_force_specular_faces)
 			Render_per_pixel_force_specular_faces = *per_pixel_force_specular_faces;
-		if (per_pixel_lightmap_static_specular)
-			Render_per_pixel_lightmap_static_specular = *per_pixel_lightmap_static_specular;
+		if (per_pixel_specular_ignore_lightmap)
+			Render_per_pixel_specular_ignore_lightmap = *per_pixel_specular_ignore_lightmap;
 		if (per_pixel_field_static_specular)
 			Render_per_pixel_field_static_specular = *per_pixel_field_static_specular;
+		if (per_pixel_field_lightmap_static_specular)
+			Render_per_pixel_field_lightmap_static_specular = *per_pixel_field_lightmap_static_specular;
+		if (per_pixel_field_missing_only_static_specular)
+			Render_per_pixel_field_missing_only_static_specular =
+				*per_pixel_field_missing_only_static_specular;
 		if (specular_map_debug_tint)
 			Render_specular_map_debug_tint = *specular_map_debug_tint;
 		if (antialiasing)

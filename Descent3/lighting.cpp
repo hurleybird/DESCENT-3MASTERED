@@ -121,7 +121,8 @@ static bool PerPixelLightMatches(const renderer_per_pixel_light &a, const render
 		a.headlight == b.headlight && a.has_specular_position == b.has_specular_position &&
 		a.specular_position[0] == b.specular_position[0] &&
 		a.specular_position[1] == b.specular_position[1] &&
-		a.specular_position[2] == b.specular_position[2] && a.specular_radius == b.specular_radius;
+		a.specular_position[2] == b.specular_position[2] && a.specular_radius == b.specular_radius &&
+		a.specular_scalar == b.specular_scalar;
 }
 
 static void AddPerPixelLightmapTextureLight(int lm_handle, const vector *pos, float light_dist,
@@ -176,6 +177,7 @@ static void AddPerPixelLightmapFaceLight(per_pixel_lightmap_face *light_list, in
 	light.dot_range = dot_range;
 	light.directional = light_direction != nullptr;
 	light.headlight = per_pixel_headlight;
+	light.specular_scalar = 1.0f;
 	if (light_direction)
 	{
 		light.direction[0] = light_direction->x;

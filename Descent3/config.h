@@ -81,9 +81,12 @@ extern float Render_per_pixel_headlight_specular_strength;
 extern float Render_per_pixel_specular_sharpness;
 extern float Render_per_pixel_specular_lightmap_mix;
 extern float Render_per_pixel_specular_alpha_strength;
+extern float Render_per_pixel_specular_field_resolution;
 extern bool Render_per_pixel_force_specular_faces;
-extern bool Render_per_pixel_lightmap_static_specular;
+extern bool Render_per_pixel_specular_ignore_lightmap;
 extern bool Render_per_pixel_field_static_specular;
+extern bool Render_per_pixel_field_lightmap_static_specular;
+extern bool Render_per_pixel_field_missing_only_static_specular;
 extern bool Render_specular_map_debug_tint;
 extern bool Cockpit_alt_mode;
 //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
@@ -103,6 +106,7 @@ float ConfigNormalizePerPixelHeadlightSpecularStrength(float strength);
 float ConfigNormalizePerPixelSpecularSharpness(float sharpness);
 float ConfigNormalizePerPixelSpecularLightmapMix(float mix);
 float ConfigNormalizePerPixelSpecularAlphaStrength(float strength);
+float ConfigNormalizePerPixelSpecularFieldResolution(float resolution);
 void ConfigResetPerPixelSpecularSettings();
 void ConfigValidateGameWindowSize();
 

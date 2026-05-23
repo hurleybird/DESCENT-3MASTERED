@@ -298,6 +298,9 @@ class GL4Renderer : public IRenderer
 	GLfloat per_pixel_dynamic_positions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
 	GLfloat per_pixel_dynamic_colors[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
 	GLfloat per_pixel_dynamic_radii[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
+	GLfloat per_pixel_dynamic_specular_positions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
+	GLfloat per_pixel_dynamic_specular_radii[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
+	GLfloat per_pixel_dynamic_specular_scalars[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
 	GLfloat per_pixel_dynamic_falloffs[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
 	GLfloat per_pixel_dynamic_directions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
 	GLfloat per_pixel_dynamic_dot_ranges[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};

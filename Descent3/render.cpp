@@ -1574,12 +1574,28 @@ static void AddDynamicSpecularContribution(const renderer_per_pixel_light& light
 	const vector& view_vec, const vector& normal, int material_type, float& rv, float& gv, float& bv)
 {
 	vector light_pos = { light.position[0], light.position[1], light.position[2] };
+	if (light.has_specular_position)
+	{
+		light_pos.x = light.specular_position[0];
+		light_pos.y = light.specular_position[1];
+		light_pos.z = light.specular_position[2];
+	}
 	vector light_delta = vertex_pos - light_pos;
 	float distance = vm_NormalizeVectorFast(&light_delta);
 	if (distance <= 0.0f)
 		return;
 
-	float radius = std::max(light.radius, 0.0001f);
+	float radius = light.has_specular_position ? std::max(light.radius, light.specular_radius) : light.radius;
+	if (light.headlight && light.has_specular_position)
+	{
+		vector diffuse_pos = { light.position[0], light.position[1], light.position[2] };
+		vector specular_pos = { light.specular_position[0], light.specular_position[1], light.specular_position[2] };
+		vector throw_delta = diffuse_pos - specular_pos;
+		float throw_distance = vm_GetMagnitudeFast(&throw_delta);
+		radius = std::max(light.radius,
+			throw_distance + std::max(light.specular_radius - throw_distance, light.radius * 4.0f));
+	}
+	radius = std::max(radius, 0.0001f);
 	float scalar = 1.0f - (distance / radius);
 	if (scalar <= 0.0f)
 		return;
@@ -1598,7 +1614,11 @@ static void AddDynamicSpecularContribution(const renderer_per_pixel_light& light
 		scalar *= (direction_dot - light.dot_range) / std::max(1.0f - light.dot_range, 0.0001f);
 	}
 
-	AddSpecularContribution(view_vec, light_delta, normal, material_type, scalar, light.color[0],
+	const float specular_tuning = light.headlight ? Render_per_pixel_headlight_specular_strength :
+		Render_per_pixel_dynamic_specular_strength;
+	const float specular_strength = (light.specular_scalar > 0.0f ? light.specular_scalar : 1.0f) *
+		specular_tuning;
+	AddSpecularContribution(view_vec, light_delta, normal, material_type, scalar * specular_strength, light.color[0],
 		light.color[1], light.color[2], rv, gv, bv);
 }
 
@@ -1814,19 +1834,6 @@ static void SpecularAddStaticSource(SpecularBlock& specblock, const specular_ins
 	specblock.speculars[index].color[3] = 1.0f;
 }
 
-static void SpecularAddLightmapHeadingStaticSource(SpecularBlock& specblock)
-{
-	specblock.num_speculars = 1;
-	specblock.speculars[0].bright_center[0] = 0.0f;
-	specblock.speculars[0].bright_center[1] = 0.0f;
-	specblock.speculars[0].bright_center[2] = -10000.0f;
-	specblock.speculars[0].bright_center[3] = 1.0f;
-	specblock.speculars[0].color[0] = Render_per_pixel_static_specular_strength;
-	specblock.speculars[0].color[1] = Render_per_pixel_static_specular_strength;
-	specblock.speculars[0].color[2] = Render_per_pixel_static_specular_strength;
-	specblock.speculars[0].color[3] = 1.0f;
-}
-
 static void SpecularAddFaceStaticSources(SpecularBlock& specblock, face* fp)
 {
 	if (fp->special_handle == BAD_SPECIAL_FACE_INDEX)
@@ -1868,6 +1875,10 @@ struct SpecularFaceInfo
 	int exact_tmap;
 	int split_tmap;
 	SpecularFaceBasis basis;
+	float lightmap_r;
+	float lightmap_g;
+	float lightmap_b;
+	float field_weight;
 };
 
 struct SpecularFaceAdjacency
@@ -1930,9 +1941,18 @@ struct SpecularFieldLobe
 	float weight;
 };
 
+struct SpecularFieldLightmap
+{
+	float r_sum;
+	float g_sum;
+	float b_sum;
+	float weight;
+};
+
 struct SpecularFieldCell
 {
 	SpecularFieldLobe lobes[MAX_SPECULARS];
+	SpecularFieldLightmap lightmap;
 };
 
 struct SpecularSpatialField
@@ -1978,6 +1998,62 @@ static bool SpecularTextureHasOwnOrSplitMask(face* fp)
 static float SpecularClamp(float value, float low, float high)
 {
 	return std::max(low, std::min(value, high));
+}
+
+static bool SpecularSampleLightmapTexel(int lm_handle, float u, float v, float& r, float& g, float& b)
+{
+	if (lm_handle < 0)
+		return false;
+
+	ushort* data = (ushort*)lm_data(lm_handle);
+	const int w = lm_w(lm_handle);
+	const int h = lm_h(lm_handle);
+	if (data == nullptr || w <= 0 || h <= 0)
+		return false;
+
+	const int x = std::max(0, std::min((int)(u * (float)(w - 1) + 0.5f), w - 1));
+	const int y = std::max(0, std::min((int)(v * (float)(h - 1) + 0.5f), h - 1));
+	const ushort texel = data[y * w + x];
+	r += (float)((texel >> 10) & 0x1f) / 31.0f;
+	g += (float)((texel >> 5) & 0x1f) / 31.0f;
+	b += (float)(texel & 0x1f) / 31.0f;
+	return true;
+}
+
+static void SpecularFaceLightmapColor(face* fp, float& r, float& g, float& b)
+{
+	r = g = b = 1.0f;
+	if (fp->lmi_handle == BAD_LMI_INDEX || !(fp->flags & FF_LIGHTMAP))
+		return;
+
+	const int lm_handle = LightmapInfo[fp->lmi_handle].lm_handle;
+	float sum_r = 0.0f;
+	float sum_g = 0.0f;
+	float sum_b = 0.0f;
+	float samples = 0.0f;
+	float center_u = 0.0f;
+	float center_v = 0.0f;
+	for (int vn = 0; vn < fp->num_verts; vn++)
+	{
+		const float u = SpecularClamp(fp->face_uvls[vn].u2, 0.0f, 1.0f);
+		const float v = SpecularClamp(fp->face_uvls[vn].v2, 0.0f, 1.0f);
+		if (SpecularSampleLightmapTexel(lm_handle, u, v, sum_r, sum_g, sum_b))
+			samples += 1.0f;
+		center_u += u;
+		center_v += v;
+	}
+	if (fp->num_verts > 0)
+	{
+		if (SpecularSampleLightmapTexel(lm_handle, center_u / (float)fp->num_verts,
+			center_v / (float)fp->num_verts, sum_r, sum_g, sum_b))
+			samples += 1.0f;
+	}
+	if (samples > 0.0f)
+	{
+		r = sum_r / samples;
+		g = sum_g / samples;
+		b = sum_b / samples;
+	}
 }
 
 static bool SpecularFaceCanReceivePpxSources(room* rp, face* fp)
@@ -2286,11 +2362,22 @@ static void SpecularFieldAddWeightedSample(SpecularFieldCell& cell, const Specul
 	lobe.weight += weight;
 }
 
+static void SpecularFieldAddLightmap(SpecularFieldLightmap& lightmap, float r, float g, float b, float weight)
+{
+	if (weight <= 0.0f)
+		return;
+
+	lightmap.r_sum += r * weight;
+	lightmap.g_sum += g * weight;
+	lightmap.b_sum += b * weight;
+	lightmap.weight += weight;
+}
+
 static void SpecularBuildSpatialField(SpecularSpatialField& field, const std::vector<SpecularFaceInfo>& faces,
 	const std::vector<SpecularFieldSample>& samples)
 {
 	field = {};
-	if (faces.empty() || samples.empty())
+	if (faces.empty())
 		return;
 
 	field.min_bound = faces[0].basis.center;
@@ -2308,7 +2395,9 @@ static void SpecularBuildSpatialField(SpecularSpatialField& field, const std::ve
 
 	vector extent = field.max_bound - field.min_bound;
 	const float max_extent = std::max(extent.x, std::max(extent.y, extent.z));
-	field.cell_size = SpecularClamp(max_extent / 24.0f, 12.0f, 60.0f);
+	const float field_resolution =
+		ConfigNormalizePerPixelSpecularFieldResolution(Render_per_pixel_specular_field_resolution);
+	field.cell_size = SpecularClamp(max_extent / field_resolution, 6.0f, 120.0f);
 	if (field.cell_size <= 0.0f)
 		field.cell_size = 20.0f;
 
@@ -2322,6 +2411,31 @@ static void SpecularBuildSpatialField(SpecularSpatialField& field, const std::ve
 	field.y_cells = std::max(1, std::min(field.y_cells + 2, 48));
 	field.z_cells = std::max(1, std::min(field.z_cells + 2, 48));
 	field.cells.resize(field.x_cells * field.y_cells * field.z_cells);
+
+	for (const SpecularFaceInfo& info : faces)
+	{
+		SpecularFieldAddLightmap(field.global.lightmap, info.lightmap_r, info.lightmap_g, info.lightmap_b,
+			info.field_weight);
+
+		int cx, cy, cz;
+		SpecularFieldCellForPosition(field, info.basis.center, cx, cy, cz);
+		for (int z = std::max(0, cz - 1); z <= std::min(field.z_cells - 1, cz + 1); z++)
+		{
+			for (int y = std::max(0, cy - 1); y <= std::min(field.y_cells - 1, cy + 1); y++)
+			{
+				for (int x = std::max(0, cx - 1); x <= std::min(field.x_cells - 1, cx + 1); x++)
+				{
+					vector delta = SpecularFieldCellCenter(field, x, y, z) - info.basis.center;
+					const float distance = vm_GetMagnitude(&delta);
+					const float falloff = std::max(0.0f, 1.0f - distance / (field.cell_size * 2.25f));
+					if (falloff <= 0.0f)
+						continue;
+					SpecularFieldAddLightmap(field.cells[SpecularFieldIndex(field, x, y, z)].lightmap,
+						info.lightmap_r, info.lightmap_g, info.lightmap_b, info.field_weight * falloff * falloff);
+				}
+			}
+		}
+	}
 
 	for (const SpecularFieldSample& sample : samples)
 	{
@@ -2345,6 +2459,52 @@ static void SpecularBuildSpatialField(SpecularSpatialField& field, const std::ve
 				}
 			}
 		}
+	}
+}
+
+static void SpecularFieldLightmapForFace(const SpecularSpatialField& field, const SpecularFaceInfo& target,
+	float& r, float& g, float& b)
+{
+	r = target.lightmap_r;
+	g = target.lightmap_g;
+	b = target.lightmap_b;
+	if (field.cells.empty())
+		return;
+
+	SpecularFieldLightmap output = {};
+	int cx, cy, cz;
+	SpecularFieldCellForPosition(field, target.basis.center, cx, cy, cz);
+	for (int z = std::max(0, cz - 2); z <= std::min(field.z_cells - 1, cz + 2); z++)
+	{
+		for (int y = std::max(0, cy - 2); y <= std::min(field.y_cells - 1, cy + 2); y++)
+		{
+			for (int x = std::max(0, cx - 2); x <= std::min(field.x_cells - 1, cx + 2); x++)
+			{
+				const SpecularFieldLightmap& cell_lightmap =
+					field.cells[SpecularFieldIndex(field, x, y, z)].lightmap;
+				if (cell_lightmap.weight <= 0.0f)
+					continue;
+
+				vector delta = SpecularFieldCellCenter(field, x, y, z) - target.basis.center;
+				const float distance = vm_GetMagnitude(&delta);
+				const float spatial_weight = 1.0f /
+					(1.0f + (distance / field.cell_size) * (distance / field.cell_size));
+				SpecularFieldAddLightmap(output, cell_lightmap.r_sum / cell_lightmap.weight,
+					cell_lightmap.g_sum / cell_lightmap.weight, cell_lightmap.b_sum / cell_lightmap.weight,
+					cell_lightmap.weight * spatial_weight);
+			}
+		}
+	}
+
+	if (output.weight <= 0.0f && field.global.lightmap.weight > 0.0f)
+	{
+		output = field.global.lightmap;
+	}
+	if (output.weight > 0.0f)
+	{
+		r = output.r_sum / output.weight;
+		g = output.g_sum / output.weight;
+		b = output.b_sum / output.weight;
 	}
 }
 
@@ -2401,6 +2561,12 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set, const
 	for (int lobe_index = 0; lobe_index < MAX_SPECULARS; lobe_index++)
 		SpecularFieldAddLobeToOutput(output, field.global.lobes[lobe_index], target, 0.08f);
 
+	float lightmap_r = 1.0f;
+	float lightmap_g = 1.0f;
+	float lightmap_b = 1.0f;
+	if (Render_per_pixel_field_lightmap_static_specular)
+		SpecularFieldLightmapForFace(field, target, lightmap_r, lightmap_g, lightmap_b);
+
 	for (int a = 0; a < MAX_SPECULARS - 1; a++)
 	{
 		for (int b = a + 1; b < MAX_SPECULARS; b++)
@@ -2420,8 +2586,8 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set, const
 		const float distance = SpecularClamp(lobe.distance_sum / lobe.weight, 40.0f, 800.0f);
 		specular_instance resolved = {};
 		resolved.bright_center = target.basis.center + direction * distance;
-		resolved.bright_color = SpecularPackColor(lobe.r_sum / lobe.weight, lobe.g_sum / lobe.weight,
-			lobe.b_sum / lobe.weight);
+		resolved.bright_color = SpecularPackColor((lobe.r_sum / lobe.weight) * lightmap_r,
+			(lobe.g_sum / lobe.weight) * lightmap_g, (lobe.b_sum / lobe.weight) * lightmap_b);
 		if (resolved.bright_color != 0)
 			set.sources[set.count++] = resolved;
 	}
@@ -2703,6 +2869,8 @@ void PrecomputeMineSpecularSources()
 			info.exact_tmap = fp->tmap;
 			info.split_tmap = SplitSpecularSourceMatchTmap(fp->tmap);
 			info.basis = SpecularBuildFaceBasis(rp, fp);
+			SpecularFaceLightmapColor(fp, info.lightmap_r, info.lightmap_g, info.lightmap_b);
+			info.field_weight = std::max(0.25f, sqrt(SpecularFaceArea(rp, fp)));
 			face_lookup[room_index][face_index] = info.face_info_index;
 			faces.push_back(info);
 
@@ -2722,7 +2890,7 @@ void PrecomputeMineSpecularSources()
 					donor.sources[i] = sources[i];
 				donors.push_back(donor);
 
-				const float face_weight = sqrt(SpecularFaceArea(rp, fp));
+				const float face_weight = info.field_weight;
 				for (int i = 0; i < source_count; i++)
 				{
 					vector direction = sources[i].bright_center - info.basis.center;
@@ -2930,13 +3098,15 @@ static void SpecularBuildStaticBlockSources(room* rp, int current_face_index, Sp
 
 	if (Render_per_pixel_field_static_specular)
 	{
-		SpecularAddFieldStaticSources(rp, current_face_index, specblock);
-		return;
-	}
-
-	if (Render_per_pixel_lightmap_static_specular)
-	{
-		SpecularAddLightmapHeadingStaticSource(specblock);
+		if (!Render_per_pixel_field_missing_only_static_specular ||
+			fp->special_handle == BAD_SPECIAL_FACE_INDEX)
+		{
+			SpecularAddFieldStaticSources(rp, current_face_index, specblock);
+		}
+		else
+		{
+			SpecularAddFaceStaticSources(specblock, fp);
+		}
 		return;
 	}
 
@@ -2948,32 +3118,27 @@ static void SpecularBuildStaticBlockSources(room* rp, int current_face_index, Sp
 
 static void PrepareSpecularDynamicLight(renderer_per_pixel_light& light)
 {
-	if (light.headlight && light.has_specular_position)
-	{
-		vector diffuse_position = { light.position[0], light.position[1], light.position[2] };
-		vector specular_position = { light.specular_position[0], light.specular_position[1],
-			light.specular_position[2] };
-		vector throw_delta = diffuse_position - specular_position;
-		float throw_distance = vm_GetMagnitudeFast(&throw_delta);
-
-		light.position[0] = specular_position.x;
-		light.position[1] = specular_position.y;
-		light.position[2] = specular_position.z;
-		light.radius = std::max(light.radius, throw_distance + std::max(light.specular_radius - throw_distance,
-			light.radius * 4.0f));
-	}
-
 	vector world_position = { light.position[0], light.position[1], light.position[2] };
 	vector view_position = SpecularWorldToViewPosition(world_position);
 	light.position[0] = view_position.x;
 	light.position[1] = view_position.y;
 	light.position[2] = view_position.z;
+	if (light.has_specular_position)
+	{
+		vector specular_position = { light.specular_position[0], light.specular_position[1],
+			light.specular_position[2] };
+		vector view_specular_position = SpecularWorldToViewPosition(specular_position);
+		light.specular_position[0] = view_specular_position.x;
+		light.specular_position[1] = view_specular_position.y;
+		light.specular_position[2] = view_specular_position.z;
+	}
+
 	float strength = light.headlight ?
 		Render_per_pixel_headlight_specular_strength :
 		Render_per_pixel_dynamic_specular_strength;
-	light.color[0] *= strength;
-	light.color[1] *= strength;
-	light.color[2] *= strength;
+	if (light.specular_scalar <= 0.0f)
+		light.specular_scalar = 1.0f;
+	light.specular_scalar *= strength;
 	if (light.directional)
 	{
 		vector world_direction = { light.direction[0], light.direction[1], light.direction[2] };
@@ -3007,9 +3172,12 @@ static bool BuildPerPixelSpecularState(room* rp, int face_index, SpecularBlock& 
 	specblock.exponent = TunedSpecularMaterialExponent(material_type);
 	specblock.strength = Render_per_pixel_specular_strength *
 		GameTextures[SpecularTextureTmapForFace(fp)].reflectivity * 1.5f;
-	specblock.lightmap_mix = Render_per_pixel_specular_lightmap_mix;
+	specblock.lightmap_mix =
+		(Render_per_pixel_specular_ignore_lightmap ||
+		 (Render_per_pixel_field_static_specular && Render_per_pixel_field_lightmap_static_specular)) ?
+		0.0f : Render_per_pixel_specular_lightmap_mix;
 	specblock.alpha_strength = Render_per_pixel_specular_alpha_strength;
-	specblock.pad0 = (Render_per_pixel_lightmap_static_specular && !Render_per_pixel_field_static_specular) ? 1.0f : 0.0f;
+	specblock.pad0 = 0.0f;
 	specblock.debug_tint = debug_tint ? 1.0f : 0.0f;
 	specblock.debug_authored = SpecularFaceHasLocalSources(fp) ? 1.0f : 0.0f;
 

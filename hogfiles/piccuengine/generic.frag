@@ -25,6 +25,9 @@ uniform vec3 dynamic_face_normal;
 uniform vec3 dynamic_light_positions[8];
 uniform vec3 dynamic_light_colors[8];
 uniform float dynamic_light_radii[8];
+uniform vec3 dynamic_light_specular_positions[8];
+uniform float dynamic_light_specular_radii[8];
+uniform float dynamic_light_specular_scalars[8];
 uniform float dynamic_light_falloffs[8];
 uniform vec3 dynamic_light_directions[8];
 uniform float dynamic_light_dot_ranges[8];
@@ -108,7 +111,7 @@ vec3 SpecularFromIncident(vec3 view_position, vec3 normal, vec3 incident, vec3 l
 	if (dotp <= 0.0)
 		return vec3(0.0);
 
-	return pow(dotp, specular_data.exponent) * light_color * scalar;
+	return pow(dotp, float(specular_data.exponent)) * light_color * scalar;
 }
 
 vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
@@ -118,22 +121,14 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 	vec3 normal = normalize(outnormal.xyz);
 	vec3 specular_color = vec3(0.0);
 
-	if (specular_data.pad0 > 0.5 && specular_data.num_specular > 0)
+	for (int i = 0; i < 4; i++)
 	{
-		specular_color += SpecularFromIncident(view_position, normal, vec3(0.0, 0.0, -1.0),
-			specular_data.speculars[0].color.xyz, 1.0);
-	}
-	else
-	{
-		for (int i = 0; i < 4; i++)
-		{
-			if (i >= specular_data.num_specular)
-				break;
+		if (i >= specular_data.num_specular)
+			break;
 
-			vec3 light_position = specular_data.speculars[i].bright_center.xyz;
-			specular_color += SpecularFromIncident(view_position, normal, view_position - light_position,
-				specular_data.speculars[i].color.xyz, weights[i]);
-		}
+		vec3 light_position = specular_data.speculars[i].bright_center.xyz;
+		specular_color += SpecularFromIncident(view_position, normal, view_position - light_position,
+			specular_data.speculars[i].color.xyz, weights[i]);
 	}
 
 	for (int i = 0; i < 8; i++)
@@ -141,9 +136,9 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 		if (i >= dynamic_light_count)
 			break;
 
-		vec3 light_position = dynamic_light_positions[i];
+		vec3 light_position = dynamic_light_specular_positions[i];
 		vec3 incident = view_position - light_position;
-		float radius = max(dynamic_light_radii[i], 0.0001);
+		float radius = max(dynamic_light_specular_radii[i], 0.0001);
 		float distance = length(incident);
 		if (distance <= 0.0001)
 			continue;
@@ -166,7 +161,7 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 		}
 
 		specular_color += SpecularFromIncident(view_position, normal, incident,
-			dynamic_light_colors[i], scalar);
+			dynamic_light_colors[i], scalar * dynamic_light_specular_scalars[i]);
 	}
 
 	vec3 lightmap_factor = mix(vec3(1.0), clamp(lightmap_color, vec3(0.0), vec3(1.0)),

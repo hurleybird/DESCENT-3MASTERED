@@ -124,6 +124,7 @@ struct renderer_per_pixel_light
 	bool has_specular_position;
 	float specular_position[3];
 	float specular_radius;
+	float specular_scalar;
 };
 
 void rend_SetLighting(light_state);

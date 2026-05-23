@@ -1432,7 +1432,9 @@ void GL4Renderer::SelectDrawShader()
 
 	drawshaders[shader_index].ApplyDynamicLighting(per_pixel_dynamic_light_count,
 		&per_pixel_dynamic_face_normal.x, &per_pixel_dynamic_positions[0][0],
-		&per_pixel_dynamic_colors[0][0], per_pixel_dynamic_radii, per_pixel_dynamic_falloffs,
+		&per_pixel_dynamic_colors[0][0], per_pixel_dynamic_radii,
+		&per_pixel_dynamic_specular_positions[0][0], per_pixel_dynamic_specular_radii,
+		per_pixel_dynamic_specular_scalars, per_pixel_dynamic_falloffs,
 		&per_pixel_dynamic_directions[0][0], per_pixel_dynamic_dot_ranges,
 		per_pixel_dynamic_directional);
 

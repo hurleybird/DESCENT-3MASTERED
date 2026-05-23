@@ -2454,6 +2454,9 @@ static void UpdateCurrentDynamicLightingUniforms(int count, const vector &face_n
 	GLfloat positions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3],
 	GLfloat colors[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3],
 	GLfloat radii[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS],
+	GLfloat specular_positions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3],
+	GLfloat specular_radii[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS],
+	GLfloat specular_scalars[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS],
 	GLfloat falloffs[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS],
 	GLfloat directions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3],
 	GLfloat dot_ranges[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS],
@@ -2463,7 +2466,8 @@ static void UpdateCurrentDynamicLightingUniforms(int count, const vector &face_n
 	if (current)
 	{
 		current->ApplyDynamicLighting(count, &face_normal.x, &positions[0][0], &colors[0][0],
-			radii, falloffs, &directions[0][0], dot_ranges, directional);
+			radii, &specular_positions[0][0], specular_radii, specular_scalars,
+			falloffs, &directions[0][0], dot_ranges, directional);
 	}
 }
 
@@ -2477,6 +2481,8 @@ void GL4Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int coun
 		per_pixel_dynamic_light_count = 0;
 		UpdateCurrentDynamicLightingUniforms(per_pixel_dynamic_light_count, per_pixel_dynamic_face_normal,
 			per_pixel_dynamic_positions, per_pixel_dynamic_colors, per_pixel_dynamic_radii,
+			per_pixel_dynamic_specular_positions, per_pixel_dynamic_specular_radii,
+			per_pixel_dynamic_specular_scalars,
 			per_pixel_dynamic_falloffs,
 			per_pixel_dynamic_directions, per_pixel_dynamic_dot_ranges, per_pixel_dynamic_directional);
 		return;
@@ -2496,6 +2502,26 @@ void GL4Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int coun
 		per_pixel_dynamic_colors[i][2] = lights[i].color[2];
 
 		per_pixel_dynamic_radii[i] = lights[i].radius;
+		per_pixel_dynamic_specular_positions[i][0] = lights[i].has_specular_position ?
+			lights[i].specular_position[0] : lights[i].position[0];
+		per_pixel_dynamic_specular_positions[i][1] = lights[i].has_specular_position ?
+			lights[i].specular_position[1] : lights[i].position[1];
+		per_pixel_dynamic_specular_positions[i][2] = lights[i].has_specular_position ?
+			lights[i].specular_position[2] : lights[i].position[2];
+		per_pixel_dynamic_specular_radii[i] = lights[i].has_specular_position ?
+			std::max(lights[i].radius, lights[i].specular_radius) : lights[i].radius;
+		if (lights[i].headlight && lights[i].has_specular_position)
+		{
+			vector diffuse_position = { lights[i].position[0], lights[i].position[1], lights[i].position[2] };
+			vector specular_position = { lights[i].specular_position[0], lights[i].specular_position[1],
+				lights[i].specular_position[2] };
+			vector throw_delta = diffuse_position - specular_position;
+			float throw_distance = vm_GetMagnitudeFast(&throw_delta);
+			per_pixel_dynamic_specular_radii[i] = std::max(lights[i].radius,
+				throw_distance + std::max(lights[i].specular_radius - throw_distance, lights[i].radius * 4.0f));
+		}
+		per_pixel_dynamic_specular_scalars[i] = lights[i].specular_scalar > 0.0f ?
+			lights[i].specular_scalar : 1.0f;
 		per_pixel_dynamic_falloffs[i] = lights[i].falloff;
 
 		per_pixel_dynamic_directions[i][0] = lights[i].direction[0];
@@ -2508,6 +2534,8 @@ void GL4Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int coun
 
 	UpdateCurrentDynamicLightingUniforms(per_pixel_dynamic_light_count, per_pixel_dynamic_face_normal,
 		per_pixel_dynamic_positions, per_pixel_dynamic_colors, per_pixel_dynamic_radii,
+		per_pixel_dynamic_specular_positions, per_pixel_dynamic_specular_radii,
+		per_pixel_dynamic_specular_scalars,
 		per_pixel_dynamic_falloffs,
 		per_pixel_dynamic_directions, per_pixel_dynamic_dot_ranges, per_pixel_dynamic_directional);
 }
