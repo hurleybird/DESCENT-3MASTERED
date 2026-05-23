@@ -82,7 +82,6 @@ extern float Render_per_pixel_specular_sharpness;
 extern float Render_per_pixel_specular_lightmap_mix;
 extern float Render_per_pixel_specular_alpha_strength;
 extern float Render_per_pixel_specular_field_resolution;
-extern bool Render_per_pixel_force_specular_faces;
 extern bool Render_per_pixel_specular_ignore_lightmap;
 extern bool Render_per_pixel_field_static_specular;
 extern bool Render_per_pixel_field_lightmap_static_specular;

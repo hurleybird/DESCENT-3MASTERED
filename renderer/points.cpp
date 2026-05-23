@@ -68,6 +68,8 @@ ubyte g3_RotatePoint(g3Point *dest,vector *src)
 	// store the pre-rotated point
 	dest->p3_vecPreRot = *src;
 	dest->p3_specular_normal_valid = 0;
+	dest->p3_specular_field_valid = 0;
+	dest->p3_specular_field_count = 0;
 	dest->p3_motion_world_valid = 0;
 	dest->p3_motion_prev_world_valid = 0;
 

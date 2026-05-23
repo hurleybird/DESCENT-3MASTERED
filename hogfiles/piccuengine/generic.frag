@@ -62,6 +62,10 @@ in vec4 outcolor;
 in vec4 outnormal;
 in vec4 out_motion_world_position;
 in vec4 out_motion_previous_world_position;
+#if defined(USE_SPECULAR)
+in vec4 out_field_specular_centers[4];
+in vec4 out_field_specular_colors[4];
+#endif
 #if defined(USE_TEXTURING)
 in vec3 outuv;
 #if defined(USE_LIGHTMAP)
@@ -127,9 +131,13 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 			break;
 
 		float source_weight = specular_data.pad0 > 0.5 ? 1.0 : weights[i];
-		vec3 light_position = specular_data.speculars[i].bright_center.xyz;
+		vec3 light_position = specular_data.pad0 > 0.5 ?
+			(out_field_specular_centers[i].xyz / max(out_field_specular_centers[i].w, 0.0001)) :
+			specular_data.speculars[i].bright_center.xyz;
+		vec3 light_color = specular_data.pad0 > 0.5 ?
+			out_field_specular_colors[i].xyz : specular_data.speculars[i].color.xyz;
 		specular_color += SpecularFromIncident(view_position, normal, view_position - light_position,
-			specular_data.speculars[i].color.xyz, source_weight);
+			light_color, source_weight);
 	}
 
 	for (int i = 0; i < 8; i++)

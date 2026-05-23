@@ -21,11 +21,12 @@
 #include "gameloop.h"
 #include "HardwareInternal.h"
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
 //The number of vertex attributes the legacy code used.
-constexpr int NUM_LEGACY_VERTEX_ATTRIBS = 7;
+constexpr int NUM_LEGACY_VERTEX_ATTRIBS = 15;
 //The count of vertices that each buffer will store
 constexpr int NUM_VERTS_PER_BUFFER = 640000;
 constexpr float PIXEL_MOTION_BLUR_REFERENCE_FRAME_TIME = 1.0f / 60.0f;
@@ -54,6 +55,39 @@ static vector GL4ViewSpaceNormal(vector normal)
 	if (vm_NormalizeVectorFast(&normal) <= 0.0f)
 		normal = { 0, 0, 1 };
 	return normal;
+}
+
+static vector GL4ViewSpacePosition(vector position)
+{
+	position -= View_position;
+	return position * Unscaled_matrix;
+}
+
+static void GL4SetFieldSpecularVertexPayload(gl_vertex& vert, const g3Point* pnt, bool per_pixel_specular_draw)
+{
+	for (int i = 0; i < MAX_SPECULARS; i++)
+	{
+		vert.field_specular_center[i] = {};
+		vert.field_specular_color[i] = {};
+	}
+
+	if (!per_pixel_specular_draw || !pnt->p3_specular_field_valid)
+		return;
+
+	const float payloadw = 1.0f / (pnt->p3_z + Z_bias);
+	const int count = std::min((int)pnt->p3_specular_field_count, MAX_SPECULARS);
+	for (int i = 0; i < count; i++)
+	{
+		vector view_center = GL4ViewSpacePosition(pnt->p3_specular_field_centers[i]);
+		vert.field_specular_center[i].x = view_center.x * payloadw;
+		vert.field_specular_center[i].y = view_center.y * payloadw;
+		vert.field_specular_center[i].z = view_center.z * payloadw;
+		vert.field_specular_center[i].w = payloadw;
+		vert.field_specular_color[i].x = pnt->p3_specular_field_colors[i].x;
+		vert.field_specular_color[i].y = pnt->p3_specular_field_colors[i].y;
+		vert.field_specular_color[i].z = pnt->p3_specular_field_colors[i].z;
+		vert.field_specular_color[i].w = 1.0f;
+	}
 }
 
 static bool GL4DrawTargetIsFramebuffer(GLuint framebuffer)
@@ -620,6 +654,17 @@ void GL4Renderer::InitPersistentDrawBuffer(size_t size)
 	//attrib 6: perspective-correct previous world position for moving pixel motion vectors
 	glEnableVertexAttribArray(6);
 	glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_previous_world_position));
+
+	//attribs 7-14: perspective-correct per-vertex field static specular sources
+	for (int i = 0; i < MAX_SPECULARS; i++)
+	{
+		glEnableVertexAttribArray(7 + i);
+		glVertexAttribPointer(7 + i, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex),
+			(const void*)offsetof(gl_vertex, field_specular_center[i]));
+		glEnableVertexAttribArray(11 + i);
+		glVertexAttribPointer(11 + i, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex),
+			(const void*)offsetof(gl_vertex, field_specular_color[i]));
+	}
 #ifdef _DEBUG
 	err = glGetError();
 	if (err != GL_NO_ERROR)
@@ -854,6 +899,7 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 
 	float z = GL4DepthFromEyeZ(pnt->p3_z + Z_bias);
 	vert.vert.z = -z;
+	GL4SetFieldSpecularVertexPayload(vert, pnt, per_pixel_specular_draw);
 }
 
 void GL4Renderer::SetFontBatchFullscreenDrawState(GLint old_viewport[4])
@@ -1229,6 +1275,17 @@ void GL4Renderer::SetDrawDefaults()
 		//attrib 6: perspective-correct previous world position for moving pixel motion vectors
 		glEnableVertexAttribArray(6);
 		glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_previous_world_position));
+
+		//attribs 7-14: perspective-correct per-vertex field static specular sources
+		for (int i = 0; i < MAX_SPECULARS; i++)
+		{
+			glEnableVertexAttribArray(7 + i);
+			glVertexAttribPointer(7 + i, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex),
+				(const void*)offsetof(gl_vertex, field_specular_center[i]));
+			glEnableVertexAttribArray(11 + i);
+			glVertexAttribPointer(11 + i, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex),
+				(const void*)offsetof(gl_vertex, field_specular_color[i]));
+		}
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -1669,6 +1726,7 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 
 		float z = GL4DepthFromEyeZ(pnt->p3_z + Z_bias);
 		vertp->vert.z = -z;
+		GL4SetFieldSpecularVertexPayload(*vertp, pnt, per_pixel_specular_draw);
 	}
 
 	// And draw!

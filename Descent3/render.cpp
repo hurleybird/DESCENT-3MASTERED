@@ -1707,24 +1707,6 @@ static bool SpecularFaceHasAuthoredPath(room* rp, face* fp)
 	return fp->special_handle != BAD_SPECIAL_FACE_INDEX || (rp->flags & RF_EXTERNAL);
 }
 
-static bool SpecularCanForceFace(room* rp, face* fp)
-{
-	if (!Render_per_pixel_force_specular_faces)
-		return false;
-	if (!Render_preferred_state.per_pixel_lighting || !UseHardware || !rend_CanUseNewrender())
-		return false;
-	if (rp->flags & RF_EXTERNAL)
-		return false;
-	if (fp->lmi_handle == BAD_LMI_INDEX || !(fp->flags & FF_LIGHTMAP))
-		return false;
-	if (!(GameTextures[fp->tmap].flags & TF_SPECULAR) && !SpecularFaceHasSplitTexturePair(fp))
-		return false;
-	if (!SpecularTextureHasMask(fp))
-		return false;
-
-	return GetFaceAlpha(fp, SpecularBitmapHandle(fp)) == AT_ALWAYS;
-}
-
 static bool SpecularCanUseSplitTextureFace(room* rp, face* fp)
 {
 	if (!SplitSpecularTexturePathEnabled())
@@ -1785,7 +1767,7 @@ static bool SpecularShouldQueueFace(room* rp, face* fp)
 		return true;
 	if (SpecularCanUseSplitTextureFace(rp, fp))
 		return true;
-	return SpecularCanForceFace(rp, fp);
+	return false;
 }
 
 static bool SpecularBlockAlreadyHasSource(const SpecularBlock& specblock, const vector& view_center, ushort color)
@@ -1855,6 +1837,7 @@ struct PrecomputedSpecularFaceSources
 	PrecomputedSpecularSourceSet exact;
 	PrecomputedSpecularSourceSet split;
 	PrecomputedSpecularSourceSet field;
+	std::vector<PrecomputedSpecularSourceSet> field_vertices;
 	std::vector<vector> normals;
 };
 
@@ -2529,21 +2512,21 @@ static void SpecularFieldLightmapForFace(const SpecularSpatialField& field, cons
 }
 
 static void SpecularFieldAddLobeToOutput(SpecularFieldCell& output, const SpecularFieldLobe& source,
-	const SpecularFaceInfo& target, float base_weight)
+	const vector& target_normal, float base_weight)
 {
 	if (source.weight <= 0.0f || base_weight <= 0.0f)
 		return;
 
 	SpecularFieldSample sample = {};
 	sample.position = source.position_sum / source.weight;
-	sample.direction = SpecularFieldNormalizeOr(source.direction_sum, target.basis.normal);
-	sample.normal = SpecularFieldNormalizeOr(source.normal_sum, target.basis.normal);
+	sample.direction = SpecularFieldNormalizeOr(source.direction_sum, target_normal);
+	sample.normal = SpecularFieldNormalizeOr(source.normal_sum, target_normal);
 	sample.distance = source.distance_sum / source.weight;
 	sample.r = source.r_sum / source.weight;
 	sample.g = source.g_sum / source.weight;
 	sample.b = source.b_sum / source.weight;
 
-	const float normal_dot = SpecularClamp(sample.normal * target.basis.normal, -1.0f, 1.0f);
+	const float normal_dot = SpecularClamp(sample.normal * target_normal, -1.0f, 1.0f);
 	if (normal_dot < -0.2f)
 		return;
 
@@ -2552,7 +2535,7 @@ static void SpecularFieldAddLobeToOutput(SpecularFieldCell& output, const Specul
 }
 
 static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set, const SpecularFaceInfo& target,
-	const SpecularSpatialField& field)
+	const SpecularSpatialField& field, const vector& target_position, const vector& target_normal)
 {
 	set.count = 0;
 	memset(set.sources, 0, sizeof(set.sources));
@@ -2561,7 +2544,7 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set, const
 
 	SpecularFieldCell output = {};
 	int cx, cy, cz;
-	SpecularFieldCellForPosition(field, target.basis.center, cx, cy, cz);
+	SpecularFieldCellForPosition(field, target_position, cx, cy, cz);
 	const int query_radius_cells = 4;
 	const float query_radius = field.cell_size * ((float)query_radius_cells + 0.5f);
 	for (int z = std::max(0, cz - query_radius_cells);
@@ -2574,19 +2557,19 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set, const
 				x <= std::min(field.x_cells - 1, cx + query_radius_cells); x++)
 			{
 				const SpecularFieldCell& cell = field.cells[SpecularFieldIndex(field, x, y, z)];
-				vector delta = SpecularFieldCellCenter(field, x, y, z) - target.basis.center;
+				vector delta = SpecularFieldCellCenter(field, x, y, z) - target_position;
 				const float distance = vm_GetMagnitude(&delta);
 				const float spatial_weight = SpecularFieldSmoothKernel(distance, query_radius);
 				if (spatial_weight <= 0.0f)
 					continue;
 				for (int lobe_index = 0; lobe_index < MAX_SPECULARS; lobe_index++)
-					SpecularFieldAddLobeToOutput(output, cell.lobes[lobe_index], target, spatial_weight);
+					SpecularFieldAddLobeToOutput(output, cell.lobes[lobe_index], target_normal, spatial_weight);
 			}
 		}
 	}
 
 	for (int lobe_index = 0; lobe_index < MAX_SPECULARS; lobe_index++)
-		SpecularFieldAddLobeToOutput(output, field.global.lobes[lobe_index], target, 0.08f);
+		SpecularFieldAddLobeToOutput(output, field.global.lobes[lobe_index], target_normal, 0.08f);
 
 	float lightmap_r = 1.0f;
 	float lightmap_g = 1.0f;
@@ -2611,7 +2594,7 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set, const
 			continue;
 
 		const vector source_anchor = lobe.position_sum / lobe.weight;
-		vector direction = SpecularFieldNormalizeOr(lobe.direction_sum, target.basis.normal);
+		vector direction = SpecularFieldNormalizeOr(lobe.direction_sum, target_normal);
 		const float distance = SpecularClamp(lobe.distance_sum / lobe.weight, 40.0f, 800.0f);
 		const float lobe_strength = strongest_lobe_weight > 0.0f ?
 			sqrt(SpecularClamp(lobe.weight / strongest_lobe_weight, 0.0f, 1.0f)) : 1.0f;
@@ -2999,9 +2982,26 @@ void PrecomputeMineSpecularSources()
 			split_donors[face_info_index], split_costs[face_info_index], selected);
 		SpecularBuildResolvedSourceSet(cached.split, info, donors, selected);
 
-		SpecularBuildFieldSourceSet(cached.field, info, spatial_field);
-
 		SpecularBuildResolvedNormalsForFace(cached, info, adjacency, faces);
+		SpecularBuildFieldSourceSet(cached.field, info, spatial_field, info.basis.center, info.basis.normal);
+
+		room* rp = &Rooms[info.room_index];
+		face* fp = &rp->faces[info.face_index];
+		cached.field_vertices.clear();
+		cached.field_vertices.resize(fp->num_verts);
+		for (int vn = 0; vn < fp->num_verts; vn++)
+		{
+			vector vertex_normal = info.basis.normal;
+			if (FaceHasSmoothSpecularNormals(fp))
+				vertex_normal = SpecialFaces[fp->special_handle].vertnorms[vn];
+			else if (vn < (int)cached.normals.size())
+				vertex_normal = cached.normals[vn];
+			if (vm_NormalizeVector(&vertex_normal) <= 0.0001f)
+				vertex_normal = info.basis.normal;
+
+			SpecularBuildFieldSourceSet(cached.field_vertices[vn], info, spatial_field,
+				rp->verts[fp->face_verts[vn]], vertex_normal);
+		}
 	}
 }
 
@@ -3031,7 +3031,11 @@ int GetPrecomputedMineSpecularFieldSourceCount(int roomnum, int facenum)
 	if (facenum < 0 || facenum >= (int)Precomputed_specular_sources[roomnum].size())
 		return 0;
 
-	return Precomputed_specular_sources[roomnum][facenum].field.count;
+	const PrecomputedSpecularFaceSources& cached = Precomputed_specular_sources[roomnum][facenum];
+	int count = cached.field.count;
+	for (const PrecomputedSpecularSourceSet& vertex_set : cached.field_vertices)
+		count = std::max(count, vertex_set.count);
+	return count;
 }
 
 int GetPrecomputedMineSpecularNormalCount(int roomnum, int facenum)
@@ -3058,7 +3062,7 @@ static const std::vector<vector>* SpecularGetResolvedNormals(room* rp, int face_
 	return normals.empty() ? nullptr : &normals;
 }
 
-static bool SpecularAddFieldStaticSources(room* rp, int current_face_index, SpecularBlock& specblock)
+static bool SpecularSetFieldStaticSourceCount(room* rp, int current_face_index, SpecularBlock& specblock)
 {
 	if (!Render_per_pixel_field_static_specular)
 		return false;
@@ -3071,15 +3075,19 @@ static bool SpecularAddFieldStaticSources(room* rp, int current_face_index, Spec
 		current_face_index >= (int)Precomputed_specular_sources[room_index].size())
 		return false;
 
-	SpecularAddPrecomputedSourceSet(specblock,
-		Precomputed_specular_sources[room_index][current_face_index].field);
+	const PrecomputedSpecularFaceSources& cached =
+		Precomputed_specular_sources[room_index][current_face_index];
+	int count = cached.field.count;
+	for (const PrecomputedSpecularSourceSet& vertex_set : cached.field_vertices)
+		count = std::max(count, vertex_set.count);
+	specblock.num_speculars = std::min(count, MAX_SPECULARS);
 	return specblock.num_speculars > 0;
 }
 
 static bool SpecularAddPrecomputedTextureStaticSources(room* rp, int current_face_index,
 	SpecularBlock& specblock)
 {
-	if (!Render_per_pixel_force_specular_faces && !Render_split_specular_textures)
+	if (!Render_split_specular_textures)
 		return false;
 
 	int room_index = rp - Rooms;
@@ -3096,12 +3104,6 @@ static bool SpecularAddPrecomputedTextureStaticSources(room* rp, int current_fac
 	if (Render_split_specular_textures && cached.split.count > 0)
 	{
 		SpecularAddPrecomputedSourceSet(specblock, cached.split);
-		return specblock.num_speculars > 0;
-	}
-
-	if (Render_per_pixel_force_specular_faces && cached.exact.count > 0)
-	{
-		SpecularAddPrecomputedSourceSet(specblock, cached.exact);
 		return specblock.num_speculars > 0;
 	}
 
@@ -3133,7 +3135,7 @@ static void SpecularBuildStaticBlockSources(room* rp, int current_face_index, Sp
 		if (!Render_per_pixel_field_missing_only_static_specular ||
 			fp->special_handle == BAD_SPECIAL_FACE_INDEX)
 		{
-			SpecularAddFieldStaticSources(rp, current_face_index, specblock);
+			SpecularSetFieldStaticSourceCount(rp, current_face_index, specblock);
 		}
 		else
 		{
@@ -3186,6 +3188,13 @@ static bool PerPixelSpecularMaterialEnabled()
 	return Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender();
 }
 
+static bool UseFieldStaticSpecularForFace(face* fp)
+{
+	return Render_per_pixel_field_static_specular &&
+		(!Render_per_pixel_field_missing_only_static_specular ||
+		 fp->special_handle == BAD_SPECIAL_FACE_INDEX);
+}
+
 static bool UsePerPixelSpecularMaterialForFace(room* rp, face* fp)
 {
 	return PerPixelSpecularMaterialEnabled() && !Render_mirror_for_room &&
@@ -3214,9 +3223,7 @@ static bool BuildPerPixelSpecularState(room* rp, int face_index, SpecularBlock& 
 	specblock.debug_authored = SpecularFaceHasLocalSources(fp) ? 1.0f : 0.0f;
 
 	SpecularBuildStaticBlockSources(rp, face_index, specblock);
-	if (Render_per_pixel_field_static_specular &&
-		(!Render_per_pixel_field_missing_only_static_specular ||
-		 fp->special_handle == BAD_SPECIAL_FACE_INDEX))
+	if (UseFieldStaticSpecularForFace(fp))
 	{
 		specblock.pad0 = 1.0f;
 	}
@@ -3254,6 +3261,58 @@ static void SetSpecularNormalsForFace(room* rp, face* fp, g3Point** pointlist)
 			p->p3_specular_normal = fp->normal;
 		}
 		p->p3_specular_normal_valid = 1;
+	}
+}
+
+static void ClearFieldSpecularSourcesForPoint(g3Point* p)
+{
+	p->p3_specular_field_valid = 0;
+	p->p3_specular_field_count = 0;
+	for (int i = 0; i < G3_MAX_SPECULAR_FIELD_SOURCES; i++)
+	{
+		p->p3_specular_field_centers[i] = { 0.0f, 0.0f, 0.0f };
+		p->p3_specular_field_colors[i] = { 0.0f, 0.0f, 0.0f };
+	}
+}
+
+static void SetFieldSpecularSourcesForFace(room* rp, face* fp, g3Point** pointlist)
+{
+	for (int vn = 0; vn < fp->num_verts; vn++)
+		ClearFieldSpecularSourcesForPoint(pointlist[vn]);
+
+	if (!UseFieldStaticSpecularForFace(fp))
+		return;
+
+	int room_index = rp - Rooms;
+	const int face_index = fp - rp->faces;
+	if (room_index < 0 || room_index > Precomputed_specular_highest_room ||
+		room_index >= (int)Precomputed_specular_sources.size())
+		return;
+	if (face_index < 0 || face_index >= (int)Precomputed_specular_sources[room_index].size())
+		return;
+
+	const PrecomputedSpecularFaceSources& cached =
+		Precomputed_specular_sources[room_index][face_index];
+	if ((int)cached.field_vertices.size() < fp->num_verts)
+		return;
+
+	for (int vn = 0; vn < fp->num_verts; vn++)
+	{
+		g3Point* p = pointlist[vn];
+		const PrecomputedSpecularSourceSet& vertex_sources = cached.field_vertices[vn];
+		p->p3_specular_field_valid = 1;
+		p->p3_specular_field_count = (ubyte)std::min(vertex_sources.count, MAX_SPECULARS);
+		for (int i = 0; i < p->p3_specular_field_count; i++)
+		{
+			p->p3_specular_field_centers[i] = vertex_sources.sources[i].bright_center;
+			float r, g, b;
+			SpecularUnpackColor(vertex_sources.sources[i].bright_color, r, g, b);
+			p->p3_specular_field_colors[i] = {
+				r * Render_per_pixel_static_specular_strength,
+				g * Render_per_pixel_static_specular_strength,
+				b * Render_per_pixel_static_specular_strength
+			};
+		}
 	}
 }
 
@@ -3343,6 +3402,7 @@ void RenderSpecularFacesFlat(room* rp)
 				p->p3_flags |= PF_RGBA | PF_UV | PF_UV2;
 			}
 			SetSpecularNormalsForFace(rp, fp, pointlist);
+			SetFieldSpecularSourcesForFace(rp, fp, pointlist);
 
 			rend_UpdateSpecular(&specblock);
 			rend_SetOverlayType(OT_BLEND);
@@ -4368,6 +4428,7 @@ void RenderFace(room* rp, int facenum)
 		if (BuildPerPixelSpecularState(rp, facenum, specblock, per_pixel_lights, per_pixel_light_count))
 		{
 			SetSpecularNormalsForFace(rp, fp, pointlist);
+			SetFieldSpecularSourcesForFace(rp, fp, pointlist);
 			rend_UpdateSpecular(&specblock);
 			rend_SetPerPixelSpecularMap(SpecularBitmapHandle(fp));
 			rend_SetPerPixelSpecularMode(2);

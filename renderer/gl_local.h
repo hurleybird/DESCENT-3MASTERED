@@ -73,6 +73,8 @@ struct gl_vertex
 	normal_array normal;
 	vec4_array motion_world_position;
 	vec4_array motion_previous_world_position;
+	vec4_array field_specular_center[MAX_SPECULARS];
+	vec4_array field_specular_color[MAX_SPECULARS];
 };
 
 constexpr int NUM_GL4_FBOS = 1;

@@ -28,6 +28,8 @@ extern int g3d_interp_outline;		//if on, polygon models outlined in white
 
 extern vector Matrix_scale;		//how the matrix is currently scaled
 
+#define G3_MAX_SPECULAR_FIELD_SOURCES 4
+
 //[ISB] Plane structure used for frustum culling.
 struct g3Plane
 {
@@ -133,12 +135,15 @@ struct g3Point
 	vector		p3_vec;				//x,y,z of rotated point
 	vector		p3_vecPreRot;		//original XYZ of the point
 	vector		p3_specular_normal;	//world-space normal for per-pixel specular
+	vector		p3_specular_field_centers[G3_MAX_SPECULAR_FIELD_SOURCES];	//world-space field static specular sources
+	vector		p3_specular_field_colors[G3_MAX_SPECULAR_FIELD_SOURCES];	//linear RGB field static specular source colors
 	vector		p3_motion_world_pos;	//current world-space position for pixel motion vectors
 	vector		p3_motion_prev_world_pos;	//previous world-space position for moving pixel motion vectors
 	ubyte		p3_specular_normal_valid;
+	ubyte		p3_specular_field_valid;
+	ubyte		p3_specular_field_count;
 	ubyte		p3_motion_world_valid;
 	ubyte		p3_motion_prev_world_valid;
-	ubyte		p3_motion_pad;
 	g3UVL		p3_uvl;				//uv & lighting values
 };
 

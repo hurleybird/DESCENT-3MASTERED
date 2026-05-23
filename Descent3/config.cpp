@@ -118,7 +118,6 @@ float Render_per_pixel_specular_sharpness = 1.0f;
 float Render_per_pixel_specular_lightmap_mix = 1.0f;
 float Render_per_pixel_specular_alpha_strength = 1.0f;
 float Render_per_pixel_specular_field_resolution = 24.0f;
-bool Render_per_pixel_force_specular_faces = false;
 bool Render_per_pixel_specular_ignore_lightmap = false;
 bool Render_per_pixel_field_static_specular = false;
 bool Render_per_pixel_field_lightmap_static_specular = false;
@@ -251,7 +250,6 @@ void ConfigResetPerPixelSpecularSettings()
 	Render_per_pixel_specular_lightmap_mix = 1.0f;
 	Render_per_pixel_specular_alpha_strength = 1.0f;
 	Render_per_pixel_specular_field_resolution = 24.0f;
-	Render_per_pixel_force_specular_faces = false;
 	Render_per_pixel_specular_ignore_lightmap = false;
 	Render_per_pixel_field_static_specular = false;
 	Render_per_pixel_field_lightmap_static_specular = false;
@@ -1322,7 +1320,6 @@ struct video_menu
 	short* per_pixel_specular_lightmap_mix;
 	short* per_pixel_specular_alpha_strength;
 	short* per_pixel_specular_field_resolution;
-	bool* per_pixel_force_specular_faces;
 	bool* per_pixel_specular_ignore_lightmap;
 	bool* per_pixel_field_static_specular;
 	bool* per_pixel_field_lightmap_static_specular;
@@ -1446,8 +1443,6 @@ struct video_menu
 			ConfigNormalizePerPixelSpecularAlphaStrength(Render_per_pixel_specular_alpha_strength), 0.0f, 8.0f);
 		set_slider_float_value(per_pixel_specular_field_resolution,
 			ConfigNormalizePerPixelSpecularFieldResolution(Render_per_pixel_specular_field_resolution), 6.0f, 64.0f);
-		if (per_pixel_force_specular_faces)
-			*per_pixel_force_specular_faces = Render_per_pixel_force_specular_faces;
 		if (per_pixel_specular_ignore_lightmap)
 			*per_pixel_specular_ignore_lightmap = Render_per_pixel_specular_ignore_lightmap;
 		if (per_pixel_field_static_specular)
@@ -1644,11 +1639,6 @@ struct video_menu
 			rebuild_specular_field = true;
 			ui_changed = true;
 		}
-		if (per_pixel_force_specular_faces && sheet->HasChanged(per_pixel_force_specular_faces))
-		{
-			Render_per_pixel_force_specular_faces = *per_pixel_force_specular_faces;
-			ui_changed = true;
-		}
 		if (per_pixel_specular_ignore_lightmap && sheet->HasChanged(per_pixel_specular_ignore_lightmap))
 		{
 			Render_per_pixel_specular_ignore_lightmap = *per_pixel_specular_ignore_lightmap;
@@ -1751,7 +1741,6 @@ struct video_menu
 		per_pixel_specular_lightmap_mix = NULL;
 		per_pixel_specular_alpha_strength = NULL;
 		per_pixel_specular_field_resolution = NULL;
-		per_pixel_force_specular_faces = NULL;
 		per_pixel_specular_ignore_lightmap = NULL;
 		per_pixel_field_static_specular = NULL;
 		per_pixel_field_lightmap_static_specular = NULL;
@@ -1913,8 +1902,6 @@ struct video_menu
 				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
 			&ppx_specular_slider);
 
-		per_pixel_force_specular_faces = sheet->AddLongCheckBox("Force spec faces",
-			Render_per_pixel_force_specular_faces);
 		per_pixel_specular_ignore_lightmap = sheet->AddLongCheckBox("Spec ignores LM",
 			Render_per_pixel_specular_ignore_lightmap);
 		per_pixel_field_static_specular = sheet->AddLongCheckBox("Field static spec",
@@ -1994,8 +1981,6 @@ struct video_menu
 		if (per_pixel_specular_field_resolution)
 			Render_per_pixel_specular_field_resolution = ConfigNormalizePerPixelSpecularFieldResolution(
 				slider_float_value(per_pixel_specular_field_resolution, 6.0f, 64.0f));
-		if (per_pixel_force_specular_faces)
-			Render_per_pixel_force_specular_faces = *per_pixel_force_specular_faces;
 		if (per_pixel_specular_ignore_lightmap)
 			Render_per_pixel_specular_ignore_lightmap = *per_pixel_specular_ignore_lightmap;
 		if (per_pixel_field_static_specular)

@@ -58,6 +58,30 @@ static void InterpolateSpecularNormal(g3Point *tmp, g3Point *on_pnt, g3Point *of
 	}
 }
 
+static void InterpolateSpecularField(g3Point *tmp, g3Point *on_pnt, g3Point *off_pnt, float k)
+{
+	if (on_pnt->p3_specular_field_valid && off_pnt->p3_specular_field_valid)
+	{
+		tmp->p3_specular_field_count = on_pnt->p3_specular_field_count > off_pnt->p3_specular_field_count ?
+			on_pnt->p3_specular_field_count : off_pnt->p3_specular_field_count;
+		if (tmp->p3_specular_field_count > G3_MAX_SPECULAR_FIELD_SOURCES)
+			tmp->p3_specular_field_count = G3_MAX_SPECULAR_FIELD_SOURCES;
+		for (int i = 0; i < G3_MAX_SPECULAR_FIELD_SOURCES; i++)
+		{
+			tmp->p3_specular_field_centers[i] = on_pnt->p3_specular_field_centers[i] +
+				((off_pnt->p3_specular_field_centers[i] - on_pnt->p3_specular_field_centers[i]) * k);
+			tmp->p3_specular_field_colors[i] = on_pnt->p3_specular_field_colors[i] +
+				((off_pnt->p3_specular_field_colors[i] - on_pnt->p3_specular_field_colors[i]) * k);
+		}
+		tmp->p3_specular_field_valid = 1;
+	}
+	else
+	{
+		tmp->p3_specular_field_valid = 0;
+		tmp->p3_specular_field_count = 0;
+	}
+}
+
 void FreeTempPoint(g3Point *p)
 {
 	if( free_point_num < 1 )
@@ -118,6 +142,7 @@ g3Point *ClipFarEdge( g3Point *on_pnt, g3Point *off_pnt )
 	tmp->p3_y = on_pnt->p3_y + ((off_pnt->p3_y-on_pnt->p3_y) * k);
 	tmp->p3_vecPreRot = on_pnt->p3_vecPreRot + ((off_pnt->p3_vecPreRot-on_pnt->p3_vecPreRot) * k);
 	InterpolateSpecularNormal(tmp, on_pnt, off_pnt, k);
+	InterpolateSpecularField(tmp, on_pnt, off_pnt, k);
 	if (on_pnt->p3_motion_world_valid && off_pnt->p3_motion_world_valid)
 	{
 		tmp->p3_motion_world_pos = on_pnt->p3_motion_world_pos +
@@ -201,6 +226,7 @@ g3Point *ClipCustomEdge( g3Point *on_pnt, g3Point *off_pnt )
 	tmp->p3_vec = on_pnt->p3_vec + ((off_pnt->p3_vec-on_pnt->p3_vec) * k);
 	tmp->p3_vecPreRot = on_pnt->p3_vecPreRot + ((off_pnt->p3_vecPreRot-on_pnt->p3_vecPreRot) * k);
 	InterpolateSpecularNormal(tmp, on_pnt, off_pnt, k);
+	InterpolateSpecularField(tmp, on_pnt, off_pnt, k);
 	if (on_pnt->p3_motion_world_valid && off_pnt->p3_motion_world_valid)
 	{
 		tmp->p3_motion_world_pos = on_pnt->p3_motion_world_pos +
@@ -303,6 +329,7 @@ g3Point *ClipEdge( int plane_flag, g3Point *on_pnt, g3Point *off_pnt )
 	tmp->p3_z = on_pnt->p3_z + ((off_pnt->p3_z-on_pnt->p3_z) * k);
 	tmp->p3_vecPreRot = on_pnt->p3_vecPreRot + ((off_pnt->p3_vecPreRot-on_pnt->p3_vecPreRot) * k);
 	InterpolateSpecularNormal(tmp, on_pnt, off_pnt, k);
+	InterpolateSpecularField(tmp, on_pnt, off_pnt, k);
 	if (on_pnt->p3_motion_world_valid && off_pnt->p3_motion_world_valid)
 	{
 		tmp->p3_motion_world_pos = on_pnt->p3_motion_world_pos +

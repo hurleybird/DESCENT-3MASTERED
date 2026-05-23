@@ -14,6 +14,16 @@ layout(location = 3) in vec3 uv2;
 layout(location = 4) in vec4 normal;
 layout(location = 5) in vec4 motion_world_position;
 layout(location = 6) in vec4 motion_previous_world_position;
+#if defined(USE_SPECULAR)
+layout(location = 7) in vec4 field_specular_center0;
+layout(location = 8) in vec4 field_specular_center1;
+layout(location = 9) in vec4 field_specular_center2;
+layout(location = 10) in vec4 field_specular_center3;
+layout(location = 11) in vec4 field_specular_color0;
+layout(location = 12) in vec4 field_specular_color1;
+layout(location = 13) in vec4 field_specular_color2;
+layout(location = 14) in vec4 field_specular_color3;
+#endif
 
 uniform int phong_enabled;
 
@@ -21,6 +31,10 @@ out vec4 outcolor;
 out vec4 outnormal;
 out vec4 out_motion_world_position;
 out vec4 out_motion_previous_world_position;
+#if defined(USE_SPECULAR)
+out vec4 out_field_specular_centers[4];
+out vec4 out_field_specular_colors[4];
+#endif
 #if defined(USE_TEXTURING)
 out vec3 outuv;
 #if defined(USE_LIGHTMAP)
@@ -42,6 +56,16 @@ void main()
 	#endif
 	out_motion_world_position = motion_world_position;
 	out_motion_previous_world_position = motion_previous_world_position;
+	#if defined(USE_SPECULAR)
+		out_field_specular_centers[0] = field_specular_center0;
+		out_field_specular_centers[1] = field_specular_center1;
+		out_field_specular_centers[2] = field_specular_center2;
+		out_field_specular_centers[3] = field_specular_center3;
+		out_field_specular_colors[0] = field_specular_color0;
+		out_field_specular_colors[1] = field_specular_color1;
+		out_field_specular_colors[2] = field_specular_color2;
+		out_field_specular_colors[3] = field_specular_color3;
+	#endif
 	#if defined(USE_TEXTURING)
 		outuv = uv;
 		#if defined(USE_LIGHTMAP)
