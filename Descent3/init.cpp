@@ -404,14 +404,9 @@ void SaveGameSettings()
 	WRITE_FLOAT_SETTING("RS_per_pixel_specular_field_sample_distance",
 		Render_per_pixel_specular_field_sample_distance);
 	Database->write("RS_per_pixel_sparse_specular_field", Render_per_pixel_sparse_specular_field);
-	Database->write("RS_per_pixel_field_vertex_normals_only", Render_per_pixel_field_vertex_normals_only);
-	Database->write("RS_per_pixel_specular_ignore_lightmap", Render_per_pixel_specular_ignore_lightmap);
 	Database->write("RS_per_pixel_field_static_specular", Render_per_pixel_field_static_specular);
-	Database->write("RS_per_pixel_field_lightmap_static_specular",
-		Render_per_pixel_field_lightmap_static_specular);
 	Database->write("RS_per_pixel_field_missing_only_static_specular",
 		Render_per_pixel_field_missing_only_static_specular);
-	Database->write("RS_specular_map_debug_tint", Render_specular_map_debug_tint);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	Database->write("RS_combined_motion_blur", Render_preferred_state.combined_motion_blur);
 	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_strength",
@@ -865,14 +860,9 @@ void LoadGameSettings()
 	Render_per_pixel_specular_field_sample_distance =
 		ConfigNormalizePerPixelSpecularFieldSampleDistance(Render_per_pixel_specular_field_sample_distance);
 	Database->read("RS_per_pixel_sparse_specular_field", &Render_per_pixel_sparse_specular_field);
-	Database->read("RS_per_pixel_field_vertex_normals_only", &Render_per_pixel_field_vertex_normals_only);
-	Database->read("RS_per_pixel_specular_ignore_lightmap", &Render_per_pixel_specular_ignore_lightmap);
 	Database->read("RS_per_pixel_field_static_specular", &Render_per_pixel_field_static_specular);
-	Database->read("RS_per_pixel_field_lightmap_static_specular",
-		&Render_per_pixel_field_lightmap_static_specular);
 	Database->read("RS_per_pixel_field_missing_only_static_specular",
 		&Render_per_pixel_field_missing_only_static_specular);
-	Database->read("RS_specular_map_debug_tint", &Render_specular_map_debug_tint);
 	READ_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	if (Render_preferred_state.pixel_motion_blur_strength < 0.0f)
 		Render_preferred_state.pixel_motion_blur_strength = 0.0f;

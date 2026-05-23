@@ -122,7 +122,10 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 {
 	const float[4] weights = float[4](1.0, 0.66, 0.33, 0.25);
 	vec3 view_position = out_motion_world_position.xyz / max(out_motion_world_position.w, 0.0001);
-	vec3 normal = normalize(outnormal.xyz);
+	vec3 raw_normal = outnormal.xyz;
+	if (dot(raw_normal, raw_normal) <= 0.000001)
+		return vec3(0.0);
+	vec3 normal = normalize(raw_normal);
 	vec3 specular_color = vec3(0.0);
 
 	for (int i = 0; i < 4; i++)

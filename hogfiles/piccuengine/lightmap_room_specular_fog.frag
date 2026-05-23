@@ -85,14 +85,18 @@ void main()
 	vec3 spec_color = vec3(0.0);
 
 	vec3 pos = normalize(-outpt);
-	vec3 normal = normalize(outnormal);
-	for (int i = 0; i < specular_data.num_specular; i++)
+	vec3 raw_normal = outnormal;
+	if (dot(raw_normal, raw_normal) > 0.000001)
 	{
-		vec3 lightvec = normalize(outlightpos[i] - outpt);
-		vec3 reflectlight = reflect(-lightvec, normal);
+		vec3 normal = normalize(raw_normal);
+		for (int i = 0; i < specular_data.num_specular; i++)
+		{
+			vec3 lightvec = normalize(outlightpos[i] - outpt);
+			vec3 reflectlight = reflect(-lightvec, normal);
 
-		spec_color += pow(max(dot(reflectlight, pos), 0.0), specular_data.exponent) *
-			specular_data.speculars[i].color.xyz * lmcolor.rgb * specular_data.strength * weights[i];
+			spec_color += pow(max(dot(reflectlight, pos), 0.0), specular_data.exponent) *
+				specular_data.speculars[i].color.xyz * lmcolor.rgb * specular_data.strength * weights[i];
+		}
 	}
 
 	float mag = 0;

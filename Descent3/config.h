@@ -84,12 +84,8 @@ extern float Render_per_pixel_specular_alpha_strength;
 extern float Render_per_pixel_specular_field_resolution;
 extern float Render_per_pixel_specular_field_sample_distance;
 extern bool Render_per_pixel_sparse_specular_field;
-extern bool Render_per_pixel_field_vertex_normals_only;
-extern bool Render_per_pixel_specular_ignore_lightmap;
 extern bool Render_per_pixel_field_static_specular;
-extern bool Render_per_pixel_field_lightmap_static_specular;
 extern bool Render_per_pixel_field_missing_only_static_specular;
-extern bool Render_specular_map_debug_tint;
 extern bool Cockpit_alt_mode;
 //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
 extern int DesiredOpenGLProfile;

@@ -70,6 +70,17 @@ static vector GL4ViewSpaceNormal(vector normal)
 	return normal;
 }
 
+static vector GL4ViewSpaceSpecularNormal(const g3Point* pnt, vector fallback_normal)
+{
+	if (!pnt->p3_specular_normal_valid)
+		return GL4ViewSpaceNormal(fallback_normal);
+
+	vector normal = pnt->p3_specular_normal * Unscaled_matrix;
+	if (vm_NormalizeVectorFast(&normal) <= 0.0f)
+		return { 0, 0, 0 };
+	return normal;
+}
+
 static vector GL4ViewSpacePosition(vector position)
 {
 	position -= View_position;
@@ -861,8 +872,7 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 
 	if (per_pixel_specular_draw)
 	{
-		vector specular_normal = GL4ViewSpaceNormal(pnt->p3_specular_normal_valid ?
-			pnt->p3_specular_normal : per_pixel_dynamic_face_normal);
+		vector specular_normal = GL4ViewSpaceSpecularNormal(pnt, per_pixel_dynamic_face_normal);
 		vert.normal.x = specular_normal.x;
 		vert.normal.y = specular_normal.y;
 		vert.normal.z = specular_normal.z;
@@ -1650,8 +1660,7 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 
 		if (per_pixel_specular_draw)
 		{
-			vector specular_normal = GL4ViewSpaceNormal(pnt->p3_specular_normal_valid ?
-				pnt->p3_specular_normal : per_pixel_dynamic_face_normal);
+			vector specular_normal = GL4ViewSpaceSpecularNormal(pnt, per_pixel_dynamic_face_normal);
 			vertp->normal.x = specular_normal.x;
 			vertp->normal.y = specular_normal.y;
 			vertp->normal.z = specular_normal.z;
