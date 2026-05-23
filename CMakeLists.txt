@@ -25,6 +25,7 @@ function(add_hog_file HOG_NAME HOG_SRC_DIR)
 		COMMAND ${CMAKE_COMMAND} -E touch $<TARGET_FILE:hogdir>
 		DEPENDS ${CMAKE_BINARY_DIR}/${HOG_NAME}
 		SOURCES ${HOG_SOURCES})
+	install(FILES ${CMAKE_BINARY_DIR}/${HOG_NAME} DESTINATION ${D3_GAMEDIR})
 endfunction()
 
 IF (UNIX)
@@ -271,6 +272,23 @@ target_include_directories(dmfc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/netgames/inc
 add_dependencies(PiccuEngine revision_check piccuengine_hog TCP-IP Tracker dmfc)
 	
 install(TARGETS PiccuEngine DESTINATION ${D3_GAMEDIR})
+install(TARGETS dmfc
+	RUNTIME DESTINATION ${D3_GAMEDIR}
+	LIBRARY DESTINATION ${D3_GAMEDIR})
+
+if (WIN32)
+	find_file(OPENAL_RUNTIME_DLL
+		NAMES OpenAL32.dll
+		PATHS "${CMAKE_SOURCE_DIR}/thirdparty/OpenAL/bin/Win32"
+		NO_DEFAULT_PATH)
+	if (OPENAL_RUNTIME_DLL)
+		install(FILES "${OPENAL_RUNTIME_DLL}" DESTINATION ${D3_GAMEDIR})
+	elseif (EXISTS "${D3_GAMEDIR}/OpenAL32.dll")
+		message(STATUS "OpenAL32.dll already exists in ${D3_GAMEDIR}; install will leave it in place.")
+	else()
+		message(WARNING "OpenAL32.dll was not found at thirdparty/OpenAL/bin/Win32; install will not copy it.")
+	endif()
+endif()
 
 source_group("AudioEncode" REGULAR_EXPRESSION "${CMAKE_CURRENT_SOURCE_DIR}/AudioEncode/.+")
 source_group("bitmap" REGULAR_EXPRESSION "${CMAKE_CURRENT_SOURCE_DIR}/bitmap/.+")
