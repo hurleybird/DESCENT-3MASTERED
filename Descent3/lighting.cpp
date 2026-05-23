@@ -117,39 +117,44 @@ static bool PerPixelLightMatches(const renderer_per_pixel_light &a, const render
 	return a.position[0] == b.position[0] && a.position[1] == b.position[1] && a.position[2] == b.position[2] &&
 		a.color[0] == b.color[0] && a.color[1] == b.color[1] && a.color[2] == b.color[2] &&
 		a.radius == b.radius && a.falloff == b.falloff && a.dot_range == b.dot_range && a.directional == b.directional &&
-		a.direction[0] == b.direction[0] && a.direction[1] == b.direction[1] && a.direction[2] == b.direction[2];
+		a.direction[0] == b.direction[0] && a.direction[1] == b.direction[1] && a.direction[2] == b.direction[2] &&
+		a.headlight == b.headlight && a.has_specular_position == b.has_specular_position &&
+		a.specular_position[0] == b.specular_position[0] &&
+		a.specular_position[1] == b.specular_position[1] &&
+		a.specular_position[2] == b.specular_position[2] && a.specular_radius == b.specular_radius;
 }
 
 static void AddPerPixelLightmapTextureLight(int lm_handle, const vector *pos, float light_dist,
 	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range,
-	bool per_pixel_headlight);
+	bool per_pixel_headlight, const vector *specular_position);
 static void AddPerPixelLightmapFaceLight(per_pixel_lightmap_face *light_list, int &light_list_count, int lightmap_key,
 	const vector *pos, float light_dist, float red_scale, float green_scale, float blue_scale,
-	const vector *light_direction, float dot_range, bool per_pixel_headlight);
+	const vector *light_direction, float dot_range, bool per_pixel_headlight, const vector *specular_position);
 static int GetPerPixelLightmapFaceLights(per_pixel_lightmap_face *light_list, int light_list_count, int lightmap_key,
 	renderer_per_pixel_light *lights, int max_lights);
 
 static void AddPerPixelLightmapLight(ushort lmi_handle, const vector *pos, float light_dist,
 	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range,
-	bool per_pixel_headlight)
+	bool per_pixel_headlight, const vector *specular_position)
 {
 	AddPerPixelLightmapTextureLight(LightmapInfo[lmi_handle].lm_handle, pos, light_dist, red_scale, green_scale,
-		blue_scale, light_direction, dot_range, per_pixel_headlight);
+		blue_scale, light_direction, dot_range, per_pixel_headlight, specular_position);
 	AddPerPixelLightmapFaceLight(Per_pixel_lightmap_faces, Num_per_pixel_lightmap_faces, lmi_handle, pos, light_dist,
-		red_scale, green_scale, blue_scale, light_direction, dot_range, per_pixel_headlight);
+		red_scale, green_scale, blue_scale, light_direction, dot_range, per_pixel_headlight, specular_position);
 }
 
 static void AddPerPixelLightmapTextureLight(int lm_handle, const vector *pos, float light_dist,
 	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range,
-	bool per_pixel_headlight)
+	bool per_pixel_headlight, const vector *specular_position)
 {
 	AddPerPixelLightmapFaceLight(Per_pixel_lightmap_textures, Num_per_pixel_lightmap_textures, lm_handle, pos,
-		light_dist, red_scale, green_scale, blue_scale, light_direction, dot_range, per_pixel_headlight);
+		light_dist, red_scale, green_scale, blue_scale, light_direction, dot_range, per_pixel_headlight,
+		specular_position);
 }
 
 static void AddPerPixelLightmapFaceLight(per_pixel_lightmap_face *light_list, int &light_list_count, int lightmap_key,
 	const vector *pos, float light_dist, float red_scale, float green_scale, float blue_scale,
-	const vector *light_direction, float dot_range, bool per_pixel_headlight)
+	const vector *light_direction, float dot_range, bool per_pixel_headlight, const vector *specular_position)
 {
 	if (per_pixel_headlight)
 	{
@@ -170,11 +175,21 @@ static void AddPerPixelLightmapFaceLight(per_pixel_lightmap_face *light_list, in
 	light.falloff = per_pixel_headlight ? PER_PIXEL_HEADLIGHT_FALLOFF : 1.0f;
 	light.dot_range = dot_range;
 	light.directional = light_direction != nullptr;
+	light.headlight = per_pixel_headlight;
 	if (light_direction)
 	{
 		light.direction[0] = light_direction->x;
 		light.direction[1] = light_direction->y;
 		light.direction[2] = light_direction->z;
+	}
+	if (specular_position)
+	{
+		light.has_specular_position = true;
+		light.specular_position[0] = specular_position->x;
+		light.specular_position[1] = specular_position->y;
+		light.specular_position[2] = specular_position->z;
+		vector specular_delta = *pos - *specular_position;
+		light.specular_radius = light_dist + vm_GetMagnitudeFast(&specular_delta);
 	}
 
 	for (int i = 0; i < light_list_count; i++)
@@ -519,7 +534,7 @@ void ApplyLightingToExternalRoom(vector* pos, int roomnum, float light_dist, flo
 		if (per_pixel_room_lighting)
 		{
 			AddPerPixelLightmapLight(fp->lmi_handle, pos, light_dist, red_scale, green_scale, blue_scale,
-				light_direction, dot_range, false);
+				light_direction, dot_range, false, nullptr);
 
 			if (!(Lmi_spoken_for[fp->lmi_handle / 8] & (1 << (fp->lmi_handle % 8))))
 			{
@@ -922,7 +937,7 @@ void ApplyLightingToSubmodel(object* obj, poly_model* pm, bsp_info* sm, float li
 		if (per_pixel_lightmap_lighting)
 		{
 			AddPerPixelLightmapLight(fp->lmi_handle, &light_pos, light_dist, red_scale, green_scale, blue_scale,
-				Use_light_direction ? &light_dir : nullptr, dot_range, false);
+				Use_light_direction ? &light_dir : nullptr, dot_range, false, nullptr);
 
 			if (!(Lmi_spoken_for[fp->lmi_handle / 8] & (1 << (fp->lmi_handle % 8))))
 			{
@@ -1330,7 +1345,9 @@ void ApplyLightingToObjects(vector* pos, int roomnum, float light_dist, float re
 }
 
 // Applys dynamic lightmap changes to rooms and room objects.  If light direction is non-null, we are applying a directional light
-void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_scale, float green_scale, float blue_scale, vector* light_direction, float dot_range, bool per_pixel_headlight)
+void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_scale, float green_scale,
+	float blue_scale, vector* light_direction, float dot_range, bool per_pixel_headlight,
+	vector* specular_position)
 {
 	fvi_face_room_list facelist[MAX_DYNAMIC_FACES];
 	ushort lmilist[MAX_DYNAMIC_FACES];
@@ -1432,7 +1449,7 @@ void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_
 		if (per_pixel_room_lighting)
 		{
 			AddPerPixelLightmapLight(fp->lmi_handle, pos, light_dist, red_scale, green_scale, blue_scale,
-				light_direction, dot_range, per_pixel_headlight);
+				light_direction, dot_range, per_pixel_headlight, specular_position);
 
 			if (!(Lmi_spoken_for[fp->lmi_handle / 8] & (1 << (fp->lmi_handle % 8))))
 			{
@@ -1815,7 +1832,9 @@ void ClearDynamicLightmaps()
 }
 
 // Changes the terrain shading to approximate lighting
-void ApplyLightingToTerrain(vector* pos, int cellnum, float light_dist, float red_scale, float green_scale, float blue_scale, vector* light_direction, float dot_range, bool per_pixel_headlight)
+void ApplyLightingToTerrain(vector* pos, int cellnum, float light_dist, float red_scale, float green_scale,
+	float blue_scale, vector* light_direction, float dot_range, bool per_pixel_headlight,
+	vector* specular_position)
 {
 	int celllist[MAX_DYNAMIC_CELLS];
 	int num_cells, i;
@@ -1884,7 +1903,7 @@ void ApplyLightingToTerrain(vector* pos, int cellnum, float light_dist, float re
 				}
 
 				AddPerPixelLightmapTextureLight(whichmap, pos, light_dist, red_scale, green_scale, blue_scale,
-					light_direction, dot_range, per_pixel_headlight);
+					light_direction, dot_range, per_pixel_headlight, specular_position);
 			}
 
 			continue;

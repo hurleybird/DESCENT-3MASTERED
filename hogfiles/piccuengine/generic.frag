@@ -87,8 +87,8 @@ layout(std140) uniform SpecularBlock
 	float lightmap_mix;
 	float alpha_strength;
 	float pad0;
-	float pad1;
-	float pad2;
+	float debug_tint;
+	float debug_authored;
 	specular speculars[4];
 } specular_data;
 
@@ -271,7 +271,15 @@ void main()
 
 	#if defined(USE_SPECULAR)
 		vec4 base_color = texture(colortexture, outuv.xy / outuv.z);
-		if (per_pixel_specular_enabled != 0)
+		if (specular_data.debug_tint > 0.5)
+		{
+			float mask_alpha = (base_color.a > 0.001) ?
+				clamp(base_color.a * 3.0, 0.35, 0.9) : 0.0;
+			vec3 tint_color = (specular_data.debug_authored > 0.5) ?
+				vec3(1.0, 0.85, 0.0) : vec3(0.0, 1.0, 0.0);
+			color = vec4(tint_color, mask_alpha);
+		}
+		else if (per_pixel_specular_enabled != 0)
 		{
 			vec3 lightmap_color = texture(lightmaptexture, outuv2.xy / outuv2.z).rgb;
 			color = vec4(ApplyPerPixelSpecular(lightmap_color),

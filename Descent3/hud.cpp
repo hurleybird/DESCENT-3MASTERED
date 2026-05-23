@@ -37,6 +37,11 @@
 #include "stringtable.h"
 #include "pstring.h"
 #include "config.h"
+#include "bitmap.h"
+#include "findintersection.h"
+#include "gametexture.h"
+#include "room.h"
+#include "special_face.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1427,6 +1432,168 @@ static void HUDRenderMotionVectorDebugSample()
 	}
 }
 
+static void HUDAppendFlagName(char* buffer, size_t buffer_size, const char* name)
+{
+	if (buffer_size == 0 || name == nullptr)
+		return;
+
+	size_t len = strlen(buffer);
+	if (len >= buffer_size - 1)
+		return;
+	if (buffer[0] != '\0')
+	{
+		strncat(buffer, "|", buffer_size - len - 1);
+		len = strlen(buffer);
+	}
+	if (len < buffer_size - 1)
+		strncat(buffer, name, buffer_size - len - 1);
+}
+
+static void HUDFaceFlagsToString(ushort flags, char* buffer, size_t buffer_size)
+{
+	buffer[0] = '\0';
+	if (flags & FF_LIGHTMAP) HUDAppendFlagName(buffer, buffer_size, "LIGHTMAP");
+	if (flags & FF_VERTEX_ALPHA) HUDAppendFlagName(buffer, buffer_size, "VERTEX_ALPHA");
+	if (flags & FF_CORONA) HUDAppendFlagName(buffer, buffer_size, "CORONA");
+	if (flags & FF_TEXTURE_CHANGED) HUDAppendFlagName(buffer, buffer_size, "TEXTURE_CHANGED");
+	if (flags & FF_HAS_TRIGGER) HUDAppendFlagName(buffer, buffer_size, "HAS_TRIGGER");
+	if (flags & FF_SPEC_INVISIBLE) HUDAppendFlagName(buffer, buffer_size, "SPEC_INVISIBLE");
+	if (flags & FF_FLOATING_TRIG) HUDAppendFlagName(buffer, buffer_size, "FLOATING_TRIG");
+	if (flags & FF_DESTROYED) HUDAppendFlagName(buffer, buffer_size, "DESTROYED");
+	if (flags & FF_VOLUMETRIC) HUDAppendFlagName(buffer, buffer_size, "VOLUMETRIC");
+	if (flags & FF_TRIANGULATED) HUDAppendFlagName(buffer, buffer_size, "TRIANGULATED");
+	if (flags & FF_VISIBLE) HUDAppendFlagName(buffer, buffer_size, "VISIBLE");
+	if (flags & FF_NOT_SHELL) HUDAppendFlagName(buffer, buffer_size, "NOT_SHELL");
+	if (flags & FF_TOUCHED) HUDAppendFlagName(buffer, buffer_size, "TOUCHED");
+	if (flags & FF_GOALFACE) HUDAppendFlagName(buffer, buffer_size, "GOALFACE");
+	if (flags & FF_NOT_FACING) HUDAppendFlagName(buffer, buffer_size, "NOT_FACING");
+	if (flags & FF_SCORCHED) HUDAppendFlagName(buffer, buffer_size, "SCORCHED");
+	if (buffer[0] == '\0')
+		snprintf(buffer, buffer_size, "none");
+}
+
+static void HUDTextureFlagsToString(int flags, char* buffer, size_t buffer_size)
+{
+	buffer[0] = '\0';
+	if (flags & TF_METAL) HUDAppendFlagName(buffer, buffer_size, "METAL");
+	if (flags & TF_MARBLE) HUDAppendFlagName(buffer, buffer_size, "MARBLE");
+	if (flags & TF_PLASTIC) HUDAppendFlagName(buffer, buffer_size, "PLASTIC");
+	if (flags & TF_TMAP2) HUDAppendFlagName(buffer, buffer_size, "TMAP2");
+	if (flags & TF_SATURATE) HUDAppendFlagName(buffer, buffer_size, "SATURATE");
+	if (flags & TF_ALPHA) HUDAppendFlagName(buffer, buffer_size, "ALPHA");
+	if (flags & TF_PROCEDURAL) HUDAppendFlagName(buffer, buffer_size, "PROCEDURAL");
+	if (flags & TF_SMOOTH_SPECULAR) HUDAppendFlagName(buffer, buffer_size, "SMOOTH_SPEC");
+	if (buffer[0] == '\0')
+		snprintf(buffer, buffer_size, "none");
+}
+
+static const char* HUDBitmapFormatName(int bm_handle)
+{
+	if (bm_handle < 0)
+		return "invalid";
+	if (bm_format(bm_handle) == BITMAP_FORMAT_4444)
+		return "4444";
+	return "1555";
+}
+
+static void HUDRenderFaceProbe()
+{
+	if (!Viewer_object)
+		return;
+
+	vector ray_end = Viewer_object->pos + (Viewer_object->orient.fvec * 10000.0f);
+	fvi_query fq = {};
+	fvi_info hit_info = {};
+	fq.p0 = &Viewer_object->pos;
+	fq.p1 = &ray_end;
+	fq.startroom = Viewer_object->roomnum;
+	fq.rad = 0.0f;
+	fq.thisobjnum = Viewer_object - Objects;
+	fq.flags = FQ_IGNORE_MOVING_OBJECTS | FQ_IGNORE_WEAPONS;
+
+	int hit = fvi_FindIntersection(&fq, &hit_info);
+	const int line_height = grtext_GetHeight("X") + 2;
+	int y = Game_window_y + (Game_window_h / 2) + line_height * (Render_draw_call_stats ? 4 : -3);
+
+	if (hit == HIT_NONE || hit_info.num_hits <= 0)
+	{
+		RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y, "Face probe: no hit");
+		return;
+	}
+
+	int hit_index = -1;
+	for (int i = 0; i < hit_info.num_hits; i++)
+	{
+		if (hit_info.hit_face[i] >= 0 && hit_info.hit_face_room[i] >= 0 &&
+			hit_info.hit_face_room[i] <= Highest_room_index)
+		{
+			hit_index = i;
+			break;
+		}
+	}
+
+	if (hit_index < 0)
+	{
+		RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+			"Face probe: hit type %d, no mine face", hit);
+		return;
+	}
+
+	const int roomnum = hit_info.hit_face_room[hit_index];
+	const int facenum = hit_info.hit_face[hit_index];
+	room* rp = &Rooms[roomnum];
+	if (!rp->used || facenum < 0 || facenum >= rp->num_faces)
+	{
+		RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+			"Face probe: invalid room/face %d/%d", roomnum, facenum);
+		return;
+	}
+
+	face* fp = &rp->faces[facenum];
+	texture* tex = &GameTextures[fp->tmap];
+	int bm_handle = GetTextureBitmap(fp->tmap, 0);
+	bool has_special = fp->special_handle != BAD_SPECIAL_FACE_INDEX;
+	bool has_vertnorms = has_special && SpecialFaces[fp->special_handle].vertnorms != nullptr;
+	bool smooth_flag = has_special && (SpecialFaces[fp->special_handle].flags & SFF_SPEC_SMOOTH);
+	int source_count = 0;
+	if (has_special)
+	{
+		for (int i = 0; i < SpecialFaces[fp->special_handle].num; i++)
+		{
+			if (SpecialFaces[fp->special_handle].spec_instance[i].bright_color != 0)
+				source_count++;
+		}
+	}
+
+	char face_flags[256];
+	char tex_flags[256];
+	HUDFaceFlagsToString(fp->flags, face_flags, sizeof(face_flags));
+	HUDTextureFlagsToString(tex->flags, tex_flags, sizeof(tex_flags));
+
+	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+		"Face probe: room %d face %d hit %.2f", roomnum, facenum, hit_info.hit_dist);
+	y += line_height;
+	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+		"Texture %d \"%s\"  bitmap %d \"%s\"  format %s", fp->tmap, tex->name,
+		bm_handle, bm_handle >= 0 ? GameBitmaps[bm_handle].name : "invalid", HUDBitmapFormatName(bm_handle));
+	y += line_height;
+	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+		"Face flags 0x%04X: %s", fp->flags, face_flags);
+	y += line_height;
+	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+		"Texture flags 0x%08X: %s", (unsigned int)tex->flags, tex_flags);
+	y += line_height;
+	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+		"Lightmap %u  special %d  sources %d  vert normals %s  SFF_SPEC_SMOOTH %s",
+		fp->lmi_handle, fp->special_handle, source_count, has_vertnorms ? "yes" : "no",
+		smooth_flag ? "yes" : "no");
+	y += line_height;
+	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+		"Alpha %.2f  reflect %.2f  material spec %s  normal %.2f %.2f %.2f",
+		tex->alpha, tex->reflectivity, (tex->flags & TF_SPECULAR) ? "yes" : "no",
+		fp->normal.x, fp->normal.y, fp->normal.z);
+}
+
 #define HUD_KEYS_NEXT_LINE	hudconty += HUDEnabledControlsLineAdvance()
 
 //	iterate through entire hud item list to draw.
@@ -1493,6 +1660,9 @@ void RenderHUDItems(tStatMask stat_mask)
 		rend_GetDrawCallStats(&draw_stats);
 		HUDRenderDrawCallStats(draw_stats);
 	}
+
+	if (Render_face_probe)
+		HUDRenderFaceProbe();
 
 	if (Render_preferred_state.motion_vector_debug_preview)
 		HUDRenderMotionVectorDebugSample();

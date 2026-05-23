@@ -120,6 +120,10 @@ struct renderer_per_pixel_light
 	float direction[3];
 	float dot_range;
 	bool directional;
+	bool headlight;
+	bool has_specular_position;
+	float specular_position[3];
+	float specular_radius;
 };
 
 void rend_SetLighting(light_state);
@@ -769,7 +773,12 @@ struct SpecularBlock
 	float lightmap_mix;
 	//Alpha gain applied to the specular mask texture.
 	float alpha_strength;
-	float pad[3];
+	//Padding for std140 shader layout.
+	float pad0;
+	//Diagnostic mode: render the sampled spec mask instead of computed specular.
+	float debug_tint;
+	//Diagnostic mode: nonzero when this face has authored static specular records.
+	float debug_authored;
 
 	//All light sources. 
 	SpecularDef speculars[MAX_SPECULARS];

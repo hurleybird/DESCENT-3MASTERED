@@ -40,8 +40,8 @@ layout(std140) uniform SpecularBlock
 	float lightmap_mix;
 	float alpha_strength;
 	float pad0;
-	float pad1;
-	float pad2;
+	float debug_tint;
+	float debug_authored;
 	specular speculars[4];
 } specular_data;
 

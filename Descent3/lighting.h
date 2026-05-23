@@ -66,7 +66,7 @@ int FindFreeDynamicLightmap (int cl);
 // Applies dynamic lighting to the room faces based on the light coming from
 // an object
 void ApplyLightingToRooms (vector *,int,float,float,float,float,vector *light_direction=NULL,float dot_range=0,
-	bool per_pixel_headlight=false);
+	bool per_pixel_headlight=false, vector *specular_position=NULL);
 
 // Clears the used flag for the dynamic lightmaps
 void ClearDynamicLightmaps ();
@@ -76,7 +76,7 @@ int GetPerPixelLightmapTextureLights(int lm_handle, renderer_per_pixel_light *li
 
 // Changes the terrain shading to approximate lighting
 void ApplyLightingToTerrain (vector *pos,int cellnum,float light_dist,float red_scale,float green_scale,float blue_scale,
-	vector *light_direction=NULL,float dot_range=0,bool per_pixel_headlight=false);
+	vector *light_direction=NULL,float dot_range=0,bool per_pixel_headlight=false,vector *specular_position=NULL);
 
 // Gets the viewable lightmap elements
 void FindValidLightmapElements (face *fp,dynamic_face *dynamic_fp,vector *light_pos,float light_dist);
@@ -127,4 +127,3 @@ void BlendAllLightingEdges ();
 
 
 #endif
-

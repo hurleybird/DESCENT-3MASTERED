@@ -71,13 +71,17 @@ extern bool Game_fullscreen;
 extern int Game_frame_limit_fps;
 extern float Hud_text_scale;
 extern bool Render_draw_call_stats;
+extern bool Render_face_probe;
 extern bool Render_soft_vis_effects;
 extern float Render_per_pixel_specular_strength;
 extern float Render_per_pixel_static_specular_strength;
 extern float Render_per_pixel_dynamic_specular_strength;
+extern float Render_per_pixel_headlight_specular_strength;
 extern float Render_per_pixel_specular_sharpness;
 extern float Render_per_pixel_specular_lightmap_mix;
 extern float Render_per_pixel_specular_alpha_strength;
+extern bool Render_per_pixel_force_specular_faces;
+extern bool Render_specular_map_debug_tint;
 extern bool Cockpit_alt_mode;
 //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
 extern int DesiredOpenGLProfile;
@@ -92,9 +96,11 @@ float ConfigNormalizeBloomIntensity(float intensity);
 float ConfigNormalizePerPixelSpecularStrength(float strength);
 float ConfigNormalizePerPixelStaticSpecularStrength(float strength);
 float ConfigNormalizePerPixelDynamicSpecularStrength(float strength);
+float ConfigNormalizePerPixelHeadlightSpecularStrength(float strength);
 float ConfigNormalizePerPixelSpecularSharpness(float sharpness);
 float ConfigNormalizePerPixelSpecularLightmapMix(float mix);
 float ConfigNormalizePerPixelSpecularAlphaStrength(float strength);
+void ConfigResetPerPixelSpecularSettings();
 void ConfigValidateGameWindowSize();
 
 enum
