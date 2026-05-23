@@ -108,16 +108,6 @@ int Game_frame_limit_fps = 0;
 float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
 bool Render_soft_vis_effects = false;
-bool Render_close_screen_effects_post_ao = true;
-bool Render_disable_napalm_fx_spray = false;
-bool Render_disable_napalm_fx_weapon_objects = false;
-bool Render_disable_napalm_fx_smoke_trails = false;
-bool Render_disable_napalm_fx_particles = false;
-bool Render_disable_napalm_fx_black_smoke = false;
-bool Render_disable_napalm_fx_small_explosions = false;
-bool Render_disable_napalm_fx_impact_blasts = false;
-bool Render_disable_napalm_fx_fire_anims = false;
-bool Render_disable_napalm_fx_muzzle = false;
 bool Cockpit_alt_mode = true;
 float Render_FOV_desired = 72;
 
@@ -1224,16 +1214,6 @@ struct video_menu
 	bool* show_fps;
 	bool* show_draw_calls;
 	bool* soft_vis_effects;
-	bool* close_screen_effects_post_ao;
-	bool* disable_napalm_fx_spray;
-	bool* disable_napalm_fx_weapon_objects;
-	bool* disable_napalm_fx_smoke_trails;
-	bool* disable_napalm_fx_particles;
-	bool* disable_napalm_fx_black_smoke;
-	bool* disable_napalm_fx_small_explosions;
-	bool* disable_napalm_fx_impact_blasts;
-	bool* disable_napalm_fx_fire_anims;
-	bool* disable_napalm_fx_muzzle;
 	bool* motion_vector_debug;
 
 	short* fov;
@@ -1441,56 +1421,6 @@ struct video_menu
 			Render_soft_vis_effects = *soft_vis_effects;
 			ui_changed = true;
 		}
-		if (close_screen_effects_post_ao && sheet->HasChanged(close_screen_effects_post_ao))
-		{
-			Render_close_screen_effects_post_ao = *close_screen_effects_post_ao;
-			ui_changed = true;
-		}
-		if (disable_napalm_fx_spray && sheet->HasChanged(disable_napalm_fx_spray))
-		{
-			Render_disable_napalm_fx_spray = *disable_napalm_fx_spray;
-			ui_changed = true;
-		}
-		if (disable_napalm_fx_weapon_objects && sheet->HasChanged(disable_napalm_fx_weapon_objects))
-		{
-			Render_disable_napalm_fx_weapon_objects = *disable_napalm_fx_weapon_objects;
-			ui_changed = true;
-		}
-		if (disable_napalm_fx_smoke_trails && sheet->HasChanged(disable_napalm_fx_smoke_trails))
-		{
-			Render_disable_napalm_fx_smoke_trails = *disable_napalm_fx_smoke_trails;
-			ui_changed = true;
-		}
-		if (disable_napalm_fx_particles && sheet->HasChanged(disable_napalm_fx_particles))
-		{
-			Render_disable_napalm_fx_particles = *disable_napalm_fx_particles;
-			ui_changed = true;
-		}
-		if (disable_napalm_fx_black_smoke && sheet->HasChanged(disable_napalm_fx_black_smoke))
-		{
-			Render_disable_napalm_fx_black_smoke = *disable_napalm_fx_black_smoke;
-			ui_changed = true;
-		}
-		if (disable_napalm_fx_small_explosions && sheet->HasChanged(disable_napalm_fx_small_explosions))
-		{
-			Render_disable_napalm_fx_small_explosions = *disable_napalm_fx_small_explosions;
-			ui_changed = true;
-		}
-		if (disable_napalm_fx_impact_blasts && sheet->HasChanged(disable_napalm_fx_impact_blasts))
-		{
-			Render_disable_napalm_fx_impact_blasts = *disable_napalm_fx_impact_blasts;
-			ui_changed = true;
-		}
-		if (disable_napalm_fx_fire_anims && sheet->HasChanged(disable_napalm_fx_fire_anims))
-		{
-			Render_disable_napalm_fx_fire_anims = *disable_napalm_fx_fire_anims;
-			ui_changed = true;
-		}
-		if (disable_napalm_fx_muzzle && sheet->HasChanged(disable_napalm_fx_muzzle))
-		{
-			Render_disable_napalm_fx_muzzle = *disable_napalm_fx_muzzle;
-			ui_changed = true;
-		}
 		if (antialiasing && sheet->HasChanged(antialiasing))
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1550,16 +1480,6 @@ struct video_menu
 		show_fps = NULL;
 		show_draw_calls = NULL;
 		soft_vis_effects = NULL;
-		close_screen_effects_post_ao = NULL;
-		disable_napalm_fx_spray = NULL;
-		disable_napalm_fx_weapon_objects = NULL;
-		disable_napalm_fx_smoke_trails = NULL;
-		disable_napalm_fx_particles = NULL;
-		disable_napalm_fx_black_smoke = NULL;
-		disable_napalm_fx_small_explosions = NULL;
-		disable_napalm_fx_impact_blasts = NULL;
-		disable_napalm_fx_fire_anims = NULL;
-		disable_napalm_fx_muzzle = NULL;
 		motion_vector_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
@@ -1657,19 +1577,6 @@ struct video_menu
 		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats, IDV_DRAW_CALL_STATS);
 		update_draw_call_title();
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
-		close_screen_effects_post_ao = sheet->AddLongCheckBox("Post-AO close-screen FX",
-			Render_close_screen_effects_post_ao);
-
-		sheet->NewGroup("Napalm FX", 184, 254);
-		disable_napalm_fx_spray = sheet->AddLongCheckBox("Spray blobs", Render_disable_napalm_fx_spray);
-		disable_napalm_fx_weapon_objects = sheet->AddLongCheckBox("Weapon blobs", Render_disable_napalm_fx_weapon_objects);
-		disable_napalm_fx_smoke_trails = sheet->AddLongCheckBox("Smoke trails", Render_disable_napalm_fx_smoke_trails);
-		disable_napalm_fx_particles = sheet->AddLongCheckBox("Particles", Render_disable_napalm_fx_particles);
-		disable_napalm_fx_black_smoke = sheet->AddLongCheckBox("Black smoke", Render_disable_napalm_fx_black_smoke);
-		disable_napalm_fx_small_explosions = sheet->AddLongCheckBox("Small explosions", Render_disable_napalm_fx_small_explosions);
-		disable_napalm_fx_impact_blasts = sheet->AddLongCheckBox("Impact blasts", Render_disable_napalm_fx_impact_blasts);
-		disable_napalm_fx_fire_anims = sheet->AddLongCheckBox("Fire anims", Render_disable_napalm_fx_fire_anims);
-		disable_napalm_fx_muzzle = sheet->AddLongCheckBox("Muzzle FX", Render_disable_napalm_fx_muzzle);
 
 		return sheet;
 	};
@@ -1710,26 +1617,6 @@ struct video_menu
 			Render_draw_call_stats = *show_draw_calls;
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
-		if (close_screen_effects_post_ao)
-			Render_close_screen_effects_post_ao = *close_screen_effects_post_ao;
-		if (disable_napalm_fx_spray)
-			Render_disable_napalm_fx_spray = *disable_napalm_fx_spray;
-		if (disable_napalm_fx_weapon_objects)
-			Render_disable_napalm_fx_weapon_objects = *disable_napalm_fx_weapon_objects;
-		if (disable_napalm_fx_smoke_trails)
-			Render_disable_napalm_fx_smoke_trails = *disable_napalm_fx_smoke_trails;
-		if (disable_napalm_fx_particles)
-			Render_disable_napalm_fx_particles = *disable_napalm_fx_particles;
-		if (disable_napalm_fx_black_smoke)
-			Render_disable_napalm_fx_black_smoke = *disable_napalm_fx_black_smoke;
-		if (disable_napalm_fx_small_explosions)
-			Render_disable_napalm_fx_small_explosions = *disable_napalm_fx_small_explosions;
-		if (disable_napalm_fx_impact_blasts)
-			Render_disable_napalm_fx_impact_blasts = *disable_napalm_fx_impact_blasts;
-		if (disable_napalm_fx_fire_anims)
-			Render_disable_napalm_fx_fire_anims = *disable_napalm_fx_fire_anims;
-		if (disable_napalm_fx_muzzle)
-			Render_disable_napalm_fx_muzzle = *disable_napalm_fx_muzzle;
 		if (antialiasing)
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);

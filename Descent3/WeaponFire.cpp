@@ -838,7 +838,7 @@ void HomingDoFrame(object* obj)
 	HomingTurnTowardObj(obj, HomingAquireTarget(obj));
 }
 
-static bool WeaponIsNapalmDiagnosticSource(int weapon_num)
+static bool WeaponIsNapalmSource(int weapon_num)
 {
 	static int napalm_id = -2;
 
@@ -848,19 +848,19 @@ static bool WeaponIsNapalmDiagnosticSource(int weapon_num)
 	return weapon_num == napalm_id || (Weapons[weapon_num].flags & WF_NAPALM);
 }
 
-static bool WeaponIsCloseScreenNapalmDiagnosticCandidate(object* obj)
+static bool WeaponIsCloseScreenNapalmCandidate(object* obj)
 {
 	if (obj == NULL || obj->type != OBJ_WEAPON || Player_object == NULL)
 		return false;
 
-	if (!WeaponIsNapalmDiagnosticSource(obj->id))
+	if (!WeaponIsNapalmSource(obj->id))
 		return false;
 
 	if (VisEffectIsLocalPlayerAttachedSourceObject(obj))
 		return true;
 
 	object* parent_obj = ObjGet(obj->parent_handle);
-	if (!VisEffectViewerIsLocalPlayerView() || !VisEffectIsLocalPlayerViewSourceObject(parent_obj))
+	if (!VisEffectViewerIsFirstPersonLocalPlayerView() || !VisEffectIsLocalPlayerViewSourceObject(parent_obj))
 		return false;
 
 	return VisEffectIsNearLocalPlayerView(obj);
@@ -869,7 +869,7 @@ static bool WeaponIsCloseScreenNapalmDiagnosticCandidate(object* obj)
 bool WeaponIsCloseScreenEffectObject(object* obj)
 {
 	return VisEffectIsCloseScreenWeaponObject(obj) ||
-		WeaponIsCloseScreenNapalmDiagnosticCandidate(obj);
+		WeaponIsCloseScreenNapalmCandidate(obj);
 }
 
 void WeaponDoFrame(object* obj)
@@ -1887,7 +1887,7 @@ void DoSprayEffect(object* obj, otype_wb_info* static_wb, ubyte wb_index)
 		{
 			int weapon_num = static_wb->gp_weapon_index[cur_m_bit];
 			const bool close_screen_weapon = close_screen_source ||
-				(WeaponIsNapalmDiagnosticSource(weapon_num) && VisEffectIsLocalPlayerAttachedSourceObject(obj));
+				(WeaponIsNapalmSource(weapon_num) && VisEffectIsLocalPlayerAttachedSourceObject(obj));
 
 			WeaponCalcGun(&laser_pos, &laser_dir, obj, pm->poly_wb[0].gp_index[cur_m_bit]);
 			int visnum = VisEffectCreate(VIS_FIREBALL, SPRAY_INDEX, obj->roomnum, &laser_pos);
@@ -2340,8 +2340,6 @@ void DrawWeaponObject(object* obj)
 	ASSERT(Weapons[obj->id].used > 0);
 
 	const bool close_screen_effect = WeaponIsCloseScreenEffectObject(obj);
-	if (Render_disable_napalm_fx_weapon_objects && obj->type == OBJ_WEAPON && WeaponIsNapalmDiagnosticSource(obj->id))
-		return;
 
 	if (close_screen_effect && VisEffectQueueCloseScreenWeaponObject(obj))
 		return;

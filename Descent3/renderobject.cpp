@@ -2091,7 +2091,7 @@ void DrawPowerupSparkles(object* obj)
 			vis->velocity *= 3.0f + (ps_rand() % 4);
 
 			vis->size = 0.05f + ((ps_rand() % 10) * 0.008f);
-			vis->flags |= VF_USES_LIFELEFT;
+			vis->flags |= VF_USES_LIFELEFT | VF_NO_SOFT_PARTICLES;
 
 			const float lifetime = 0.25f + ((ps_rand() % 10) * 0.05f);
 			vis->lifeleft = lifetime;

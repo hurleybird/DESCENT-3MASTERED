@@ -101,8 +101,21 @@ static float VisEffectSnowFadeInFactor(float time_live)
 
 static bool VisEffectCanUseLateCloseScreenPass()
 {
-	return Render_close_screen_effects_post_ao &&
-		Renderer_type == RENDERER_OPENGL && OpenGLProfile == GLPROFILE_CORE;
+	return Renderer_type == RENDERER_OPENGL &&
+		OpenGLProfile == GLPROFILE_CORE &&
+		VisEffectViewerIsFirstPersonLocalPlayerView();
+}
+
+bool VisEffectViewerIsFirstPersonLocalPlayerView()
+{
+	if (Player_object == NULL || Viewer_object == NULL)
+		return false;
+	if (Viewer_object != Player_object)
+		return false;
+	if (Players[Player_num].flags & PLAYER_FLAGS_REARVIEW)
+		return false;
+
+	return true;
 }
 
 static void VisEffectClearCloseScreenLateQueue()
@@ -320,19 +333,17 @@ bool VisEffectIsCloseScreenSourceObject(object* obj)
 {
 	if (obj == NULL)
 		return false;
+	if (!VisEffectViewerIsFirstPersonLocalPlayerView())
+		return false;
 
-	if (obj == Viewer_object)
-		return true;
-
-	return obj == Player_object &&
-		Player_camera_objnum >= 0 &&
-		Player_camera_objnum <= Highest_object_index &&
-		Viewer_object == &Objects[Player_camera_objnum];
+	return obj == Player_object;
 }
 
 bool VisEffectIsLocalPlayerAttachedSourceObject(object* obj)
 {
 	if (obj == NULL || Player_object == NULL)
+		return false;
+	if (!VisEffectViewerIsFirstPersonLocalPlayerView())
 		return false;
 
 	if (obj == Player_object)
@@ -341,35 +352,19 @@ bool VisEffectIsLocalPlayerAttachedSourceObject(object* obj)
 	return (obj->flags & OF_ATTACHED) != 0 && ObjGet(obj->attach_ultimate_handle) == Player_object;
 }
 
-bool VisEffectViewerIsLocalPlayerView()
-{
-	if (Player_object == NULL || Viewer_object == NULL)
-		return false;
-
-	if (Viewer_object == Player_object)
-		return true;
-
-	return Player_camera_objnum >= 0 &&
-		Player_camera_objnum <= Highest_object_index &&
-		Viewer_object == &Objects[Player_camera_objnum];
-}
-
 bool VisEffectIsLocalPlayerViewSourceObject(object* obj)
 {
 	if (obj == NULL || Player_object == NULL)
 		return false;
 
-	if (VisEffectIsLocalPlayerAttachedSourceObject(obj))
-		return true;
-
-	return Player_camera_objnum >= 0 &&
-		Player_camera_objnum <= Highest_object_index &&
-		obj == &Objects[Player_camera_objnum];
+	return VisEffectIsLocalPlayerAttachedSourceObject(obj);
 }
 
 bool VisEffectIsNearLocalPlayerView(object* obj, float padding)
 {
 	if (obj == NULL || Player_object == NULL || Viewer_object == NULL)
+		return false;
+	if (!VisEffectViewerIsFirstPersonLocalPlayerView())
 		return false;
 
 	float player_view_distance = vm_VectorDistanceQuick(&Player_object->pos, &Viewer_object->pos);
@@ -384,7 +379,8 @@ bool VisEffectIsNearLocalPlayerView(object* obj, float padding)
 static bool VisEffectShouldQueueLateCloseScreenItem()
 {
 	return Close_screen_collecting_late && !Close_screen_rendering_late &&
-		!Render_mirror_for_room;
+		!Render_mirror_for_room &&
+		VisEffectViewerIsFirstPersonLocalPlayerView();
 }
 
 static bool VisEffectQueueCloseScreenVisEffect(vis_effect* vis)
@@ -438,7 +434,7 @@ bool VisEffectQueueCloseScreenWeaponObject(object* obj)
 
 bool VisEffectQueueCloseScreenAlpha(float r, float g, float b, float alpha)
 {
-	if (!Close_screen_collecting_late || Close_screen_rendering_late)
+	if (!VisEffectShouldQueueLateCloseScreenItem())
 		return false;
 
 	CloseScreenLateRenderItem item = {};
@@ -459,6 +455,8 @@ void VisEffectMarkCloseScreenWeaponObject(object* obj)
 {
 	if (obj == NULL || obj->handle == OBJECT_HANDLE_NONE)
 		return;
+	if (!VisEffectViewerIsFirstPersonLocalPlayerView())
+		return;
 
 	if (std::find(Close_screen_weapon_object_handles.begin(), Close_screen_weapon_object_handles.end(), obj->handle) != Close_screen_weapon_object_handles.end())
 		return;
@@ -472,6 +470,8 @@ void VisEffectMarkCloseScreenWeaponObject(object* obj)
 bool VisEffectIsCloseScreenWeaponObject(object* obj)
 {
 	if (obj == NULL || obj->type != OBJ_WEAPON)
+		return false;
+	if (!VisEffectViewerIsFirstPersonLocalPlayerView())
 		return false;
 
 	return std::find(Close_screen_weapon_object_handles.begin(), Close_screen_weapon_object_handles.end(), obj->handle) != Close_screen_weapon_object_handles.end();
@@ -1477,6 +1477,14 @@ static bool VisEffectShouldUseSoftParticles()
 	return Render_soft_vis_effects;
 }
 
+static bool VisEffectShouldUseSoftParticlesForEffect(const vis_effect* vis)
+{
+	if (vis && (vis->flags & VF_NO_SOFT_PARTICLES))
+		return false;
+
+	return VisEffectShouldUseSoftParticles();
+}
+
 static bool VisEffectShouldUseSoftSnowParticles(bool zbuffer_state)
 {
 	if (Close_screen_rendering_late)
@@ -2281,7 +2289,7 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 
 	key.bitmap_handle = bm_handle;
 	key.alpha_type = batch_alpha_type;
-	key.soft_particles = VisEffectShouldUseSoftParticles();
+	key.soft_particles = VisEffectShouldUseSoftParticlesForEffect(vis);
 
 	blend_key = key;
 	blend_key.bitmap_handle = blend_bm_handle;
@@ -3103,7 +3111,7 @@ static void QueueVisMassDriverBatchItem(const VisMassDriverBatchKey& key,
 	VisMassDriver_batch_items.push_back(item);
 }
 
-static bool VisEffectIsLineOrStreakForCloseScreenDiagnostic(int id)
+static bool VisEffectIsLineOrStreakForCloseScreenLatePass(int id)
 {
 	return id == FADING_LINE_INDEX ||
 		id == LIGHTNING_BOLT_INDEX ||
@@ -3114,19 +3122,21 @@ static bool VisEffectIsLineOrStreakForCloseScreenDiagnostic(int id)
 		VisEffectIsMassDriverTrail(id);
 }
 
-static bool VisEffectIsCloseScreenDiagnosticCandidate(vis_effect* vis)
+static bool VisEffectIsCloseScreenLatePassCandidate(vis_effect* vis)
 {
 	if (!Rendering_main_view)
+		return false;
+	if (!VisEffectViewerIsFirstPersonLocalPlayerView())
 		return false;
 
 	if (vis->type != VIS_FIREBALL)
 		return (vis->flags & VF_CLOSE_SCREEN_EFFECT) != 0;
 
+	if (VisEffectIsLineOrStreakForCloseScreenLatePass(vis->id))
+		return false;
+
 	if ((vis->flags & VF_CLOSE_SCREEN_EFFECT) != 0)
 		return true;
-
-	if (VisEffectIsLineOrStreakForCloseScreenDiagnostic(vis->id))
-		return false;
 
 	if ((vis->flags & VF_WINDSHIELD_EFFECT) != 0 &&
 		(vis->id == RAINDROP_INDEX || vis->id == SNOWFLAKE_INDEX))
@@ -3135,45 +3145,9 @@ static bool VisEffectIsCloseScreenDiagnosticCandidate(vis_effect* vis)
 	return false;
 }
 
-static bool VisEffectIsDisabledNapalmDiagnosticClass(vis_effect* vis)
-{
-	if (vis->type != VIS_FIREBALL)
-		return false;
-
-	switch (vis->id)
-	{
-	case SPRAY_INDEX:
-		return Render_disable_napalm_fx_spray;
-	case SMOKE_TRAIL_INDEX:
-	case BILLBOARD_SMOKETRAIL_INDEX:
-		return Render_disable_napalm_fx_smoke_trails;
-	case PARTICLE_INDEX:
-		return Render_disable_napalm_fx_particles;
-	case BLACK_SMOKE_INDEX:
-		return Render_disable_napalm_fx_black_smoke;
-	case SMALL_EXPLOSION_INDEX:
-	case SMALL_EXPLOSION_INDEX2:
-		return Render_disable_napalm_fx_small_explosions;
-	case BLAST_RING_INDEX:
-	case CUSTOM_EXPLOSION_INDEX:
-		return Render_disable_napalm_fx_impact_blasts;
-	case NAPALM_BALL_INDEX:
-	case BLUE_FIRE_INDEX:
-		return Render_disable_napalm_fx_fire_anims;
-	case MUZZLE_FLASH_INDEX:
-	case MED_SMOKE_INDEX:
-		return Render_disable_napalm_fx_muzzle;
-	default:
-		return false;
-	}
-}
-
 void DrawVisEffectMaybeBatched(vis_effect* vis)
 {
-	if (VisEffectIsDisabledNapalmDiagnosticClass(vis))
-		return;
-
-	const bool close_screen_effect = VisEffectIsCloseScreenDiagnosticCandidate(vis);
+	const bool close_screen_effect = VisEffectIsCloseScreenLatePassCandidate(vis);
 	if (close_screen_effect && VisEffectQueueCloseScreenVisEffect(vis))
 		return;
 
@@ -4062,7 +4036,7 @@ void DrawVisEffect(vis_effect* vis)
 	rend_SetWrapType(WT_CLAMP);
 	rend_SetLighting(LS_NONE);
 	rend_SetAOSuppression(1.0f);
-	rend_SetSoftParticleState(VisEffectShouldUseSoftParticles() ? 1 : 0);
+	rend_SetSoftParticleState(VisEffectShouldUseSoftParticlesForEffect(vis) ? 1 : 0);
 
 	auto draw_frame = [&](int frame_bm_handle) {
 		if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX || vis->id == GRAY_SPARK_INDEX)
@@ -4357,7 +4331,7 @@ void AttachRandomNapalmEffectsToObject(object* obj)
 	vector pos = obj->pos - (velocity_norm * (obj->size / 2));
 
 	// Napalm effects here are attached to the burning object. Only napalm attached
-	// to the local player belongs to this diagnostic.
+	// to the local player belongs to the close-screen late pass.
 	const bool close_screen_napalm = VisEffectIsLocalPlayerAttachedSourceObject(obj);
 	if (obj->movement_type == MT_PHYSICS && (OBJECT_OUTSIDE(obj) && (ps_rand() % 3) == 0) || (ps_rand() % 3) == 0)
 	{

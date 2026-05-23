@@ -72,16 +72,6 @@ extern int Game_frame_limit_fps;
 extern float Hud_text_scale;
 extern bool Render_draw_call_stats;
 extern bool Render_soft_vis_effects;
-extern bool Render_close_screen_effects_post_ao;
-extern bool Render_disable_napalm_fx_spray;
-extern bool Render_disable_napalm_fx_weapon_objects;
-extern bool Render_disable_napalm_fx_smoke_trails;
-extern bool Render_disable_napalm_fx_particles;
-extern bool Render_disable_napalm_fx_black_smoke;
-extern bool Render_disable_napalm_fx_small_explosions;
-extern bool Render_disable_napalm_fx_impact_blasts;
-extern bool Render_disable_napalm_fx_fire_anims;
-extern bool Render_disable_napalm_fx_muzzle;
 extern bool Cockpit_alt_mode;
 //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
 extern int DesiredOpenGLProfile;
