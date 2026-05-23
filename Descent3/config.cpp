@@ -118,6 +118,8 @@ float Render_per_pixel_specular_sharpness = 1.0f;
 float Render_per_pixel_specular_lightmap_mix = 1.0f;
 float Render_per_pixel_specular_alpha_strength = 1.0f;
 bool Render_per_pixel_force_specular_faces = false;
+bool Render_per_pixel_lightmap_static_specular = false;
+bool Render_per_pixel_field_static_specular = false;
 bool Render_specular_map_debug_tint = false;
 bool Cockpit_alt_mode = true;
 float Render_FOV_desired = 72;
@@ -241,6 +243,8 @@ void ConfigResetPerPixelSpecularSettings()
 	Render_per_pixel_specular_lightmap_mix = 1.0f;
 	Render_per_pixel_specular_alpha_strength = 1.0f;
 	Render_per_pixel_force_specular_faces = false;
+	Render_per_pixel_lightmap_static_specular = false;
+	Render_per_pixel_field_static_specular = false;
 	Render_specular_map_debug_tint = false;
 }
 
@@ -1307,6 +1311,8 @@ struct video_menu
 	short* per_pixel_specular_lightmap_mix;
 	short* per_pixel_specular_alpha_strength;
 	bool* per_pixel_force_specular_faces;
+	bool* per_pixel_lightmap_static_specular;
+	bool* per_pixel_field_static_specular;
 	bool* specular_map_debug_tint;
 	char* buffer;
 	char* aspect_buffer;
@@ -1426,6 +1432,10 @@ struct video_menu
 			ConfigNormalizePerPixelSpecularAlphaStrength(Render_per_pixel_specular_alpha_strength), 0.0f, 8.0f);
 		if (per_pixel_force_specular_faces)
 			*per_pixel_force_specular_faces = Render_per_pixel_force_specular_faces;
+		if (per_pixel_lightmap_static_specular)
+			*per_pixel_lightmap_static_specular = Render_per_pixel_lightmap_static_specular;
+		if (per_pixel_field_static_specular)
+			*per_pixel_field_static_specular = Render_per_pixel_field_static_specular;
 		if (specular_map_debug_tint)
 			*specular_map_debug_tint = Render_specular_map_debug_tint;
 		if (sheet)
@@ -1610,6 +1620,16 @@ struct video_menu
 			Render_per_pixel_force_specular_faces = *per_pixel_force_specular_faces;
 			ui_changed = true;
 		}
+		if (per_pixel_lightmap_static_specular && sheet->HasChanged(per_pixel_lightmap_static_specular))
+		{
+			Render_per_pixel_lightmap_static_specular = *per_pixel_lightmap_static_specular;
+			ui_changed = true;
+		}
+		if (per_pixel_field_static_specular && sheet->HasChanged(per_pixel_field_static_specular))
+		{
+			Render_per_pixel_field_static_specular = *per_pixel_field_static_specular;
+			ui_changed = true;
+		}
 		if (specular_map_debug_tint && sheet->HasChanged(specular_map_debug_tint))
 		{
 			Render_specular_map_debug_tint = *specular_map_debug_tint;
@@ -1687,6 +1707,8 @@ struct video_menu
 		per_pixel_specular_lightmap_mix = NULL;
 		per_pixel_specular_alpha_strength = NULL;
 		per_pixel_force_specular_faces = NULL;
+		per_pixel_lightmap_static_specular = NULL;
+		per_pixel_field_static_specular = NULL;
 		specular_map_debug_tint = NULL;
 		buffer = NULL;
 		aspect_buffer = NULL;
@@ -1838,6 +1860,10 @@ struct video_menu
 
 		per_pixel_force_specular_faces = sheet->AddLongCheckBox("Force spec faces",
 			Render_per_pixel_force_specular_faces);
+		per_pixel_lightmap_static_specular = sheet->AddLongCheckBox("LM static spec",
+			Render_per_pixel_lightmap_static_specular);
+		per_pixel_field_static_specular = sheet->AddLongCheckBox("Field static spec",
+			Render_per_pixel_field_static_specular);
 		specular_map_debug_tint = sheet->AddLongCheckBox("Tint spec data",
 			Render_specular_map_debug_tint);
 		sheet->AddButton("Defaults", IDV_PPX_SPECULAR_DEFAULTS);
@@ -1908,6 +1934,10 @@ struct video_menu
 				slider_float_value(per_pixel_specular_alpha_strength, 0.0f, 8.0f));
 		if (per_pixel_force_specular_faces)
 			Render_per_pixel_force_specular_faces = *per_pixel_force_specular_faces;
+		if (per_pixel_lightmap_static_specular)
+			Render_per_pixel_lightmap_static_specular = *per_pixel_lightmap_static_specular;
+		if (per_pixel_field_static_specular)
+			Render_per_pixel_field_static_specular = *per_pixel_field_static_specular;
 		if (specular_map_debug_tint)
 			Render_specular_map_debug_tint = *specular_map_debug_tint;
 		if (antialiasing)

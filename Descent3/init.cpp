@@ -401,6 +401,8 @@ void SaveGameSettings()
 	WRITE_FLOAT_SETTING("RS_per_pixel_specular_lightmap_mix", Render_per_pixel_specular_lightmap_mix);
 	WRITE_FLOAT_SETTING("RS_per_pixel_specular_alpha_strength", Render_per_pixel_specular_alpha_strength);
 	Database->write("RS_per_pixel_force_specular_faces", Render_per_pixel_force_specular_faces);
+	Database->write("RS_per_pixel_lightmap_static_specular", Render_per_pixel_lightmap_static_specular);
+	Database->write("RS_per_pixel_field_static_specular", Render_per_pixel_field_static_specular);
 	Database->write("RS_specular_map_debug_tint", Render_specular_map_debug_tint);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	Database->write("RS_combined_motion_blur", Render_preferred_state.combined_motion_blur);
@@ -848,6 +850,8 @@ void LoadGameSettings()
 	Render_per_pixel_specular_alpha_strength =
 		ConfigNormalizePerPixelSpecularAlphaStrength(Render_per_pixel_specular_alpha_strength);
 	Database->read("RS_per_pixel_force_specular_faces", &Render_per_pixel_force_specular_faces);
+	Database->read("RS_per_pixel_lightmap_static_specular", &Render_per_pixel_lightmap_static_specular);
+	Database->read("RS_per_pixel_field_static_specular", &Render_per_pixel_field_static_specular);
 	Database->read("RS_specular_map_debug_tint", &Render_specular_map_debug_tint);
 	READ_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	if (Render_preferred_state.pixel_motion_blur_strength < 0.0f)

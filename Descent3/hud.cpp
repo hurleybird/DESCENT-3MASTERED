@@ -42,6 +42,7 @@
 #include "gametexture.h"
 #include "room.h"
 #include "special_face.h"
+#include "render.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1564,6 +1565,10 @@ static void HUDRenderFaceProbe()
 				source_count++;
 		}
 	}
+	const int ppx_exact_sources = GetPrecomputedMineSpecularSourceCount(roomnum, facenum, false);
+	const int ppx_split_sources = GetPrecomputedMineSpecularSourceCount(roomnum, facenum, true);
+	const int ppx_field_sources = GetPrecomputedMineSpecularFieldSourceCount(roomnum, facenum);
+	const int ppx_normal_count = GetPrecomputedMineSpecularNormalCount(roomnum, facenum);
 
 	char face_flags[256];
 	char tex_flags[256];
@@ -1584,9 +1589,13 @@ static void HUDRenderFaceProbe()
 		"Texture flags 0x%08X: %s", (unsigned int)tex->flags, tex_flags);
 	y += line_height;
 	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
-		"Lightmap %u  special %d  sources %d  vert normals %s  SFF_SPEC_SMOOTH %s",
-		fp->lmi_handle, fp->special_handle, source_count, has_vertnorms ? "yes" : "no",
-		smooth_flag ? "yes" : "no");
+		"Lightmap %u  special %d  special refs %d  PPX refs exact/split/field %d/%d/%d",
+		fp->lmi_handle, fp->special_handle, source_count, ppx_exact_sources, ppx_split_sources,
+		ppx_field_sources);
+	y += line_height;
+	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+		"Special vert normals %s  PPX generated normals %d  SFF_SPEC_SMOOTH %s",
+		has_vertnorms ? "yes" : "no", ppx_normal_count, smooth_flag ? "yes" : "no");
 	y += line_height;
 	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
 		"Alpha %.2f  reflect %.2f  material spec %s  normal %.2f %.2f %.2f",

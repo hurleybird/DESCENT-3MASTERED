@@ -118,14 +118,22 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 	vec3 normal = normalize(outnormal.xyz);
 	vec3 specular_color = vec3(0.0);
 
-	for (int i = 0; i < 4; i++)
+	if (specular_data.pad0 > 0.5 && specular_data.num_specular > 0)
 	{
-		if (i >= specular_data.num_specular)
-			break;
+		specular_color += SpecularFromIncident(view_position, normal, vec3(0.0, 0.0, -1.0),
+			specular_data.speculars[0].color.xyz, 1.0);
+	}
+	else
+	{
+		for (int i = 0; i < 4; i++)
+		{
+			if (i >= specular_data.num_specular)
+				break;
 
-		vec3 light_position = specular_data.speculars[i].bright_center.xyz;
-		specular_color += SpecularFromIncident(view_position, normal, view_position - light_position,
-			specular_data.speculars[i].color.xyz, weights[i]);
+			vec3 light_position = specular_data.speculars[i].bright_center.xyz;
+			specular_color += SpecularFromIncident(view_position, normal, view_position - light_position,
+				specular_data.speculars[i].color.xyz, weights[i]);
+		}
 	}
 
 	for (int i = 0; i < 8; i++)

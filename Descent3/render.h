@@ -168,6 +168,9 @@ void MeshRooms();
 
 // Precomputes per-face borrowed specular sources after level geometry is loaded.
 void PrecomputeMineSpecularSources();
+int GetPrecomputedMineSpecularSourceCount(int roomnum, int facenum, bool split_match);
+int GetPrecomputedMineSpecularFieldSourceCount(int roomnum, int facenum);
+int GetPrecomputedMineSpecularNormalCount(int roomnum, int facenum);
 
 extern int Num_specular_faces_to_render,Num_fog_faces_to_render;
 
