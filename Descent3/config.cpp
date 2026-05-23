@@ -985,13 +985,6 @@ extern int Legacy_motion_blur_max_iterations;
 extern float Legacy_motion_blur_alpha_scale;
 extern float Legacy_motion_blur_alpha_exponent;
 
-enum
-{
-	MOTION_BLUR_UI_OFF = 0,
-	MOTION_BLUR_UI_OLD = 1,
-	MOTION_BLUR_UI_NEW = 2
-};
-
 static float ClampLegacyMotionBlurFrameTime(float frame_time)
 {
 	if (frame_time < 0.001f)
@@ -1105,10 +1098,13 @@ static bool MotionBlurLegacyMatchesPreset(float copy_density, int max_iterations
 		fabs(Legacy_motion_blur_alpha_exponent - alpha_exponent) < 0.0001f;
 }
 
-static int MotionBlurPresetToIndex()
+int ConfigGetMotionBlurPreset()
 {
 	if (Render_preferred_state.combined_motion_blur)
-		return MOTION_BLUR_UI_NEW;
+	{
+		return Render_preferred_state.combined_motion_blur_legacy_strength > 0.0f ?
+			MOTION_BLUR_UI_COMBO : MOTION_BLUR_UI_NEW;
+	}
 	if (!Use_motion_blur)
 		return MOTION_BLUR_UI_OFF;
 	if (MotionBlurLegacyMatchesPreset(1.0f, 12, 1.0f))
@@ -1135,13 +1131,13 @@ static void ClearPixelMotionBlurValues()
 	Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression = 0.0f;
 }
 
-static void ApplyNewMotionBlurValues()
+static void ApplyPixelMotionBlurValues(float legacy_geometry_strength)
 {
 	Use_motion_blur = 0;
 	Render_preferred_state.combined_motion_blur = true;
 	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_PIXEL;
 	Render_preferred_state.pixel_motion_blur_strength = 0.32f;
-	Render_preferred_state.combined_motion_blur_legacy_strength = 1.0f;
+	Render_preferred_state.combined_motion_blur_legacy_strength = legacy_geometry_strength;
 	Render_preferred_state.combined_motion_blur_legacy_frame_time = 0.03f;
 	Render_preferred_state.combined_motion_blur_legacy_sphere_size = 0.20f;
 	Render_preferred_state.combined_motion_blur_legacy_copy_density = 2.0f;
@@ -1151,6 +1147,16 @@ static void ApplyNewMotionBlurValues()
 	Render_preferred_state.pixel_motion_blur_center_suppression = 1.0f;
 	Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression = 0.0f;
 	Render_preferred_state.pixel_motion_blur_samples = 17;
+}
+
+static void ApplyNewMotionBlurValues()
+{
+	ApplyPixelMotionBlurValues(0.0f);
+}
+
+static void ApplyComboMotionBlurValues()
+{
+	ApplyPixelMotionBlurValues(1.0f);
 }
 
 static void ConfigEnsureCombinedMotionBlurVectorMode()
@@ -1176,7 +1182,7 @@ static void ConfigFinalizeMotionVectorUse()
 		Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
 }
 
-static void ApplyMotionBlurPresetFromIndex(int index)
+void ConfigApplyMotionBlurPreset(int index)
 {
 	switch (index)
 	{
@@ -1187,6 +1193,9 @@ static void ApplyMotionBlurPresetFromIndex(int index)
 		break;
 	case MOTION_BLUR_UI_NEW:
 		ApplyNewMotionBlurValues();
+		break;
+	case MOTION_BLUR_UI_COMBO:
+		ApplyComboMotionBlurValues();
 		break;
 	case MOTION_BLUR_UI_OFF:
 	default:
@@ -2260,7 +2269,7 @@ struct details_menu
 		pixel_err = NULL;
 		rend_dist = NULL;
 		motion_blur = NULL;
-		motion_blur_applied_index = MotionBlurPresetToIndex();
+		motion_blur_applied_index = ConfigGetMotionBlurPreset();
 		if (show_legacy_terrain_controls)
 		{
 			sheet->NewGroup(TXT_GEOMETRY, 90, 0);
@@ -2299,6 +2308,7 @@ struct details_menu
 		motion_blur = sheet->AddFirstRadioButton(TXT_OFF);
 		sheet->AddRadioButton("Old");
 		sheet->AddRadioButton("New");
+		sheet->AddRadioButton("Combo");
 		*motion_blur = motion_blur_applied_index;
 
 		return sheet;
@@ -2314,7 +2324,7 @@ struct details_menu
 		Detail_settings.Mirrored_surfaces = *mirror;
 		Detail_settings.Object_complexity = *objcomp;
 		if (motion_blur)
-			ApplyMotionBlurPresetFromIndex(*motion_blur);
+			ConfigApplyMotionBlurPreset(*motion_blur);
 		const ubyte old_motion_vector_mode = Render_preferred_state.motion_vector_mode;
 		ConfigFinalizeMotionVectorUse();
 		if (old_motion_vector_mode != Render_preferred_state.motion_vector_mode)
@@ -2341,7 +2351,7 @@ struct details_menu
 	{
 		if (motion_blur && *motion_blur != motion_blur_applied_index)
 		{
-			ApplyMotionBlurPresetFromIndex(*motion_blur);
+			ConfigApplyMotionBlurPreset(*motion_blur);
 			motion_blur_applied_index = *motion_blur;
 			rend_SetPreferredState(&Render_preferred_state);
 			sheet->UpdateChanges();

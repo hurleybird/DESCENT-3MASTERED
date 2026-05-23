@@ -85,6 +85,17 @@ float ConfigNormalizeBloomThreshold(float threshold);
 float ConfigNormalizeBloomIntensity(float intensity);
 void ConfigValidateGameWindowSize();
 
+enum
+{
+	MOTION_BLUR_UI_OFF = 0,
+	MOTION_BLUR_UI_OLD = 1,
+	MOTION_BLUR_UI_NEW = 2,
+	MOTION_BLUR_UI_COMBO = 3
+};
+
+int ConfigGetMotionBlurPreset();
+void ConfigApplyMotionBlurPreset(int index);
+
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 //KEEP THESE MEMBERS IN THE SAME ORDER, IF YOU ADD,REMOVE, OR CHANGE ANYTHING IN THIS STRUCT, MAKE SURE YOU
 //UPDATE DetailPresetLow,DetailPresetMed,DetailPresetHigh AND DetailPresetVHi IN CONFIG.CPP

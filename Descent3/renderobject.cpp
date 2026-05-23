@@ -1188,11 +1188,14 @@ void RenderObject(object* obj)
 
 		////////////////////////////////////////////
 		/////////////MOTION BLUR////////////////////
-		if ((Use_motion_blur || Render_preferred_state.combined_motion_blur) &&
+		const bool combined_legacy_motion_blur =
+			Render_preferred_state.combined_motion_blur &&
+			Render_preferred_state.combined_motion_blur_legacy_strength > 0.0f;
+		if ((Use_motion_blur || combined_legacy_motion_blur) &&
 			RenderObject_IsLegacyMotionBlurEligible(obj))
 		{
 			double motion_blur_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
-			if (Render_preferred_state.combined_motion_blur)
+			if (combined_legacy_motion_blur)
 			{
 				const float sensitivity = RenderObject_ClampCombinedLegacyGeoSensitivity(
 					Render_preferred_state.combined_motion_blur_legacy_strength);
