@@ -26,6 +26,7 @@ uniform float dynamic_light_falloffs[8];
 uniform vec3 dynamic_light_directions[8];
 uniform float dynamic_light_dot_ranges[8];
 uniform int dynamic_light_directional[8];
+uniform int per_pixel_specular_enabled;
 uniform float ao_suppression;
 uniform float bloom_suppression;
 uniform int ao_class_value;
@@ -70,6 +71,98 @@ layout(location = 1) out vec2 velocity;
 layout(location = 2) out vec4 post_mask;
 layout(location = 3) out float ao_class;
 layout(location = 4) out uint motion_object_id;
+
+#if defined(USE_SPECULAR)
+struct specular
+{
+	vec4 bright_center;
+	vec4 color;
+};
+
+layout(std140) uniform SpecularBlock
+{
+	int num_specular;
+	int exponent;
+	float strength;
+	float lightmap_mix;
+	float alpha_strength;
+	float pad0;
+	float pad1;
+	float pad2;
+	specular speculars[4];
+} specular_data;
+
+vec3 SpecularFromIncident(vec3 view_position, vec3 normal, vec3 incident, vec3 light_color, float scalar)
+{
+	float distance = length(incident);
+	if (distance <= 0.0001 || scalar <= 0.0)
+		return vec3(0.0);
+
+	vec3 incident_norm = incident / distance;
+	vec3 view_vec = normalize(-view_position);
+	vec3 reflected = reflect(incident_norm, normal);
+	float dotp = max(dot(view_vec, reflected), 0.0);
+	if (dotp <= 0.0)
+		return vec3(0.0);
+
+	return pow(dotp, specular_data.exponent) * light_color * scalar;
+}
+
+vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
+{
+	const float[4] weights = float[4](1.0, 0.66, 0.33, 0.25);
+	vec3 view_position = out_motion_world_position.xyz / max(out_motion_world_position.w, 0.0001);
+	vec3 normal = normalize(outnormal.xyz);
+	vec3 specular_color = vec3(0.0);
+
+	for (int i = 0; i < 4; i++)
+	{
+		if (i >= specular_data.num_specular)
+			break;
+
+		vec3 light_position = specular_data.speculars[i].bright_center.xyz;
+		specular_color += SpecularFromIncident(view_position, normal, view_position - light_position,
+			specular_data.speculars[i].color.xyz, weights[i]);
+	}
+
+	for (int i = 0; i < 8; i++)
+	{
+		if (i >= dynamic_light_count)
+			break;
+
+		vec3 light_position = dynamic_light_positions[i];
+		vec3 incident = view_position - light_position;
+		float radius = max(dynamic_light_radii[i], 0.0001);
+		float distance = length(incident);
+		if (distance <= 0.0001)
+			continue;
+
+		vec3 incident_norm = incident / distance;
+		float scalar = 1.0 - (distance / radius);
+		if (scalar <= 0.0)
+			continue;
+		scalar = pow(scalar, max(dynamic_light_falloffs[i], 0.0001));
+
+		if (dynamic_light_directional[i] != 0)
+		{
+			vec3 light_direction = normalize(dynamic_light_directions[i]);
+			float direction_dot = dot(incident_norm, light_direction);
+			float dot_range = dynamic_light_dot_ranges[i];
+			if (direction_dot < dot_range)
+				continue;
+
+			scalar *= (direction_dot - dot_range) / max(1.0 - dot_range, 0.0001);
+		}
+
+		specular_color += SpecularFromIncident(view_position, normal, incident,
+			dynamic_light_colors[i], scalar);
+	}
+
+	vec3 lightmap_factor = mix(vec3(1.0), clamp(lightmap_color, vec3(0.0), vec3(1.0)),
+		clamp(specular_data.lightmap_mix, 0.0, 1.0));
+	return clamp(specular_color * lightmap_factor * specular_data.strength, vec3(0.0), vec3(1.0));
+}
+#endif
 
 vec4 ApplyPhongLighting(vec4 source_color)
 {
@@ -177,7 +270,17 @@ void main()
 	float bloom_mask = 0.0;
 
 	#if defined(USE_SPECULAR)
-		color = vec4(vertex_color.rgb, texture(colortexture, outuv.xy / outuv.z).a * vertex_color.a);
+		vec4 base_color = texture(colortexture, outuv.xy / outuv.z);
+		if (per_pixel_specular_enabled != 0)
+		{
+			vec3 lightmap_color = texture(lightmaptexture, outuv2.xy / outuv2.z).rgb;
+			color = vec4(ApplyPerPixelSpecular(lightmap_color),
+				clamp(base_color.a * vertex_color.a * specular_data.alpha_strength, 0.0, 1.0));
+		}
+		else
+		{
+			color = vec4(vertex_color.rgb, base_color.a * vertex_color.a);
+		}
 	#elif defined(USE_TEXTURING) && defined(USE_LIGHTMAP)
 		vec4 lightmap_color = texture(lightmaptexture, outuv2.xy / outuv2.z);
 		lightmap_color.rgb = ApplyDynamicLightmapLighting(lightmap_color.rgb);

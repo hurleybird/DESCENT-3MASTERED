@@ -132,11 +132,13 @@ struct g3Point
 	short		p3_pad;				//keep structure longword aligned
 	vector		p3_vec;				//x,y,z of rotated point
 	vector		p3_vecPreRot;		//original XYZ of the point
+	vector		p3_specular_normal;	//world-space normal for per-pixel specular
 	vector		p3_motion_world_pos;	//current world-space position for pixel motion vectors
 	vector		p3_motion_prev_world_pos;	//previous world-space position for moving pixel motion vectors
+	ubyte		p3_specular_normal_valid;
 	ubyte		p3_motion_world_valid;
 	ubyte		p3_motion_prev_world_valid;
-	ubyte		p3_motion_pad[2];
+	ubyte		p3_motion_pad;
 	g3UVL		p3_uvl;				//uv & lighting values
 };
 

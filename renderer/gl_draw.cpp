@@ -19,6 +19,7 @@
 #include "gl_local.h"
 #include "game.h"
 #include "gameloop.h"
+#include "HardwareInternal.h"
 
 #include <cstring>
 #include <vector>
@@ -39,6 +40,20 @@ static float GL4DepthFromEyeZ(float z)
 static float GL4SoftParticleDepthFromPoint(const g3Point* pnt)
 {
 	return GL4DepthFromEyeZ(pnt->p3_z + Z_bias);
+}
+
+static vector GL4ViewSpacePositionFromPoint(const g3Point* pnt)
+{
+	vector view_position = pnt->p3_vecPreRot - View_position;
+	return view_position * Unscaled_matrix;
+}
+
+static vector GL4ViewSpaceNormal(vector normal)
+{
+	normal = normal * Unscaled_matrix;
+	if (vm_NormalizeVectorFast(&normal) <= 0.0f)
+		normal = { 0, 0, 1 };
+	return normal;
 }
 
 static bool GL4DrawTargetIsFramebuffer(GLuint framebuffer)
@@ -684,6 +699,8 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 	vert.normal.y = 0.0f;
 	vert.normal.z = 0.0f;
 	vert.normal.w = -1.0f;
+	const bool per_pixel_specular_draw = OpenGL_state.cur_alpha_type == AT_SPECULAR &&
+		OpenGL_preferred_state.per_pixel_lighting;
 
 	float alpha = Alpha_multiplier * OpenGL_Alpha_factor;
 	if (OpenGL_state.cur_alpha_type & ATF_VERTEX)
@@ -749,7 +766,16 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 		}
 	}
 
-	if (OpenGL_state.cur_light_state == LS_PHONG || per_pixel_dynamic_light_count > 0)
+	if (per_pixel_specular_draw)
+	{
+		vector specular_normal = GL4ViewSpaceNormal(pnt->p3_specular_normal_valid ?
+			pnt->p3_specular_normal : per_pixel_dynamic_face_normal);
+		vert.normal.x = specular_normal.x;
+		vert.normal.y = specular_normal.y;
+		vert.normal.z = specular_normal.z;
+		vert.normal.w = 1.0f;
+	}
+	else if (OpenGL_state.cur_light_state == LS_PHONG || per_pixel_dynamic_light_count > 0)
 	{
 		float payloadw = 1.0f / (pnt->p3_z + Z_bias);
 		vert.normal.x = pnt->p3_vecPreRot.x * payloadw;
@@ -771,7 +797,16 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 	vert.motion_previous_world_position.y = 0.0f;
 	vert.motion_previous_world_position.z = 0.0f;
 	vert.motion_previous_world_position.w = 0.0f;
-	if (CurrentDrawWritesPixelMotionVectors() && !motion_object_active)
+	if (per_pixel_specular_draw)
+	{
+		float payloadw = 1.0f / (pnt->p3_z + Z_bias);
+		vector view_position = GL4ViewSpacePositionFromPoint(pnt);
+		vert.motion_world_position.x = view_position.x * payloadw;
+		vert.motion_world_position.y = view_position.y * payloadw;
+		vert.motion_world_position.z = view_position.z * payloadw;
+		vert.motion_world_position.w = payloadw;
+	}
+	else if (CurrentDrawWritesPixelMotionVectors() && !motion_object_active)
 	{
 		float payloadw = 1.0f / (pnt->p3_z + Z_bias);
 		vert.motion_world_position.x = pnt->p3_vecPreRot.x * payloadw;
@@ -1095,7 +1130,7 @@ void GL4Renderer::SetDrawDefaults()
 	//Textured and lightmapped
 	drawshaders[2].AttachSourcePreprocess(genericVertexBody, genericFragBody, true, true, false, false);
 	//Specular.
-	drawshaders[3].AttachSourcePreprocess(genericVertexBody, genericFragBody, true, false, true, false);
+	drawshaders[3].AttachSourcePreprocess(genericVertexBody, genericFragBody, true, true, true, false);
 
 	//With fog
 	//No texturing
@@ -1105,7 +1140,7 @@ void GL4Renderer::SetDrawDefaults()
 	//Textured and lightmapped
 	drawshaders[6].AttachSourcePreprocess(genericVertexBody, genericFragBody, true, true, false, true);
 	//Specular.
-	drawshaders[7].AttachSourcePreprocess(genericVertexBody, genericFragBody, true, false, true, true);
+	drawshaders[7].AttachSourcePreprocess(genericVertexBody, genericFragBody, true, true, true, true);
 
 	for (int i = 0; i < 8; i++)
 	{
@@ -1120,6 +1155,7 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_dynamic_directions_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_directions[0]");
 		drawshader_dynamic_dot_ranges_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_dot_ranges[0]");
 		drawshader_dynamic_directional_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_directional[0]");
+		drawshader_per_pixel_specular_enabled_uniforms[i] = drawshaders[i].FindUniform("per_pixel_specular_enabled");
 		drawshader_ao_suppression_uniforms[i] = drawshaders[i].FindUniform("ao_suppression");
 		drawshader_bloom_suppression_uniforms[i] = drawshaders[i].FindUniform("bloom_suppression");
 		drawshader_ao_class_uniforms[i] = drawshaders[i].FindUniform("ao_class_value");
@@ -1380,6 +1416,9 @@ void GL4Renderer::SelectDrawShader()
 	if (phong_enabled && drawshader_light_direction_uniforms[shader_index] != -1)
 		glUniform3f(drawshader_light_direction_uniforms[shader_index], per_pixel_light_direction.x,
 			per_pixel_light_direction.y, per_pixel_light_direction.z);
+	if (drawshader_per_pixel_specular_enabled_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_per_pixel_specular_enabled_uniforms[shader_index],
+			(OpenGL_state.cur_alpha_type == AT_SPECULAR && OpenGL_preferred_state.per_pixel_lighting) ? 1 : 0);
 
 	drawshaders[shader_index].ApplyDynamicLighting(per_pixel_dynamic_light_count,
 		&per_pixel_dynamic_face_normal.x, &per_pixel_dynamic_positions[0][0],
@@ -1439,6 +1478,8 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 	}
 
 	float alpha = Alpha_multiplier * OpenGL_Alpha_factor;
+	const bool per_pixel_specular_draw = OpenGL_state.cur_alpha_type == AT_SPECULAR &&
+		OpenGL_preferred_state.per_pixel_lighting;
 
 	gl_vertex* vertp = GL_vertices;
 
@@ -1520,7 +1561,16 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 			}
 		}
 
-		if (OpenGL_state.cur_light_state == LS_PHONG || per_pixel_dynamic_light_count > 0)
+		if (per_pixel_specular_draw)
+		{
+			vector specular_normal = GL4ViewSpaceNormal(pnt->p3_specular_normal_valid ?
+				pnt->p3_specular_normal : per_pixel_dynamic_face_normal);
+			vertp->normal.x = specular_normal.x;
+			vertp->normal.y = specular_normal.y;
+			vertp->normal.z = specular_normal.z;
+			vertp->normal.w = 1.0f;
+		}
+		else if (OpenGL_state.cur_light_state == LS_PHONG || per_pixel_dynamic_light_count > 0)
 		{
 			float payloadw = 1.0f / (pnt->p3_z + Z_bias);
 			vertp->normal.x = pnt->p3_vecPreRot.x * payloadw;
@@ -1543,7 +1593,16 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 		vertp->motion_previous_world_position.y = 0.0f;
 		vertp->motion_previous_world_position.z = 0.0f;
 		vertp->motion_previous_world_position.w = 0.0f;
-		if (CurrentDrawWritesPixelMotionVectors() && !motion_object_active)
+		if (per_pixel_specular_draw)
+		{
+			float payloadw = 1.0f / (pnt->p3_z + Z_bias);
+			vector view_position = GL4ViewSpacePositionFromPoint(pnt);
+			vertp->motion_world_position.x = view_position.x * payloadw;
+			vertp->motion_world_position.y = view_position.y * payloadw;
+			vertp->motion_world_position.z = view_position.z * payloadw;
+			vertp->motion_world_position.w = payloadw;
+		}
+		else if (CurrentDrawWritesPixelMotionVectors() && !motion_object_active)
 		{
 			float payloadw = 1.0f / (pnt->p3_z + Z_bias);
 			vertp->motion_world_position.x = pnt->p3_vecPreRot.x * payloadw;

@@ -37,6 +37,11 @@ layout(std140) uniform SpecularBlock
 	int num_specular;
 	int exponent;
 	float strength;
+	float lightmap_mix;
+	float alpha_strength;
+	float pad0;
+	float pad1;
+	float pad2;
 	specular speculars[4];
 } specular_data;
 

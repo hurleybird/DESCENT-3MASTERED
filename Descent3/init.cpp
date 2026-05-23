@@ -391,6 +391,12 @@ void SaveGameSettings()
 	Database->write("RS_motion_vector_mode", Render_preferred_state.motion_vector_mode);
 	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
 	Database->write("RS_soft_vis_effects", Render_soft_vis_effects);
+	WRITE_FLOAT_SETTING("RS_per_pixel_specular_strength", Render_per_pixel_specular_strength);
+	WRITE_FLOAT_SETTING("RS_per_pixel_static_specular_strength", Render_per_pixel_static_specular_strength);
+	WRITE_FLOAT_SETTING("RS_per_pixel_dynamic_specular_strength", Render_per_pixel_dynamic_specular_strength);
+	WRITE_FLOAT_SETTING("RS_per_pixel_specular_sharpness", Render_per_pixel_specular_sharpness);
+	WRITE_FLOAT_SETTING("RS_per_pixel_specular_lightmap_mix", Render_per_pixel_specular_lightmap_mix);
+	WRITE_FLOAT_SETTING("RS_per_pixel_specular_alpha_strength", Render_per_pixel_specular_alpha_strength);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	Database->write("RS_combined_motion_blur", Render_preferred_state.combined_motion_blur);
 	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_strength",
@@ -603,6 +609,12 @@ void LoadGameSettings()
 	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_debug_preview = false;
 	Render_soft_vis_effects = false;
+	Render_per_pixel_specular_strength = 1.0f;
+	Render_per_pixel_static_specular_strength = 1.0f;
+	Render_per_pixel_dynamic_specular_strength = 1.0f;
+	Render_per_pixel_specular_sharpness = 1.0f;
+	Render_per_pixel_specular_lightmap_mix = 1.0f;
+	Render_per_pixel_specular_alpha_strength = 1.0f;
 	Render_preferred_state.pixel_motion_blur_strength = 0.0f;
 	Render_preferred_state.combined_motion_blur = false;
 	Render_preferred_state.combined_motion_blur_legacy_strength = 1.0f;
@@ -813,6 +825,23 @@ void LoadGameSettings()
 	Render_preferred_state.motion_vector_mode = (ubyte)tempint;
 	Database->read("RS_motion_vector_debug_preview", &Render_preferred_state.motion_vector_debug_preview);
 	Database->read("RS_soft_vis_effects", &Render_soft_vis_effects);
+	READ_FLOAT_SETTING("RS_per_pixel_specular_strength", Render_per_pixel_specular_strength);
+	Render_per_pixel_specular_strength = ConfigNormalizePerPixelSpecularStrength(Render_per_pixel_specular_strength);
+	READ_FLOAT_SETTING("RS_per_pixel_static_specular_strength", Render_per_pixel_static_specular_strength);
+	Render_per_pixel_static_specular_strength =
+		ConfigNormalizePerPixelStaticSpecularStrength(Render_per_pixel_static_specular_strength);
+	READ_FLOAT_SETTING("RS_per_pixel_dynamic_specular_strength", Render_per_pixel_dynamic_specular_strength);
+	Render_per_pixel_dynamic_specular_strength =
+		ConfigNormalizePerPixelDynamicSpecularStrength(Render_per_pixel_dynamic_specular_strength);
+	READ_FLOAT_SETTING("RS_per_pixel_specular_sharpness", Render_per_pixel_specular_sharpness);
+	Render_per_pixel_specular_sharpness =
+		ConfigNormalizePerPixelSpecularSharpness(Render_per_pixel_specular_sharpness);
+	READ_FLOAT_SETTING("RS_per_pixel_specular_lightmap_mix", Render_per_pixel_specular_lightmap_mix);
+	Render_per_pixel_specular_lightmap_mix =
+		ConfigNormalizePerPixelSpecularLightmapMix(Render_per_pixel_specular_lightmap_mix);
+	READ_FLOAT_SETTING("RS_per_pixel_specular_alpha_strength", Render_per_pixel_specular_alpha_strength);
+	Render_per_pixel_specular_alpha_strength =
+		ConfigNormalizePerPixelSpecularAlphaStrength(Render_per_pixel_specular_alpha_strength);
 	READ_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	if (Render_preferred_state.pixel_motion_blur_strength < 0.0f)
 		Render_preferred_state.pixel_motion_blur_strength = 0.0f;

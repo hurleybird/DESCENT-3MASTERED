@@ -346,7 +346,7 @@ void GL4Renderer::SetCommonDepth(int depth)
 void GL4Renderer::UpdateSpecular(SpecularBlock* specularstate)
 {
 	glBindBuffer(GL_COPY_WRITE_BUFFER, specularbuffername);
-	glBufferSubData(GL_COPY_WRITE_BUFFER, 0, 16 + (specularstate->num_speculars * 32), specularstate);
+	glBufferSubData(GL_COPY_WRITE_BUFFER, 0, sizeof(SpecularBlock), specularstate);
 
 #ifdef _DEBUG
 	GLenum err = glGetError();

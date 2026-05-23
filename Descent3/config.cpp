@@ -108,6 +108,12 @@ int Game_frame_limit_fps = 0;
 float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
 bool Render_soft_vis_effects = false;
+float Render_per_pixel_specular_strength = 1.0f;
+float Render_per_pixel_static_specular_strength = 1.0f;
+float Render_per_pixel_dynamic_specular_strength = 1.0f;
+float Render_per_pixel_specular_sharpness = 1.0f;
+float Render_per_pixel_specular_lightmap_mix = 1.0f;
+float Render_per_pixel_specular_alpha_strength = 1.0f;
 bool Cockpit_alt_mode = true;
 float Render_FOV_desired = 72;
 
@@ -174,6 +180,45 @@ float ConfigNormalizeBloomIntensity(float intensity)
 	if (intensity > 1.0f)
 		return 1.0f;
 	return intensity;
+}
+
+static float ConfigNormalizeFloatRange(float value, float min_value, float max_value)
+{
+	if (value < min_value)
+		return min_value;
+	if (value > max_value)
+		return max_value;
+	return value;
+}
+
+float ConfigNormalizePerPixelSpecularStrength(float strength)
+{
+	return ConfigNormalizeFloatRange(strength, 0.0f, 32.0f);
+}
+
+float ConfigNormalizePerPixelStaticSpecularStrength(float strength)
+{
+	return ConfigNormalizeFloatRange(strength, 0.0f, 32.0f);
+}
+
+float ConfigNormalizePerPixelDynamicSpecularStrength(float strength)
+{
+	return ConfigNormalizeFloatRange(strength, 0.0f, 32.0f);
+}
+
+float ConfigNormalizePerPixelSpecularSharpness(float sharpness)
+{
+	return ConfigNormalizeFloatRange(sharpness, 0.05f, 8.0f);
+}
+
+float ConfigNormalizePerPixelSpecularLightmapMix(float mix)
+{
+	return ConfigNormalizeFloatRange(mix, 0.0f, 1.0f);
+}
+
+float ConfigNormalizePerPixelSpecularAlphaStrength(float strength)
+{
+	return ConfigNormalizeFloatRange(strength, 0.0f, 8.0f);
 }
 
 static int ConfigNormalizeGTAOResolution(int resolution)
@@ -625,6 +670,7 @@ void config_gamma()
 //
 #define RESBUFFER_SIZE 50
 #define ASPECTBUFFER_SIZE 32
+#define PPX_SPECULAR_SLIDER_UNITS 100
 #define IDV_CHANGEWINDOW 10
 #define IDV_CHANGEASPECT 11
 #define IDV_FILTERING 18
@@ -1227,6 +1273,12 @@ struct video_menu
 
 	short* fov;
 	short* frame_limit;
+	short* per_pixel_specular_strength;
+	short* per_pixel_static_specular_strength;
+	short* per_pixel_dynamic_specular_strength;
+	short* per_pixel_specular_sharpness;
+	short* per_pixel_specular_lightmap_mix;
+	short* per_pixel_specular_alpha_strength;
 	char* buffer;
 	char* aspect_buffer;
 	bool* fullscreen;
@@ -1307,6 +1359,11 @@ struct video_menu
 	bool can_apply_display_settings_live()
 	{
 		return GetFunctionMode() == GAME_MODE || GetFunctionMode() == EDITOR_GAME_MODE;
+	}
+
+	float slider_float_value(short* slider, float min_value, float max_value)
+	{
+		return CALC_SLIDER_FLOAT_VALUE(*slider, min_value, max_value, PPX_SPECULAR_SLIDER_UNITS);
 	}
 
 	bool apply_display_settings(bool allow_menu, bool apply_fullscreen)
@@ -1430,6 +1487,42 @@ struct video_menu
 			Render_soft_vis_effects = *soft_vis_effects;
 			ui_changed = true;
 		}
+		if (per_pixel_specular_strength && sheet->HasChanged(per_pixel_specular_strength))
+		{
+			Render_per_pixel_specular_strength = ConfigNormalizePerPixelSpecularStrength(
+				slider_float_value(per_pixel_specular_strength, 0.0f, 32.0f));
+			ui_changed = true;
+		}
+		if (per_pixel_static_specular_strength && sheet->HasChanged(per_pixel_static_specular_strength))
+		{
+			Render_per_pixel_static_specular_strength = ConfigNormalizePerPixelStaticSpecularStrength(
+				slider_float_value(per_pixel_static_specular_strength, 0.0f, 32.0f));
+			ui_changed = true;
+		}
+		if (per_pixel_dynamic_specular_strength && sheet->HasChanged(per_pixel_dynamic_specular_strength))
+		{
+			Render_per_pixel_dynamic_specular_strength = ConfigNormalizePerPixelDynamicSpecularStrength(
+				slider_float_value(per_pixel_dynamic_specular_strength, 0.0f, 32.0f));
+			ui_changed = true;
+		}
+		if (per_pixel_specular_sharpness && sheet->HasChanged(per_pixel_specular_sharpness))
+		{
+			Render_per_pixel_specular_sharpness = ConfigNormalizePerPixelSpecularSharpness(
+				slider_float_value(per_pixel_specular_sharpness, 0.05f, 8.0f));
+			ui_changed = true;
+		}
+		if (per_pixel_specular_lightmap_mix && sheet->HasChanged(per_pixel_specular_lightmap_mix))
+		{
+			Render_per_pixel_specular_lightmap_mix = ConfigNormalizePerPixelSpecularLightmapMix(
+				slider_float_value(per_pixel_specular_lightmap_mix, 0.0f, 1.0f));
+			ui_changed = true;
+		}
+		if (per_pixel_specular_alpha_strength && sheet->HasChanged(per_pixel_specular_alpha_strength))
+		{
+			Render_per_pixel_specular_alpha_strength = ConfigNormalizePerPixelSpecularAlphaStrength(
+				slider_float_value(per_pixel_specular_alpha_strength, 0.0f, 8.0f));
+			ui_changed = true;
+		}
 		if (antialiasing && sheet->HasChanged(antialiasing))
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1492,6 +1585,12 @@ struct video_menu
 		motion_vector_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
+		per_pixel_specular_strength = NULL;
+		per_pixel_static_specular_strength = NULL;
+		per_pixel_dynamic_specular_strength = NULL;
+		per_pixel_specular_sharpness = NULL;
+		per_pixel_specular_lightmap_mix = NULL;
+		per_pixel_specular_alpha_strength = NULL;
 		buffer = NULL;
 		aspect_buffer = NULL;
 		fullscreen = NULL;
@@ -1587,6 +1686,51 @@ struct video_menu
 		update_draw_call_title();
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
 
+		tSliderSettings ppx_specular_slider = {};
+		ppx_specular_slider.type = SLIDER_UNITS_FLOAT;
+		ppx_specular_slider.min_val.f = 0.0f;
+		ppx_specular_slider.max_val.f = 32.0f;
+		sheet->NewGroup("PPX Spec", 184, 242);
+		per_pixel_specular_strength = sheet->AddSlider("Overall", PPX_SPECULAR_SLIDER_UNITS,
+			CALC_SLIDER_POS_FLOAT(ConfigNormalizePerPixelSpecularStrength(Render_per_pixel_specular_strength),
+				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
+			&ppx_specular_slider);
+
+		per_pixel_static_specular_strength = sheet->AddSlider("Static", PPX_SPECULAR_SLIDER_UNITS,
+			CALC_SLIDER_POS_FLOAT(
+				ConfigNormalizePerPixelStaticSpecularStrength(Render_per_pixel_static_specular_strength),
+				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
+			&ppx_specular_slider);
+
+		per_pixel_dynamic_specular_strength = sheet->AddSlider("Dynamic", PPX_SPECULAR_SLIDER_UNITS,
+			CALC_SLIDER_POS_FLOAT(
+				ConfigNormalizePerPixelDynamicSpecularStrength(Render_per_pixel_dynamic_specular_strength),
+				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
+			&ppx_specular_slider);
+
+		ppx_specular_slider.min_val.f = 0.05f;
+		ppx_specular_slider.max_val.f = 8.0f;
+		per_pixel_specular_sharpness = sheet->AddSlider("Sharp", PPX_SPECULAR_SLIDER_UNITS,
+			CALC_SLIDER_POS_FLOAT(
+				ConfigNormalizePerPixelSpecularSharpness(Render_per_pixel_specular_sharpness),
+				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
+			&ppx_specular_slider);
+
+		ppx_specular_slider.min_val.f = 0.0f;
+		ppx_specular_slider.max_val.f = 1.0f;
+		per_pixel_specular_lightmap_mix = sheet->AddSlider("LM Mix", PPX_SPECULAR_SLIDER_UNITS,
+			CALC_SLIDER_POS_FLOAT(
+				ConfigNormalizePerPixelSpecularLightmapMix(Render_per_pixel_specular_lightmap_mix),
+				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
+			&ppx_specular_slider);
+
+		ppx_specular_slider.max_val.f = 8.0f;
+		per_pixel_specular_alpha_strength = sheet->AddSlider("Alpha", PPX_SPECULAR_SLIDER_UNITS,
+			CALC_SLIDER_POS_FLOAT(
+				ConfigNormalizePerPixelSpecularAlphaStrength(Render_per_pixel_specular_alpha_strength),
+				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
+			&ppx_specular_slider);
+
 		return sheet;
 	};
 
@@ -1626,6 +1770,24 @@ struct video_menu
 			Render_draw_call_stats = *show_draw_calls;
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
+		if (per_pixel_specular_strength)
+			Render_per_pixel_specular_strength = ConfigNormalizePerPixelSpecularStrength(
+				slider_float_value(per_pixel_specular_strength, 0.0f, 32.0f));
+		if (per_pixel_static_specular_strength)
+			Render_per_pixel_static_specular_strength = ConfigNormalizePerPixelStaticSpecularStrength(
+				slider_float_value(per_pixel_static_specular_strength, 0.0f, 32.0f));
+		if (per_pixel_dynamic_specular_strength)
+			Render_per_pixel_dynamic_specular_strength = ConfigNormalizePerPixelDynamicSpecularStrength(
+				slider_float_value(per_pixel_dynamic_specular_strength, 0.0f, 32.0f));
+		if (per_pixel_specular_sharpness)
+			Render_per_pixel_specular_sharpness = ConfigNormalizePerPixelSpecularSharpness(
+				slider_float_value(per_pixel_specular_sharpness, 0.05f, 8.0f));
+		if (per_pixel_specular_lightmap_mix)
+			Render_per_pixel_specular_lightmap_mix = ConfigNormalizePerPixelSpecularLightmapMix(
+				slider_float_value(per_pixel_specular_lightmap_mix, 0.0f, 1.0f));
+		if (per_pixel_specular_alpha_strength)
+			Render_per_pixel_specular_alpha_strength = ConfigNormalizePerPixelSpecularAlphaStrength(
+				slider_float_value(per_pixel_specular_alpha_strength, 0.0f, 8.0f));
 		if (antialiasing)
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);

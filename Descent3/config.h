@@ -72,6 +72,12 @@ extern int Game_frame_limit_fps;
 extern float Hud_text_scale;
 extern bool Render_draw_call_stats;
 extern bool Render_soft_vis_effects;
+extern float Render_per_pixel_specular_strength;
+extern float Render_per_pixel_static_specular_strength;
+extern float Render_per_pixel_dynamic_specular_strength;
+extern float Render_per_pixel_specular_sharpness;
+extern float Render_per_pixel_specular_lightmap_mix;
+extern float Render_per_pixel_specular_alpha_strength;
 extern bool Cockpit_alt_mode;
 //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
 extern int DesiredOpenGLProfile;
@@ -83,6 +89,12 @@ void ConfigApplyFrameLimitSetting();
 float ConfigNormalizeHudTextScale(float scale);
 float ConfigNormalizeBloomThreshold(float threshold);
 float ConfigNormalizeBloomIntensity(float intensity);
+float ConfigNormalizePerPixelSpecularStrength(float strength);
+float ConfigNormalizePerPixelStaticSpecularStrength(float strength);
+float ConfigNormalizePerPixelDynamicSpecularStrength(float strength);
+float ConfigNormalizePerPixelSpecularSharpness(float sharpness);
+float ConfigNormalizePerPixelSpecularLightmapMix(float mix);
+float ConfigNormalizePerPixelSpecularAlphaStrength(float strength);
 void ConfigValidateGameWindowSize();
 
 enum

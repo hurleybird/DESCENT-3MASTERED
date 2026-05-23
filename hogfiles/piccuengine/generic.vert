@@ -35,7 +35,11 @@ void main()
 {
 	gl_Position = commons.projection * commons.modelview * vec4(position, 1.0);
 	outcolor = color;
-	outnormal = normal;
+	#if defined(USE_SPECULAR)
+		outnormal = normal;
+	#else
+		outnormal = normal;
+	#endif
 	out_motion_world_position = motion_world_position;
 	out_motion_previous_world_position = motion_previous_world_position;
 	#if defined(USE_TEXTURING)

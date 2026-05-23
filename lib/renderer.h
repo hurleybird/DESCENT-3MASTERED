@@ -765,8 +765,11 @@ struct SpecularBlock
 	int exponent;
 	//Strength modifier applied to lighting calculation
 	float strength;
-	//padding for std140
-	int pad; 
+	//How much the lightmap modulates specular, 0 = unlit specular, 1 = legacy lightmap tint.
+	float lightmap_mix;
+	//Alpha gain applied to the specular mask texture.
+	float alpha_strength;
+	float pad[3];
 
 	//All light sources. 
 	SpecularDef speculars[MAX_SPECULARS];

@@ -1461,6 +1461,55 @@ static void AddDynamicSpecularContribution(const renderer_per_pixel_light& light
 		light.color[1], light.color[2], rv, gv, bv);
 }
 
+static int SpecularMaterialType(face* fp)
+{
+	if (GameTextures[fp->tmap].flags & TF_PLASTIC)
+		return 1;
+	if (GameTextures[fp->tmap].flags & TF_MARBLE)
+		return 2;
+	return 0;
+}
+
+static int SpecularMaterialExponent(int material_type)
+{
+	if (material_type == 1)
+		return 14;
+	if (material_type == 2)
+		return 4;
+	return 6;
+}
+
+static int TunedSpecularMaterialExponent(int material_type)
+{
+	float exponent = (float)SpecularMaterialExponent(material_type) *
+		ConfigNormalizePerPixelSpecularSharpness(Render_per_pixel_specular_sharpness);
+	if (exponent < 1.0f)
+		exponent = 1.0f;
+	if (exponent > 128.0f)
+		exponent = 128.0f;
+	return (int)(exponent + 0.5f);
+}
+
+static vector SpecularWorldToViewPosition(const vector& world_position)
+{
+	vector view_position = world_position - Viewer_eye;
+	return view_position * Viewer_orient;
+}
+
+static vector SpecularWorldToViewDirection(const vector& world_direction)
+{
+	vector view_direction = world_direction * Viewer_orient;
+	vm_NormalizeVectorFast(&view_direction);
+	return view_direction;
+}
+
+static int SpecularBitmapHandle(face* fp)
+{
+	if ((fp->flags & FF_DESTROYED) && (GameTextures[fp->tmap].flags & TF_DESTROYABLE))
+		return GetTextureBitmap(GameTextures[fp->tmap].destroy_handle, 0);
+	return GetTextureBitmap(fp->tmap, 0);
+}
+
 void RenderSpecularFacesFlat(room* rp)
 {
 	static int first = 1;
@@ -1504,6 +1553,173 @@ void RenderSpecularFacesFlat(room* rp)
 	rend_SetAlphaType(AT_SPECULAR);
 	rend_SetZBufferWriteMask(0);
 
+	const bool per_pixel_shader_specular = Render_preferred_state.per_pixel_lighting &&
+		UseHardware && rend_CanUseNewrender();
+	if (per_pixel_shader_specular)
+	{
+		vector fallback_normals[MAX_VERTS_PER_ROOM];
+		ubyte fallback_normal_counts[MAX_VERTS_PER_ROOM] = {};
+		for (int vn = 0; vn < MAX_VERTS_PER_ROOM; vn++)
+			fallback_normals[vn] = { 0, 0, 0 };
+
+		for (int i = 0; i < Num_specular_faces_to_render; i++)
+		{
+			face* fp = &rp->faces[Specular_faces[i]];
+			for (int vn = 0; vn < fp->num_verts; vn++)
+			{
+				int vertnum = fp->face_verts[vn];
+				if (vertnum < 0 || vertnum >= MAX_VERTS_PER_ROOM)
+					continue;
+				fallback_normals[vertnum] += fp->normal;
+				if (fallback_normal_counts[vertnum] < 255)
+					fallback_normal_counts[vertnum]++;
+			}
+		}
+
+		for (int vn = 0; vn < MAX_VERTS_PER_ROOM; vn++)
+		{
+			if (fallback_normal_counts[vn] > 0)
+				vm_NormalizeVectorFast(&fallback_normals[vn]);
+		}
+
+		for (int i = 0; i < Num_specular_faces_to_render; i++)
+		{
+			face* fp = &rp->faces[Specular_faces[i]];
+			if (fp->flags & FF_SPEC_INVISIBLE)
+			{
+				fp->flags &= ~(FF_SPEC_INVISIBLE);
+				continue;
+			}
+			if (fp->lmi_handle == 65535)
+				continue;
+
+			int bm_handle = SpecularBitmapHandle(fp);
+			if (bm_format(bm_handle) != BITMAP_FORMAT_4444)
+				continue;
+
+			int material_type = SpecularMaterialType(fp);
+			SpecularBlock specblock = {};
+			specblock.exponent = TunedSpecularMaterialExponent(material_type);
+			specblock.strength = Render_per_pixel_specular_strength *
+				GameTextures[fp->tmap].reflectivity * 1.5f;
+			specblock.lightmap_mix = Render_per_pixel_specular_lightmap_mix;
+			specblock.alpha_strength = Render_per_pixel_specular_alpha_strength;
+
+			if (rp->flags & RF_EXTERNAL)
+			{
+				vector view_center = SpecularWorldToViewPosition(Terrain_sky.satellite_vectors[0]);
+				specblock.num_speculars = 1;
+				specblock.speculars[0].bright_center[0] = view_center.x;
+				specblock.speculars[0].bright_center[1] = view_center.y;
+				specblock.speculars[0].bright_center[2] = view_center.z;
+				specblock.speculars[0].bright_center[3] = 1.0f;
+				specblock.speculars[0].color[0] = Render_per_pixel_static_specular_strength;
+				specblock.speculars[0].color[1] = Render_per_pixel_static_specular_strength;
+				specblock.speculars[0].color[2] = Render_per_pixel_static_specular_strength;
+				specblock.speculars[0].color[3] = 1.0f;
+			}
+			else
+			{
+				special_face* sf = &SpecialFaces[fp->special_handle];
+				specblock.num_speculars = std::min((int)sf->num, MAX_SPECULARS);
+				for (int t = 0; t < specblock.num_speculars; t++)
+				{
+					ushort color = sf->spec_instance[t].bright_color;
+					vector view_center = SpecularWorldToViewPosition(sf->spec_instance[t].bright_center);
+					specblock.speculars[t].bright_center[0] = view_center.x;
+					specblock.speculars[t].bright_center[1] = view_center.y;
+					specblock.speculars[t].bright_center[2] = view_center.z;
+					specblock.speculars[t].bright_center[3] = 1.0f;
+					specblock.speculars[t].color[0] =
+						((float)((color >> 10) & 0x1f) / 31.0f) * Render_per_pixel_static_specular_strength;
+					specblock.speculars[t].color[1] =
+						((float)((color >> 5) & 0x1f) / 31.0f) * Render_per_pixel_static_specular_strength;
+					specblock.speculars[t].color[2] =
+						((float)(color & 0x1f) / 31.0f) * Render_per_pixel_static_specular_strength;
+					specblock.speculars[t].color[3] = 1.0f;
+				}
+			}
+
+			renderer_per_pixel_light dynamic_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
+			int dynamic_light_count = GetPerPixelLightmapLights(fp->lmi_handle, dynamic_lights,
+				RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+			for (int t = 0; t < dynamic_light_count; t++)
+			{
+				vector world_position = { dynamic_lights[t].position[0], dynamic_lights[t].position[1],
+					dynamic_lights[t].position[2] };
+				vector view_position = SpecularWorldToViewPosition(world_position);
+				dynamic_lights[t].position[0] = view_position.x;
+				dynamic_lights[t].position[1] = view_position.y;
+				dynamic_lights[t].position[2] = view_position.z;
+				dynamic_lights[t].color[0] *= Render_per_pixel_dynamic_specular_strength;
+				dynamic_lights[t].color[1] *= Render_per_pixel_dynamic_specular_strength;
+				dynamic_lights[t].color[2] *= Render_per_pixel_dynamic_specular_strength;
+				if (dynamic_lights[t].directional)
+				{
+					vector world_direction = { dynamic_lights[t].direction[0], dynamic_lights[t].direction[1],
+						dynamic_lights[t].direction[2] };
+					vector view_direction = SpecularWorldToViewDirection(world_direction);
+					dynamic_lights[t].direction[0] = view_direction.x;
+					dynamic_lights[t].direction[1] = view_direction.y;
+					dynamic_lights[t].direction[2] = view_direction.z;
+				}
+			}
+
+			if (specblock.strength <= 0.0f || (specblock.num_speculars == 0 && dynamic_light_count == 0))
+				continue;
+
+			const bool has_smooth_normals = FaceHasSmoothSpecularNormals(fp);
+			for (int vn = 0; vn < fp->num_verts; vn++)
+			{
+				int vertnum = fp->face_verts[vn];
+				pointbuffer[vn] = World_point_buffer[rp->wpb_index + vertnum];
+				g3Point* p = &pointbuffer[vn];
+				pointlist[vn] = p;
+				p->p3_uvl.u = fp->face_uvls[vn].u;
+				p->p3_uvl.v = fp->face_uvls[vn].v;
+				p->p3_uvl.u2 = fp->face_uvls[vn].u2;
+				p->p3_uvl.v2 = fp->face_uvls[vn].v2;
+				p->p3_a = 1.0f;
+				p->p3_r = 1.0f;
+				p->p3_g = 1.0f;
+				p->p3_b = 1.0f;
+				if (has_smooth_normals)
+				{
+					p->p3_specular_normal = SpecialFaces[fp->special_handle].vertnorms[vn];
+				}
+				else if (vertnum >= 0 && vertnum < MAX_VERTS_PER_ROOM && fallback_normal_counts[vertnum] > 0)
+				{
+					p->p3_specular_normal = fallback_normals[vertnum];
+				}
+				else
+				{
+					p->p3_specular_normal = fp->normal;
+				}
+				p->p3_specular_normal_valid = 1;
+				p->p3_flags |= PF_RGBA | PF_UV | PF_UV2;
+			}
+
+			rend_UpdateSpecular(&specblock);
+			rend_SetOverlayType(OT_BLEND);
+			rend_SetOverlayMap(LightmapInfo[fp->lmi_handle].lm_handle);
+			rend_SetPerPixelDynamicLighting(dynamic_light_count > 0 ? &fp->normal : nullptr,
+				dynamic_light_count, dynamic_light_count > 0 ? dynamic_lights : nullptr);
+
+			if (fp->flags & FF_TRIANGULATED)
+				g3_SetTriangulationTest(1);
+
+			g3_DrawPoly(fp->num_verts, pointlist, bm_handle);
+
+			if (fp->flags & FF_TRIANGULATED)
+				g3_SetTriangulationTest(0);
+		}
+
+		rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
+		rend_SetOverlayType(OT_NONE);
+		rend_SetZBufferWriteMask(1);
+		return;
+	}
+
 	for (int i = 0; i < Num_specular_faces_to_render; i++)
 	{
 		face* fp = &rp->faces[Specular_faces[i]];
@@ -1512,14 +1728,8 @@ void RenderSpecularFacesFlat(room* rp)
 		const bool use_smooth_normals = has_smooth_normals &&
 			UseSmoothSpecularForFace(fp);
 
-		int material_type = 0;
-		if (GameTextures[fp->tmap].flags & TF_PLASTIC)
-			material_type = 1;
-		else if (GameTextures[fp->tmap].flags & TF_MARBLE)
-			material_type = 2;
-		int bm_handle = GetTextureBitmap(fp->tmap, 0);
-		if ((fp->flags & FF_DESTROYED) && (GameTextures[fp->tmap].flags & TF_DESTROYABLE))
-			bm_handle = GetTextureBitmap(GameTextures[fp->tmap].destroy_handle, 0);
+		int material_type = SpecularMaterialType(fp);
+		int bm_handle = SpecularBitmapHandle(fp);
 		if (bm_format(bm_handle) != BITMAP_FORMAT_4444)
 			continue;
 

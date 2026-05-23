@@ -254,6 +254,7 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_dynamic_directions_uniforms[8] = {};
 	GLint drawshader_dynamic_dot_ranges_uniforms[8] = {};
 	GLint drawshader_dynamic_directional_uniforms[8] = {};
+	GLint drawshader_per_pixel_specular_enabled_uniforms[8] = {};
 	GLint drawshader_ao_suppression_uniforms[8] = {};
 	GLint drawshader_bloom_suppression_uniforms[8] = {};
 	GLint drawshader_ao_class_uniforms[8] = {};
