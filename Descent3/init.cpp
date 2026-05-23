@@ -392,21 +392,6 @@ void SaveGameSettings()
 	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
 	Database->write("RS_face_probe", Render_face_probe);
 	Database->write("RS_soft_vis_effects", Render_soft_vis_effects);
-	Database->write("RS_split_specular_textures", Render_split_specular_textures);
-	WRITE_FLOAT_SETTING("RS_per_pixel_specular_strength", Render_per_pixel_specular_strength);
-	WRITE_FLOAT_SETTING("RS_per_pixel_static_specular_strength", Render_per_pixel_static_specular_strength);
-	WRITE_FLOAT_SETTING("RS_per_pixel_dynamic_specular_strength", Render_per_pixel_dynamic_specular_strength);
-	WRITE_FLOAT_SETTING("RS_per_pixel_headlight_specular_strength", Render_per_pixel_headlight_specular_strength);
-	WRITE_FLOAT_SETTING("RS_per_pixel_specular_sharpness", Render_per_pixel_specular_sharpness);
-	WRITE_FLOAT_SETTING("RS_per_pixel_specular_lightmap_mix", Render_per_pixel_specular_lightmap_mix);
-	WRITE_FLOAT_SETTING("RS_per_pixel_specular_alpha_strength", Render_per_pixel_specular_alpha_strength);
-	WRITE_FLOAT_SETTING("RS_per_pixel_specular_field_resolution", Render_per_pixel_specular_field_resolution);
-	WRITE_FLOAT_SETTING("RS_per_pixel_specular_field_sample_distance",
-		Render_per_pixel_specular_field_sample_distance);
-	Database->write("RS_per_pixel_sparse_specular_field", Render_per_pixel_sparse_specular_field);
-	Database->write("RS_per_pixel_field_static_specular", Render_per_pixel_field_static_specular);
-	Database->write("RS_per_pixel_field_missing_only_static_specular",
-		Render_per_pixel_field_missing_only_static_specular);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	Database->write("RS_combined_motion_blur", Render_preferred_state.combined_motion_blur);
 	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_strength",
@@ -831,38 +816,6 @@ void LoadGameSettings()
 	Database->read("RS_motion_vector_debug_preview", &Render_preferred_state.motion_vector_debug_preview);
 	Database->read("RS_face_probe", &Render_face_probe);
 	Database->read("RS_soft_vis_effects", &Render_soft_vis_effects);
-	Database->read("RS_split_specular_textures", &Render_split_specular_textures);
-	READ_FLOAT_SETTING("RS_per_pixel_specular_strength", Render_per_pixel_specular_strength);
-	Render_per_pixel_specular_strength = ConfigNormalizePerPixelSpecularStrength(Render_per_pixel_specular_strength);
-	READ_FLOAT_SETTING("RS_per_pixel_static_specular_strength", Render_per_pixel_static_specular_strength);
-	Render_per_pixel_static_specular_strength =
-		ConfigNormalizePerPixelStaticSpecularStrength(Render_per_pixel_static_specular_strength);
-	READ_FLOAT_SETTING("RS_per_pixel_dynamic_specular_strength", Render_per_pixel_dynamic_specular_strength);
-	Render_per_pixel_dynamic_specular_strength =
-		ConfigNormalizePerPixelDynamicSpecularStrength(Render_per_pixel_dynamic_specular_strength);
-	READ_FLOAT_SETTING("RS_per_pixel_headlight_specular_strength", Render_per_pixel_headlight_specular_strength);
-	Render_per_pixel_headlight_specular_strength =
-		ConfigNormalizePerPixelHeadlightSpecularStrength(Render_per_pixel_headlight_specular_strength);
-	READ_FLOAT_SETTING("RS_per_pixel_specular_sharpness", Render_per_pixel_specular_sharpness);
-	Render_per_pixel_specular_sharpness =
-		ConfigNormalizePerPixelSpecularSharpness(Render_per_pixel_specular_sharpness);
-	READ_FLOAT_SETTING("RS_per_pixel_specular_lightmap_mix", Render_per_pixel_specular_lightmap_mix);
-	Render_per_pixel_specular_lightmap_mix =
-		ConfigNormalizePerPixelSpecularLightmapMix(Render_per_pixel_specular_lightmap_mix);
-	READ_FLOAT_SETTING("RS_per_pixel_specular_alpha_strength", Render_per_pixel_specular_alpha_strength);
-	Render_per_pixel_specular_alpha_strength =
-		ConfigNormalizePerPixelSpecularAlphaStrength(Render_per_pixel_specular_alpha_strength);
-	READ_FLOAT_SETTING("RS_per_pixel_specular_field_resolution", Render_per_pixel_specular_field_resolution);
-	Render_per_pixel_specular_field_resolution =
-		ConfigNormalizePerPixelSpecularFieldResolution(Render_per_pixel_specular_field_resolution);
-	READ_FLOAT_SETTING("RS_per_pixel_specular_field_sample_distance",
-		Render_per_pixel_specular_field_sample_distance);
-	Render_per_pixel_specular_field_sample_distance =
-		ConfigNormalizePerPixelSpecularFieldSampleDistance(Render_per_pixel_specular_field_sample_distance);
-	Database->read("RS_per_pixel_sparse_specular_field", &Render_per_pixel_sparse_specular_field);
-	Database->read("RS_per_pixel_field_static_specular", &Render_per_pixel_field_static_specular);
-	Database->read("RS_per_pixel_field_missing_only_static_specular",
-		&Render_per_pixel_field_missing_only_static_specular);
 	READ_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	if (Render_preferred_state.pixel_motion_blur_strength < 0.0f)
 		Render_preferred_state.pixel_motion_blur_strength = 0.0f;

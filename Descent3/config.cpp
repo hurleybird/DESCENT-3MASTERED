@@ -109,19 +109,20 @@ float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
 bool Render_face_probe = false;
 bool Render_soft_vis_effects = false;
-bool Render_split_specular_textures = false;
+// bool Render_split_specular_textures = false;
+bool Render_split_specular_textures = true;
 float Render_per_pixel_specular_strength = 1.0f;
 float Render_per_pixel_static_specular_strength = 1.0f;
-float Render_per_pixel_dynamic_specular_strength = 1.0f;
+float Render_per_pixel_dynamic_specular_strength = 2.0f;
 float Render_per_pixel_headlight_specular_strength = 1.0f;
 float Render_per_pixel_specular_sharpness = 1.0f;
 float Render_per_pixel_specular_lightmap_mix = 1.0f;
 float Render_per_pixel_specular_alpha_strength = 1.0f;
-float Render_per_pixel_specular_field_resolution = 24.0f;
-float Render_per_pixel_specular_field_sample_distance = 72.0f;
-bool Render_per_pixel_sparse_specular_field = true;
-bool Render_per_pixel_field_static_specular = false;
-bool Render_per_pixel_field_missing_only_static_specular = false;
+float Render_per_pixel_specular_field_resolution = 100.0f;
+float Render_per_pixel_specular_field_sample_distance = 32.0f;
+bool Render_per_pixel_sparse_specular_field = false;
+bool Render_per_pixel_field_static_specular = true;
+bool Render_per_pixel_field_missing_only_static_specular = true;
 bool Cockpit_alt_mode = true;
 float Render_FOV_desired = 72;
 
@@ -199,39 +200,9 @@ static float ConfigNormalizeFloatRange(float value, float min_value, float max_v
 	return value;
 }
 
-float ConfigNormalizePerPixelSpecularStrength(float strength)
-{
-	return ConfigNormalizeFloatRange(strength, 0.0f, 32.0f);
-}
-
-float ConfigNormalizePerPixelStaticSpecularStrength(float strength)
-{
-	return ConfigNormalizeFloatRange(strength, 0.0f, 32.0f);
-}
-
-float ConfigNormalizePerPixelDynamicSpecularStrength(float strength)
-{
-	return ConfigNormalizeFloatRange(strength, 0.0f, 32.0f);
-}
-
-float ConfigNormalizePerPixelHeadlightSpecularStrength(float strength)
-{
-	return ConfigNormalizeFloatRange(strength, 0.0f, 32.0f);
-}
-
 float ConfigNormalizePerPixelSpecularSharpness(float sharpness)
 {
 	return ConfigNormalizeFloatRange(sharpness, 0.05f, 8.0f);
-}
-
-float ConfigNormalizePerPixelSpecularLightmapMix(float mix)
-{
-	return ConfigNormalizeFloatRange(mix, 0.0f, 1.0f);
-}
-
-float ConfigNormalizePerPixelSpecularAlphaStrength(float strength)
-{
-	return ConfigNormalizeFloatRange(strength, 0.0f, 8.0f);
 }
 
 float ConfigNormalizePerPixelSpecularFieldResolution(float resolution)
@@ -248,16 +219,16 @@ void ConfigResetPerPixelSpecularSettings()
 {
 	Render_per_pixel_specular_strength = 1.0f;
 	Render_per_pixel_static_specular_strength = 1.0f;
-	Render_per_pixel_dynamic_specular_strength = 1.0f;
+	Render_per_pixel_dynamic_specular_strength = 2.0f;
 	Render_per_pixel_headlight_specular_strength = 1.0f;
 	Render_per_pixel_specular_sharpness = 1.0f;
 	Render_per_pixel_specular_lightmap_mix = 1.0f;
 	Render_per_pixel_specular_alpha_strength = 1.0f;
-	Render_per_pixel_specular_field_resolution = 24.0f;
-	Render_per_pixel_specular_field_sample_distance = 72.0f;
-	Render_per_pixel_sparse_specular_field = true;
-	Render_per_pixel_field_static_specular = false;
-	Render_per_pixel_field_missing_only_static_specular = false;
+	Render_per_pixel_specular_field_resolution = 100.0f;
+	Render_per_pixel_specular_field_sample_distance = 32.0f;
+	Render_per_pixel_sparse_specular_field = false;
+	Render_per_pixel_field_static_specular = true;
+	Render_per_pixel_field_missing_only_static_specular = true;
 }
 
 static int ConfigNormalizeGTAOResolution(int resolution)
@@ -709,12 +680,10 @@ void config_gamma()
 //
 #define RESBUFFER_SIZE 50
 #define ASPECTBUFFER_SIZE 32
-#define PPX_SPECULAR_SLIDER_UNITS 3200
 #define IDV_CHANGEWINDOW 10
 #define IDV_CHANGEASPECT 11
 #define IDV_FILTERING 18
 #define IDV_DRAW_CALL_STATS 19
-#define IDV_PPX_SPECULAR_DEFAULTS 20
 #define UID_RESOLUTION 110
 #define UID_ASPECT 111
 
@@ -1310,24 +1279,10 @@ struct video_menu
 	bool* show_draw_calls;
 	bool* face_probe;
 	bool* soft_vis_effects;
-	bool* split_specular_textures;
 	bool* motion_vector_debug;
 
 	short* fov;
 	short* frame_limit;
-	short* per_pixel_specular_strength;
-	short* per_pixel_static_specular_strength;
-	short* per_pixel_dynamic_specular_strength;
-	short* per_pixel_headlight_specular_strength;
-	short* per_pixel_specular_sharpness;
-	short* per_pixel_specular_lightmap_mix;
-	short* per_pixel_specular_alpha_strength;
-	short* per_pixel_specular_field_resolution;
-	short* per_pixel_specular_field_sample_distance;
-	bool specular_field_slider_rebuild_pending;
-	bool* per_pixel_sparse_specular_field;
-	bool* per_pixel_field_static_specular;
-	bool* per_pixel_field_missing_only_static_specular;
 	char* buffer;
 	char* aspect_buffer;
 	bool* fullscreen;
@@ -1408,57 +1363,6 @@ struct video_menu
 	bool can_apply_display_settings_live()
 	{
 		return GetFunctionMode() == GAME_MODE || GetFunctionMode() == EDITOR_GAME_MODE;
-	}
-
-	float slider_float_value(short* slider, float min_value, float max_value)
-	{
-		return CALC_SLIDER_FLOAT_VALUE(*slider, min_value, max_value, PPX_SPECULAR_SLIDER_UNITS);
-	}
-
-	void set_slider_float_value(short* slider, float value, float min_value, float max_value)
-	{
-		if (!slider)
-			return;
-
-		tSliderSettings slider_settings = {};
-		slider_settings.type = SLIDER_UNITS_FLOAT;
-		slider_settings.min_val.f = min_value;
-		slider_settings.max_val.f = max_value;
-		*slider = CALC_SLIDER_POS_FLOAT(value, &slider_settings, PPX_SPECULAR_SLIDER_UNITS);
-	}
-
-	void reset_per_pixel_specular_sliders()
-	{
-		ConfigResetPerPixelSpecularSettings();
-		set_slider_float_value(per_pixel_specular_strength,
-			ConfigNormalizePerPixelSpecularStrength(Render_per_pixel_specular_strength), 0.0f, 32.0f);
-		set_slider_float_value(per_pixel_static_specular_strength,
-			ConfigNormalizePerPixelStaticSpecularStrength(Render_per_pixel_static_specular_strength), 0.0f, 32.0f);
-		set_slider_float_value(per_pixel_dynamic_specular_strength,
-			ConfigNormalizePerPixelDynamicSpecularStrength(Render_per_pixel_dynamic_specular_strength), 0.0f, 32.0f);
-		set_slider_float_value(per_pixel_headlight_specular_strength,
-			ConfigNormalizePerPixelHeadlightSpecularStrength(Render_per_pixel_headlight_specular_strength), 0.0f, 32.0f);
-		set_slider_float_value(per_pixel_specular_sharpness,
-			ConfigNormalizePerPixelSpecularSharpness(Render_per_pixel_specular_sharpness), 0.05f, 8.0f);
-		set_slider_float_value(per_pixel_specular_lightmap_mix,
-			ConfigNormalizePerPixelSpecularLightmapMix(Render_per_pixel_specular_lightmap_mix), 0.0f, 1.0f);
-		set_slider_float_value(per_pixel_specular_alpha_strength,
-			ConfigNormalizePerPixelSpecularAlphaStrength(Render_per_pixel_specular_alpha_strength), 0.0f, 8.0f);
-		set_slider_float_value(per_pixel_specular_field_resolution,
-			ConfigNormalizePerPixelSpecularFieldResolution(Render_per_pixel_specular_field_resolution), 1.0f, 256.0f);
-		set_slider_float_value(per_pixel_specular_field_sample_distance,
-			ConfigNormalizePerPixelSpecularFieldSampleDistance(Render_per_pixel_specular_field_sample_distance),
-			1.0f, 300.0f);
-		if (per_pixel_sparse_specular_field)
-			*per_pixel_sparse_specular_field = Render_per_pixel_sparse_specular_field;
-		if (per_pixel_field_static_specular)
-			*per_pixel_field_static_specular = Render_per_pixel_field_static_specular;
-		if (per_pixel_field_missing_only_static_specular)
-			*per_pixel_field_missing_only_static_specular = Render_per_pixel_field_missing_only_static_specular;
-		if (sheet)
-			sheet->UpdateChanges();
-		PrecomputeMineSpecularSources();
-		specular_field_slider_rebuild_pending = false;
 	}
 
 	bool apply_display_settings(bool allow_menu, bool apply_fullscreen)
@@ -1587,97 +1491,6 @@ struct video_menu
 			Render_soft_vis_effects = *soft_vis_effects;
 			ui_changed = true;
 		}
-		if (split_specular_textures && sheet->HasChanged(split_specular_textures))
-		{
-			Render_split_specular_textures = *split_specular_textures;
-			ui_changed = true;
-		}
-		if (per_pixel_specular_strength && sheet->HasChanged(per_pixel_specular_strength))
-		{
-			Render_per_pixel_specular_strength = ConfigNormalizePerPixelSpecularStrength(
-				slider_float_value(per_pixel_specular_strength, 0.0f, 32.0f));
-			ui_changed = true;
-		}
-		if (per_pixel_static_specular_strength && sheet->HasChanged(per_pixel_static_specular_strength))
-		{
-			Render_per_pixel_static_specular_strength = ConfigNormalizePerPixelStaticSpecularStrength(
-				slider_float_value(per_pixel_static_specular_strength, 0.0f, 32.0f));
-			ui_changed = true;
-		}
-		if (per_pixel_dynamic_specular_strength && sheet->HasChanged(per_pixel_dynamic_specular_strength))
-		{
-			Render_per_pixel_dynamic_specular_strength = ConfigNormalizePerPixelDynamicSpecularStrength(
-				slider_float_value(per_pixel_dynamic_specular_strength, 0.0f, 32.0f));
-			ui_changed = true;
-		}
-		if (per_pixel_headlight_specular_strength && sheet->HasChanged(per_pixel_headlight_specular_strength))
-		{
-			Render_per_pixel_headlight_specular_strength = ConfigNormalizePerPixelHeadlightSpecularStrength(
-				slider_float_value(per_pixel_headlight_specular_strength, 0.0f, 32.0f));
-			ui_changed = true;
-		}
-		if (per_pixel_specular_sharpness && sheet->HasChanged(per_pixel_specular_sharpness))
-		{
-			Render_per_pixel_specular_sharpness = ConfigNormalizePerPixelSpecularSharpness(
-				slider_float_value(per_pixel_specular_sharpness, 0.05f, 8.0f));
-			ui_changed = true;
-		}
-		if (per_pixel_specular_lightmap_mix && sheet->HasChanged(per_pixel_specular_lightmap_mix))
-		{
-			Render_per_pixel_specular_lightmap_mix = ConfigNormalizePerPixelSpecularLightmapMix(
-				slider_float_value(per_pixel_specular_lightmap_mix, 0.0f, 1.0f));
-			ui_changed = true;
-		}
-		if (per_pixel_specular_alpha_strength && sheet->HasChanged(per_pixel_specular_alpha_strength))
-		{
-			Render_per_pixel_specular_alpha_strength = ConfigNormalizePerPixelSpecularAlphaStrength(
-				slider_float_value(per_pixel_specular_alpha_strength, 0.0f, 8.0f));
-			ui_changed = true;
-		}
-		bool rebuild_specular_field = false;
-		if (per_pixel_specular_field_resolution && sheet->HasChanged(per_pixel_specular_field_resolution))
-		{
-			Render_per_pixel_specular_field_resolution = ConfigNormalizePerPixelSpecularFieldResolution(
-				slider_float_value(per_pixel_specular_field_resolution, 1.0f, 256.0f));
-			specular_field_slider_rebuild_pending = true;
-			ui_changed = true;
-		}
-		if (per_pixel_specular_field_sample_distance &&
-			sheet->HasChanged(per_pixel_specular_field_sample_distance))
-		{
-			Render_per_pixel_specular_field_sample_distance =
-				ConfigNormalizePerPixelSpecularFieldSampleDistance(
-					slider_float_value(per_pixel_specular_field_sample_distance, 1.0f, 300.0f));
-			specular_field_slider_rebuild_pending = true;
-			ui_changed = true;
-		}
-		if (per_pixel_sparse_specular_field && sheet->HasChanged(per_pixel_sparse_specular_field))
-		{
-			Render_per_pixel_sparse_specular_field = *per_pixel_sparse_specular_field;
-			rebuild_specular_field = true;
-			ui_changed = true;
-		}
-		if (per_pixel_field_static_specular && sheet->HasChanged(per_pixel_field_static_specular))
-		{
-			Render_per_pixel_field_static_specular = *per_pixel_field_static_specular;
-			ui_changed = true;
-		}
-		if (per_pixel_field_missing_only_static_specular &&
-			sheet->HasChanged(per_pixel_field_missing_only_static_specular))
-		{
-			Render_per_pixel_field_missing_only_static_specular =
-				*per_pixel_field_missing_only_static_specular;
-			ui_changed = true;
-		}
-		if (specular_field_slider_rebuild_pending &&
-			!sheet->SliderIsDragging(per_pixel_specular_field_resolution) &&
-			!sheet->SliderIsDragging(per_pixel_specular_field_sample_distance))
-		{
-			rebuild_specular_field = true;
-			specular_field_slider_rebuild_pending = false;
-		}
-		if (rebuild_specular_field)
-			PrecomputeMineSpecularSources();
 		if (antialiasing && sheet->HasChanged(antialiasing))
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1738,23 +1551,9 @@ struct video_menu
 		show_draw_calls = NULL;
 		face_probe = NULL;
 		soft_vis_effects = NULL;
-		split_specular_textures = NULL;
 		motion_vector_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
-		per_pixel_specular_strength = NULL;
-		per_pixel_static_specular_strength = NULL;
-		per_pixel_dynamic_specular_strength = NULL;
-		per_pixel_headlight_specular_strength = NULL;
-		per_pixel_specular_sharpness = NULL;
-		per_pixel_specular_lightmap_mix = NULL;
-		per_pixel_specular_alpha_strength = NULL;
-		per_pixel_specular_field_resolution = NULL;
-		per_pixel_specular_field_sample_distance = NULL;
-		specular_field_slider_rebuild_pending = false;
-		per_pixel_sparse_specular_field = NULL;
-		per_pixel_field_static_specular = NULL;
-		per_pixel_field_missing_only_static_specular = NULL;
 		buffer = NULL;
 		aspect_buffer = NULL;
 		fullscreen = NULL;
@@ -1850,82 +1649,6 @@ struct video_menu
 		update_draw_call_title();
 		face_probe = sheet->AddLongCheckBox("Face probe", Render_face_probe);
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
-		split_specular_textures = sheet->AddLongCheckBox("Split spec maps", Render_split_specular_textures);
-
-		tSliderSettings ppx_specular_slider = {};
-		ppx_specular_slider.type = SLIDER_UNITS_FLOAT;
-		ppx_specular_slider.min_val.f = 0.0f;
-		ppx_specular_slider.max_val.f = 32.0f;
-		sheet->NewGroup("PPX Spec", 184, 242);
-		per_pixel_specular_strength = sheet->AddSlider("Overall", PPX_SPECULAR_SLIDER_UNITS,
-			CALC_SLIDER_POS_FLOAT(ConfigNormalizePerPixelSpecularStrength(Render_per_pixel_specular_strength),
-				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
-			&ppx_specular_slider);
-
-		per_pixel_static_specular_strength = sheet->AddSlider("Static", PPX_SPECULAR_SLIDER_UNITS,
-			CALC_SLIDER_POS_FLOAT(
-				ConfigNormalizePerPixelStaticSpecularStrength(Render_per_pixel_static_specular_strength),
-				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
-			&ppx_specular_slider);
-
-		per_pixel_dynamic_specular_strength = sheet->AddSlider("Dyn Other", PPX_SPECULAR_SLIDER_UNITS,
-			CALC_SLIDER_POS_FLOAT(
-				ConfigNormalizePerPixelDynamicSpecularStrength(Render_per_pixel_dynamic_specular_strength),
-				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
-			&ppx_specular_slider);
-
-		per_pixel_headlight_specular_strength = sheet->AddSlider("Headlight", PPX_SPECULAR_SLIDER_UNITS,
-			CALC_SLIDER_POS_FLOAT(
-				ConfigNormalizePerPixelHeadlightSpecularStrength(Render_per_pixel_headlight_specular_strength),
-				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
-			&ppx_specular_slider);
-
-		ppx_specular_slider.min_val.f = 0.05f;
-		ppx_specular_slider.max_val.f = 8.0f;
-		per_pixel_specular_sharpness = sheet->AddSlider("Sharp", PPX_SPECULAR_SLIDER_UNITS,
-			CALC_SLIDER_POS_FLOAT(
-				ConfigNormalizePerPixelSpecularSharpness(Render_per_pixel_specular_sharpness),
-				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
-			&ppx_specular_slider);
-
-		ppx_specular_slider.min_val.f = 0.0f;
-		ppx_specular_slider.max_val.f = 1.0f;
-		per_pixel_specular_lightmap_mix = sheet->AddSlider("LM Mix", PPX_SPECULAR_SLIDER_UNITS,
-			CALC_SLIDER_POS_FLOAT(
-				ConfigNormalizePerPixelSpecularLightmapMix(Render_per_pixel_specular_lightmap_mix),
-				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
-			&ppx_specular_slider);
-
-		ppx_specular_slider.max_val.f = 8.0f;
-		per_pixel_specular_alpha_strength = sheet->AddSlider("Alpha", PPX_SPECULAR_SLIDER_UNITS,
-			CALC_SLIDER_POS_FLOAT(
-				ConfigNormalizePerPixelSpecularAlphaStrength(Render_per_pixel_specular_alpha_strength),
-				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
-			&ppx_specular_slider);
-
-		ppx_specular_slider.min_val.f = 1.0f;
-		ppx_specular_slider.max_val.f = 256.0f;
-		per_pixel_specular_field_resolution = sheet->AddSlider("Field res", PPX_SPECULAR_SLIDER_UNITS,
-			CALC_SLIDER_POS_FLOAT(
-				ConfigNormalizePerPixelSpecularFieldResolution(Render_per_pixel_specular_field_resolution),
-				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
-			&ppx_specular_slider);
-
-		ppx_specular_slider.min_val.f = 1.0f;
-		ppx_specular_slider.max_val.f = 300.0f;
-		per_pixel_specular_field_sample_distance = sheet->AddSlider("Field sample", PPX_SPECULAR_SLIDER_UNITS,
-			CALC_SLIDER_POS_FLOAT(
-				ConfigNormalizePerPixelSpecularFieldSampleDistance(Render_per_pixel_specular_field_sample_distance),
-				&ppx_specular_slider, PPX_SPECULAR_SLIDER_UNITS),
-			&ppx_specular_slider);
-
-		per_pixel_sparse_specular_field = sheet->AddLongCheckBox("Sparse field",
-			Render_per_pixel_sparse_specular_field);
-		per_pixel_field_static_specular = sheet->AddLongCheckBox("Field static spec",
-			Render_per_pixel_field_static_specular);
-		per_pixel_field_missing_only_static_specular = sheet->AddLongCheckBox("Field -1 only",
-			Render_per_pixel_field_missing_only_static_specular);
-		sheet->AddButton("Defaults", IDV_PPX_SPECULAR_DEFAULTS);
 
 		return sheet;
 	};
@@ -1968,60 +1691,6 @@ struct video_menu
 			Render_face_probe = *face_probe;
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
-		if (split_specular_textures)
-			Render_split_specular_textures = *split_specular_textures;
-		if (per_pixel_specular_strength)
-		{
-			Render_per_pixel_specular_strength = ConfigNormalizePerPixelSpecularStrength(
-				slider_float_value(per_pixel_specular_strength, 0.0f, 32.0f));
-		}
-		if (per_pixel_static_specular_strength)
-		{
-			Render_per_pixel_static_specular_strength = ConfigNormalizePerPixelStaticSpecularStrength(
-				slider_float_value(per_pixel_static_specular_strength, 0.0f, 32.0f));
-		}
-		if (per_pixel_dynamic_specular_strength)
-		{
-			Render_per_pixel_dynamic_specular_strength = ConfigNormalizePerPixelDynamicSpecularStrength(
-				slider_float_value(per_pixel_dynamic_specular_strength, 0.0f, 32.0f));
-		}
-		if (per_pixel_headlight_specular_strength)
-		{
-			Render_per_pixel_headlight_specular_strength = ConfigNormalizePerPixelHeadlightSpecularStrength(
-				slider_float_value(per_pixel_headlight_specular_strength, 0.0f, 32.0f));
-		}
-		if (per_pixel_specular_sharpness)
-		{
-			Render_per_pixel_specular_sharpness = ConfigNormalizePerPixelSpecularSharpness(
-				slider_float_value(per_pixel_specular_sharpness, 0.05f, 8.0f));
-		}
-		if (per_pixel_specular_lightmap_mix)
-			Render_per_pixel_specular_lightmap_mix = ConfigNormalizePerPixelSpecularLightmapMix(
-				slider_float_value(per_pixel_specular_lightmap_mix, 0.0f, 1.0f));
-		if (per_pixel_specular_alpha_strength)
-		{
-			Render_per_pixel_specular_alpha_strength = ConfigNormalizePerPixelSpecularAlphaStrength(
-				slider_float_value(per_pixel_specular_alpha_strength, 0.0f, 8.0f));
-		}
-		if (per_pixel_specular_field_resolution)
-			Render_per_pixel_specular_field_resolution = ConfigNormalizePerPixelSpecularFieldResolution(
-				slider_float_value(per_pixel_specular_field_resolution, 1.0f, 256.0f));
-		if (per_pixel_specular_field_sample_distance)
-			Render_per_pixel_specular_field_sample_distance =
-				ConfigNormalizePerPixelSpecularFieldSampleDistance(
-					slider_float_value(per_pixel_specular_field_sample_distance, 1.0f, 300.0f));
-		if (per_pixel_sparse_specular_field)
-			Render_per_pixel_sparse_specular_field = *per_pixel_sparse_specular_field;
-		if (per_pixel_field_static_specular)
-			Render_per_pixel_field_static_specular = *per_pixel_field_static_specular;
-		if (per_pixel_field_missing_only_static_specular)
-			Render_per_pixel_field_missing_only_static_specular =
-				*per_pixel_field_missing_only_static_specular;
-		if (specular_field_slider_rebuild_pending)
-		{
-			PrecomputeMineSpecularSources();
-			specular_field_slider_rebuild_pending = false;
-		}
 		if (antialiasing)
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -2108,10 +1777,6 @@ struct video_menu
 
 		switch (res)
 		{
-		case IDV_PPX_SPECULAR_DEFAULTS:
-			reset_per_pixel_specular_sliders();
-			break;
-
 		case IDV_CHANGEWINDOW:
 		{
 			newuiTiledWindow menu;
