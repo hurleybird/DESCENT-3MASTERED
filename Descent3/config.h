@@ -82,6 +82,7 @@ extern float Render_per_pixel_specular_sharpness;
 extern float Render_per_pixel_specular_lightmap_mix;
 extern float Render_per_pixel_specular_alpha_strength;
 extern float Render_per_pixel_specular_field_resolution;
+extern float Render_per_pixel_specular_field_sample_distance;
 extern bool Render_per_pixel_specular_ignore_lightmap;
 extern bool Render_per_pixel_field_static_specular;
 extern bool Render_per_pixel_field_lightmap_static_specular;
@@ -106,6 +107,7 @@ float ConfigNormalizePerPixelSpecularSharpness(float sharpness);
 float ConfigNormalizePerPixelSpecularLightmapMix(float mix);
 float ConfigNormalizePerPixelSpecularAlphaStrength(float strength);
 float ConfigNormalizePerPixelSpecularFieldResolution(float resolution);
+float ConfigNormalizePerPixelSpecularFieldSampleDistance(float distance);
 void ConfigResetPerPixelSpecularSettings();
 void ConfigValidateGameWindowSize();
 

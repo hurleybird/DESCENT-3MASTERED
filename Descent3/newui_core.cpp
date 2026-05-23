@@ -372,6 +372,7 @@ public:
 	void SetRange(short range);
 	short GetPos() const { return m_pos; };
 	short GetRange() const { return m_unitrange; };
+	bool IsDragging() const { return m_dragging; };
 	void SetUnits(tSliderSettings* settings);
 
 protected:
@@ -1963,6 +1964,29 @@ bool newuiSheet::HasChanged(char* cptr)
 				if (desc->internal == cptr)
 					return desc->changed;
 				
+				break;
+			}
+		}
+	}
+
+	return false;
+}
+
+bool newuiSheet::SliderIsDragging(short* sptr)
+{
+	ASSERT(m_realized);
+
+	for (int i = 0; i < m_ngadgets; i++)
+	{
+		newuiSheet::t_gadget_desc* desc = &m_gadgetlist[i];
+		if (desc->obj.gadget)
+		{
+			switch (desc->type)
+			{
+			case GADGET_SLIDER:
+				if ((&desc->parm.s[0]) == sptr)
+					return desc->obj.slider->IsDragging();
+
 				break;
 			}
 		}

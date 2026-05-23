@@ -27,10 +27,23 @@
 
 //The number of vertex attributes the legacy code used.
 constexpr int NUM_LEGACY_VERTEX_ATTRIBS = 15;
-//The count of vertices that each buffer will store
-constexpr int NUM_VERTS_PER_BUFFER = 640000;
+//The vertex format carries several optional payloads; size the draw buffer by bytes so new payloads do not
+//quietly turn the persistent mapping into an oversized allocation.
+constexpr size_t DRAW_BUFFER_TARGET_BYTES = 64u * 1024u * 1024u;
+constexpr int MIN_VERTS_PER_BUFFER = 65536;
 constexpr float PIXEL_MOTION_BLUR_REFERENCE_FRAME_TIME = 1.0f / 60.0f;
 constexpr unsigned int GL4_MOTION_OBJECT_LEGACY_BLUR_MASK = 0x80000000u;
+
+static int GL4DrawBufferVertexCapacity()
+{
+	const size_t capacity = DRAW_BUFFER_TARGET_BYTES / sizeof(gl_vertex);
+	return std::max(MIN_VERTS_PER_BUFFER, (int)capacity);
+}
+
+static size_t GL4DrawBufferByteSize()
+{
+	return (size_t)GL4DrawBufferVertexCapacity() * sizeof(gl_vertex);
+}
 
 static float GL4DepthFromEyeZ(float z)
 {
@@ -603,30 +616,8 @@ void GL4Renderer::UseSceneDrawBuffers()
 	post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle(), false, false);
 }
 
-void GL4Renderer::InitPersistentDrawBuffer(size_t size)
+static void GL4SetDrawVertexAttributes()
 {
-	//Due to names becoming immutable when using buffer storage,
-	//need to recycle buffers by explicitly deleting the old one. OpenGL maintains its lifetime until it is done
-	if (drawbuffer != 0)
-	{
-		glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
-		glUnmapBuffer(GL_ARRAY_BUFFER);
-		glDeleteBuffers(1, &drawbuffer);
-	}
-
-	glGenBuffers(1, &drawbuffer);
-	glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
-
-	glBufferStorage(GL_ARRAY_BUFFER, size, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
-
-#ifdef _DEBUG
-	GLenum err = glGetError();
-	if (err != GL_NO_ERROR)
-		Int3();
-#endif
-
-	// Keep this path on the existing vertex attribute setup.
-
 	//attrib 0: position
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), 0);
@@ -665,28 +656,70 @@ void GL4Renderer::InitPersistentDrawBuffer(size_t size)
 		glVertexAttribPointer(11 + i, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex),
 			(const void*)offsetof(gl_vertex, field_specular_color[i]));
 	}
-#ifdef _DEBUG
-	err = glGetError();
-	if (err != GL_NO_ERROR)
-		Int3();
-#endif
+}
 
-	drawbuffermap = glMapBufferRange(GL_ARRAY_BUFFER, 0, size, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+bool GL4Renderer::InitPersistentDrawBuffer(size_t size)
+{
+	//Due to names becoming immutable when using buffer storage,
+	//need to recycle buffers by explicitly deleting the old one. OpenGL maintains its lifetime until it is done
+	if (drawbuffer != 0)
+	{
+		glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
+		if (drawbuffermap != nullptr)
+			glUnmapBuffer(GL_ARRAY_BUFFER);
+		glDeleteBuffers(1, &drawbuffer);
+		drawbuffer = 0;
+		drawbuffermap = nullptr;
+	}
+
+	glGenBuffers(1, &drawbuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
+
+	glBufferStorage(GL_ARRAY_BUFFER, size, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+	GLenum err = glGetError();
+	if (err == GL_NO_ERROR)
+	{
+		GL4SetDrawVertexAttributes();
+		drawbuffermap = glMapBufferRange(GL_ARRAY_BUFFER, 0, size,
+			GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+		err = glGetError();
+	}
+
+	if (err == GL_NO_ERROR && drawbuffermap != nullptr)
+		return true;
+
 #ifdef _DEBUG
-	err = glGetError();
-	if (err != GL_NO_ERROR)
-		Int3();
+	Int3();
 #endif
+	if (drawbuffer != 0)
+	{
+		glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
+		if (drawbuffermap != nullptr)
+			glUnmapBuffer(GL_ARRAY_BUFFER);
+		glDeleteBuffers(1, &drawbuffer);
+	}
+
+	drawbuffer = 0;
+	drawbuffermap = nullptr;
+	OpenGL_buffer_storage_enabled = false;
+
+	glGenBuffers(1, &drawbuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
+	glBufferData(GL_ARRAY_BUFFER, size, nullptr, GL_STREAM_DRAW);
+	GL4SetDrawVertexAttributes();
+	return false;
 }
 
 void GL4Renderer::DestroyPersistentDrawBuffer()
 {
-	if (OpenGL_buffer_storage_enabled && drawbuffer)
+	if (drawbuffer)
 	{
 		glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
-		glUnmapBuffer(GL_ARRAY_BUFFER);
+		if (drawbuffermap != nullptr)
+			glUnmapBuffer(GL_ARRAY_BUFFER);
 		glDeleteBuffers(1, &drawbuffer);
 		drawbuffer = 0;
+		drawbuffermap = nullptr;
 	}
 }
 
@@ -697,12 +730,17 @@ int GL4Renderer::CopyVertices(int numvertices)
 
 int GL4Renderer::CopyVertices(const gl_vertex* vertices, int numvertices)
 {
+	const GLuint vertex_capacity = (GLuint)GL4DrawBufferVertexCapacity();
+	const GLuint requested_vertices = numvertices > 0 ? (GLuint)numvertices : 0;
 	if (OpenGL_buffer_storage_enabled)
 	{
-		if (nextcommittedvertex + numvertices > NUM_VERTS_PER_BUFFER)
+		if (drawbuffermap == nullptr || nextcommittedvertex + requested_vertices > vertex_capacity)
 		{
-			size_t buffersize = NUM_VERTS_PER_BUFFER * sizeof(gl_vertex);
-			InitPersistentDrawBuffer(buffersize);
+			size_t buffersize = GL4DrawBufferByteSize();
+			if (requested_vertices > vertex_capacity)
+				buffersize = (size_t)numvertices * sizeof(gl_vertex);
+			if (!InitPersistentDrawBuffer(buffersize))
+				return CopyVertices(vertices, numvertices);
 			nextcommittedvertex = 0;
 		}
 
@@ -718,9 +756,11 @@ int GL4Renderer::CopyVertices(const gl_vertex* vertices, int numvertices)
 	else
 	{
 		glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
-		if (nextcommittedvertex + numvertices > NUM_VERTS_PER_BUFFER)
+		if (nextcommittedvertex + requested_vertices > vertex_capacity)
 		{
-			size_t buffersize = NUM_VERTS_PER_BUFFER * sizeof(gl_vertex);
+			size_t buffersize = GL4DrawBufferByteSize();
+			if (requested_vertices > vertex_capacity)
+				buffersize = (size_t)numvertices * sizeof(gl_vertex);
 			glBufferData(GL_ARRAY_BUFFER, buffersize, nullptr, GL_STREAM_DRAW);
 			nextcommittedvertex = 0;
 		}
@@ -728,8 +768,16 @@ int GL4Renderer::CopyVertices(const gl_vertex* vertices, int numvertices)
 		int startoffset = nextcommittedvertex;
 
 		void* dataptr = glMapBufferRange(GL_ARRAY_BUFFER, startoffset * sizeof(gl_vertex), numvertices * sizeof(gl_vertex), GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
-		memcpy(dataptr, vertices, numvertices * sizeof(gl_vertex));
-		glUnmapBuffer(GL_ARRAY_BUFFER);
+		if (dataptr != nullptr)
+		{
+			memcpy(dataptr, vertices, numvertices * sizeof(gl_vertex));
+			glUnmapBuffer(GL_ARRAY_BUFFER);
+		}
+		else
+		{
+			glBufferSubData(GL_ARRAY_BUFFER, startoffset * sizeof(gl_vertex),
+				numvertices * sizeof(gl_vertex), vertices);
+		}
 
 		nextcommittedvertex += numvertices;
 
@@ -1237,7 +1285,7 @@ void GL4Renderer::SetDrawDefaults()
 	glBindVertexArray(drawvao);
 
 	//Init draw buffers
-	size_t buffersize = NUM_VERTS_PER_BUFFER * sizeof(gl_vertex);
+	size_t buffersize = GL4DrawBufferByteSize();
 	if (OpenGL_buffer_storage_enabled)
 	{
 		InitPersistentDrawBuffer(buffersize);
@@ -1248,44 +1296,7 @@ void GL4Renderer::SetDrawDefaults()
 		glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
 		glBufferData(GL_ARRAY_BUFFER, buffersize, nullptr, GL_STREAM_DRAW);
 
-		//attrib 0: position
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), 0);
-
-		//attrib 1: color
-		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, color));
-
-		//attrib 2: uv
-		glEnableVertexAttribArray(2);
-		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, tex_coord));
-
-		//attrib 3: uv 2
-		glEnableVertexAttribArray(3);
-		glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, tex_coord2));
-
-		//attrib 4: per-pixel lighting normal
-		glEnableVertexAttribArray(4);
-		glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, normal));
-
-		//attrib 5: perspective-correct world position for pixel motion vectors
-		glEnableVertexAttribArray(5);
-		glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_world_position));
-
-		//attrib 6: perspective-correct previous world position for moving pixel motion vectors
-		glEnableVertexAttribArray(6);
-		glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex), (const void*)offsetof(gl_vertex, motion_previous_world_position));
-
-		//attribs 7-14: perspective-correct per-vertex field static specular sources
-		for (int i = 0; i < MAX_SPECULARS; i++)
-		{
-			glEnableVertexAttribArray(7 + i);
-			glVertexAttribPointer(7 + i, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex),
-				(const void*)offsetof(gl_vertex, field_specular_center[i]));
-			glEnableVertexAttribArray(11 + i);
-			glVertexAttribPointer(11 + i, 4, GL_FLOAT, GL_FALSE, sizeof(gl_vertex),
-				(const void*)offsetof(gl_vertex, field_specular_color[i]));
-		}
+		GL4SetDrawVertexAttributes();
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);

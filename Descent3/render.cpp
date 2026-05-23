@@ -2545,8 +2545,10 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set, const
 	SpecularFieldCell output = {};
 	int cx, cy, cz;
 	SpecularFieldCellForPosition(field, target_position, cx, cy, cz);
-	const int query_radius_cells = 4;
-	const float query_radius = field.cell_size * ((float)query_radius_cells + 0.5f);
+	const float query_radius =
+		ConfigNormalizePerPixelSpecularFieldSampleDistance(Render_per_pixel_specular_field_sample_distance);
+	const int query_radius_cells = std::max(1,
+		std::min(24, (int)ceil(query_radius / std::max(field.cell_size, 0.001f))));
 	for (int z = std::max(0, cz - query_radius_cells);
 		z <= std::min(field.z_cells - 1, cz + query_radius_cells); z++)
 	{

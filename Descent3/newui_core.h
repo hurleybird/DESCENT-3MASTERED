@@ -187,6 +187,7 @@ public:
 	bool HasChanged(short *sptr);
 	bool HasChanged(int *iptr);
 	bool HasChanged(char *cptr);
+	bool SliderIsDragging(short *sptr);
 
 // obtain's pointer to gadget of respective item.  it is your responsibility to typecast the gadget
 // only works if you specified an ID!  Also the sheet must have been realized by now.

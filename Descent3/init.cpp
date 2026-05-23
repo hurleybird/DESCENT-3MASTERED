@@ -401,6 +401,8 @@ void SaveGameSettings()
 	WRITE_FLOAT_SETTING("RS_per_pixel_specular_lightmap_mix", Render_per_pixel_specular_lightmap_mix);
 	WRITE_FLOAT_SETTING("RS_per_pixel_specular_alpha_strength", Render_per_pixel_specular_alpha_strength);
 	WRITE_FLOAT_SETTING("RS_per_pixel_specular_field_resolution", Render_per_pixel_specular_field_resolution);
+	WRITE_FLOAT_SETTING("RS_per_pixel_specular_field_sample_distance",
+		Render_per_pixel_specular_field_sample_distance);
 	Database->write("RS_per_pixel_specular_ignore_lightmap", Render_per_pixel_specular_ignore_lightmap);
 	Database->write("RS_per_pixel_field_static_specular", Render_per_pixel_field_static_specular);
 	Database->write("RS_per_pixel_field_lightmap_static_specular",
@@ -856,6 +858,10 @@ void LoadGameSettings()
 	READ_FLOAT_SETTING("RS_per_pixel_specular_field_resolution", Render_per_pixel_specular_field_resolution);
 	Render_per_pixel_specular_field_resolution =
 		ConfigNormalizePerPixelSpecularFieldResolution(Render_per_pixel_specular_field_resolution);
+	READ_FLOAT_SETTING("RS_per_pixel_specular_field_sample_distance",
+		Render_per_pixel_specular_field_sample_distance);
+	Render_per_pixel_specular_field_sample_distance =
+		ConfigNormalizePerPixelSpecularFieldSampleDistance(Render_per_pixel_specular_field_sample_distance);
 	Database->read("RS_per_pixel_specular_ignore_lightmap", &Render_per_pixel_specular_ignore_lightmap);
 	Database->read("RS_per_pixel_field_static_specular", &Render_per_pixel_field_static_specular);
 	Database->read("RS_per_pixel_field_lightmap_static_specular",

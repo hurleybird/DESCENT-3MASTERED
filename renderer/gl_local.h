@@ -399,7 +399,7 @@ class GL4Renderer : public IRenderer
 private:
 	//DRAW
 	void UseDrawVAO();
-	void InitPersistentDrawBuffer(size_t size);
+	bool InitPersistentDrawBuffer(size_t size);
 	void DestroyPersistentDrawBuffer();
 	int CopyVertices(int numvertices);
 	int CopyVertices(const gl_vertex* vertices, int numvertices);
