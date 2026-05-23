@@ -171,8 +171,6 @@ static bool UseSmoothSpecularNormals(face& fp, int texturenum)
 		UseSmoothSpecularForFace(fp, texturenum);
 }
 
-constexpr int MIRROR_MOTION_OBJECT_HANDLE = 0x20000002;
-
 enum class PostRenderMode
 {
 	Lit,
@@ -296,7 +294,6 @@ struct RoomMesh
 
 		assert(Rooms[roomnum].mirror_face != -1);
 		Room_VertexBuffer.BindBitmap(GetTextureBitmap(Rooms[roomnum].faces[Rooms[roomnum].mirror_face].tmap, 0));
-		rend_BeginMotionObject(MIRROR_MOTION_OBJECT_HANDLE, RENDERER_MOTION_OBJECT_FORCE_CAPTURE);
 		for (RoomDrawElement& element : MirrorInteractions)
 		{
 			Room_VertexBuffer.BindLightmap(element.lmhandle);
@@ -305,7 +302,6 @@ struct RoomMesh
 			//And draw
 			Room_VertexBuffer.DrawIndexed(PrimitiveType::Triangles, element.range);
 		}
-		rend_EndMotionObject();
 		rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
 	}
 
