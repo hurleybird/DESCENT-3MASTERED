@@ -168,8 +168,7 @@ static bool UseSmoothSpecularForFace(face& fp, int texturenum)
 static bool UseSmoothSpecularNormals(face& fp, int texturenum)
 {
 	return FaceHasSmoothSpecularNormals(fp) &&
-		((GameTextures[texturenum].flags & TF_SMOOTH_SPECULAR) ||
-			Render_preferred_state.per_pixel_lighting);
+		UseSmoothSpecularForFace(fp, texturenum);
 }
 
 constexpr int MIRROR_MOTION_OBJECT_HANDLE = 0x20000002;

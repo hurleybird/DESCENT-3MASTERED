@@ -1406,6 +1406,61 @@ static bool UseSmoothSpecularForFace(face* fp)
 		Render_preferred_state.per_pixel_lighting;
 }
 
+static void AddSpecularContribution(const vector& view_vec, vector incident_norm, const vector& normal,
+	int material_type, float scalar_scale, float cr, float cg, float cb, float& rv, float& gv, float& bv)
+{
+	if (vm_NormalizeVectorFast(&incident_norm) <= 0.0f)
+		return;
+
+	float d = incident_norm * normal;
+	vector upvec = d * normal;
+	incident_norm -= (2 * upvec);
+	float dotp = view_vec * incident_norm;
+	if (dotp > 1.0f)
+		dotp = 1.0f;
+
+	if (dotp <= 0.0f)
+		return;
+
+	int index = (float)(MAX_SPECULAR_INCREMENTS - 1) * dotp;
+	float scalar = Specular_tables[material_type][index] * scalar_scale;
+	rv = std::min(1.0f, rv + (scalar * cr));
+	gv = std::min(1.0f, gv + (scalar * cg));
+	bv = std::min(1.0f, bv + (scalar * cb));
+}
+
+static void AddDynamicSpecularContribution(const renderer_per_pixel_light& light, const vector& vertex_pos,
+	const vector& view_vec, const vector& normal, int material_type, float& rv, float& gv, float& bv)
+{
+	vector light_pos = { light.position[0], light.position[1], light.position[2] };
+	vector light_delta = vertex_pos - light_pos;
+	float distance = vm_NormalizeVectorFast(&light_delta);
+	if (distance <= 0.0f)
+		return;
+
+	float radius = std::max(light.radius, 0.0001f);
+	float scalar = 1.0f - (distance / radius);
+	if (scalar <= 0.0f)
+		return;
+
+	scalar = powf(scalar, std::max(light.falloff, 0.0001f));
+	if (light.directional)
+	{
+		vector light_dir = { light.direction[0], light.direction[1], light.direction[2] };
+		if (vm_NormalizeVectorFast(&light_dir) <= 0.0f)
+			return;
+
+		float direction_dot = light_delta * light_dir;
+		if (direction_dot < light.dot_range)
+			return;
+
+		scalar *= (direction_dot - light.dot_range) / std::max(1.0f - light.dot_range, 0.0001f);
+	}
+
+	AddSpecularContribution(view_vec, light_delta, normal, material_type, scalar, light.color[0],
+		light.color[1], light.color[2], rv, gv, bv);
+}
+
 void RenderSpecularFacesFlat(room* rp)
 {
 	static int first = 1;
@@ -1455,8 +1510,7 @@ void RenderSpecularFacesFlat(room* rp)
 		const bool smooth_specular = UseSmoothSpecularForFace(fp);
 		const bool has_smooth_normals = FaceHasSmoothSpecularNormals(fp);
 		const bool use_smooth_normals = has_smooth_normals &&
-			((GameTextures[fp->tmap].flags & TF_SMOOTH_SPECULAR) ||
-				Render_preferred_state.per_pixel_lighting);
+			UseSmoothSpecularForFace(fp);
 
 		int material_type = 0;
 		if (GameTextures[fp->tmap].flags & TF_PLASTIC)
@@ -1477,6 +1531,14 @@ void RenderSpecularFacesFlat(room* rp)
 		{
 			// this face shouldn't be rendered during the specular pass...skip it
 			continue;
+		}
+
+		renderer_per_pixel_light dynamic_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
+		int dynamic_light_count = 0;
+		if (Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender())
+		{
+			dynamic_light_count = GetPerPixelLightmapLights(fp->lmi_handle, dynamic_lights,
+				RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
 		}
 
 		lm_handle = LightmapInfo[fp->lmi_handle].lm_handle;
@@ -1503,6 +1565,7 @@ void RenderSpecularFacesFlat(room* rp)
 
 			vector subvec = Viewer_eye - rp->verts[fp->face_verts[vn]];
 			vm_NormalizeVectorFast(&subvec);
+			const vector& spec_normal = use_smooth_normals ? SpecialFaces[fp->special_handle].vertnorms[vn] : fp->normal;
 			if (!(rp->flags & RF_EXTERNAL))
 			{
 				int limit = SpecialFaces[fp->special_handle].num;
@@ -1518,37 +1581,11 @@ void RenderSpecularFacesFlat(room* rp)
 					vector incident_norm = rp->verts[fp->face_verts[vn]] - SpecialFaces[fp->special_handle].spec_instance[t].bright_center;
 					float spec_scalar = Specular_scalars[t];
 
-					vm_NormalizeVectorFast(&incident_norm);
-					float d;
-					vector upvec;
-					if (use_smooth_normals)
-					{
-						d = incident_norm * SpecialFaces[fp->special_handle].vertnorms[vn];
-						upvec = d * SpecialFaces[fp->special_handle].vertnorms[vn];
-					}
-					else
-					{
-						d = incident_norm * fp->normal;
-						upvec = d * fp->normal;
-
-					}
-					incident_norm -= (2 * upvec);
-					float dotp = subvec * incident_norm;
-					if (dotp > 1)
-						dotp = 1;
-
-					if (dotp > 0)
-					{
-						int index = ((float)(MAX_SPECULAR_INCREMENTS - 1) * dotp);
-						scalar = Specular_tables[material_type][index] * spec_scalar;
-
-						float cr = (float)((color >> 10) & 0x1f) / 31.0;
-						float cg = (float)((color >> 5) & 0x1f) / 31.0;
-						float cb = (float)(color & 0x1f) / 31.0;
-						rv = std::min(1.0f, (rv + (scalar * cr)));
-						gv = std::min(1.0f, (gv + (scalar * cg)));
-						bv = std::min(1.0f, (bv + (scalar * cb)));
-					}
+					float cr = (float)((color >> 10) & 0x1f) / 31.0f;
+					float cg = (float)((color >> 5) & 0x1f) / 31.0f;
+					float cb = (float)(color & 0x1f) / 31.0f;
+					AddSpecularContribution(subvec, incident_norm, spec_normal, material_type, spec_scalar,
+						cr, cg, cb, rv, gv, bv);
 				}
 			}
 			else
@@ -1571,6 +1608,11 @@ void RenderSpecularFacesFlat(room* rp)
 					gv = scalar;
 					bv = scalar;
 				}
+			}
+			for (int t = 0; t < dynamic_light_count; t++)
+			{
+				AddDynamicSpecularContribution(dynamic_lights[t], rp->verts[fp->face_verts[vn]], subvec,
+					spec_normal, material_type, rv, gv, bv);
 			}
 			// Finally, brighten these value up a bit
 			if (smooth_specular)
@@ -2127,7 +2169,7 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 
 	if (face_cc.cc_and)
 	{
-		if (spec_face && GameTextures[fp->tmap].flags & TF_SMOOTH_SPECULAR)
+		if (spec_face && UseSmoothSpecularForFace(fp))
 		{
 			fp->flags |= FF_SPEC_INVISIBLE;
 			UpdateSpecularFace(rp, fp);
@@ -2362,7 +2404,7 @@ void RenderFace(room* rp, int facenum)
 	}
 	if (face_cc.cc_and)	// This entire face is off the screen
 	{
-		if (spec_face && GameTextures[fp->tmap].flags & TF_SMOOTH_SPECULAR)
+		if (spec_face && UseSmoothSpecularForFace(fp))
 		{
 			fp->flags |= FF_SPEC_INVISIBLE;
 			UpdateSpecularFace(rp, fp);
@@ -2514,7 +2556,7 @@ void RenderFace(room* rp, int facenum)
 			UpdateSpecularFace(rp, fp);
 		else
 		{
-			if (GameTextures[fp->tmap].flags & TF_SMOOTH_SPECULAR)
+			if (UseSmoothSpecularForFace(fp))
 			{
 				fp->flags |= FF_SPEC_INVISIBLE;
 				UpdateSpecularFace(rp, fp);
@@ -2756,7 +2798,7 @@ void RenderRoomUnsorted(room* rp)
 
 		if (!(fp->flags & FF_VISIBLE) || (fp->flags & FF_NOT_FACING))
 		{
-			if (GameTextures[fp->tmap].flags & TF_SMOOTH_SPECULAR)
+			if (UseSmoothSpecularForFace(fp))
 			{
 				if (!Render_mirror_for_room && Detail_settings.Specular_lighting && (GameTextures[fp->tmap].flags & TF_SPECULAR) &&
 					((fp->special_handle != BAD_SPECIAL_FACE_INDEX) || (rp->flags & RF_EXTERNAL)))

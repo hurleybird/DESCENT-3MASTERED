@@ -1345,6 +1345,8 @@ void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_
 
 	ApplyLightingToObjects(pos, roomnum, light_dist, red_scale, green_scale, blue_scale, light_direction, dot_range);
 
+	const bool per_pixel_room_lighting = UsePerPixelRoomLighting();
+
 	num_faces = fvi_QuickDistFaceList(roomnum, pos, light_dist, facelist, MAX_DYNAMIC_FACES);
 
 #ifdef _DEBUG
@@ -1360,7 +1362,6 @@ void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_
 	int red_limit = 31;
 	int green_limit = 31;
 	int blue_limit = 31;
-	const bool per_pixel_room_lighting = UsePerPixelRoomLighting();
 
 	for (i = 0; i < num_faces; i++)
 	{
