@@ -126,9 +126,10 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 		if (i >= specular_data.num_specular)
 			break;
 
+		float source_weight = specular_data.pad0 > 0.5 ? 1.0 : weights[i];
 		vec3 light_position = specular_data.speculars[i].bright_center.xyz;
 		specular_color += SpecularFromIncident(view_position, normal, view_position - light_position,
-			specular_data.speculars[i].color.xyz, weights[i]);
+			specular_data.speculars[i].color.xyz, source_weight);
 	}
 
 	for (int i = 0; i < 8; i++)

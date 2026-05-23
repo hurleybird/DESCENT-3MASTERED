@@ -2307,6 +2307,26 @@ static vector SpecularFieldCellCenter(const SpecularSpatialField& field, int x, 
 	return center;
 }
 
+static float SpecularFieldSmoothKernel(float distance, float radius)
+{
+	if (radius <= 0.0f)
+		return 0.0f;
+	const float t = SpecularClamp(distance / radius, 0.0f, 1.0f);
+	const float smooth = t * t * (3.0f - 2.0f * t);
+	const float weight = 1.0f - smooth;
+	return weight * weight;
+}
+
+static bool SpecularFieldHasLobes(const SpecularFieldCell& cell)
+{
+	for (int i = 0; i < MAX_SPECULARS; i++)
+	{
+		if (cell.lobes[i].weight > 0.0f)
+			return true;
+	}
+	return false;
+}
+
 static void SpecularFieldAddWeightedSample(SpecularFieldCell& cell, const SpecularFieldSample& sample,
 	float weight)
 {
@@ -2536,22 +2556,29 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set, const
 {
 	set.count = 0;
 	memset(set.sources, 0, sizeof(set.sources));
-	if (field.cells.empty() || field.global.lobes[0].weight <= 0.0f)
+	if (field.cells.empty() || !SpecularFieldHasLobes(field.global))
 		return;
 
 	SpecularFieldCell output = {};
 	int cx, cy, cz;
 	SpecularFieldCellForPosition(field, target.basis.center, cx, cy, cz);
-	for (int z = std::max(0, cz - 2); z <= std::min(field.z_cells - 1, cz + 2); z++)
+	const int query_radius_cells = 4;
+	const float query_radius = field.cell_size * ((float)query_radius_cells + 0.5f);
+	for (int z = std::max(0, cz - query_radius_cells);
+		z <= std::min(field.z_cells - 1, cz + query_radius_cells); z++)
 	{
-		for (int y = std::max(0, cy - 2); y <= std::min(field.y_cells - 1, cy + 2); y++)
+		for (int y = std::max(0, cy - query_radius_cells);
+			y <= std::min(field.y_cells - 1, cy + query_radius_cells); y++)
 		{
-			for (int x = std::max(0, cx - 2); x <= std::min(field.x_cells - 1, cx + 2); x++)
+			for (int x = std::max(0, cx - query_radius_cells);
+				x <= std::min(field.x_cells - 1, cx + query_radius_cells); x++)
 			{
 				const SpecularFieldCell& cell = field.cells[SpecularFieldIndex(field, x, y, z)];
 				vector delta = SpecularFieldCellCenter(field, x, y, z) - target.basis.center;
 				const float distance = vm_GetMagnitude(&delta);
-				const float spatial_weight = 1.0f / (1.0f + (distance / field.cell_size) * (distance / field.cell_size));
+				const float spatial_weight = SpecularFieldSmoothKernel(distance, query_radius);
+				if (spatial_weight <= 0.0f)
+					continue;
 				for (int lobe_index = 0; lobe_index < MAX_SPECULARS; lobe_index++)
 					SpecularFieldAddLobeToOutput(output, cell.lobes[lobe_index], target, spatial_weight);
 			}
@@ -2576,18 +2603,23 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set, const
 		}
 	}
 
+	const float strongest_lobe_weight = output.lobes[0].weight;
 	for (int lobe_index = 0; lobe_index < MAX_SPECULARS && set.count < MAX_SPECULARS; lobe_index++)
 	{
 		const SpecularFieldLobe& lobe = output.lobes[lobe_index];
 		if (lobe.weight <= 0.0f)
 			continue;
 
+		const vector source_anchor = lobe.position_sum / lobe.weight;
 		vector direction = SpecularFieldNormalizeOr(lobe.direction_sum, target.basis.normal);
 		const float distance = SpecularClamp(lobe.distance_sum / lobe.weight, 40.0f, 800.0f);
+		const float lobe_strength = strongest_lobe_weight > 0.0f ?
+			sqrt(SpecularClamp(lobe.weight / strongest_lobe_weight, 0.0f, 1.0f)) : 1.0f;
 		specular_instance resolved = {};
-		resolved.bright_center = target.basis.center + direction * distance;
-		resolved.bright_color = SpecularPackColor((lobe.r_sum / lobe.weight) * lightmap_r,
-			(lobe.g_sum / lobe.weight) * lightmap_g, (lobe.b_sum / lobe.weight) * lightmap_b);
+		resolved.bright_center = source_anchor + direction * distance;
+		resolved.bright_color = SpecularPackColor((lobe.r_sum / lobe.weight) * lightmap_r * lobe_strength,
+			(lobe.g_sum / lobe.weight) * lightmap_g * lobe_strength,
+			(lobe.b_sum / lobe.weight) * lightmap_b * lobe_strength);
 		if (resolved.bright_color != 0)
 			set.sources[set.count++] = resolved;
 	}
@@ -3182,6 +3214,12 @@ static bool BuildPerPixelSpecularState(room* rp, int face_index, SpecularBlock& 
 	specblock.debug_authored = SpecularFaceHasLocalSources(fp) ? 1.0f : 0.0f;
 
 	SpecularBuildStaticBlockSources(rp, face_index, specblock);
+	if (Render_per_pixel_field_static_specular &&
+		(!Render_per_pixel_field_missing_only_static_specular ||
+		 fp->special_handle == BAD_SPECIAL_FACE_INDEX))
+	{
+		specblock.pad0 = 1.0f;
+	}
 
 	dynamic_light_count = GetPerPixelLightmapLights(fp->lmi_handle, dynamic_lights,
 		RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
