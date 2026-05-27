@@ -177,7 +177,7 @@ static bool PostRenderCullObjectByOcclusion(object* objp, bool object_outside,
 		return false;
 	if (Render_mirror_for_room || !Rendering_main_view)
 		return false;
-	if (!object_outside && !ROOMNUM_OUTSIDE(Viewer_roomnum))
+	if (!object_outside && !ROOMNUM_OUTSIDE(Viewer_roomnum) && objp->roomnum == Viewer_roomnum)
 		return false;
 
 	double start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;

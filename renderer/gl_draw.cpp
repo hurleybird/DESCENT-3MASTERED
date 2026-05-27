@@ -19,6 +19,7 @@
 #include "gl_local.h"
 #include "game.h"
 #include "gameloop.h"
+#include "config.h"
 #include "HardwareInternal.h"
 
 #include <algorithm>
@@ -1850,8 +1851,12 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 	if (triangle_vertices <= 0)
 		return;
 
-	std::vector<gl_vertex> vertices;
-	vertices.reserve(triangle_vertices);
+	std::vector<gl_vertex> local_vertices;
+	static std::vector<gl_vertex> cached_vertices;
+	std::vector<gl_vertex>& vertices = Render_cpu_batch_cache ? cached_vertices : local_vertices;
+	vertices.clear();
+	if (vertices.capacity() < (size_t)triangle_vertices)
+		vertices.reserve(triangle_vertices);
 
 	int polygons_drawn = 0;
 	for (int i = 0; i < count; i++)
@@ -2532,8 +2537,12 @@ void GL4Renderer::DrawSpecialLineBatch(const renderer_line_batch_item *items, in
 
 	SelectDrawShader();
 
-	std::vector<gl_vertex> vertices;
-	vertices.reserve(count * 2);
+	std::vector<gl_vertex> local_vertices;
+	static std::vector<gl_vertex> cached_vertices;
+	std::vector<gl_vertex>& vertices = Render_cpu_batch_cache ? cached_vertices : local_vertices;
+	vertices.clear();
+	if (vertices.capacity() < (size_t)count * 2)
+		vertices.reserve((size_t)count * 2);
 
 	for (int i = 0; i < count; i++)
 	{

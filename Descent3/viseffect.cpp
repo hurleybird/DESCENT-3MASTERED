@@ -2814,7 +2814,11 @@ static void FlushVisFireballBatchesNow()
 	rend_SetTextureType(TT_LINEAR);
 	rend_SetSoftParticleState(VisFireball_batch_key.soft_particles ? 1 : 0);
 
-	std::vector<renderer_poly_batch_item> renderer_items(VisFireball_batch_items.size());
+	std::vector<renderer_poly_batch_item> local_renderer_items;
+	static std::vector<renderer_poly_batch_item> cached_renderer_items;
+	std::vector<renderer_poly_batch_item>& renderer_items = Render_cpu_batch_cache ? cached_renderer_items : local_renderer_items;
+	renderer_items.clear();
+	renderer_items.resize(VisFireball_batch_items.size());
 	for (size_t i = 0; i < VisFireball_batch_items.size(); i++)
 	{
 		VisFireball_batch_items[i].RefreshPointList();
@@ -2864,7 +2868,11 @@ static void FlushVisSmokeTrailBatchesNow()
 	rend_SetTextureType(TT_LINEAR);
 	rend_SetSoftParticleState(VisSmokeTrail_batch_key.soft_particles ? 1 : 0);
 
-	std::vector<renderer_poly_batch_item> renderer_items(VisSmokeTrail_batch_items.size());
+	std::vector<renderer_poly_batch_item> local_renderer_items;
+	static std::vector<renderer_poly_batch_item> cached_renderer_items;
+	std::vector<renderer_poly_batch_item>& renderer_items = Render_cpu_batch_cache ? cached_renderer_items : local_renderer_items;
+	renderer_items.clear();
+	renderer_items.resize(VisSmokeTrail_batch_items.size());
 	for (size_t i = 0; i < VisSmokeTrail_batch_items.size(); i++)
 	{
 		VisSmokeTrail_batch_items[i].RefreshPointList();
@@ -2914,7 +2922,11 @@ static void FlushVisMassDriverBatchesNow()
 	rend_SetTextureType(TT_LINEAR);
 	rend_SetSoftParticleState(VisMassDriver_batch_key.soft_particles ? 1 : 0);
 
-	std::vector<renderer_poly_batch_item> renderer_items(VisMassDriver_batch_items.size());
+	std::vector<renderer_poly_batch_item> local_renderer_items;
+	static std::vector<renderer_poly_batch_item> cached_renderer_items;
+	std::vector<renderer_poly_batch_item>& renderer_items = Render_cpu_batch_cache ? cached_renderer_items : local_renderer_items;
+	renderer_items.clear();
+	renderer_items.resize(VisMassDriver_batch_items.size());
 	for (size_t i = 0; i < VisMassDriver_batch_items.size(); i++)
 	{
 		VisMassDriver_batch_items[i].RefreshPointList();
@@ -2965,7 +2977,11 @@ static void FlushVisWeatherQuadBatchesNow()
 	rend_SetTextureType(TT_LINEAR);
 	rend_SetSoftParticleState(VisWeather_quad_batch_key.soft_particles ? 1 : 0);
 
-	std::vector<renderer_poly_batch_item> renderer_items(VisWeather_quad_batch_items.size());
+	std::vector<renderer_poly_batch_item> local_renderer_items;
+	static std::vector<renderer_poly_batch_item> cached_renderer_items;
+	std::vector<renderer_poly_batch_item>& renderer_items = Render_cpu_batch_cache ? cached_renderer_items : local_renderer_items;
+	renderer_items.clear();
+	renderer_items.resize(VisWeather_quad_batch_items.size());
 	for (size_t i = 0; i < VisWeather_quad_batch_items.size(); i++)
 	{
 		VisWeather_quad_batch_items[i].RefreshPointList();
@@ -3015,7 +3031,11 @@ static void FlushVisWeatherLineBatchesNow()
 	rend_SetAOSuppression(1.0f);
 	rend_SetSoftParticleState(VisWeather_line_batch_soft ? 1 : 0);
 
-	std::vector<renderer_line_batch_item> renderer_items(VisWeather_line_batch_items.size());
+	std::vector<renderer_line_batch_item> local_renderer_items;
+	static std::vector<renderer_line_batch_item> cached_renderer_items;
+	std::vector<renderer_line_batch_item>& renderer_items = Render_cpu_batch_cache ? cached_renderer_items : local_renderer_items;
+	renderer_items.clear();
+	renderer_items.resize(VisWeather_line_batch_items.size());
 	for (size_t i = 0; i < VisWeather_line_batch_items.size(); i++)
 	{
 		VisWeather_line_batch_items[i].RefreshItem();

@@ -109,6 +109,7 @@ float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
 bool Render_face_probe = false;
 bool Render_soft_vis_effects = false;
+bool Render_cpu_batch_cache = false;
 // bool Render_split_specular_textures = false;
 bool Render_split_specular_textures = true;
 float Render_per_pixel_specular_strength = 1.0f;
@@ -1279,6 +1280,7 @@ struct video_menu
 	bool* show_draw_calls;
 	bool* face_probe;
 	bool* soft_vis_effects;
+	bool* cpu_batch_cache;
 	bool* motion_vector_debug;
 
 	short* fov;
@@ -1491,6 +1493,11 @@ struct video_menu
 			Render_soft_vis_effects = *soft_vis_effects;
 			ui_changed = true;
 		}
+		if (cpu_batch_cache && sheet->HasChanged(cpu_batch_cache))
+		{
+			Render_cpu_batch_cache = *cpu_batch_cache;
+			ui_changed = true;
+		}
 		if (antialiasing && sheet->HasChanged(antialiasing))
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1551,6 +1558,7 @@ struct video_menu
 		show_draw_calls = NULL;
 		face_probe = NULL;
 		soft_vis_effects = NULL;
+		cpu_batch_cache = NULL;
 		motion_vector_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
@@ -1649,6 +1657,7 @@ struct video_menu
 		update_draw_call_title();
 		face_probe = sheet->AddLongCheckBox("Face probe", Render_face_probe);
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
+		cpu_batch_cache = sheet->AddLongCheckBox("CPU batch cache", Render_cpu_batch_cache);
 
 		return sheet;
 	};
@@ -1691,6 +1700,8 @@ struct video_menu
 			Render_face_probe = *face_probe;
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
+		if (cpu_batch_cache)
+			Render_cpu_batch_cache = *cpu_batch_cache;
 		if (antialiasing)
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
