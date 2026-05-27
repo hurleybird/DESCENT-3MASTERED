@@ -874,6 +874,7 @@ void GL4Renderer::Close()
 
 	FreeImages();
 	DestroyFontBatchResources();
+	DestroyParticleInstanceResources();
 	if (framebuffer_ok)
 		CloseFramebuffer();
 

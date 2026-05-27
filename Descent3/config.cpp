@@ -110,6 +110,9 @@ bool Render_draw_call_stats = false;
 bool Render_face_probe = false;
 bool Render_soft_vis_effects = false;
 bool Render_cpu_batch_cache = false;
+bool Render_disable_powerup_sparkles = false;
+bool Render_simd_particle_builder = false;
+bool Render_gl4_particle_instancing = false;
 // bool Render_split_specular_textures = false;
 bool Render_split_specular_textures = true;
 float Render_per_pixel_specular_strength = 1.0f;
@@ -1281,6 +1284,9 @@ struct video_menu
 	bool* face_probe;
 	bool* soft_vis_effects;
 	bool* cpu_batch_cache;
+	bool* disable_powerup_sparkles;
+	bool* simd_particle_builder;
+	bool* gl4_particle_instancing;
 	bool* motion_vector_debug;
 
 	short* fov;
@@ -1498,6 +1504,21 @@ struct video_menu
 			Render_cpu_batch_cache = *cpu_batch_cache;
 			ui_changed = true;
 		}
+		if (disable_powerup_sparkles && sheet->HasChanged(disable_powerup_sparkles))
+		{
+			Render_disable_powerup_sparkles = *disable_powerup_sparkles;
+			ui_changed = true;
+		}
+		if (simd_particle_builder && sheet->HasChanged(simd_particle_builder))
+		{
+			Render_simd_particle_builder = *simd_particle_builder;
+			ui_changed = true;
+		}
+		if (gl4_particle_instancing && sheet->HasChanged(gl4_particle_instancing))
+		{
+			Render_gl4_particle_instancing = *gl4_particle_instancing;
+			ui_changed = true;
+		}
 		if (antialiasing && sheet->HasChanged(antialiasing))
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1559,6 +1580,9 @@ struct video_menu
 		face_probe = NULL;
 		soft_vis_effects = NULL;
 		cpu_batch_cache = NULL;
+		disable_powerup_sparkles = NULL;
+		simd_particle_builder = NULL;
+		gl4_particle_instancing = NULL;
 		motion_vector_debug = NULL;
 		fov = NULL;
 		frame_limit = NULL;
@@ -1658,6 +1682,9 @@ struct video_menu
 		face_probe = sheet->AddLongCheckBox("Face probe", Render_face_probe);
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
 		cpu_batch_cache = sheet->AddLongCheckBox("CPU batch cache", Render_cpu_batch_cache);
+		disable_powerup_sparkles = sheet->AddLongCheckBox("Disable powerup sparkles", Render_disable_powerup_sparkles);
+		simd_particle_builder = sheet->AddLongCheckBox("SIMD particle builder", Render_simd_particle_builder);
+		gl4_particle_instancing = sheet->AddLongCheckBox("GL4 particle instancing", Render_gl4_particle_instancing);
 
 		return sheet;
 	};
@@ -1702,6 +1729,12 @@ struct video_menu
 			Render_soft_vis_effects = *soft_vis_effects;
 		if (cpu_batch_cache)
 			Render_cpu_batch_cache = *cpu_batch_cache;
+		if (disable_powerup_sparkles)
+			Render_disable_powerup_sparkles = *disable_powerup_sparkles;
+		if (simd_particle_builder)
+			Render_simd_particle_builder = *simd_particle_builder;
+		if (gl4_particle_instancing)
+			Render_gl4_particle_instancing = *gl4_particle_instancing;
 		if (antialiasing)
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);

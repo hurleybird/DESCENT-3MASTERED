@@ -300,6 +300,30 @@ void rend_DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, 
 	renderer_inst->DrawPolygon3DBatch(handle, items, count, map_type);
 }
 
+bool rend_SupportsParticleInstanceBatch()
+{
+	if (!Renderer_initted)
+		return false;
+
+	return renderer_inst->SupportsParticleInstanceBatch();
+}
+
+bool rend_CanDrawParticleInstanceBatch()
+{
+	if (!Renderer_initted)
+		return false;
+
+	return renderer_inst->CanDrawParticleInstanceBatch();
+}
+
+bool rend_DrawParticleInstanceBatch(int handle, const renderer_particle_instance *items, int count, int map_type)
+{
+	if (!Renderer_initted || !items || count <= 0)
+		return false;
+
+	return renderer_inst->DrawParticleInstanceBatch(handle, items, count, map_type);
+}
+
 void rend_DrawPolygon2D(int handle, g3Point** p, int nv)
 {
 	if (!Renderer_initted)

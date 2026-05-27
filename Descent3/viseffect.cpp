@@ -32,6 +32,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <float.h>
+#if defined(_M_IX86) || defined(_M_X64) || defined(__SSE__)
+#include <xmmintrin.h>
+#endif
 #include "PHYSICS.H"
 #include "weapon.h"
 #include "lighting.h"
@@ -1427,6 +1430,9 @@ struct VisFireballSharedAtlas
 static bool VisFireball_batch_valid = false;
 static VisFireballBatchKey VisFireball_batch_key = {};
 static std::vector<VisFireballBatchItem> VisFireball_batch_items;
+static bool VisParticle_instance_batch_valid = false;
+static VisFireballBatchKey VisParticle_instance_batch_key = {};
+static std::vector<renderer_particle_instance> VisParticle_instance_batch_items;
 static std::vector<VisFireballSharedAtlas> VisFireball_shared_atlases;
 static bool VisWeather_quad_batch_valid = false;
 static VisWeatherBatchKey VisWeather_quad_batch_key = {};
@@ -1447,6 +1453,11 @@ static const int VIS_FIREBALL_ATLAS_MAX_DIMENSION = 2048;
 static bool VisEffectHasQueuedBatch()
 {
 	return VisFireball_batch_valid && !VisFireball_batch_items.empty();
+}
+
+static bool VisEffectHasQueuedParticleInstanceBatch()
+{
+	return VisParticle_instance_batch_valid && !VisParticle_instance_batch_items.empty();
 }
 
 static bool VisEffectHasQueuedWeatherQuadBatch()
@@ -2003,6 +2014,34 @@ static bool VisEffectBuildRotatedBatchItem(VisFireballBatchItem& item, const vec
 	rot_vectors[3].y = -height;
 
 	item.nv = 4;
+#if defined(_M_IX86) || defined(_M_X64) || defined(__SSE__)
+	if (Render_simd_particle_builder)
+	{
+		const __m128 xs = _mm_set_ps(-width, width, width, -width);
+		const __m128 ys = _mm_set_ps(-height, -height, height, height);
+		const __m128 vx = _mm_add_ps(_mm_mul_ps(xs, _mm_set1_ps(rot_matrix.rvec.x)),
+			_mm_mul_ps(ys, _mm_set1_ps(rot_matrix.uvec.x)));
+		const __m128 vy = _mm_add_ps(_mm_mul_ps(xs, _mm_set1_ps(rot_matrix.rvec.y)),
+			_mm_mul_ps(ys, _mm_set1_ps(rot_matrix.uvec.y)));
+		const __m128 vz = _mm_add_ps(_mm_mul_ps(xs, _mm_set1_ps(rot_matrix.rvec.z)),
+			_mm_mul_ps(ys, _mm_set1_ps(rot_matrix.uvec.z)));
+		float out_x[4], out_y[4], out_z[4];
+		_mm_storeu_ps(out_x, vx);
+		_mm_storeu_ps(out_y, vy);
+		_mm_storeu_ps(out_z, vz);
+
+		for (int i = 0; i < 4; i++)
+		{
+			item.points[i].p3_vec.x = out_x[i] + center.p3_vec.x;
+			item.points[i].p3_vec.y = out_y[i] + center.p3_vec.y;
+			item.points[i].p3_vec.z = out_z[i] + center.p3_vec.z;
+			item.points[i].p3_flags = PF_UV | PF_RGBA;
+			item.points[i].p3_l = 1.0f;
+			g3_CodePoint(&item.points[i]);
+		}
+	}
+	else
+#endif
 	for (int i = 0; i < 4; i++)
 	{
 		rot_vectors[i].z = 0;
@@ -2022,6 +2061,54 @@ static bool VisEffectBuildRotatedBatchItem(VisFireballBatchItem& item, const vec
 	item.points[3].p3_u = 0.0f;
 	item.points[3].p3_v = 1.0f;
 
+	return true;
+}
+
+static bool VisEffectBuildParticleInstanceItem(renderer_particle_instance& item, const vector* pos,
+	angle rot_angle, float width, float height, float z_bias, float u0, float v0, float u1, float v1,
+	float red, float green, float blue, float alpha)
+{
+	if (!Render_gl4_particle_instancing || OpenGLProfile != GLPROFILE_CORE || !rend_CanDrawParticleInstanceBatch())
+		return false;
+
+	g3Point center;
+	if (g3_RotatePoint(&center, const_cast<vector*>(pos)) & CC_BEHIND)
+		return false;
+	if (center.p3_codes & CC_OFF_FAR)
+		return false;
+	if (center.p3_codes)
+		return false;
+
+	g3_ProjectPoint(&center);
+	if (center.p3_z <= 0.0001f)
+		return false;
+
+	const float draw_z = center.p3_z + z_bias;
+	if (draw_z <= 0.0001f)
+		return false;
+
+	const float half_width = (width * Matrix_scale.x * Window_w2) / center.p3_z;
+	const float half_height = (height * Matrix_scale.y * Window_h2) / center.p3_z;
+	if (half_width <= 0.0f || half_height <= 0.0f)
+		return false;
+
+	item = {};
+	item.screen_x = center.p3_sx;
+	item.screen_y = center.p3_sy;
+	item.eye_z = center.p3_z;
+	item.draw_z = draw_z;
+	item.half_width = half_width;
+	item.half_height = half_height;
+	item.sin_rot = -FixSin(rot_angle);
+	item.cos_rot = FixCos(rot_angle);
+	item.u0 = u0;
+	item.v0 = v0;
+	item.u1 = u1;
+	item.v1 = v1;
+	item.r = red;
+	item.g = green;
+	item.b = blue;
+	item.a = alpha;
 	return true;
 }
 
@@ -2087,9 +2174,10 @@ static bool VisEffectIsSpecialFireball(int id)
 
 static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey& key,
 	VisFireballBatchItem& item, VisFireballBatchKey& blend_key, VisFireballBatchItem& blend_item,
-	bool& has_blend_item)
+	bool& has_blend_item, renderer_particle_instance& instance_item, bool& has_instance_item)
 {
 	has_blend_item = false;
+	has_instance_item = false;
 
 	if (vis->type != VIS_FIREBALL || VisEffectIsSpecialFireball(vis->id))
 		return false;
@@ -2307,7 +2395,17 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 	const float width = size;
 	const float height = (size * bitmap_height) / bitmap_width;
 	const float z_bias = (vis->flags & VF_NO_Z_ADJUST) ? 0.0f : -size;
+	const bool blend_valid = frame1_weight > 0.001f && blend_bm_handle > BAD_BITMAP_HANDLE &&
+		blend_bitmap_width > 0 && blend_bitmap_height > 0;
 	bool built;
+
+	if (!blend_valid && !(vis->flags & VF_PLANAR) &&
+		VisEffectBuildParticleInstanceItem(instance_item, &vis->pos, rot_angle, width, height, z_bias,
+			u0, v0, u1, v1, vertex_red, vertex_green, vertex_blue, vertex_alpha))
+	{
+		has_instance_item = true;
+		return true;
+	}
 
 	if (vis->flags & VF_PLANAR)
 		built = VisEffectBuildPlanarBatchItem(item, &vis->pos, &vis->end_pos, rot_angle, width, height);
@@ -2316,8 +2414,6 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 
 	if (built)
 	{
-		const bool blend_valid = frame1_weight > 0.001f && blend_bm_handle > BAD_BITMAP_HANDLE &&
-			blend_bitmap_width > 0 && blend_bitmap_height > 0;
 		if (blend_valid)
 		{
 			blend_item = item;
@@ -2841,6 +2937,51 @@ static void FlushVisFireballBatchesNow()
 	VisFireball_batch_valid = false;
 }
 
+static void FlushVisParticleInstanceBatchesNow()
+{
+	if (!VisEffectHasQueuedParticleInstanceBatch())
+		return;
+
+	char marker_buffer[96];
+	const char* marker = "VisEffect.FlushParticleInstances";
+	if (Perf_markers_enabled)
+	{
+		snprintf(marker_buffer, sizeof(marker_buffer), "VisEffect.FlushParticleInstances.Count=%d",
+			(int)VisParticle_instance_batch_items.size());
+		marker = marker_buffer;
+	}
+	PERF_MARKER_SCOPE(marker);
+
+	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
+
+	rend_SetAlphaType(VisParticle_instance_batch_key.alpha_type);
+	rend_SetAlphaValue(255);
+	rend_SetOverlayType(OT_NONE);
+	rend_SetZBias(0.0f);
+	rend_SetZBufferWriteMask(0);
+	rend_SetWrapType(WT_CLAMP);
+	rend_SetLighting(LS_GOURAUD);
+	rend_SetColorModel(CM_RGB);
+	rend_SetAOSuppression(1.0f);
+	rend_SetTextureType(TT_LINEAR);
+	rend_SetSoftParticleState(VisParticle_instance_batch_key.soft_particles ? 1 : 0);
+
+	rend_DrawParticleInstanceBatch(VisParticle_instance_batch_key.bitmap_handle,
+		VisParticle_instance_batch_items.data(), (int)VisParticle_instance_batch_items.size(),
+		MAP_TYPE_BITMAP);
+
+	rend_SetSoftParticleState(0);
+	rend_SetAOSuppression(0.0f);
+	rend_SetZBias(0.0f);
+	rend_SetZBufferWriteMask(1);
+	rend_SetWrapType(WT_WRAP);
+	rend_SetLighting(LS_NONE);
+	rend_SetColorModel(CM_MONO);
+
+	VisParticle_instance_batch_items.clear();
+	VisParticle_instance_batch_valid = false;
+}
+
 static void FlushVisSmokeTrailBatchesNow()
 {
 	if (!VisEffectHasQueuedSmokeTrailBatch())
@@ -3064,6 +3205,7 @@ static void FlushVisWeatherBatchesNow()
 static void FlushVisEffectBatchesNow()
 {
 	FlushVisFireballBatchesNow();
+	FlushVisParticleInstanceBatchesNow();
 	FlushVisWeatherBatchesNow();
 	FlushVisSmokeTrailBatchesNow();
 	FlushVisMassDriverBatchesNow();
@@ -3083,6 +3225,7 @@ void ForceFlushVisEffectBatches()
 static void QueueVisEffectBatchItem(const VisFireballBatchKey& key, const VisFireballBatchItem& item)
 {
 	FlushVisMassDriverBatchesNow();
+	FlushVisParticleInstanceBatchesNow();
 
 	if (VisFireball_batch_valid && !VisFireball_batch_key.Equals(key))
 		FlushVisFireballBatchesNow();
@@ -3096,9 +3239,30 @@ static void QueueVisEffectBatchItem(const VisFireballBatchKey& key, const VisFir
 	VisFireball_batch_items.push_back(item);
 }
 
+static void QueueVisParticleInstanceBatchItem(const VisFireballBatchKey& key,
+	const renderer_particle_instance& item)
+{
+	FlushVisFireballBatchesNow();
+	FlushVisWeatherBatchesNow();
+	FlushVisSmokeTrailBatchesNow();
+	FlushVisMassDriverBatchesNow();
+
+	if (VisParticle_instance_batch_valid && !VisParticle_instance_batch_key.Equals(key))
+		FlushVisParticleInstanceBatchesNow();
+
+	if (!VisParticle_instance_batch_valid)
+	{
+		VisParticle_instance_batch_key = key;
+		VisParticle_instance_batch_valid = true;
+	}
+
+	VisParticle_instance_batch_items.push_back(item);
+}
+
 static void QueueVisWeatherQuadBatchItem(const VisWeatherBatchKey& key, const VisFireballBatchItem& item)
 {
 	FlushVisFireballBatchesNow();
+	FlushVisParticleInstanceBatchesNow();
 	FlushVisSmokeTrailBatchesNow();
 	FlushVisMassDriverBatchesNow();
 	FlushVisWeatherLineBatchesNow();
@@ -3118,6 +3282,7 @@ static void QueueVisWeatherQuadBatchItem(const VisWeatherBatchKey& key, const Vi
 static void QueueVisWeatherLineBatchItem(bool soft_particles, const VisWeatherLineBatchItem& item)
 {
 	FlushVisFireballBatchesNow();
+	FlushVisParticleInstanceBatchesNow();
 	FlushVisSmokeTrailBatchesNow();
 	FlushVisMassDriverBatchesNow();
 	FlushVisWeatherQuadBatchesNow();
@@ -3137,6 +3302,7 @@ static void QueueVisWeatherLineBatchItem(bool soft_particles, const VisWeatherLi
 static void QueueVisSmokeTrailBatchItem(const VisSmokeTrailBatchKey& key, const VisFireballBatchItem& item)
 {
 	FlushVisFireballBatchesNow();
+	FlushVisParticleInstanceBatchesNow();
 	FlushVisWeatherBatchesNow();
 	FlushVisMassDriverBatchesNow();
 
@@ -3156,6 +3322,7 @@ static void QueueVisMassDriverBatchItem(const VisMassDriverBatchKey& key,
 	const VisFireballBatchItem& item)
 {
 	FlushVisFireballBatchesNow();
+	FlushVisParticleInstanceBatchesNow();
 	FlushVisWeatherBatchesNow();
 	FlushVisSmokeTrailBatchesNow();
 
@@ -3269,16 +3436,24 @@ void DrawVisEffectMaybeBatched(vis_effect* vis)
 	VisFireballBatchKey blend_key = {};
 	VisFireballBatchItem blend_item = {};
 	bool has_blend_item = false;
-	if (!VisEffectBuildFireballBatchItem(vis, key, item, blend_key, blend_item, has_blend_item))
+	renderer_particle_instance instance_item = {};
+	bool has_instance_item = false;
+	if (!VisEffectBuildFireballBatchItem(vis, key, item, blend_key, blend_item, has_blend_item,
+		instance_item, has_instance_item))
 	{
 		FlushVisEffectBatchesNow();
 		DrawVisEffect(vis);
 		return;
 	}
 
-	QueueVisEffectBatchItem(key, item);
-	if (has_blend_item)
-		QueueVisEffectBatchItem(blend_key, blend_item);
+	if (has_instance_item)
+		QueueVisParticleInstanceBatchItem(key, instance_item);
+	else
+	{
+		QueueVisEffectBatchItem(key, item);
+		if (has_blend_item)
+			QueueVisEffectBatchItem(blend_key, blend_item);
+	}
 }
 
 void VisEffectRenderCloseScreenEffectsPostAO()

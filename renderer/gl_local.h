@@ -126,6 +126,7 @@ class GL4Renderer : public IRenderer
 	ShaderProgram motionvectorcopyshader;
 	ShaderProgram motionblurshader;
 	ShaderProgram ao_compositeshader;
+	ShaderProgram particleinstanceshaders[2];
 	BloomResources bloom;
 	GTAOResources gtao;
 	//Cached projection matrix and near/far for GTAO. Updated on every
@@ -280,6 +281,19 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_soft_particle_enabled_uniforms[8] = {};
 	GLint drawshader_soft_particle_screen_size_uniforms[8] = {};
 	GLint drawshader_soft_particle_depth_range_uniforms[8] = {};
+	GLint particleinstance_phong_enabled_uniforms[2] = {};
+	GLint particleinstance_dynamic_count_uniforms[2] = {};
+	GLint particleinstance_ao_suppression_uniforms[2] = {};
+	GLint particleinstance_bloom_suppression_uniforms[2] = {};
+	GLint particleinstance_ao_class_uniforms[2] = {};
+	GLint particleinstance_ao_weight_uniforms[2] = {};
+	GLint particleinstance_ao_capture_weight_mode_uniforms[2] = {};
+	GLint particleinstance_post_mask_luminance_uniforms[2] = {};
+	GLint particleinstance_motion_vector_mode_uniforms[2] = {};
+	GLint particleinstance_motion_vector_object_id_uniforms[2] = {};
+	GLint particleinstance_soft_particle_enabled_uniforms[2] = {};
+	GLint particleinstance_soft_particle_screen_size_uniforms[2] = {};
+	GLint particleinstance_soft_particle_depth_range_uniforms[2] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
 	float ao_suppression_draw_value = 0.0f;
@@ -313,6 +327,8 @@ class GL4Renderer : public IRenderer
 	GLuint soft_particle_depth_source_framebuffer = 0;
 
 	GLuint drawvao = 0;
+	GLuint particleinstancevao = 0;
+	GLuint particleinstancebuffer = 0;
 	void* drawbuffermap = 0;
 	bool motion_object_active = false;
 	bool motion_vectors_dirty = false;
@@ -404,7 +420,10 @@ private:
 	int CopyVertices(int numvertices);
 	int CopyVertices(const gl_vertex* vertices, int numvertices);
 	void SetDrawDefaults();
+	void InitParticleInstanceResources(const char* genericFragBody);
+	void DestroyParticleInstanceResources();
 	void SelectDrawShader();
+	void ApplyParticleInstanceUniforms(int shader_index);
 	GLuint PrepareSoftParticleDepthTexture();
 	void InvalidateSoftParticleDepthTexture();
 	void BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xscalar, float yscalar,
@@ -637,6 +656,10 @@ public:
 	// Given a handle to a bitmap and nv point vertices, draws a 3D polygon
 	void DrawPolygon3D(int handle, g3Point** p, int nv, int map_type = MAP_TYPE_BITMAP) override;
 	void DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, int count,
+		int map_type = MAP_TYPE_BITMAP) override;
+	bool SupportsParticleInstanceBatch() const override;
+	bool CanDrawParticleInstanceBatch() const override;
+	bool DrawParticleInstanceBatch(int handle, const renderer_particle_instance *items, int count,
 		int map_type = MAP_TYPE_BITMAP) override;
 
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon

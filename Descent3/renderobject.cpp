@@ -2075,7 +2075,7 @@ void DrawPowerupSparkles(object* obj)
 {
 	PERF_MARKER_SCOPE("RenderObject.PowerupSparkles");
 	extern bool Render_mirror_for_room;
-	if (!Render_powerup_sparkles)
+	if (!Render_powerup_sparkles || Render_disable_powerup_sparkles)
 		return;
 
 	if (Game_paused)
