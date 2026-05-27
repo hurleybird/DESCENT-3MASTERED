@@ -322,6 +322,17 @@ void PerfMarkersEndFrame()
 
 	PolymodelPerfFlush();
 	RenderObjectPerfFlush();
+	PerfMarkersRecordDuration("Frame.Total", Perf_marker_frame_start, frame_end - Perf_marker_frame_start);
+	if (!Perf_marker_stack.empty())
+	{
+		char open_marker_count[64];
+		snprintf(open_marker_count, sizeof(open_marker_count), "Frame.Count.OpenMarkers=%d", (int)Perf_marker_stack.size());
+		PerfMarkersRecordDuration(open_marker_count, frame_end, 0.0);
+	}
+	char marker_record_count[64];
+	snprintf(marker_record_count, sizeof(marker_record_count), "Frame.Count.MarkerRecords=%d", (int)Perf_marker_records.size());
+	PerfMarkersRecordDuration(marker_record_count, frame_end, 0.0);
+
 	fprintf(Perf_marker_file,
 		"FRAME\t%d\t%.3f\t%.3f\t%.3f\tgametime=%.3f\tframetime=%.3f\tcapture=%s\treason=%s\tgame_if=%d\tmenu_if=%d\n",
 		Perf_marker_frame_number,

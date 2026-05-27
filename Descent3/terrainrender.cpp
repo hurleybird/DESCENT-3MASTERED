@@ -2537,6 +2537,15 @@ void RenderTerrainRooms()
 		{
 			int objnum = rooms_to_render[i].objnum;
 			object* obj = &Objects[objnum];
+			char mine_marker_buffer[96];
+			const char* mine_marker = "TerrainRooms.RenderMine";
+			if (Perf_markers_enabled)
+			{
+				snprintf(mine_marker_buffer, sizeof(mine_marker_buffer), "TerrainRooms.RenderMine obj=%d room=%d dist=%.1f",
+					objnum, obj->id, rooms_to_render[i].dist);
+				mine_marker = mine_marker_buffer;
+			}
+			PERF_MARKER_SCOPE(mine_marker);
 #ifndef NEWEDITOR
 			RenderMine(obj->id, 0, 1);
 #else

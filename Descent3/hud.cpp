@@ -43,6 +43,7 @@
 #include "room.h"
 #include "special_face.h"
 #include "render.h"
+#include "gameloop.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -936,8 +937,14 @@ void RenderHUDFrame(float zoom)
 		Game_window_x = game_window_xmid - Game_window_w / 2;
 	}
 
-	StartFrame(false);
-	g3_StartFrame(&Viewer_object->pos, &Viewer_object->orient, zoom);
+	{
+		PERF_MARKER_SCOPE("HUD.StartFrame.Primary");
+		StartFrame(false);
+	}
+	{
+		PERF_MARKER_SCOPE("HUD.g3_StartFrame.Primary");
+		g3_StartFrame(&Viewer_object->pos, &Viewer_object->orient, zoom);
+	}
 
 	rend_SetOverlayType(OT_NONE);
 
@@ -987,12 +994,18 @@ void RenderHUDFrame(float zoom)
 
 		case HUD_LETTERBOX:
 			if (!Cinematic_inuse)
+			{
+				PERF_MARKER_SCOPE("HUD.RenderItems.Immediate");
 				RenderHUDItems(Hud_stat_mask);
+			}
 			break;
 
 		case HUD_OBSERVER:
 			if (!Cinematic_inuse)
+			{
+				PERF_MARKER_SCOPE("HUD.RenderItems.Immediate");
 				RenderHUDItems(Hud_stat_mask);
+			}
 			break;
 
 		default:
@@ -1001,11 +1014,20 @@ void RenderHUDFrame(float zoom)
 	}
 
 	// Do dll stuff
-	CallGameDLL(EVT_CLIENT_HUD_INTERVAL, &DLLInfo);
+	{
+		PERF_MARKER_SCOPE("HUD.CallGameDLL");
+		CallGameDLL(EVT_CLIENT_HUD_INTERVAL, &DLLInfo);
+	}
 
 	//	End frame
-	g3_EndFrame();
-	EndFrame();
+	{
+		PERF_MARKER_SCOPE("HUD.g3_EndFrame.Primary");
+		g3_EndFrame();
+	}
+	{
+		PERF_MARKER_SCOPE("HUD.EndFrame.Primary");
+		EndFrame();
+	}
 
 	if (hudmode == HUD_FULLSCREEN || hudmode == HUD_COCKPIT)
 	{
@@ -1020,14 +1042,27 @@ void RenderHUDFrame(float zoom)
 	// [ISB] extra pass to render the cockpit so it always uses correct window
 	if (render_post_world_hud || render_cockpit_geometry)
 	{
-		const bool post_world_frame =
-			render_cockpit_geometry ? rend_BeginCockpitFrame() : rend_BeginPostPresentFrame();
+		bool post_world_frame = false;
+		if (render_cockpit_geometry)
+		{
+			PERF_MARKER_SCOPE("HUD.BeginCockpitFrame");
+			post_world_frame = rend_BeginCockpitFrame();
+		}
+		else
+		{
+			PERF_MARKER_SCOPE("HUD.BeginPostPresentFrame");
+			post_world_frame = rend_BeginPostPresentFrame();
+		}
 		if (post_world_frame)
+		{
+			PERF_MARKER_SCOPE("HUD.CloseScreenEffectsPostAO");
 			VisEffectRenderCloseScreenEffectsPostAO();
+		}
 		if (render_post_world_hud)
 		{
 			if (post_world_frame)
 			{
+				PERF_MARKER_SCOPE("HUD.StartPostPresentFrame");
 				rend_StartPostPresentFrame(post_world_hud_window_x, post_world_hud_window_y,
 					post_world_hud_window_x + post_world_hud_window_w, post_world_hud_window_y + post_world_hud_window_h,
 					RF_CLEAR_ZBUFFER);
@@ -1048,28 +1083,58 @@ void RenderHUDFrame(float zoom)
 			Game_window_x = post_world_hud_window_x;
 			Game_window_y = post_world_hud_window_y;
 			if (render_hud_items_after_world_post)
+			{
+				PERF_MARKER_SCOPE("HUD.RenderItems.PostWorld");
 				RenderHUDItems(post_world_hud_stat_mask);
+			}
 			if (render_reticle_after_world_post)
+			{
+				PERF_MARKER_SCOPE("HUD.RenderReticle.PostWorld");
 				RenderReticle();
+			}
 			Game_window_w = saved_game_window_w;
 			Game_window_h = saved_game_window_h;
 			Game_window_x = saved_game_window_x;
 			Game_window_y = saved_game_window_y;
 
 			if (post_world_frame)
+			{
+				PERF_MARKER_SCOPE("HUD.EndPostPresentFrame");
 				rend_EndFrame();
+			}
 			else
+			{
+				PERF_MARKER_SCOPE("HUD.EndFrame.PostWorldFallback");
 				EndFrame();
+			}
 		}
 		if (render_cockpit_geometry)
 		{
-			StartFrame(false);
-			g3_StartFrame(&Viewer_object->pos, &Viewer_object->orient, zoom);
-			RenderCockpit();
-			g3_EndFrame();
-			EndFrame();
+			{
+				PERF_MARKER_SCOPE("HUD.Cockpit.StartFrame");
+				StartFrame(false);
+			}
+			{
+				PERF_MARKER_SCOPE("HUD.Cockpit.g3_StartFrame");
+				g3_StartFrame(&Viewer_object->pos, &Viewer_object->orient, zoom);
+			}
+			{
+				PERF_MARKER_SCOPE("HUD.RenderCockpit");
+				RenderCockpit();
+			}
+			{
+				PERF_MARKER_SCOPE("HUD.Cockpit.g3_EndFrame");
+				g3_EndFrame();
+			}
+			{
+				PERF_MARKER_SCOPE("HUD.Cockpit.EndFrame");
+				EndFrame();
+			}
 			if (post_world_frame)
+			{
+				PERF_MARKER_SCOPE("HUD.EndCockpitFrame");
 				rend_EndCockpitFrame();
+			}
 		}
 	}
 

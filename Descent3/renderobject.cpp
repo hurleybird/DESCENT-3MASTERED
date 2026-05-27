@@ -177,6 +177,8 @@ static double Render_object_perf_polymodel_normalize_time = 0.0;
 static double Render_object_perf_motion_blur_time = 0.0;
 static double Render_object_perf_extra_effects_time = 0.0;
 static double Render_object_perf_type_time[MAX_OBJECT_TYPES];
+static double Render_object_perf_polymodel_base_type_time[MAX_OBJECT_TYPES];
+static double Render_object_perf_extra_effects_type_time[MAX_OBJECT_TYPES];
 static double Render_object_perf_render_type_time[10];
 static int Render_object_perf_call_count = 0;
 static int Render_object_perf_rendered_count = 0;
@@ -186,6 +188,8 @@ static int Render_object_perf_attach_reject_count = 0;
 static int Render_object_perf_setup_reject_count = 0;
 static int Render_object_perf_safe_reject_count = 0;
 static int Render_object_perf_type_count[MAX_OBJECT_TYPES];
+static int Render_object_perf_polymodel_base_type_count[MAX_OBJECT_TYPES];
+static int Render_object_perf_extra_effects_type_count[MAX_OBJECT_TYPES];
 static int Render_object_perf_render_type_count[10];
 
 static const char* RenderObjectPerfRenderTypeName(int render_type)
@@ -280,8 +284,12 @@ void RenderObjectPerfReset()
 	Render_object_perf_setup_reject_count = 0;
 	Render_object_perf_safe_reject_count = 0;
 	memset(Render_object_perf_type_time, 0, sizeof(Render_object_perf_type_time));
+	memset(Render_object_perf_polymodel_base_type_time, 0, sizeof(Render_object_perf_polymodel_base_type_time));
+	memset(Render_object_perf_extra_effects_type_time, 0, sizeof(Render_object_perf_extra_effects_type_time));
 	memset(Render_object_perf_render_type_time, 0, sizeof(Render_object_perf_render_type_time));
 	memset(Render_object_perf_type_count, 0, sizeof(Render_object_perf_type_count));
+	memset(Render_object_perf_polymodel_base_type_count, 0, sizeof(Render_object_perf_polymodel_base_type_count));
+	memset(Render_object_perf_extra_effects_type_count, 0, sizeof(Render_object_perf_extra_effects_type_count));
 	memset(Render_object_perf_render_type_count, 0, sizeof(Render_object_perf_render_type_count));
 }
 
@@ -319,6 +327,20 @@ void RenderObjectPerfFlush()
 		snprintf(marker, sizeof(marker), "RenderObject.Type.%s.Count=%d",
 			RenderObjectPerfObjectTypeName(i), Render_object_perf_type_count[i]);
 		PerfMarkersRecordDuration(marker, marker_time, Render_object_perf_type_time[i]);
+
+		if (Render_object_perf_polymodel_base_type_count[i] > 0)
+		{
+			snprintf(marker, sizeof(marker), "RenderObject.Type.%s.PolymodelBase.Count=%d",
+				RenderObjectPerfObjectTypeName(i), Render_object_perf_polymodel_base_type_count[i]);
+			PerfMarkersRecordDuration(marker, marker_time, Render_object_perf_polymodel_base_type_time[i]);
+		}
+
+		if (Render_object_perf_extra_effects_type_count[i] > 0)
+		{
+			snprintf(marker, sizeof(marker), "RenderObject.Type.%s.ExtraEffects.Count=%d",
+				RenderObjectPerfObjectTypeName(i), Render_object_perf_extra_effects_type_count[i]);
+			PerfMarkersRecordDuration(marker, marker_time, Render_object_perf_extra_effects_type_time[i]);
+		}
 	}
 
 	for (int i = 0; i < (int)(sizeof(Render_object_perf_render_type_count) / sizeof(Render_object_perf_render_type_count[0])); i++)
@@ -1176,14 +1198,30 @@ void RenderObject(object* obj)
 			double polymodel_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
 			RenderObject_DrawPolymodel(obj, normalized_time);
 			if (perf_scope.IsActive())
-				RenderObjectPerfAdd(Render_object_perf_polymodel_base_time, polymodel_start_time);
+			{
+				double polymodel_duration = PerfMarkersNow() - polymodel_start_time;
+				Render_object_perf_polymodel_base_time += polymodel_duration;
+				if (obj->type >= 0 && obj->type < MAX_OBJECT_TYPES)
+				{
+					Render_object_perf_polymodel_base_type_time[obj->type] += polymodel_duration;
+					Render_object_perf_polymodel_base_type_count[obj->type]++;
+				}
+			}
 		}
 		else
 		{
 			double polymodel_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
 			RenderObject_DrawPolymodel(obj, NULL);
 			if (perf_scope.IsActive())
-				RenderObjectPerfAdd(Render_object_perf_polymodel_base_time, polymodel_start_time);
+			{
+				double polymodel_duration = PerfMarkersNow() - polymodel_start_time;
+				Render_object_perf_polymodel_base_time += polymodel_duration;
+				if (obj->type >= 0 && obj->type < MAX_OBJECT_TYPES)
+				{
+					Render_object_perf_polymodel_base_type_time[obj->type] += polymodel_duration;
+					Render_object_perf_polymodel_base_type_count[obj->type]++;
+				}
+			}
 		}
 
 		////////////////////////////////////////////
@@ -1422,7 +1460,15 @@ void RenderObject(object* obj)
 			DrawVirusLightning(obj);
 		}
 		if (perf_scope.IsActive() && has_extra_effects)
-			RenderObjectPerfAdd(Render_object_perf_extra_effects_time, extra_effects_start_time);
+		{
+			double extra_effects_duration = PerfMarkersNow() - extra_effects_start_time;
+			Render_object_perf_extra_effects_time += extra_effects_duration;
+			if (obj->type >= 0 && obj->type < MAX_OBJECT_TYPES)
+			{
+				Render_object_perf_extra_effects_type_time[obj->type] += extra_effects_duration;
+				Render_object_perf_extra_effects_type_count[obj->type]++;
+			}
+		}
 
 	}
 		break;
@@ -2027,6 +2073,7 @@ int IsPointVisible(vector* pos, float size, float* pointz)
 //Do powerup sparkles and stuff
 void DrawPowerupSparkles(object* obj)
 {
+	PERF_MARKER_SCOPE("RenderObject.PowerupSparkles");
 	extern bool Render_mirror_for_room;
 	if (!Render_powerup_sparkles)
 		return;
@@ -2117,6 +2164,7 @@ void DrawPowerupSparkles(object* obj)
 // Draws the glowing disk around a powerup
 void DrawPowerupGlowDisk(object* obj)
 {
+	PERF_MARKER_SCOPE("RenderObject.PowerupGlowDisk");
 	ASSERT(obj->type == OBJ_POWERUP);
 	if (!Detail_settings.Powerup_halos)
 		return;

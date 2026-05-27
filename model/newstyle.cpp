@@ -41,6 +41,9 @@
 #include <stdlib.h>
 #include <search.h>
 #include <string.h>
+#include <functional>
+#include <stdint.h>
+#include <unordered_map>
 #include <vector>
 
 #include "psrand.h"
@@ -74,9 +77,14 @@ static double Polymodel_perf_faces_unsorted_scan_time = 0.0;
 static double Polymodel_perf_faces_unsorted_sort_time = 0.0;
 static double Polymodel_perf_faces_sorted_time = 0.0;
 static double Polymodel_perf_face_base_time = 0.0;
+static double Polymodel_perf_face_base_key_time = 0.0;
 static double Polymodel_perf_face_base_point_time = 0.0;
 static double Polymodel_perf_face_base_state_time = 0.0;
 static double Polymodel_perf_face_base_per_pixel_time = 0.0;
+static double Polymodel_perf_face_base_clip_time = 0.0;
+static double Polymodel_perf_face_base_copy_time = 0.0;
+static double Polymodel_perf_face_base_batch_add_time = 0.0;
+static double Polymodel_perf_face_base_batch_prepare_time = 0.0;
 static double Polymodel_perf_face_base_draw_time = 0.0;
 static double Polymodel_perf_lightmap_face_time = 0.0;
 static double Polymodel_perf_lightmap_face_draw_time = 0.0;
@@ -91,12 +99,23 @@ static int Polymodel_perf_submodel_visit_count = 0;
 static int Polymodel_perf_submodel_draw_count = 0;
 static int Polymodel_perf_faces_considered_count = 0;
 static int Polymodel_perf_base_face_count = 0;
+static int Polymodel_perf_base_face_clipped_count = 0;
 static int Polymodel_perf_alpha_face_count = 0;
 static int Polymodel_perf_lightmap_face_count = 0;
 static int Polymodel_perf_specular_face_count = 0;
 static int Polymodel_perf_fog_face_count = 0;
 static int Polymodel_perf_draw_poly_count = 0;
 static int Polymodel_perf_facing_effect_count = 0;
+static int Polymodel_perf_base_batch_add_count = 0;
+static int Polymodel_perf_base_batch_last_hit_count = 0;
+static int Polymodel_perf_base_batch_lookup_hit_count = 0;
+static int Polymodel_perf_base_batch_miss_count = 0;
+static int Polymodel_perf_base_batch_key_compare_count = 0;
+static int Polymodel_perf_base_batch_created_count = 0;
+static int Polymodel_perf_base_batch_flushed_count = 0;
+static int Polymodel_perf_base_batch_flush_count = 0;
+static int Polymodel_perf_base_batch_max_batches_per_flush = 0;
+static int Polymodel_perf_base_batch_max_faces_per_batch = 0;
 
 static double PolymodelPerfNow()
 {
@@ -131,6 +150,12 @@ static void PolymodelPerfRecordCounter(double marker_time, const char* marker_na
 	PerfMarkersRecordDuration(marker, marker_time, 0.0);
 }
 
+static void PolymodelPerfUpdateMax(int& bucket, size_t value)
+{
+	if (Perf_markers_enabled && value > (size_t)bucket)
+		bucket = (int)value;
+}
+
 void PolymodelPerfReset()
 {
 	Polymodel_perf_first_time = 0.0;
@@ -147,9 +172,14 @@ void PolymodelPerfReset()
 	Polymodel_perf_faces_unsorted_sort_time = 0.0;
 	Polymodel_perf_faces_sorted_time = 0.0;
 	Polymodel_perf_face_base_time = 0.0;
+	Polymodel_perf_face_base_key_time = 0.0;
 	Polymodel_perf_face_base_point_time = 0.0;
 	Polymodel_perf_face_base_state_time = 0.0;
 	Polymodel_perf_face_base_per_pixel_time = 0.0;
+	Polymodel_perf_face_base_clip_time = 0.0;
+	Polymodel_perf_face_base_copy_time = 0.0;
+	Polymodel_perf_face_base_batch_add_time = 0.0;
+	Polymodel_perf_face_base_batch_prepare_time = 0.0;
 	Polymodel_perf_face_base_draw_time = 0.0;
 	Polymodel_perf_lightmap_face_time = 0.0;
 	Polymodel_perf_lightmap_face_draw_time = 0.0;
@@ -164,12 +194,23 @@ void PolymodelPerfReset()
 	Polymodel_perf_submodel_draw_count = 0;
 	Polymodel_perf_faces_considered_count = 0;
 	Polymodel_perf_base_face_count = 0;
+	Polymodel_perf_base_face_clipped_count = 0;
 	Polymodel_perf_alpha_face_count = 0;
 	Polymodel_perf_lightmap_face_count = 0;
 	Polymodel_perf_specular_face_count = 0;
 	Polymodel_perf_fog_face_count = 0;
 	Polymodel_perf_draw_poly_count = 0;
 	Polymodel_perf_facing_effect_count = 0;
+	Polymodel_perf_base_batch_add_count = 0;
+	Polymodel_perf_base_batch_last_hit_count = 0;
+	Polymodel_perf_base_batch_lookup_hit_count = 0;
+	Polymodel_perf_base_batch_miss_count = 0;
+	Polymodel_perf_base_batch_key_compare_count = 0;
+	Polymodel_perf_base_batch_created_count = 0;
+	Polymodel_perf_base_batch_flushed_count = 0;
+	Polymodel_perf_base_batch_flush_count = 0;
+	Polymodel_perf_base_batch_max_batches_per_flush = 0;
+	Polymodel_perf_base_batch_max_faces_per_batch = 0;
 }
 
 void PolymodelPerfFlush()
@@ -191,9 +232,14 @@ void PolymodelPerfFlush()
 	PolymodelPerfRecordDuration(marker_time, "Polymodel.FacesUnsorted.StateSort.Aggregate", Polymodel_perf_faces_unsorted_sort_time);
 	PolymodelPerfRecordDuration(marker_time, "Polymodel.FacesSorted.Aggregate", Polymodel_perf_faces_sorted_time);
 	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.Total.Aggregate", Polymodel_perf_face_base_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.KeySetup.Aggregate", Polymodel_perf_face_base_key_time);
 	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.PointSetup.Aggregate", Polymodel_perf_face_base_point_time);
 	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.StateSetup.Aggregate", Polymodel_perf_face_base_state_time);
 	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.PerPixelSetup.Aggregate", Polymodel_perf_face_base_per_pixel_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.Clip.Aggregate", Polymodel_perf_face_base_clip_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.CopyPoints.Aggregate", Polymodel_perf_face_base_copy_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.BatchAdd.Aggregate", Polymodel_perf_face_base_batch_add_time);
+	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.BatchPrepare.Aggregate", Polymodel_perf_face_base_batch_prepare_time);
 	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Base.DrawPoly.Aggregate", Polymodel_perf_face_base_draw_time);
 	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Lightmap.Total.Aggregate", Polymodel_perf_lightmap_face_time);
 	PolymodelPerfRecordDuration(marker_time, "Polymodel.Face.Lightmap.DrawPoly.Aggregate", Polymodel_perf_lightmap_face_draw_time);
@@ -209,12 +255,23 @@ void PolymodelPerfFlush()
 	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.SubmodelsDrawn", Polymodel_perf_submodel_draw_count);
 	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.FacesConsidered", Polymodel_perf_faces_considered_count);
 	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.BaseFacesDrawn", Polymodel_perf_base_face_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.BaseFacesClipped", Polymodel_perf_base_face_clipped_count);
 	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.AlphaFaces", Polymodel_perf_alpha_face_count);
 	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.LightmapFaces", Polymodel_perf_lightmap_face_count);
 	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.SpecularFaces", Polymodel_perf_specular_face_count);
 	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.FogFaces", Polymodel_perf_fog_face_count);
 	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.DrawPolyCalls", Polymodel_perf_draw_poly_count);
 	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.FacingEffects", Polymodel_perf_facing_effect_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.BaseBatchAdds", Polymodel_perf_base_batch_add_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.BaseBatchLastHits", Polymodel_perf_base_batch_last_hit_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.BaseBatchLookupHits", Polymodel_perf_base_batch_lookup_hit_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.BaseBatchMisses", Polymodel_perf_base_batch_miss_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.BaseBatchKeyComparisons", Polymodel_perf_base_batch_key_compare_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.BaseBatchesCreated", Polymodel_perf_base_batch_created_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.BaseBatchesFlushed", Polymodel_perf_base_batch_flushed_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.BaseBatchFlushes", Polymodel_perf_base_batch_flush_count);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.BaseBatchMaxBatchesPerFlush", Polymodel_perf_base_batch_max_batches_per_flush);
+	PolymodelPerfRecordCounter(marker_time, "Polymodel.Count.BaseBatchMaxFacesPerBatch", Polymodel_perf_base_batch_max_faces_per_batch);
 }
 
 void PolymodelPerfAddDrawModel(double start_time)
@@ -346,6 +403,57 @@ struct PolymodelBaseFaceBatchKey
 	}
 };
 
+static size_t PolymodelBaseFaceBatchHashCombine(size_t seed, size_t value)
+{
+	return seed ^ (value + 0x9e3779b9 + (seed << 6) + (seed >> 2));
+}
+
+static size_t PolymodelBaseFaceBatchHashInt(size_t seed, int value)
+{
+	return PolymodelBaseFaceBatchHashCombine(seed, std::hash<int>()(value));
+}
+
+static size_t PolymodelBaseFaceBatchHashFloat(size_t seed, float value)
+{
+	uint32_t bits = 0;
+	memcpy(&bits, &value, sizeof(bits));
+	return PolymodelBaseFaceBatchHashCombine(seed, std::hash<uint32_t>()(bits));
+}
+
+struct PolymodelBaseFaceBatchKeyHasher
+{
+	size_t operator()(const PolymodelBaseFaceBatchKey& key) const
+	{
+		size_t seed = 0;
+		seed = PolymodelBaseFaceBatchHashInt(seed, key.bitmap_handle);
+		seed = PolymodelBaseFaceBatchHashInt(seed, key.overlay_map);
+		seed = PolymodelBaseFaceBatchHashInt(seed, (int)key.texture_type_value);
+		seed = PolymodelBaseFaceBatchHashInt(seed, key.overlay_type);
+		seed = PolymodelBaseFaceBatchHashInt(seed, (int)key.lighting);
+		seed = PolymodelBaseFaceBatchHashInt(seed, (int)key.color_model_value);
+		seed = PolymodelBaseFaceBatchHashInt(seed, key.alpha_type);
+		seed = PolymodelBaseFaceBatchHashInt(seed, key.alpha_value);
+		seed = PolymodelBaseFaceBatchHashCombine(seed, std::hash<unsigned int>()((unsigned int)key.flat_color));
+		if (key.lighting == LS_PHONG)
+		{
+			seed = PolymodelBaseFaceBatchHashFloat(seed, key.light_direction.x);
+			seed = PolymodelBaseFaceBatchHashFloat(seed, key.light_direction.y);
+			seed = PolymodelBaseFaceBatchHashFloat(seed, key.light_direction.z);
+		}
+		return seed;
+	}
+};
+
+struct PolymodelBaseFaceBatchKeyEqual
+{
+	bool operator()(const PolymodelBaseFaceBatchKey& left, const PolymodelBaseFaceBatchKey& right) const
+	{
+		if (Perf_markers_enabled)
+			Polymodel_perf_base_batch_key_compare_count++;
+		return left.Equals(right);
+	}
+};
+
 struct PolymodelBaseFaceBatch
 {
 	PolymodelBaseFaceBatchKey key;
@@ -355,27 +463,72 @@ struct PolymodelBaseFaceBatch
 class PolymodelBaseFaceBatcher
 {
 public:
-	void Add(const PolymodelBaseFaceBatchKey& key, const PolymodelBatchedFace& face)
+	PolymodelBatchedFace& Add(const PolymodelBaseFaceBatchKey& key)
 	{
-		for (size_t i = 0; i < m_batches.size(); i++)
+		if (Perf_markers_enabled)
+			Polymodel_perf_base_batch_add_count++;
+
+		if (m_last_batch_index != (size_t)-1 && m_last_batch_index < m_batches.size())
 		{
-			if (m_batches[i].key.Equals(key))
+			if (Perf_markers_enabled)
+				Polymodel_perf_base_batch_key_compare_count++;
+			if (m_batches[m_last_batch_index].key.Equals(key))
 			{
-				m_batches[i].faces.push_back(face);
-				return;
+				PolymodelBaseFaceBatch& batch = m_batches[m_last_batch_index];
+				batch.faces.emplace_back();
+				if (Perf_markers_enabled)
+					Polymodel_perf_base_batch_last_hit_count++;
+				PolymodelPerfUpdateMax(Polymodel_perf_base_batch_max_faces_per_batch, batch.faces.size());
+				return batch.faces.back();
 			}
 		}
 
-		PolymodelBaseFaceBatch batch;
+		if (m_batches.empty())
+		{
+			m_batches.reserve(16);
+			m_batch_lookup.reserve(16);
+		}
+
+		BatchLookup::iterator iter = m_batch_lookup.find(key);
+		if (iter != m_batch_lookup.end())
+		{
+			PolymodelBaseFaceBatch& batch = m_batches[iter->second];
+			batch.faces.emplace_back();
+			m_last_batch_index = iter->second;
+			if (Perf_markers_enabled)
+				Polymodel_perf_base_batch_lookup_hit_count++;
+			PolymodelPerfUpdateMax(Polymodel_perf_base_batch_max_faces_per_batch, batch.faces.size());
+			return batch.faces.back();
+		}
+
+		const size_t batch_index = m_batches.size();
+		m_batches.emplace_back();
+		PolymodelBaseFaceBatch& batch = m_batches.back();
 		batch.key = key;
-		batch.faces.push_back(face);
-		m_batches.push_back(batch);
+		batch.faces.reserve(4);
+		batch.faces.emplace_back();
+		m_batch_lookup.emplace(batch.key, batch_index);
+		m_last_batch_index = batch_index;
+		if (Perf_markers_enabled)
+		{
+			Polymodel_perf_base_batch_miss_count++;
+			Polymodel_perf_base_batch_created_count++;
+		}
+		PolymodelPerfUpdateMax(Polymodel_perf_base_batch_max_faces_per_batch, batch.faces.size());
+		return batch.faces.back();
 	}
 
 	void Flush()
 	{
 		if (m_batches.empty())
 			return;
+
+		if (Perf_markers_enabled)
+		{
+			Polymodel_perf_base_batch_flush_count++;
+			Polymodel_perf_base_batch_flushed_count += (int)m_batches.size();
+			PolymodelPerfUpdateMax(Polymodel_perf_base_batch_max_batches_per_flush, m_batches.size());
+		}
 
 		for (size_t i = 0; i < m_batches.size(); i++)
 		{
@@ -398,16 +551,19 @@ public:
 			PolymodelPerfAdd(Polymodel_perf_face_base_state_time, state_setup_start_time);
 			PolymodelPerfAdd(Polymodel_perf_face_base_time, state_setup_start_time);
 
-			std::vector<renderer_poly_batch_item> items(batch.faces.size());
+			double batch_prepare_start_time = PolymodelPerfNow();
+			m_batch_items.resize(batch.faces.size());
 			for (size_t face_index = 0; face_index < batch.faces.size(); face_index++)
 			{
 				batch.faces[face_index].RefreshPointList();
-				items[face_index].pointlist = batch.faces[face_index].pointlist;
-				items[face_index].nv = batch.faces[face_index].nv;
+				m_batch_items[face_index].pointlist = batch.faces[face_index].pointlist;
+				m_batch_items[face_index].nv = batch.faces[face_index].nv;
 			}
+			PolymodelPerfAdd(Polymodel_perf_face_base_batch_prepare_time, batch_prepare_start_time);
+			PolymodelPerfAdd(Polymodel_perf_face_base_time, batch_prepare_start_time);
 
 			double draw_start_time = PolymodelPerfNow();
-			rend_DrawPolygon3DBatch(batch.key.bitmap_handle, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
+			rend_DrawPolygon3DBatch(batch.key.bitmap_handle, m_batch_items.data(), (int)m_batch_items.size(), MAP_TYPE_BITMAP);
 			if (Perf_markers_enabled)
 				Polymodel_perf_draw_poly_count++;
 			PolymodelPerfAdd(Polymodel_perf_face_base_draw_time, draw_start_time);
@@ -418,10 +574,18 @@ public:
 			rend_SetLighting(LS_GOURAUD);
 
 		m_batches.clear();
+		m_batch_lookup.clear();
+		m_last_batch_index = (size_t)-1;
 	}
 
 private:
+	typedef std::unordered_map<PolymodelBaseFaceBatchKey, size_t,
+		PolymodelBaseFaceBatchKeyHasher, PolymodelBaseFaceBatchKeyEqual> BatchLookup;
+
 	std::vector<PolymodelBaseFaceBatch> m_batches;
+	std::vector<renderer_poly_batch_item> m_batch_items;
+	BatchLookup m_batch_lookup;
+	size_t m_last_batch_index = (size_t)-1;
 };
 
 class PolymodelFogFaceBatcher
@@ -588,6 +752,7 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 
 	double face_start_time = PolymodelPerfNow();
 	PolymodelPerfTouch(face_start_time);
+	double key_setup_start_time = face_start_time;
 	g3Codes face_cc;
 	face_cc.cc_and = 0xff;
 	face_cc.cc_or = 0;
@@ -619,14 +784,20 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 			int per_pixel_light_count = GetPerPixelLightmapLights((ushort)lightmap_lmi_handle, per_pixel_lights,
 				RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
 			if (per_pixel_light_count > 0)
+			{
+				PolymodelPerfAdd(Polymodel_perf_face_base_key_time, key_setup_start_time);
 				return false;
+			}
 		}
 	}
 
 	if (texp)
 	{
 		if (!allow_alpha && (texp->flags & (TF_ALPHA | TF_SATURATE)))
+		{
+			PolymodelPerfAdd(Polymodel_perf_face_base_key_time, key_setup_start_time);
 			return false;
+		}
 
 		key.bitmap_handle = GetTextureBitmap(texp - GameTextures, 0);
 		key.texture_type_value = TT_LINEAR;
@@ -671,6 +842,7 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 		norm_time /= texp->slide_v;
 		vchange = norm_time;
 	}
+	PolymodelPerfAdd(Polymodel_perf_face_base_key_time, key_setup_start_time);
 
 	g3Point *source_pointlist[100];
 
@@ -712,9 +884,11 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	bool was_clipped = false;
 	if (face_cc.cc_or)
 	{
+		double clip_start_time = PolymodelPerfNow();
 		if (Polymodel_use_effect && (Polymodel_effect.type &
 			(PEF_FOGGED_MODEL | PEF_SPECULAR_MODEL | PEF_SPECULAR_FACES)))
 		{
+			PolymodelPerfAdd(Polymodel_perf_face_base_clip_time, clip_start_time);
 			return false;
 		}
 
@@ -725,6 +899,7 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 			g3_FreeTempPoints(draw_pointlist, draw_nv);
 			if (Perf_markers_enabled)
 				Polymodel_perf_base_face_count++;
+			PolymodelPerfAdd(Polymodel_perf_face_base_clip_time, clip_start_time);
 			PolymodelPerfAdd(Polymodel_perf_face_base_time, face_start_time);
 			return true;
 		}
@@ -732,17 +907,24 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 		if (draw_nv < 3 || draw_nv >= 100)
 		{
 			g3_FreeTempPoints(draw_pointlist, draw_nv);
+			PolymodelPerfAdd(Polymodel_perf_face_base_clip_time, clip_start_time);
 			return false;
 		}
+		if (Perf_markers_enabled)
+			Polymodel_perf_base_face_clipped_count++;
+		PolymodelPerfAdd(Polymodel_perf_face_base_clip_time, clip_start_time);
 	}
 
-	PolymodelBatchedFace batched_face;
+	double batch_add_start_time = PolymodelPerfNow();
+	PolymodelBatchedFace& batched_face = batcher.Add(key);
+	PolymodelPerfAdd(Polymodel_perf_face_base_batch_add_time, batch_add_start_time);
+
+	double copy_start_time = PolymodelPerfNow();
 	CopyPolymodelBatchPoints(batched_face, draw_pointlist, draw_nv);
+	PolymodelPerfAdd(Polymodel_perf_face_base_copy_time, copy_start_time);
 
 	if (was_clipped)
 		g3_FreeTempPoints(draw_pointlist, draw_nv);
-
-	batcher.Add(key, batched_face);
 
 	if (Perf_markers_enabled)
 		Polymodel_perf_base_face_count++;

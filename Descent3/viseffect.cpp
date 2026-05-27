@@ -2791,6 +2791,14 @@ static void FlushVisFireballBatchesNow()
 	{
 		return;
 	}
+	char marker_buffer[96];
+	const char* marker = "VisEffect.FlushFireball";
+	if (Perf_markers_enabled)
+	{
+		snprintf(marker_buffer, sizeof(marker_buffer), "VisEffect.FlushFireball.Count=%d", (int)VisFireball_batch_items.size());
+		marker = marker_buffer;
+	}
+	PERF_MARKER_SCOPE(marker);
 
 	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
 
@@ -2833,6 +2841,14 @@ static void FlushVisSmokeTrailBatchesNow()
 {
 	if (!VisEffectHasQueuedSmokeTrailBatch())
 		return;
+	char marker_buffer[96];
+	const char* marker = "VisEffect.FlushSmokeTrail";
+	if (Perf_markers_enabled)
+	{
+		snprintf(marker_buffer, sizeof(marker_buffer), "VisEffect.FlushSmokeTrail.Count=%d", (int)VisSmokeTrail_batch_items.size());
+		marker = marker_buffer;
+	}
+	PERF_MARKER_SCOPE(marker);
 
 	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
 
@@ -2875,6 +2891,14 @@ static void FlushVisMassDriverBatchesNow()
 {
 	if (!VisEffectHasQueuedMassDriverBatch())
 		return;
+	char marker_buffer[96];
+	const char* marker = "VisEffect.FlushMassDriver";
+	if (Perf_markers_enabled)
+	{
+		snprintf(marker_buffer, sizeof(marker_buffer), "VisEffect.FlushMassDriver.Count=%d", (int)VisMassDriver_batch_items.size());
+		marker = marker_buffer;
+	}
+	PERF_MARKER_SCOPE(marker);
 
 	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
 
@@ -2917,6 +2941,14 @@ static void FlushVisWeatherQuadBatchesNow()
 {
 	if (!VisEffectHasQueuedWeatherQuadBatch())
 		return;
+	char marker_buffer[96];
+	const char* marker = "VisEffect.FlushWeatherQuad";
+	if (Perf_markers_enabled)
+	{
+		snprintf(marker_buffer, sizeof(marker_buffer), "VisEffect.FlushWeatherQuad.Count=%d", (int)VisWeather_quad_batch_items.size());
+		marker = marker_buffer;
+	}
+	PERF_MARKER_SCOPE(marker);
 
 	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
 
@@ -2961,6 +2993,14 @@ static void FlushVisWeatherLineBatchesNow()
 {
 	if (!VisEffectHasQueuedWeatherLineBatch())
 		return;
+	char marker_buffer[96];
+	const char* marker = "VisEffect.FlushWeatherLine";
+	if (Perf_markers_enabled)
+	{
+		snprintf(marker_buffer, sizeof(marker_buffer), "VisEffect.FlushWeatherLine.Count=%d", (int)VisWeather_line_batch_items.size());
+		marker = marker_buffer;
+	}
+	PERF_MARKER_SCOPE(marker);
 
 	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
 
