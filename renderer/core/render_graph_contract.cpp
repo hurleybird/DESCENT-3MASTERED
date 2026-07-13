@@ -263,7 +263,8 @@ uint32_t ValidateGraphEvaluationContext(const GraphEvaluationContext &context)
 		errors |= kGraphEvaluationInvalidBranch;
 
 	const bool any_late_post_consumer = context.gtao_enabled != 0 ||
-		context.bloom_enabled != 0 || context.motion_consumer_active != 0;
+		context.bloom_enabled != 0 || context.motion_consumer_active != 0 ||
+		context.cockpit_deferral_active != 0;
 	if ((context.late_post_active != 0) != any_late_post_consumer ||
 		(context.gtao_temporal_active != 0 && context.gtao_enabled == 0) ||
 		(context.gtao_debug_active != 0 && context.gtao_enabled == 0) ||

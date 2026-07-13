@@ -5,7 +5,7 @@ CAP_WORLD	SsaaFourToTwo	capture_ssaa_4_to_2.frag	0:ubo(std140,640);1:sampler[7];
 CAP_WORLD	SsaaTwoToOne	capture_ssaa_2_to_1.frag	0:ubo(std140,640);1:sampler[7];2:float2D?(SceneColor);3:float2D?(CapturedWorldMsaaResolved);4:float2D?(CapturedWorldIntermediate2x)	RGBA8 CapturedWorldColor; frame_branch.y selects binding 2/3/4
 CAP_WORLD	AttachmentAlphaOnlyClear	alpha_clear.frag	none; attachment operation	SceneColor alpha-only clear; RGB LOAD
 CAP_DEPTH_LOGICAL	SingleSample	depth_map.frag	0:ubo(std140,640);1:sampler[7];2:depth2D(SceneDepth)	D32 CapturedWorldDepth
-CAP_DEPTH_LOGICAL	Multisample	depth_map_ms.frag	0:ubo(std140,640);1:sampler[7];2:depth2DMS(SceneDepth)	D32 CapturedWorldDepth; sample zero
+CAP_DEPTH_LOGICAL	Multisample	depth_map_ms.frag	0:ubo(std140,640);1:sampler[7];2:depth2DMS(SceneDepth)	D32 CapturedWorldDepth; sample zero (soft-particle snapshot uses native depth resolve)
 RES_COLOR	Multisample	resolve_float_ms.frag	0:ubo(std140,640);1:sampler[7];2:float2DMS(SceneColor)	RGBA8 ResolvedColor; arithmetic sample mean
 RES_DEPTH	Multisample	resolve_depth_ms.frag	0:ubo(std140,640);1:sampler[7];2:depth2DMS(SceneDepth)	D32 ResolvedDepth; sample zero
 RES_VEL	Multisample	resolve_float_ms.frag	0:ubo(std140,640);1:sampler[7];2:float2DMS(SceneVelocity)	RG16F ResolvedVelocity; arithmetic sample mean

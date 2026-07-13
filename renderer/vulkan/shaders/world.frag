@@ -217,8 +217,9 @@ void main() {
         else color=vec4(spec,clamp(mask*block.alpha_strength*vertex_color.a,0.0,1.0));
     }
     if((state.shader_flags&SHADER_SOFT_PARTICLE)!=0u&&color.a>0.0){
-        vec2 screen_uv=gl_FragCoord.xy*frame_view.target_extent_inv_extent.zw;
-        float scene_depth=SampleWorld2D(material.image2d.w,material.sampler_index.w,screen_uv).r;
+        ivec2 depth_size=textureSize(float_images[nonuniformEXT(material.image2d.w)],0);
+        ivec2 depth_pixel=clamp(ivec2(gl_FragCoord.xy),ivec2(0),depth_size-ivec2(1));
+        float scene_depth=texelFetch(float_images[nonuniformEXT(material.image2d.w)],depth_pixel,0).r;
         if(scene_depth<0.9999){float scene_eye=1.0/max(1.0-clamp(scene_depth,0.0,0.9999),0.0001);float particle_eye=1.0/max(1.0-clamp(in_mapped_depth,0.0,0.9999),0.0001);color.a*=clamp((scene_eye-particle_eye)/max(material.uv_params.w,0.0001),0.0,1.0);}
     }
     if((state.shader_flags&SHADER_COCKPIT)!=0u&&aux.params.x>0.5){

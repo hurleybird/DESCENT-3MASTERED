@@ -154,6 +154,28 @@ struct automated_display_transition_state
 
 static automated_display_transition_state Automated_display_transition = {};
 
+// Background-safe renderer reconfiguration probes.  These run at the same
+// empty presented-frame boundary used by the F2 video menu, then allow a later
+// -capture-frame to observe the post-transition result.
+struct automated_renderer_transition_state
+{
+	bool initialized;
+	int gameplay_frame;
+	bool bloom_enabled;
+	bool bloom_applied;
+	int bloom_frame;
+	bool msaa_enabled;
+	bool msaa_applied;
+	int msaa_frame;
+	int msaa_samples;
+	bool ssaa_enabled;
+	bool ssaa_applied;
+	int ssaa_frame;
+	int ssaa_factor;
+};
+
+static automated_renderer_transition_state Automated_renderer_transition = {};
+
 void AutomatedCaptureLog(const char* format, ...)
 {
 	const char* path = getenv("PICCU_CAPTURE_LOG");
@@ -233,6 +255,137 @@ static void ApplyAutomatedDisplayTransition()
 	}
 
 	++Automated_display_transition.gameplay_frame;
+}
+
+static bool ParseAutomatedRendererFrame(const char* name, int* argument,
+	int* frame)
+{
+	*argument = FindArg((char*)name);
+	if (!*argument)
+		return false;
+	const char* value = GetArg(*argument + 1);
+	char* end = nullptr;
+	const long parsed = value ? strtol(value, &end, 10) : -1;
+	if (!value || end == value || *end != '\0' || parsed < 0 || parsed > 1000000)
+	{
+		mprintf((0, "Automated renderer transition disabled: invalid frame for %s.\n",
+			name));
+		return false;
+	}
+	*frame = (int)parsed;
+	return true;
+}
+
+static void InitAutomatedRendererTransition()
+{
+	if (Automated_renderer_transition.initialized)
+		return;
+	Automated_renderer_transition.initialized = true;
+
+	int argument = 0;
+	Automated_renderer_transition.bloom_enabled = ParseAutomatedRendererFrame(
+		"-toggle-bloom-frame", &argument,
+		&Automated_renderer_transition.bloom_frame);
+
+	if (ParseAutomatedRendererFrame("-set-msaa-frame", &argument,
+		&Automated_renderer_transition.msaa_frame))
+	{
+		const char* value = GetArg(argument + 2);
+		char* end = nullptr;
+		const long samples = value ? strtol(value, &end, 10) : -1;
+		if (value && end != value && *end == '\0' &&
+			(samples == 0 || samples == 2 || samples == 4 || samples == 8))
+		{
+			Automated_renderer_transition.msaa_enabled = true;
+			Automated_renderer_transition.msaa_samples = (int)samples;
+		}
+		else
+			mprintf((0, "Automated MSAA transition disabled: expected 0, 2, 4, or 8 samples.\n"));
+	}
+
+	if (ParseAutomatedRendererFrame("-set-ssaa-frame", &argument,
+		&Automated_renderer_transition.ssaa_frame))
+	{
+		const char* value = GetArg(argument + 2);
+		char* end = nullptr;
+		const long factor = value ? strtol(value, &end, 10) : -1;
+		if (value && end != value && *end == '\0' &&
+			(factor == 1 || factor == 2 || factor == 4))
+		{
+			Automated_renderer_transition.ssaa_enabled = true;
+			Automated_renderer_transition.ssaa_factor = (int)factor;
+		}
+		else
+			mprintf((0, "Automated SSAA transition disabled: expected factor 1, 2, or 4.\n"));
+	}
+
+	AutomatedCaptureLog("renderer transitions armed bloom=%d@%d msaa=%d@%d->%d ssaa=%d@%d->%d",
+		Automated_renderer_transition.bloom_enabled ? 1 : 0,
+		Automated_renderer_transition.bloom_frame,
+		Automated_renderer_transition.msaa_enabled ? 1 : 0,
+		Automated_renderer_transition.msaa_frame,
+		Automated_renderer_transition.msaa_samples,
+		Automated_renderer_transition.ssaa_enabled ? 1 : 0,
+		Automated_renderer_transition.ssaa_frame,
+		Automated_renderer_transition.ssaa_factor);
+}
+
+static void ApplyAutomatedRendererTransition()
+{
+	InitAutomatedRendererTransition();
+	if (Game_state != GAMESTATE_LVLPLAYING ||
+		Game_interface_mode != GAME_INTERFACE || Menu_interface_mode ||
+		Skip_render_game_frame || Dedicated_server)
+		return;
+
+	const int frame = Automated_renderer_transition.gameplay_frame;
+	const bool apply_bloom = Automated_renderer_transition.bloom_enabled &&
+		!Automated_renderer_transition.bloom_applied &&
+		frame == Automated_renderer_transition.bloom_frame;
+	const bool apply_msaa = Automated_renderer_transition.msaa_enabled &&
+		!Automated_renderer_transition.msaa_applied &&
+		frame == Automated_renderer_transition.msaa_frame;
+	const bool apply_ssaa = Automated_renderer_transition.ssaa_enabled &&
+		!Automated_renderer_transition.ssaa_applied &&
+		frame == Automated_renderer_transition.ssaa_frame;
+	if (apply_bloom || apply_msaa || apply_ssaa)
+	{
+		const renderer_preferred_state old = Render_preferred_state;
+		if (apply_bloom)
+		{
+			Render_preferred_state.bloom_enabled =
+				!Render_preferred_state.bloom_enabled;
+			Automated_renderer_transition.bloom_applied = true;
+		}
+		if (apply_msaa)
+		{
+			Render_preferred_state.msaa_samples =
+				(ubyte)Automated_renderer_transition.msaa_samples;
+			Render_preferred_state.antialised =
+				Render_preferred_state.msaa_samples > 0;
+			Automated_renderer_transition.msaa_applied = true;
+		}
+		if (apply_ssaa)
+		{
+			Render_preferred_state.supersampling_factor =
+				(ubyte)Automated_renderer_transition.ssaa_factor;
+			Automated_renderer_transition.ssaa_applied = true;
+		}
+
+		const int applied = rend_SetPreferredState(&Render_preferred_state);
+		AutomatedCaptureLog("renderer transition %s frame=%d bloom=%d->%d msaa=%u->%u ssaa=%u->%u",
+			applied ? "applied" : "failed", frame,
+			old.bloom_enabled ? 1 : 0,
+			Render_preferred_state.bloom_enabled ? 1 : 0,
+			(unsigned)old.msaa_samples,
+			(unsigned)Render_preferred_state.msaa_samples,
+			(unsigned)old.supersampling_factor,
+			(unsigned)Render_preferred_state.supersampling_factor);
+		if (!applied)
+			Render_preferred_state = old;
+	}
+
+	++Automated_renderer_transition.gameplay_frame;
 }
 
 bool AutomatedCaptureSuppressesInput()
@@ -3092,6 +3245,7 @@ void GameFrame(void)
 	INT64 curr_time;
 #endif
 	ApplyAutomatedDisplayTransition();
+	ApplyAutomatedRendererTransition();
 	BeginAutomatedCaptureFrame();
 	const double automated_perf_frame_begin = timer_GetTime64();
 	double automated_perf_render_begin = automated_perf_frame_begin;

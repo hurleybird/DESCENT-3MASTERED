@@ -1949,17 +1949,67 @@ struct FrameCompiler::Impl
 		}
 
 		const bool depth_output = (output.aspect & VK_IMAGE_ASPECT_DEPTH_BIT) != 0;
+		const bool initialize_soft_depth =
+			operation.type == PlanOperationType::InsertedGraphNode &&
+			operation.inserted_graph_node == InsertedGraphNodeId::AcquireSoftDepth;
+		if (initialize_soft_depth && variant == PostPassVariant::Multisample)
+		{
+			// Match GL4's multisample framebuffer depth blit with Vulkan's native
+			// depth resolve.  Sampling texture2DMS in a fullscreen shader produced
+			// discontinuous soft-particle fades even though every individual sample
+			// reduction rule yielded the same artifact.
+			if (!first_source.Valid() || first_source.samples == VK_SAMPLE_COUNT_1_BIT ||
+				output.samples != VK_SAMPLE_COUNT_1_BIT ||
+				first_source.extent.width != output.extent.width ||
+				first_source.extent.height != output.extent.height)
+				return false;
+			ci.state_tracker->UseImage(first_source.image, FullRange(first_source),
+				{ VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+				  VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+				  VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+				  VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+				  ci.platform->GraphicsQueueFamily(), ResourceIntent::Read });
+			ci.state_tracker->UseImage(output.image, FullRange(output),
+				{ VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+				  VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+				  VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+				  VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+				  ci.platform->GraphicsQueueFamily(), ResourceIntent::Write });
+			ci.state_tracker->Flush(command);
+
+			VkRenderingAttachmentInfo depth = {
+				VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO
+			};
+			depth.imageView = first_source.view;
+			depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+			depth.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+			depth.resolveImageView = output.view;
+			depth.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+			depth.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+			depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+			VkRenderingInfo rendering = { VK_STRUCTURE_TYPE_RENDERING_INFO };
+			rendering.renderArea.extent = output.extent;
+			rendering.layerCount = 1;
+			rendering.pDepthAttachment = &depth;
+			vkCmdBeginRendering(command, &rendering);
+			++*rendering_instances;
+			vkCmdEndRendering(command);
+			return true;
+		}
 		ci.state_tracker->UseImage(output.image, FullRange(output),
 			{ depth_output ? VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
 				VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT :
 				VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-			  depth_output ? VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+			  depth_output ? (initialize_soft_depth ?
 				VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT :
+				VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+				VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT) :
 				VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT |
-				VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+					VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
 			  depth_output ? VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL :
 				VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			  ci.platform->GraphicsQueueFamily(), ResourceIntent::ReadWrite });
+			  ci.platform->GraphicsQueueFamily(), initialize_soft_depth ?
+				ResourceIntent::Write : ResourceIntent::ReadWrite });
 		ci.state_tracker->Flush(command);
 
 		const bool attachment_only = pipeline_node == GraphNodeId::PostAlphaClear;
@@ -2004,8 +2054,11 @@ struct FrameCompiler::Impl
 		attachment.imageLayout = depth_output ?
 			VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL :
 			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		attachment.loadOp = initialize_soft_depth ? VK_ATTACHMENT_LOAD_OP_CLEAR :
+			VK_ATTACHMENT_LOAD_OP_LOAD;
 		attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		if (initialize_soft_depth)
+			attachment.clearValue.depthStencil.depth = 1.0f;
 		VkRenderingInfo rendering = { VK_STRUCTURE_TYPE_RENDERING_INFO };
 		rendering.renderArea.extent = output.extent;
 		rendering.layerCount = 1;

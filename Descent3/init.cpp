@@ -387,12 +387,12 @@ void SaveGameSettings()
 
 	sprintf(tempbuffer,"%f",Detail_settings.Terrain_render_distance/((float)TERRAIN_SIZE));
 	Database->write("RS_terraindist",tempbuffer,strlen(tempbuffer)+1);
-	if (!FindArg("-msaa"))
+	if (!FindArg("-msaa") && !FindArg("-set-msaa-frame"))
 	{
 		Database->write("RS_antialiased", Render_preferred_state.antialised);
 		Database->write("RS_msaa_samples", Render_preferred_state.msaa_samples);
 	}
-	if (!FindArg("-ssaa"))
+	if (!FindArg("-ssaa") && !FindArg("-set-ssaa-frame"))
 		Database->write("RS_supersampling", Render_preferred_state.supersampling_factor);
 	if (!FindArg("-noperpixellighting") &&
 		!FindArg("-no-per-pixel-lighting") &&
@@ -400,7 +400,9 @@ void SaveGameSettings()
 		!FindArg("-per-pixel-lighting"))
 		Database->write("RS_per_pixel_lighting",
 			Render_preferred_state.per_pixel_lighting);
-	Database->write("RS_bloom_enabled", Render_preferred_state.bloom_enabled);
+	if (!FindArg("-toggle-bloom-frame") && !FindArg("-bloom") &&
+		!FindArg("-nobloom") && !FindArg("-no-bloom"))
+		Database->write("RS_bloom_enabled", Render_preferred_state.bloom_enabled);
 	if (!FindArg("-bloomthreshold") && !FindArg("-bloom-threshold"))
 	{
 		sprintf(tempbuffer, "%f", Render_preferred_state.bloom_threshold);
@@ -891,6 +893,10 @@ void LoadGameSettings()
 	else if (FindArg("-perpixellighting") || FindArg("-per-pixel-lighting"))
 		Render_preferred_state.per_pixel_lighting = true;
 	Database->read("RS_bloom_enabled", &Render_preferred_state.bloom_enabled);
+	if (FindArg("-nobloom") || FindArg("-no-bloom"))
+		Render_preferred_state.bloom_enabled = false;
+	else if (FindArg("-bloom"))
+		Render_preferred_state.bloom_enabled = true;
 	templen = TEMPBUFFERSIZE;
 	if (Database->read("RS_bloom_threshold", tempbuffer, &templen))
 	{

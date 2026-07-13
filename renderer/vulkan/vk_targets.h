@@ -42,6 +42,7 @@ public:
 	void Shutdown(bool device_lost = false) noexcept;
 	bool Configure(const CapturedPreferredState &preferred,
 		VkExtent2D drawable_extent, uint64_t retire_after_timeline);
+	void UpdateDynamicPreferredState(const CapturedPreferredState &preferred) noexcept;
 	bool Ready() const noexcept;
 
 	const CapturedTargetLayout &SceneLayout() const;

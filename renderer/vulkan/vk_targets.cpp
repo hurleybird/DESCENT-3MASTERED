@@ -389,7 +389,10 @@ bool TargetManager::BuildGeneration(const CapturedPreferredState &preferred,
 			return false;
 	}
 
-	if (preferred.bloom_enabled && preferred.width >= 16 && preferred.height >= 16)
+	// Bloom is a live graph branch.  Keep its comparatively small pyramid tied
+	// to the render dimensions so enabling it never requires duplicating the
+	// much larger scene/MSAA/SSAA target generation.
+	if (preferred.width >= 16 && preferred.height >= 16)
 	{
 		uint32_t width = preferred.width / 2;
 		uint32_t height = preferred.height / 2;
@@ -461,6 +464,15 @@ bool TargetManager::Configure(const CapturedPreferredState &preferred,
 	RegisterGenerationState(&active_);
 	RetireGeneration(&old, retire_after_timeline);
 	return true;
+}
+
+void TargetManager::UpdateDynamicPreferredState(
+	const CapturedPreferredState &preferred) noexcept
+{
+	if (!initialized_ || !active_.generation)
+		return;
+	active_.preferred = preferred;
+	active_.scene.feature_flags = FeatureFlags(preferred);
 }
 
 void TargetManager::RegisterGenerationState(GenerationState *generation)

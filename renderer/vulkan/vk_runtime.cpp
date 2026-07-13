@@ -145,7 +145,6 @@ bool FullTargetSignatureChanged(const CapturedPreferredState &left,
 		left.antialised != right.antialised ||
 		left.supersampling_factor != right.supersampling_factor ||
 		left.msaa_samples != right.msaa_samples ||
-		left.bloom_enabled != right.bloom_enabled ||
 		left.gtao_enabled != right.gtao_enabled ||
 		NormalizeOverscanPercent(left) != NormalizeOverscanPercent(right) ||
 		WantsMotionResources(left) != WantsMotionResources(right);
@@ -983,6 +982,7 @@ bool VulkanRuntime::ApplyPreferredState(
 		// Sampler choice, gamma, lighting enable, and all remaining scalar/
 		// branch fields are captured dynamically and preserve every GPU object.
 		impl_->preferred = preferred;
+		impl_->targets.UpdateDynamicPreferredState(preferred);
 		return true;
 	}
 	std::unique_ptr<PipelineLibrary> replacement;
@@ -1074,6 +1074,7 @@ bool VulkanRuntime::ApplyPreferredState(
 		prior->Shutdown(false);
 	}
 	impl_->preferred = preferred;
+	impl_->targets.UpdateDynamicPreferredState(preferred);
 	impl_->drawable_width = extent.width;
 	impl_->drawable_height = extent.height;
 	if (rebuild_targets)

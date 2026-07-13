@@ -140,7 +140,6 @@ world_aux_records.fog_color: offset 0, type 8b52, size 1, index 6, binding -1, s
 world_aux_records.fog_plane: offset 16, type 8b52, size 1, index 6, binding -1, stages 16, topLevelArrayStride 64
 world_aux_records.params: offset 32, type 8b52, size 1, index 6, binding -1, stages 16, topLevelArrayStride 64
 world_aux_records.indices: offset 48, type 8dc8, size 1, index 6, binding -1, stages 16, topLevelArrayStride 64
-FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 1, binding -1, stages 16
 
 Uniform block reflection:
 DynamicLights: offset -1, type ffffffff, size 80, index 0, binding 4, stages 16, numMembers 5
@@ -504,13 +503,11 @@ materials.image2d: offset 0, type 8dc8, size 1, index 2, binding -1, stages 16, 
 materials.image2d_array: offset 16, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
 materials.sampler_index: offset 32, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
 materials.uv_params: offset 48, type 8b52, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
-FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 3, binding -1, stages 16
 
 Uniform block reflection:
 DrawHeaders: offset -1, type ffffffff, size 32, index 0, binding 0, stages 16, numMembers 8
 ShaderStates: offset -1, type ffffffff, size 144, index 1, binding 1, stages 16, numMembers 24
 Materials: offset -1, type ffffffff, size 64, index 2, binding 2, stages 16, numMembers 4
-FrameViewBlock: offset -1, type ffffffff, size 512, index 3, binding 0, stages 16, numMembers 11
 
 Buffer variable reflection:
 

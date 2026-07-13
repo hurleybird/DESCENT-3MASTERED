@@ -559,6 +559,16 @@ static void TestExecutableGraphEvaluation()
 			GraphResourceBit(GraphResource::SceneColor),
 		"authored-only graph clears capture alpha without allocating captured color/depth");
 
+	GraphEvaluationContext cockpit_no_effects = authored;
+	cockpit_no_effects.late_post_active = 1;
+	cockpit_no_effects.cockpit_deferral_active = 1;
+	cockpit_no_effects.cockpit_frame_count = 1;
+	cockpit_no_effects.cockpit_ui_post_span_count = 1;
+	Check(ValidateGraphEvaluationContext(cockpit_no_effects) == 0 &&
+		EvaluateGraphNodeInvocationCount(GraphNodeId::CockpitGammaOnly,
+			cockpit_no_effects) == 1,
+		"cockpit composition remains a valid late-post consumer with effects disabled");
+
 	GraphEvaluationContext cockpit = normal;
 	cockpit.cockpit_deferral_active = 1;
 	cockpit.cockpit_frame_count = 1;

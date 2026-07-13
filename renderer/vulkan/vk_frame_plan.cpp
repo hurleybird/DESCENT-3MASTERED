@@ -92,6 +92,12 @@ GraphEvaluationContext FramePlanner::BuildGraphContext(
 	result.cockpit_deferral_active =
 		signature.dynamic.cockpit_deferral_active != 0 ||
 		signature.dynamic.defer_bloom != 0;
+	// Cockpit composition itself is a late-post consumer.  It remains active
+	// when bloom, GTAO, and motion effects are all disabled, so derive the
+	// per-frame graph branch from the dynamic deferral request as well as the
+	// target's preferred-state feature mask.
+	result.late_post_active = result.late_post_active ||
+		result.cockpit_deferral_active;
 	result.gtao_deferred_active = result.gtao_enabled &&
 		result.cockpit_deferral_active;
 	result.motion_consumer_active = WantsMotionResources(signature.preferred);
