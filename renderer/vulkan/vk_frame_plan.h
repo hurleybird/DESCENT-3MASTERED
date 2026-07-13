@@ -21,6 +21,7 @@ enum class PlanOperationType : uint32_t
 	CapturedCommand = 0,
 	GraphNode,
 	CompilerGraphPhase,
+	InsertedGraphNode,
 };
 
 struct PlanOperation
@@ -31,6 +32,7 @@ struct PlanOperation
 	uint32_t graph_invocation = 0;
 	uint32_t graph_level = 0;
 	uint32_t compiler_phase_index = kInvalidId;
+	InsertedGraphNodeId inserted_graph_node = InsertedGraphNodeId::Count;
 	PostPassVariant descriptor_variant = PostPassVariant::Only;
 	PostUniformSourceSelector source_selector =
 		PostUniformSourceSelector::Primary2D;

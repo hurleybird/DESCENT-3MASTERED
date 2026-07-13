@@ -364,6 +364,20 @@ bool FramePlanner::Build(const RenderCaptureSegment &capture,
 			for (GraphNodeId node : finish_nodes)
 				AppendNode(node, index, plan->graph, plan->sources, plan);
 		}
+		else if (command.type == CaptureCommandType::AcquireSoftDepth)
+		{
+			// Soft depth is an exact mid-scene graph insertion.  It deliberately
+			// reuses the typed depth-map post pipeline while writing the dedicated
+			// snapshot resource, rather than becoming part of the frozen late-post
+			// graph.
+			PlanOperation inserted = {};
+			inserted.type = PlanOperationType::InsertedGraphNode;
+			inserted.capture_command_index = index;
+			inserted.graph_node = GraphNodeId::CapDepthLogical;
+			inserted.inserted_graph_node = InsertedGraphNodeId::AcquireSoftDepth;
+			plan->operations.push_back(inserted);
+			++plan->graph_pass_count;
+		}
 
 		PlanOperation direct = {};
 		direct.type = PlanOperationType::CapturedCommand;

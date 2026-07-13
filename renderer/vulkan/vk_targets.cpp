@@ -424,7 +424,7 @@ bool TargetManager::BuildGeneration(const CapturedPreferredState &preferred,
 		VK_FORMAT_R8_UNORM, logical, ColorUsage(), VK_IMAGE_ASPECT_COLOR_BIT,
 		"vk.cockpit.alpha") ||
 		!AddGraphImage(generation, GraphResource::SoftDepthSnapshot, 0,
-		VK_FORMAT_D32_SFLOAT, logical, DepthUsage(), VK_IMAGE_ASPECT_DEPTH_BIT,
+		VK_FORMAT_D32_SFLOAT, internal, DepthUsage(), VK_IMAGE_ASPECT_DEPTH_BIT,
 		"vk.soft_depth"))
 		return false;
 	if (applied_msaa > 1 &&

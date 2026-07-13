@@ -1229,13 +1229,15 @@ struct FrameCompiler::Impl
 			page.array_samplers.assign(page.array_views.size(), VK_NULL_HANDLE);
 			for (uint32_t i = 0; i < page.images.size(); ++i)
 			{
-				if (page.images[i].image == kSoftDepthTextureSentinel)
+				const bool soft_depth =
+					page.images[i].image == kSoftDepthTextureSentinel;
+				if (soft_depth)
 				{
-					const TargetImageRef soft_depth = ci.targets->GraphImage(
+					const TargetImageRef soft_depth_image = ci.targets->GraphImage(
 						GraphResource::SoftDepthSnapshot);
-					if (!soft_depth.Valid())
+					if (!soft_depth_image.Valid())
 						return false;
-					page.image_views[i] = soft_depth.view;
+					page.image_views[i] = soft_depth_image.view;
 				}
 				else
 				{
@@ -1247,8 +1249,12 @@ struct FrameCompiler::Impl
 						return false;
 					page.image_views[i] = resident.view;
 				}
-				page.image_samplers[i] = ci.textures->WorldSampler(
-					page.images[i].sampler);
+				// Scene depth is a discrete per-pixel signal.  Match GL4's explicit
+				// GL_NEAREST binding instead of inheriting the particle texture's
+				// filtering/mip sampler through material slot 3.
+				page.image_samplers[i] = soft_depth ?
+					ci.pipelines->Sampler(SamplerSemantic::DepthNearest) :
+					ci.textures->WorldSampler(page.images[i].sampler);
 				if (!page.image_samplers[i]) return false;
 			}
 			for (uint32_t i = 0; i < page.arrays.size(); ++i)
@@ -1575,6 +1581,9 @@ struct FrameCompiler::Impl
 
 	GraphResource OperationOutput(const PlanOperation &operation) const
 	{
+		if (operation.type == PlanOperationType::InsertedGraphNode &&
+			operation.inserted_graph_node == InsertedGraphNodeId::AcquireSoftDepth)
+			return GraphResource::SoftDepthSnapshot;
 		GraphResourceMask outputs = 0;
 		if (operation.type == PlanOperationType::CompilerGraphPhase &&
 			operation.compiler_phase_index < kCompilerGraphPhaseContractCount)
@@ -2549,6 +2558,11 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 	{
 		if (operation.type != PlanOperationType::CapturedCommand)
 		{
+			const bool resume_scene = rendering_open &&
+				operation.type == PlanOperationType::InsertedGraphNode &&
+				operation.inserted_graph_node ==
+					InsertedGraphNodeId::AcquireSoftDepth &&
+				rendering_target == RenderTargetClass::Scene;
 			end_rendering();
 			if (operation.graph_node == GraphNodeId::Present)
 				continue;
@@ -2556,6 +2570,14 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 				&post_present_index, &rendering_instances))
 				return fail_recording("graph-encode",
 					"post pipeline/resource contract could not be encoded");
+			if (resume_scene)
+			{
+				BeginFrameTargetCommand resume = {};
+				resume.target = RenderTargetClass::Scene;
+				if (!begin_target(resume))
+					return fail_recording("target-resume",
+						"scene target could not resume after soft-depth capture");
+			}
 			continue;
 		}
 		if (operation.capture_command_index >= capture->Commands().size())
