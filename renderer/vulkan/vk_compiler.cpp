@@ -1093,9 +1093,24 @@ struct FrameCompiler::Impl
 		const CapturedTargetLayout &layout = page.target == RenderTargetClass::Scene ?
 			ci.targets->SceneLayout() : (page.target == RenderTargetClass::PostPresent ?
 			ci.targets->PostLayout() : ci.targets->CockpitLayout());
-		output.viewport_xywh[0] = output.viewport_xywh[1] = 0.0f;
-		output.viewport_xywh[2] = static_cast<float>(layout.internal_width);
-		output.viewport_xywh[3] = static_cast<float>(layout.internal_height);
+		// T0 vertices retain the engine's logical pixel coordinates.  The Vulkan
+		// viewport performs the SSAA expansion, just as GL4's ortho projection and
+		// glViewport do; dividing by the internal extent here applies the scale a
+		// second time and confines 4x-SSAA UI to one quarter of each axis.
+		if (output.visible_origin_size[2] <= 0.0f ||
+			output.visible_origin_size[3] <= 0.0f)
+		{
+			output.visible_origin_size[0] = output.visible_origin_size[1] = 0.0f;
+			output.visible_origin_size[2] = static_cast<float>(layout.logical_width);
+			output.visible_origin_size[3] = static_cast<float>(layout.logical_height);
+		}
+		// Font glyph inputs are local to the active clip, but font.vert maps them
+		// through the full-target viewport.  Preserve the clip origin so its
+		// target-absolute path matches GL4's offset_x/offset_y adjustment.
+		output.viewport_xywh[0] = output.visible_origin_size[0];
+		output.viewport_xywh[1] = output.visible_origin_size[1];
+		output.viewport_xywh[2] = output.visible_origin_size[2];
+		output.viewport_xywh[3] = output.visible_origin_size[3];
 		output.target_extent_inv_extent[0] =
 			static_cast<float>(layout.internal_width);
 		output.target_extent_inv_extent[1] =
@@ -1112,6 +1127,11 @@ struct FrameCompiler::Impl
 				output.history_target_flags[0] |= 2u;
 		}
 		output.history_target_flags[1] = static_cast<uint32_t>(page.target);
+		// Font batches use target-absolute logical coordinates and temporarily
+		// draw through the full target viewport.  z/w carry that logical extent;
+		// x/y remain the history flags and target class ABI.
+		output.history_target_flags[2] = layout.logical_width;
+		output.history_target_flags[3] = layout.logical_height;
 		return output;
 	}
 
@@ -1347,7 +1367,11 @@ struct FrameCompiler::Impl
 		viewport_info.minDepth = 0.0f;
 		viewport_info.maxDepth = 1.0f;
 		scissor_info.extent = { layout.internal_width, layout.internal_height };
-		if (draw.raster.viewport < capture.Viewports().size())
+		// GL4 flushes font batches with a full-target viewport because glyph
+		// positions are target-absolute even when text was queued in a clipped
+		// frame interval.  Keep the captured scissor, but match that viewport.
+		if (draw.source != PrimitiveSourceKind::Font &&
+			draw.raster.viewport < capture.Viewports().size())
 		{
 			const CapturedViewport &viewport = capture.Viewports()[draw.raster.viewport];
 			viewport_info.x = static_cast<float>(viewport.physical_rect.x);

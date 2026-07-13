@@ -6,7 +6,7 @@ Uniform reflection:
 payload_words: offset 0, type 1405, size 0, index 0, binding -1, stages 1, arrayStride 4, topLevelArrayStride 4
 WorldPush.payload_word_base: offset 12, type 1405, size 1, index 1, binding -1, stages 1
 FrameViewBlock.viewport_xywh: offset 448, type 8b52, size 1, index 2, binding -1, stages 1
-FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 2, binding -1, stages 1
+FrameViewBlock.history_target_flags: offset 496, type 8dc8, size 1, index 2, binding -1, stages 1
 WorldPush.draw_header_base: offset 0, type 1405, size 1, index 1, binding -1, stages 1
 draw_headers.state_index: offset 0, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
 draw_headers.material_index: offset 4, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
@@ -170,7 +170,7 @@ out_object_id: offset 0, type 1405, size 1, index 0, binding -1, stages 16
 C:/Repos/PiccuEngine/renderer/vulkan/shaders/ui.vert
 Uniform reflection:
 FrameViewBlock.viewport_xywh: offset 448, type 8b52, size 1, index 0, binding -1, stages 1
-FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 0, binding -1, stages 1
+FrameViewBlock.history_target_flags: offset 496, type 8dc8, size 1, index 0, binding -1, stages 1
 WorldPush.draw_header_base: offset 0, type 1405, size 1, index 1, binding -1, stages 1
 draw_headers.state_index: offset 0, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
 draw_headers.material_index: offset 4, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
@@ -289,7 +289,7 @@ out_object_id: offset 0, type 1405, size 1, index 0, binding -1, stages 16
 C:/Repos/PiccuEngine/renderer/vulkan/shaders/font.vert
 Uniform reflection:
 FrameViewBlock.viewport_xywh: offset 448, type 8b52, size 1, index 0, binding -1, stages 1
-FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 0, binding -1, stages 1
+FrameViewBlock.history_target_flags: offset 496, type 8dc8, size 1, index 0, binding -1, stages 1
 WorldPush.draw_header_base: offset 0, type 1405, size 1, index 1, binding -1, stages 1
 draw_headers.state_index: offset 0, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
 draw_headers.material_index: offset 4, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
@@ -299,41 +299,36 @@ draw_headers.vertex_payload_offset: offset 16, type 1405, size 1, index 2, bindi
 draw_headers.motion_payload_offset: offset 20, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
 draw_headers.specular_payload_offset: offset 24, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
 draw_headers.room_or_terrain_index: offset 28, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
-materials.image2d: offset 0, type 8dc8, size 1, index 3, binding -1, stages 1, topLevelArrayStride 64
-materials.image2d_array: offset 16, type 8dc8, size 1, index 3, binding -1, stages 1, topLevelArrayStride 64
-materials.sampler_index: offset 32, type 8dc8, size 1, index 3, binding -1, stages 1, topLevelArrayStride 64
-materials.uv_params: offset 48, type 8b52, size 1, index 3, binding -1, stages 1, topLevelArrayStride 64
-shader_states.shader_flags: offset 0, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.texture_type: offset 4, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.overlay_type: offset 8, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.lighting_color_model: offset 12, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.alpha_type: offset 16, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.alpha_value: offset 20, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.blend_class: offset 24, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.draw_classification: offset 28, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.alpha_factor: offset 32, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.z_bias: offset 36, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.flat_color: offset 48, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.fog_color: offset 64, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.light_direction: offset 80, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.post_values: offset 96, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.specular_block_index: offset 120, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.motion_object_id: offset 124, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.motion_flags: offset 128, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.ao_class: offset 132, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.state_flags2: offset 136, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.reserved0: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.shader_flags: offset 0, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.texture_type: offset 4, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.overlay_type: offset 8, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.lighting_color_model: offset 12, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_type: offset 16, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_value: offset 20, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.blend_class: offset 24, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.draw_classification: offset 28, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_factor: offset 32, type 1406, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.z_bias: offset 36, type 1406, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.flat_color: offset 48, type 8b52, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_color: offset 64, type 8b52, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.light_direction: offset 80, type 8b52, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.post_values: offset 96, type 8b52, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.specular_block_index: offset 120, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_object_id: offset 124, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_flags: offset 128, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.ao_class: offset 132, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.state_flags2: offset 136, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.reserved0: offset 140, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
 
 Uniform block reflection:
 FrameViewBlock: offset -1, type ffffffff, size 512, index 0, binding 0, stages 1, numMembers 11
 WorldPush: offset -1, type ffffffff, size 16, index 1, binding -1, stages 1, numMembers 4
 DrawHeaders: offset -1, type ffffffff, size 32, index 2, binding 0, stages 1, numMembers 8
-Materials: offset -1, type ffffffff, size 64, index 3, binding 2, stages 1, numMembers 4
-ShaderStates: offset -1, type ffffffff, size 144, index 4, binding 1, stages 1, numMembers 24
+ShaderStates: offset -1, type ffffffff, size 144, index 3, binding 1, stages 1, numMembers 24
 
 Buffer variable reflection:
 
@@ -344,6 +339,7 @@ gl_DrawID: offset 0, type 1404, size 1, index 0, binding -1, stages 1
 in_position: offset 0, type 8b51, size 1, index 0, binding -1, stages 1
 in_rgba8: offset 0, type 1405, size 1, index 0, binding -1, stages 1
 in_uv0: offset 0, type 8b50, size 1, index 0, binding -1, stages 1
+in_uv1: offset 0, type 8b50, size 1, index 0, binding -1, stages 1
 
 Pipeline output reflection:
 
@@ -415,7 +411,7 @@ Uniform reflection:
 payload_words: offset 0, type 1405, size 0, index 0, binding -1, stages 1, arrayStride 4, topLevelArrayStride 4
 WorldPush.payload_word_base: offset 12, type 1405, size 1, index 1, binding -1, stages 1
 FrameViewBlock.viewport_xywh: offset 448, type 8b52, size 1, index 2, binding -1, stages 1
-FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 2, binding -1, stages 1
+FrameViewBlock.history_target_flags: offset 496, type 8dc8, size 1, index 2, binding -1, stages 1
 WorldPush.draw_header_base: offset 0, type 1405, size 1, index 1, binding -1, stages 1
 draw_headers.state_index: offset 0, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
 draw_headers.material_index: offset 4, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
@@ -540,7 +536,7 @@ Uniform reflection:
 payload_words: offset 0, type 1405, size 0, index 0, binding -1, stages 1, arrayStride 4, topLevelArrayStride 4
 WorldPush.payload_word_base: offset 12, type 1405, size 1, index 1, binding -1, stages 1
 FrameViewBlock.viewport_xywh: offset 448, type 8b52, size 1, index 2, binding -1, stages 1
-FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 2, binding -1, stages 1
+FrameViewBlock.history_target_flags: offset 496, type 8dc8, size 1, index 2, binding -1, stages 1
 WorldPush.draw_header_base: offset 0, type 1405, size 1, index 1, binding -1, stages 1
 draw_headers.state_index: offset 0, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
 draw_headers.material_index: offset 4, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
@@ -647,7 +643,7 @@ Uniform reflection:
 payload_words: offset 0, type 1405, size 0, index 0, binding -1, stages 1, arrayStride 4, topLevelArrayStride 4
 WorldPush.payload_word_base: offset 12, type 1405, size 1, index 1, binding -1, stages 1
 FrameViewBlock.viewport_xywh: offset 448, type 8b52, size 1, index 2, binding -1, stages 1
-FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 2, binding -1, stages 1
+FrameViewBlock.history_target_flags: offset 496, type 8dc8, size 1, index 2, binding -1, stages 1
 WorldPush.draw_header_base: offset 0, type 1405, size 1, index 1, binding -1, stages 1
 draw_headers.state_index: offset 0, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
 draw_headers.material_index: offset 4, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32

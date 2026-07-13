@@ -109,7 +109,7 @@ vec4 MapT0Position(vec3 position, ShaderState state, uint draw_flags,
     uint depth_interpretation) {
     vec2 origin = (draw_flags & DRAW_TARGET_ABSOLUTE) != 0u ? frame_view.viewport_xywh.xy : vec2(0.0);
     vec2 extent = (draw_flags & DRAW_TARGET_ABSOLUTE) != 0u ?
-        frame_view.target_extent_inv_extent.xy : frame_view.viewport_xywh.zw;
+        vec2(frame_view.history_target_flags.zw) : frame_view.viewport_xywh.zw;
     vec2 ndc = 2.0 * (position.xy + origin) / max(extent, vec2(1.0)) - vec2(1.0);
     float depth = 0.0;
     if (depth_interpretation == 0u) {
