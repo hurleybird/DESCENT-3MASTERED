@@ -3384,27 +3384,24 @@ void VulkanRenderer::DrawChunkedBitmap(chunked_bitmap *chunk, int x, int y,
 	}
 	const int piece_width = bm_w(chunk->bm_array[0], 0);
 	const int piece_height = bm_h(chunk->bm_array[0], 0);
-	const sbyte old_z = public_state_.cur_zbuffer_state;
+	int screen_width = 0, screen_height = 0;
+	GetProjectionParameters(&screen_width, &screen_height);
+	(void)alpha; // GL4's canonical unscaled chunk path draws opaque pieces.
 	SetZBufferState(0);
-	SetAlphaType(AT_CONSTANT_TEXTURE);
-	SetAlphaValue(alpha);
 	for (int row = 0; row < chunk->h; ++row)
 		for (int column = 0; column < chunk->w; ++column)
 		{
 			const int dx = x + piece_width * column;
 			const int dy = y + piece_height * row;
 			const int width = std::max(0, std::min(piece_width,
-				public_state_.screen_width - dx));
+				screen_width - dx));
 			const int height = std::max(0, std::min(piece_height,
-				public_state_.screen_height - dy));
+				screen_height - dy));
 			if (width == 0 || height == 0)
 				continue;
-			DrawScaledBitmap(dx, dy, dx + width, dy + height,
-				chunk->bm_array[row * chunk->w + column], 0.0f, 0.0f,
-				static_cast<float>(width) / piece_width,
-				static_cast<float>(height) / piece_height);
+			DrawSimpleBitmap(chunk->bm_array[row * chunk->w + column], dx, dy);
 		}
-	SetZBufferState(old_z);
+	SetZBufferState(1);
 }
 
 void VulkanRenderer::DrawScaledChunkedBitmap(chunked_bitmap *chunk, int x,
@@ -3596,14 +3593,18 @@ void VulkanRenderer::DrawFontCharacter(int bitmap, int x1, int y1, int x2,
 	const float uv[4][2] = { {u,v}, {u+width,v},
 		{u+width,v+height}, {u,v+height} };
 	const uint32_t triangle_vertices[6] = { 0, 1, 2, 0, 2, 3 };
+	const uint32_t font_rgba = PackRgba(ColorRed(legacy_state_.flat_color),
+		ColorGreen(legacy_state_.flat_color), ColorBlue(legacy_state_.flat_color),
+		255);
 	for (uint32_t i = 0; i < 6; ++i)
 	{
 		const uint32_t corner = triangle_vertices[i];
 		BaseVertex &vertex = glyph.vertices[i];
 		vertex.position[0] = positions[corner][0];
 		vertex.position[1] = positions[corner][1];
-		vertex.rgba8 = PackRgba(ColorRed(font_colors_[corner]),
-			ColorGreen(font_colors_[corner]), ColorBlue(font_colors_[corner]), 255);
+		// GL4's batched font path uses the renderer's current flat color.  The
+		// legacy character-parameter gradients are not consumed by that path.
+		vertex.rgba8 = font_rgba;
 		vertex.uv0[0] = uv[corner][0];
 		vertex.uv0[1] = uv[corner][1];
 	}
