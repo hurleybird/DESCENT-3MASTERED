@@ -39,7 +39,7 @@ shader_states.motion_object_id: offset 124, type 1405, size 1, index 4, binding 
 shader_states.motion_flags: offset 128, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
 shader_states.ao_class: offset 132, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
 shader_states.state_flags2: offset 136, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.reserved0: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.vertex_index_base: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
 transforms.current_model: offset 0, type 8b5c, size 1, index 5, binding -1, stages 1, topLevelArrayStride 128
 transforms.previous_model: offset 64, type 8b5c, size 1, index 5, binding -1, stages 1, topLevelArrayStride 128
 FrameViewBlock.view: offset 64, type 8b5c, size 1, index 2, binding -1, stages 1
@@ -61,9 +61,9 @@ Buffer block reflection:
 
 Pipeline input reflection:
 gl_DrawID: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+gl_VertexIndex: offset 0, type 1404, size 1, index 0, binding -1, stages 1
 in_position: offset 0, type 8b51, size 1, index 0, binding -1, stages 1
 in_rgba8: offset 0, type 1405, size 1, index 0, binding -1, stages 1
-gl_VertexIndex: offset 0, type 1404, size 1, index 0, binding -1, stages 1
 in_uv0: offset 0, type 8b50, size 1, index 0, binding -1, stages 1
 in_uv1: offset 0, type 8b50, size 1, index 0, binding -1, stages 1
 
@@ -132,7 +132,7 @@ shader_states.motion_object_id: offset 124, type 1405, size 1, index 4, binding 
 shader_states.motion_flags: offset 128, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
 shader_states.ao_class: offset 132, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
 shader_states.state_flags2: offset 136, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
-shader_states.reserved0: offset 140, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.vertex_index_base: offset 140, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
 materials.image2d: offset 0, type 8dc8, size 1, index 5, binding -1, stages 16, topLevelArrayStride 64
 materials.image2d_array: offset 16, type 8dc8, size 1, index 5, binding -1, stages 16, topLevelArrayStride 64
 materials.sampler_index: offset 32, type 8dc8, size 1, index 5, binding -1, stages 16, topLevelArrayStride 64
@@ -203,7 +203,7 @@ shader_states.motion_object_id: offset 124, type 1405, size 1, index 3, binding 
 shader_states.motion_flags: offset 128, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
 shader_states.ao_class: offset 132, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
 shader_states.state_flags2: offset 136, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
-shader_states.reserved0: offset 140, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.vertex_index_base: offset 140, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
 
 Uniform block reflection:
 FrameViewBlock: offset -1, type ffffffff, size 512, index 0, binding 0, stages 1, numMembers 11
@@ -260,7 +260,7 @@ shader_states.motion_object_id: offset 124, type 1405, size 1, index 1, binding 
 shader_states.motion_flags: offset 128, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
 shader_states.ao_class: offset 132, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
 shader_states.state_flags2: offset 136, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
-shader_states.reserved0: offset 140, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.vertex_index_base: offset 140, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
 materials.image2d: offset 0, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
 materials.image2d_array: offset 16, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
 materials.sampler_index: offset 32, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
@@ -322,7 +322,7 @@ shader_states.motion_object_id: offset 124, type 1405, size 1, index 3, binding 
 shader_states.motion_flags: offset 128, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
 shader_states.ao_class: offset 132, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
 shader_states.state_flags2: offset 136, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
-shader_states.reserved0: offset 140, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.vertex_index_base: offset 140, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
 
 Uniform block reflection:
 FrameViewBlock: offset -1, type ffffffff, size 512, index 0, binding 0, stages 1, numMembers 11
@@ -380,7 +380,7 @@ shader_states.motion_object_id: offset 124, type 1405, size 1, index 1, binding 
 shader_states.motion_flags: offset 128, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
 shader_states.ao_class: offset 132, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
 shader_states.state_flags2: offset 136, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
-shader_states.reserved0: offset 140, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.vertex_index_base: offset 140, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
 materials.image2d: offset 0, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
 materials.image2d_array: offset 16, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
 materials.sampler_index: offset 32, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
@@ -444,7 +444,7 @@ shader_states.motion_object_id: offset 124, type 1405, size 1, index 4, binding 
 shader_states.motion_flags: offset 128, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
 shader_states.ao_class: offset 132, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
 shader_states.state_flags2: offset 136, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.reserved0: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.vertex_index_base: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
 
 Uniform block reflection:
 OptionalPayload: offset -1, type ffffffff, size 4, index 0, binding 6, stages 1, numMembers 1
@@ -459,9 +459,9 @@ Buffer block reflection:
 
 Pipeline input reflection:
 gl_DrawID: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+gl_VertexIndex: offset 0, type 1404, size 1, index 0, binding -1, stages 1
 in_position: offset 0, type 8b51, size 1, index 0, binding -1, stages 1
 in_rgba8: offset 0, type 1405, size 1, index 0, binding -1, stages 1
-gl_VertexIndex: offset 0, type 1404, size 1, index 0, binding -1, stages 1
 in_uv0: offset 0, type 8b50, size 1, index 0, binding -1, stages 1
 
 Pipeline output reflection:
@@ -503,7 +503,7 @@ shader_states.motion_object_id: offset 124, type 1405, size 1, index 1, binding 
 shader_states.motion_flags: offset 128, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
 shader_states.ao_class: offset 132, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
 shader_states.state_flags2: offset 136, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
-shader_states.reserved0: offset 140, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.vertex_index_base: offset 140, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
 materials.image2d: offset 0, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
 materials.image2d_array: offset 16, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
 materials.sampler_index: offset 32, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
@@ -569,7 +569,7 @@ shader_states.motion_object_id: offset 124, type 1405, size 1, index 4, binding 
 shader_states.motion_flags: offset 128, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
 shader_states.ao_class: offset 132, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
 shader_states.state_flags2: offset 136, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.reserved0: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.vertex_index_base: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
 
 Uniform block reflection:
 OptionalPayload: offset -1, type ffffffff, size 4, index 0, binding 6, stages 1, numMembers 1
@@ -616,7 +616,7 @@ shader_states.motion_object_id: offset 124, type 1405, size 1, index 0, binding 
 shader_states.motion_flags: offset 128, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
 shader_states.ao_class: offset 132, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
 shader_states.state_flags2: offset 136, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
-shader_states.reserved0: offset 140, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.vertex_index_base: offset 140, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
 draw_headers.state_index: offset 0, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 32
 
 Uniform block reflection:
@@ -676,7 +676,7 @@ shader_states.motion_object_id: offset 124, type 1405, size 1, index 4, binding 
 shader_states.motion_flags: offset 128, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
 shader_states.ao_class: offset 132, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
 shader_states.state_flags2: offset 136, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
-shader_states.reserved0: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.vertex_index_base: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
 
 Uniform block reflection:
 OptionalPayload: offset -1, type ffffffff, size 4, index 0, binding 6, stages 1, numMembers 1
@@ -723,7 +723,7 @@ shader_states.motion_object_id: offset 124, type 1405, size 1, index 0, binding 
 shader_states.motion_flags: offset 128, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
 shader_states.ao_class: offset 132, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
 shader_states.state_flags2: offset 136, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
-shader_states.reserved0: offset 140, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.vertex_index_base: offset 140, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
 draw_headers.state_index: offset 0, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 32
 
 Uniform block reflection:

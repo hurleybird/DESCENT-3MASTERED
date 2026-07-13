@@ -368,7 +368,9 @@ struct alignas(16) GpuShaderState
 	uint32_t motion_flags;
 	uint32_t ao_class;
 	uint32_t state_flags2;
-	uint32_t reserved0;
+	// Vulkan gl_VertexIndex includes firstVertex/baseVertex.  Per-draw payload
+	// arrays are local, so the compiler records the draw's index base here.
+	uint32_t vertex_index_base;
 };
 
 struct alignas(16) GpuMaterial

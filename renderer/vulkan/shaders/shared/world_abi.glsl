@@ -42,7 +42,7 @@ struct ShaderState {
     float alpha_factor; float z_bias; float fog_near_mapped; float fog_far_mapped;
     vec4 flat_color; vec4 fog_color; vec4 light_direction; vec4 post_values;
     uint dynamic_light_first; uint dynamic_light_count; uint specular_block_index; uint motion_object_id;
-    uint motion_flags; uint ao_class; uint state_flags2; uint reserved0;
+    uint motion_flags; uint ao_class; uint state_flags2; uint vertex_index_base;
 };
 struct Material { uvec4 image2d; uvec4 image2d_array; uvec4 sampler_index; vec4 uv_params; };
 struct Transform { mat4 current_model; mat4 previous_model; };

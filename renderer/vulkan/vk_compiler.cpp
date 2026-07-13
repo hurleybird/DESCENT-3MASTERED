@@ -579,6 +579,9 @@ struct FrameCompiler::Impl
 			state.motion_flags = source.motion_flags;
 			state.ao_class = source.ao_class;
 			state.state_flags2 = source.state_flags2;
+			state.vertex_index_base = draw.geometry_mode == GeometryMode::T2Terrain ?
+				0u : static_cast<uint32_t>(draw.indexed ?
+					draw.vertex_offset : static_cast<int32_t>(draw.first_vertex));
 
 			GpuDrawHeader header = {};
 			header.state_index = static_cast<uint32_t>(states->size());

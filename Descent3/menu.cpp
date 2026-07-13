@@ -308,6 +308,16 @@ int MainMenu()
 bool ProcessCommandLine()
 {
 	int exit_menu = 0;
+	const int loadgame_arg = FindArg("-loadgame");
+	const char *loadgame_path = loadgame_arg ? GetArg(loadgame_arg + 1) : nullptr;
+	if (loadgame_path && SetLoadGamePath(loadgame_path))
+	{
+		SetGameMode(GM_NORMAL);
+		SetFunctionMode(RESTORE_GAME_MODE);
+		SetUICallback(DEFAULT_UICALLBACK);
+		return true;
+	}
+
 	// Auto connect to a network game if the parm is there.
 	if ((!Auto_connected) && (TCP_active) && (FindArg("-url")))
 	{

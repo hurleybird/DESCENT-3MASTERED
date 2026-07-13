@@ -38,7 +38,7 @@ ABI_OFFSET(GpuShaderState, light_direction, 80); ABI_OFFSET(GpuShaderState, post
 ABI_OFFSET(GpuShaderState, dynamic_light_first, 112); ABI_OFFSET(GpuShaderState, dynamic_light_count, 116);
 ABI_OFFSET(GpuShaderState, specular_block_index, 120); ABI_OFFSET(GpuShaderState, motion_object_id, 124);
 ABI_OFFSET(GpuShaderState, motion_flags, 128); ABI_OFFSET(GpuShaderState, ao_class, 132);
-ABI_OFFSET(GpuShaderState, state_flags2, 136); ABI_OFFSET(GpuShaderState, reserved0, 140);
+ABI_OFFSET(GpuShaderState, state_flags2, 136); ABI_OFFSET(GpuShaderState, vertex_index_base, 140);
 ABI_OFFSET(GpuMaterial, image2d, 0); ABI_OFFSET(GpuMaterial, image2d_array, 16);
 ABI_OFFSET(GpuMaterial, sampler, 32); ABI_OFFSET(GpuMaterial, uv_params, 48);
 ABI_OFFSET(GpuTransform, current_model, 0); ABI_OFFSET(GpuTransform, previous_model, 64);

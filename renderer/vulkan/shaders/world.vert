@@ -32,6 +32,8 @@ void main() {
         geometry_mode = header.flags & DRAW_GEOMETRY_MODE_MASK;
     }
     ShaderState state = shader_states[header.state_index];
+    uint payload_vertex_index = geometry_mode == DRAW_GEOMETRY_T2 ?
+        uint(gl_VertexIndex) : uint(gl_VertexIndex - int(state.vertex_index_base));
     Transform transform = transforms[header.transform_index];
     vec4 local = vec4(in_position, 1.0);
     vec4 world = transform.current_model * local;
@@ -52,7 +54,7 @@ void main() {
     out_draw_index = draw_index;
     out_terrain_pages = 0u;
     if (geometry_mode == DRAW_GEOMETRY_T2) {
-        uint payload = header.vertex_payload_offset + uint(gl_VertexIndex) * 8u;
+        uint payload = header.vertex_payload_offset + payload_vertex_index * 8u;
         vec4 world_q = LoadPayloadVec4(payload);
         float q = world_q.w;
         out_uv0_q = vec3(in_uv0, q);
@@ -69,7 +71,7 @@ void main() {
         return;
     }
     if ((header.flags & DRAW_HAS_PERSPECTIVE_PAYLOAD) != 0u) {
-        uint payload = header.vertex_payload_offset + uint(gl_VertexIndex) * 4u;
+        uint payload = header.vertex_payload_offset + payload_vertex_index * 4u;
         vec4 packed = LoadPayloadVec4(payload);
         out_uv0_q = vec3(packed.xy, packed.w);
         out_uv1_q = vec3(packed.z, in_uv1.y * packed.w, packed.w);
@@ -78,7 +80,7 @@ void main() {
         out_uv1_q = vec3(in_uv1, 1.0);
     }
     if ((header.flags & DRAW_HAS_SPECULAR_PAYLOAD) != 0u) {
-        uint payload = header.specular_payload_offset + uint(gl_VertexIndex) * 36u;
+        uint payload = header.specular_payload_offset + payload_vertex_index * 36u;
         out_primary_q = LoadPayloadVec4(payload);
         for (uint field=0u;field<4u;++field) {
             out_field_centers[field]=LoadPayloadVec4(payload+4u+field*4u);
@@ -92,7 +94,7 @@ void main() {
         out_primary_q : vec4(world.xyz, 1.0);
     out_velocity = vec2(0.0);
     if ((header.flags & DRAW_HAS_MOTION_PAYLOAD) != 0u) {
-        uint payload = header.motion_payload_offset + uint(gl_VertexIndex) * 8u;
+        uint payload = header.motion_payload_offset + payload_vertex_index * 8u;
         vec4 current_world = LoadPayloadVec4(payload);
         vec4 previous_world = LoadPayloadVec4(payload + 4u);
         if (abs(current_world.w) > 0.000001 &&

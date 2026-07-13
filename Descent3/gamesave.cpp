@@ -43,6 +43,9 @@
 #include "osiris_dll.h"
 #include "levelgoal.h"
 #include "aistruct.h"
+
+// Save selected by LoadGameDialog() or the -loadgame startup option.
+static char LGS_Path[PSPATHNAME_LEN];
 #include <string.h>
 #include "matcen.h"
 #include "hud.h"
@@ -514,7 +517,7 @@ bool LoadGameDialog()
 			{
 				sprintf(filename, "saveg00%d", slot);
 				ddio_MakePath(pathname, savegame_dir, filename, NULL);
-				strcpy(LGS_Path, pathname);
+				SetLoadGamePath(pathname);
 				SetGameState(GAMESTATE_LOADGAME);
 				res = UID_CANCEL;
 			}
@@ -535,6 +538,15 @@ loadgame_fail:
 	wnd.Destroy();
 
 	return retval;
+}
+
+bool SetLoadGamePath(const char *pathname)
+{
+	if (!pathname || !pathname[0] || strlen(pathname) >= sizeof(LGS_Path))
+		return false;
+
+	strcpy(LGS_Path, pathname);
+	return true;
 }
 
 
