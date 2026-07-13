@@ -495,7 +495,8 @@ void SaveGameSettings()
 		Database->write("RS_windowaspect", Game_window_aspect);
 	}
 	if (!FindArg("-windowed") && !FindArg("-windowpos") &&
-		!FindArg("-window-position"))
+		!FindArg("-window-position") &&
+		!FindArg("-toggle-fullscreen-frame"))
 		Database->write("RS_fullscreen", Game_fullscreen);
 	if (!FindArg("-framecap") && !FindArg("-limitframe"))
 		Database->write("RS_frame_limit_fps", Game_frame_limit_fps);

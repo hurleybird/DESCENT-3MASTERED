@@ -385,14 +385,14 @@ struct Wsi::Impl
 
 	WsiStatus BuildGeneration(const WsiCreateInfo &request,
 		const Generation *previous, std::unique_ptr<Generation> *output,
-		std::unique_ptr<Generation> *failed_compatibility_candidate,
-		bool *previous_retired_by_compatibility_retry)
+		std::unique_ptr<Generation> *failed_replacement_candidate,
+		bool *previous_retired_by_replacement)
 	{
 		output->reset();
-		if (failed_compatibility_candidate)
-			failed_compatibility_candidate->reset();
-		if (previous_retired_by_compatibility_retry)
-			*previous_retired_by_compatibility_retry = false;
+		if (failed_replacement_candidate)
+			failed_replacement_candidate->reset();
+		if (previous_retired_by_replacement)
+			*previous_retired_by_replacement = false;
 		VkSurfaceCapabilitiesKHR capabilities = {};
 		VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
 			platform->PhysicalDevice(), platform->Surface(), &capabilities);
@@ -558,9 +558,9 @@ struct Wsi::Impl
 		generation->requested_create_info = request;
 
 		// Allocate every generation-owned synchronization object whose count is
-		// known before touching the native window.  This keeps the conventional
-		// oldSwapchain compatibility retry's non-atomic window as small as Vulkan
-		// permits; image views and implementation-added images remain post-create.
+		// known before replacing the native swapchain. This keeps the standard
+		// oldSwapchain replacement's non-atomic window as small as Vulkan permits;
+		// image views and implementation-added images remain post-create.
 		VkSemaphoreCreateInfo semaphore = {};
 		semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 		generation->frame_semaphores.resize(request.frame_context_count);
@@ -623,25 +623,13 @@ struct Wsi::Impl
 		create.compositeAlpha = composite_alpha;
 		create.presentMode = selected_mode;
 		create.clipped = VK_TRUE;
-		// Strict transactional attempt: do not retire the published generation.
-		create.oldSwapchain = VK_NULL_HANDLE;
+		// Vulkan's standard replacement path supplies the currently published
+		// swapchain here. Some Win32 drivers reject a second swapchain for one HWND with
+		// VK_ERROR_INITIALIZATION_FAILED rather than NATIVE_WINDOW_IN_USE, so a
+		// null-oldSwapchain probe is neither portable nor transactional in practice.
+		create.oldSwapchain = previous ? previous->swapchain : VK_NULL_HANDLE;
 		result = vkCreateSwapchainKHR(platform->Device(), &create, nullptr,
 			&generation->swapchain);
-		bool compatibility_retry_retired_previous = false;
-		if (result == VK_ERROR_NATIVE_WINDOW_IN_USE_KHR && previous)
-		{
-			// Some WSI implementations forbid two live swapchains for one native
-			// window.  This is the sole compatibility path that can retire the old
-			// generation before the candidate's image views have been created.
-			generation->swapchain = VK_NULL_HANDLE;
-			create.oldSwapchain = previous->swapchain;
-			result = vkCreateSwapchainKHR(platform->Device(), &create, nullptr,
-				&generation->swapchain);
-			compatibility_retry_retired_previous = result == VK_SUCCESS;
-			if (compatibility_retry_retired_previous &&
-				previous_retired_by_compatibility_retry)
-				*previous_retired_by_compatibility_retry = true;
-		}
 		if (result != VK_SUCCESS)
 		{
 			SetError(result, "swapchain-create", "unable to create candidate swapchain");
@@ -649,9 +637,12 @@ struct Wsi::Impl
 			return StatusForResultClass(ClassifyAcquire(result)) == WsiStatus::SubmitFailure ?
 				WsiStatus::SwapchainCreationFailed : StatusForResultClass(ClassifyAcquire(result));
 		}
+		const bool retired_previous = previous != nullptr;
+		if (retired_previous && previous_retired_by_replacement)
+			*previous_retired_by_replacement = true;
 		auto abandon_candidate = [&](WsiStatus failure) {
-			if (compatibility_retry_retired_previous && failed_compatibility_candidate)
-				*failed_compatibility_candidate = std::move(generation);
+			if (retired_previous && failed_replacement_candidate)
+				*failed_replacement_candidate = std::move(generation);
 			else
 				DestroyGeneration(generation.get());
 			return failure;
@@ -830,22 +821,21 @@ WsiStatus Wsi::Recreate(const WsiCreateInfo &create_info)
 		return WsiStatus::Paused;
 	}
 	std::unique_ptr<Impl::Generation> candidate;
-	std::unique_ptr<Impl::Generation> failed_compatibility_candidate;
+	std::unique_ptr<Impl::Generation> failed_replacement_candidate;
 	bool previous_retired = false;
 	const WsiStatus status = impl_->BuildGeneration(create_info,
-		impl_->current.get(), &candidate, &failed_compatibility_candidate,
+		impl_->current.get(), &candidate, &failed_replacement_candidate,
 		&previous_retired);
 	if (status != WsiStatus::Success)
 	{
 		if (!previous_retired || !impl_->current ||
-			!failed_compatibility_candidate)
+			!failed_replacement_candidate)
 			return status;
 
-		// The strict parallel candidate was rejected by this WSI and the sole
-		// compatibility retry retired the old native swapchain before post-create
-		// image setup failed.  Rebuild the exact prior surface configuration once,
-		// using the failed candidate as oldSwapchain.  Success restores the prior
-		// renderer preference atomically from the engine's point of view.
+		// The standard replacement retired the old native swapchain before
+		// post-create image setup failed. Rebuild the exact prior surface
+		// configuration once, using the failed candidate as oldSwapchain. Success
+		// restores the prior renderer preference from the engine's point of view.
 		const VkResult requested_failure_result = impl_->last_result;
 		const std::string requested_failure_text = impl_->last_error;
 		std::unique_ptr<Impl::Generation> restored;
@@ -853,13 +843,13 @@ WsiStatus Wsi::Recreate(const WsiCreateInfo &create_info)
 		bool failed_candidate_retired = false;
 		const WsiStatus restore_status = impl_->BuildGeneration(
 			impl_->current->requested_create_info,
-			failed_compatibility_candidate.get(), &restored,
+			failed_replacement_candidate.get(), &restored,
 			&failed_restoration_candidate, &failed_candidate_retired);
 		if (restore_status == WsiStatus::Success)
 		{
 			// Neither candidate ever entered a queue submission or presentation.
-			impl_->DestroyGeneration(failed_compatibility_candidate.get());
-			failed_compatibility_candidate.reset();
+			impl_->DestroyGeneration(failed_replacement_candidate.get());
+			failed_replacement_candidate.reset();
 			impl_->UnregisterGenerationState(impl_->current.get());
 			impl_->retired.push_back(std::move(impl_->current));
 			impl_->current = std::move(restored);
@@ -867,7 +857,7 @@ WsiStatus Wsi::Recreate(const WsiCreateInfo &create_info)
 			impl_->paused = 0;
 			impl_->last_result = requested_failure_result;
 			impl_->last_error = requested_failure_text +
-				"; prior surface configuration restored after conventional oldSwapchain retry";
+				"; prior surface configuration restored after replacement failure";
 			return status;
 		}
 
@@ -876,8 +866,8 @@ WsiStatus Wsi::Recreate(const WsiCreateInfo &create_info)
 		// prior graphics/presentation use still receives exact completion proof.
 		impl_->DestroyGeneration(failed_restoration_candidate.get());
 		failed_restoration_candidate.reset();
-		impl_->DestroyGeneration(failed_compatibility_candidate.get());
-		failed_compatibility_candidate.reset();
+		impl_->DestroyGeneration(failed_replacement_candidate.get());
+		failed_replacement_candidate.reset();
 		impl_->current->stopped = 1;
 		impl_->UnregisterGenerationState(impl_->current.get());
 		impl_->retired.push_back(std::move(impl_->current));

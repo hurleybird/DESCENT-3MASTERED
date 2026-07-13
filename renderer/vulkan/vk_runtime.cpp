@@ -1030,7 +1030,9 @@ bool VulkanRuntime::ApplyPreferredState(
 			}
 		}
 		return impl_->Fail("preferences", std::string(
-			"swapchain replacement failed: ") + WsiStatusName(wsi_status));
+			"swapchain replacement failed: ") + WsiStatusName(wsi_status) +
+			(impl_->wsi.LastError().empty() ? "" :
+				std::string(": ") + impl_->wsi.LastError()));
 	}
 
 	const VkExtent2D extent = impl_->wsi.Extent();

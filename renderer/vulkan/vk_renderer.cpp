@@ -3651,12 +3651,15 @@ void VulkanRenderer::SetCharacterParameters(ddgr_color color1,
 void VulkanRenderer::DrawFontCharacter(int bitmap, int x1, int y1, int x2,
 	int y2, float u, float v, float width, float height)
 {
-	if (!frame_interval_open_ || bitmap < 0 || x2 <= x1 || y2 <= y1)
+	if (!frame_interval_open_)
 	{
-		Fail(!frame_interval_open_ ? RuntimeFailure::InvalidLifecycle :
-			RuntimeFailure::InvalidArgument, "DrawFontCharacter");
+		Fail(RuntimeFailure::InvalidLifecycle, "DrawFontCharacter");
 		return;
 	}
+	// GL4 silently drops invalid font layers and clipped/degenerate glyph quads.
+	// These are normal text-layout results, not renderer lifecycle failures.
+	if (bitmap < 0 || x2 <= x1 || y2 <= y1)
+		return;
 	TextureRequest request = {};
 	request.logical_handle = bitmap;
 	request.map_type = MAP_TYPE_BITMAP;

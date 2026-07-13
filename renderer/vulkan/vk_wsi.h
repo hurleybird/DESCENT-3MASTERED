@@ -121,14 +121,13 @@ public:
 	Wsi &operator=(Wsi &&) = delete;
 	void SetStateTracker(ResourceStateTracker *state_tracker) noexcept;
 
-	// Initialize and Recreate are transactional.  Recreate first builds a
-	// parallel candidate without retiring the current VkSwapchainKHR.  A WSI
-	// returning VK_ERROR_NATIVE_WINDOW_IN_USE_KHR receives one conventional
-	// oldSwapchain retry after all countable sync objects are precreated.  If
-	// post-create setup then fails, the prior surface configuration is restored
-	// immediately; an unsuccessful restoration leaves no acquirable generation.
-	// Publication is one pointer swap only after every image view and generation
-	// semaphore exists.
+	// Initialize and Recreate are transactional from the engine's point of view.
+	// Recreate uses the current VkSwapchainKHR as oldSwapchain, following the
+	// portable Vulkan WSI replacement path, after precreating every countable sync
+	// object. If post-create setup then fails, the prior surface configuration is
+	// restored immediately; an unsuccessful restoration leaves no acquirable
+	// generation. Publication is one pointer swap only after every image view and
+	// generation semaphore exists.
 	WsiStatus Initialize(const WsiCreateInfo &create_info);
 	WsiStatus Recreate(const WsiCreateInfo &create_info);
 

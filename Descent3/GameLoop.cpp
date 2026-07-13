@@ -140,6 +140,20 @@ struct automated_capture_state
 
 static automated_capture_state Automated_capture = {};
 
+// Foreground display-transition probe. Unlike -capture-frame, this deliberately
+// does not suppress input or mark the native window as non-activating: fullscreen
+// behavior must be exercised under the same focus rules as an interactive game.
+struct automated_display_transition_state
+{
+	bool initialized;
+	bool enabled;
+	bool applied;
+	int target_frame;
+	int gameplay_frame;
+};
+
+static automated_display_transition_state Automated_display_transition = {};
+
 void AutomatedCaptureLog(const char* format, ...)
 {
 	const char* path = getenv("PICCU_CAPTURE_LOG");
@@ -175,6 +189,50 @@ static void AutomatedFramePerfLog(int gameplay_frame, double simulation_ms,
 		gameplay_frame, simulation_ms, capture_ms, flip_ms, tail_ms,
 		total_ms);
 	fclose(file);
+}
+
+static void ApplyAutomatedDisplayTransition()
+{
+	if (!Automated_display_transition.initialized)
+	{
+		Automated_display_transition.initialized = true;
+		const int argument = FindArg("-toggle-fullscreen-frame");
+		const char* value = argument ? GetArg(argument + 1) : nullptr;
+		char* end = nullptr;
+		const long target = value ? strtol(value, &end, 10) : -1;
+		if (value && end != value && *end == '\0' && target >= 0 &&
+			target <= 1000000)
+		{
+			Automated_display_transition.enabled = true;
+			Automated_display_transition.target_frame = (int)target;
+			AutomatedCaptureLog("fullscreen transition armed frame=%d",
+				Automated_display_transition.target_frame);
+		}
+		else if (argument)
+		{
+			mprintf((0, "Automated fullscreen transition disabled: invalid gameplay frame.\n"));
+		}
+	}
+
+	if (!Automated_display_transition.enabled ||
+		Automated_display_transition.applied ||
+		Game_state != GAMESTATE_LVLPLAYING ||
+		Game_interface_mode != GAME_INTERFACE || Menu_interface_mode ||
+		Skip_render_game_frame || Dedicated_server)
+		return;
+
+	if (Automated_display_transition.gameplay_frame ==
+		Automated_display_transition.target_frame)
+	{
+		Automated_display_transition.applied = true;
+		AutomatedCaptureLog("fullscreen transition applying frame=%d fullscreen=%d->%d",
+			Automated_display_transition.gameplay_frame,
+			Game_fullscreen ? 1 : 0, Game_fullscreen ? 0 : 1);
+		ToggleFullscreenMode();
+		return;
+	}
+
+	++Automated_display_transition.gameplay_frame;
 }
 
 bool AutomatedCaptureSuppressesInput()
@@ -3033,6 +3091,7 @@ void GameFrame(void)
 #ifdef USE_RTP
 	INT64 curr_time;
 #endif
+	ApplyAutomatedDisplayTransition();
 	BeginAutomatedCaptureFrame();
 	const double automated_perf_frame_begin = timer_GetTime64();
 	double automated_perf_render_begin = automated_perf_frame_begin;
