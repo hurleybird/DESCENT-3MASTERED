@@ -467,8 +467,6 @@ int VulkanRenderer::Init(oeApplication *app, renderer_preferred_state *pref_stat
 	public_state_.view_height = preferred_.window_height;
 	public_state_.gamma_value = preferred_.gamma;
 	legacy_state_.gamma = preferred_.gamma;
-	SetMipState(preferred_.mipping);
-	SetFiltering(preferred_.filtering);
 	RenderCaptureSegment *initial_capture = Capture("Init");
 	if (!initial_capture)
 	{
@@ -1538,8 +1536,8 @@ void VulkanRenderer::ClearZBuffer()
 uint32_t VulkanRenderer::SamplerIndex(bool array_texture) const
 {
 	const uint32_t base = (legacy_state_.wrap_type % 3u) * 4u +
-		(legacy_state_.mipping ? 2u : 0u) +
-		(legacy_state_.filtering ? 1u : 0u);
+		(legacy_state_.mipping && preferred_.mipping ? 2u : 0u) +
+		(legacy_state_.filtering && preferred_.filtering ? 1u : 0u);
 	return base + (array_texture ? 16u : 0u);
 }
 
@@ -1577,14 +1575,18 @@ bool VulkanRenderer::BuildMaterial(int handle, int map_type,
 	std::memset(material, 0, sizeof(*material));
 	ResolvedTexture resolved[8] = {};
 	TextureRequest requests[8] = {};
+	const uint32_t effective_filtering =
+		legacy_state_.filtering && preferred_.filtering;
+	const uint32_t effective_mipping =
+		legacy_state_.mipping && preferred_.mipping;
 	for (uint32_t i = 0; i < 8; ++i)
 	{
 		requests[i].logical_handle = -1;
 		requests[i].map_type = MAP_TYPE_UNKNOWN;
 		requests[i].role = static_cast<TextureRole>(i);
 		requests[i].wrap_type = legacy_state_.wrap_type;
-		requests[i].filtering = legacy_state_.filtering;
-		requests[i].mipping = legacy_state_.mipping;
+		requests[i].filtering = effective_filtering;
+		requests[i].mipping = effective_mipping;
 	}
 	requests[0].logical_handle =
 		legacy_state_.texture_type == TT_FLAT ? -1 : handle;
@@ -1770,8 +1772,10 @@ bool VulkanRenderer::BuildDrawState(PrimitiveSourceKind source,
 	shader.motion_flags = legacy_state_.motion_flags;
 	shader.ao_class = legacy_state_.ao_class;
 	shader.state_flags2 = legacy_state_.wrap_type & kStateWrapMask;
-	if (legacy_state_.filtering) shader.state_flags2 |= kStateFiltering;
-	if (legacy_state_.mipping) shader.state_flags2 |= kStateMipping;
+	if (legacy_state_.filtering && preferred_.filtering)
+		shader.state_flags2 |= kStateFiltering;
+	if (legacy_state_.mipping && preferred_.mipping)
+		shader.state_flags2 |= kStateMipping;
 	if (legacy_state_.lighting_state == LS_PHONG)
 		shader.state_flags2 |= 1u << 4;
 	else if (dynamic_light_count_ != 0)
@@ -2137,8 +2141,8 @@ bool VulkanRenderer::EmitRetainedTerrain(
 	array_request.base_bitmap_count = submission.base_bitmap_count;
 	std::memcpy(array_request.lightmap_handles, submission.lightmap_handles,
 		sizeof(array_request.lightmap_handles));
-	array_request.filtering = legacy_state_.filtering;
-	array_request.mipping = legacy_state_.mipping;
+	array_request.filtering = legacy_state_.filtering && preferred_.filtering;
+	array_request.mipping = legacy_state_.mipping && preferred_.mipping;
 	ResolvedTexture base_array = {}, lightmap_array = {};
 	if (!runtime_->ResolveTerrainTextureArrays(array_request, &base_array,
 		&lightmap_array))

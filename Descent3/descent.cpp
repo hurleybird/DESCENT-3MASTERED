@@ -127,9 +127,11 @@ void Descent3()
 		if (!Dedicated_server)
 		{
 			SetScreenMode(SM_CINEMATIC);
+			const bool automated_capture = FindArg("-capture-frame") ||
+				FindArg("-screenshot-frame");
 
 		//Show the intro movie
-			if (! FindArg("-nointro")) {
+			if (!automated_capture && !FindArg("-nointro")) {
 				char intropath[_MAX_PATH*2];
 				bool remote_path =  (CD_inserted==1) ? true : false;
 
@@ -185,8 +187,10 @@ void Descent3()
 			}
 
 			SetScreenMode(SM_MENU);
-			//Show the intro screen
-			IntroScreen();
+			// Automated comparisons start from a restored gameplay state; startup
+			// movies and splash timing must not become part of the capture clock.
+			if (!automated_capture)
+				IntroScreen();
 		}
 
 		//Init a bunch more stuff

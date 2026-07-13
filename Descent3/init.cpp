@@ -757,6 +757,28 @@ void LoadGameSettings()
 	Database->read_int("RS_bilear",&Render_preferred_state.filtering);
 	Render_preferred_state.filtering = Render_preferred_state.filtering ? 1 : 0;
 	Database->read_int("RS_mipping",&Render_preferred_state.mipping);
+	// Keep filtering tests reproducible without mutating the user's saved
+	// settings.  These map directly to the three user-visible sampling modes.
+	const int texture_filter_arg = FindArg("-texturefilter");
+	const char* texture_filter_value = texture_filter_arg ?
+		GetArg(texture_filter_arg + 1) : nullptr;
+	if (texture_filter_value && strcmpi(texture_filter_value, "point") == 0)
+	{
+		Render_preferred_state.filtering = 0;
+		Render_preferred_state.mipping = 0;
+	}
+	else if (texture_filter_value &&
+		strcmpi(texture_filter_value, "bilinear") == 0)
+	{
+		Render_preferred_state.filtering = 1;
+		Render_preferred_state.mipping = 0;
+	}
+	else if (texture_filter_value &&
+		strcmpi(texture_filter_value, "trilinear") == 0)
+	{
+		Render_preferred_state.filtering = 1;
+		Render_preferred_state.mipping = 1;
+	}
 	Database->read_int("RS_color_model",&Render_state.cur_color_model);
 	Database->read_int("RS_light",&Render_state.cur_light_state);
 	Database->read_int("RS_texture_quality",&Render_state.cur_texture_quality);
@@ -816,6 +838,10 @@ void LoadGameSettings()
 	if (tempint > 150) tempint = 150;
 	Render_preferred_state.gtao_overscan_percent = (ushort)tempint;
 	Database->read("RS_gtao_debug_preview", &Render_preferred_state.gtao_debug_preview);
+	// A non-persistent recovery switch is important when an invalid or
+	// expensive AO configuration prevents the video menu from being reached.
+	if (FindArg("-nogtao") || FindArg("-no-gtao"))
+		Render_preferred_state.gtao_enabled = false;
 	Render_preferred_state.gtao_temporal_debug_preview = false;
 	tempint = Render_preferred_state.motion_vector_mode;
 	Database->read_int("RS_motion_vector_mode", &tempint);
