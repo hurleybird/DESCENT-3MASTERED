@@ -311,6 +311,8 @@ void SetGameMode(int mode)
 ///////////////////////////////////////////////////////////////////////////////
 
 static int Screen_mode = SM_NULL;
+static bool Fullscreen_mode_toggle_pending = false;
+static unsigned Fullscreen_mode_change_serial = 0;
 
 int GetScreenMode()
 {
@@ -392,6 +394,25 @@ void SetDisplayModeChangedCallback(void (*fn)())
 	Display_mode_changed_callback = fn;
 }
 
+void RequestFullscreenModeToggle()
+{
+	if (IsAltEnterFullscreenEnabled())
+		Fullscreen_mode_toggle_pending = true;
+}
+
+void ProcessPendingFullscreenModeToggle()
+{
+	if (!Fullscreen_mode_toggle_pending || GetScreenMode() == SM_NULL)
+		return;
+	Fullscreen_mode_toggle_pending = false;
+	ToggleFullscreenMode();
+}
+
+unsigned GetFullscreenModeChangeSerial()
+{
+	return Fullscreen_mode_change_serial;
+}
+
 void ToggleFullscreenMode()
 {
 	int screen_mode = GetScreenMode();
@@ -415,6 +436,9 @@ void ToggleFullscreenMode()
 	ddio_MouseMode(MOUSE_STANDARD_MODE);
 	ddio_MouseMode(ShouldCaptureMouse() ? MOUSE_EXCLUSIVE_MODE : MOUSE_STANDARD_MODE);
 	ddio_KeyFlush();
+	++Fullscreen_mode_change_serial;
+	if (Fullscreen_mode_change_serial == 0)
+		++Fullscreen_mode_change_serial;
 }
 
 static void NormalizeRenderScaleSettings()

@@ -199,6 +199,16 @@ public:
 		Descent3();
 	};
 
+	unsigned defer() override
+	{
+		const unsigned result = oeWin32Application::defer();
+		// Keyboard messages arrive while the base defer pumps Win32. Apply the
+		// requested display change only after that pump returns, at the common
+		// between-frame boundary used by menus, movies, and gameplay.
+		ProcessPendingFullscreenModeToggle();
+		return result;
+	}
+
 //	returns 0 if we pass to default window handler.
 	virtual int WndProc( HWnd hwnd, unsigned msg, unsigned wParam, long lParam)
 	{
@@ -210,11 +220,21 @@ public:
 		switch (msg)
 		{
 		case WM_SYSKEYDOWN:
+			if (wParam == VK_RETURN && (lParam & 0x20000000L))
+			{
+				if (!(lParam & 0x40000000L))
+					RequestFullscreenModeToggle();
+				return 0;
+			}
 			if (wParam == VK_F4 && ShouldConfirmAltF4QuitInGame())
 			{
 				RequestAltF4QuitConfirmation();
 				return 0;
 			}
+			break;
+		case WM_SYSKEYUP:
+			if (wParam == VK_RETURN)
+				return 0;
 			break;
 		case WM_KILLFOCUS:
 			ddio_MouseMode(MOUSE_STANDARD_MODE);

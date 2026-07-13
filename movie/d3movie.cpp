@@ -148,6 +148,7 @@ int mve_PlayMovie( const char *pMovieName, oeApplication *pApp )
 
 	renderer_preferred_state oldstate = Render_preferred_state;
 	Movie_vid_set = false;
+	unsigned fullscreen_change_serial = GetFullscreenModeChangeSerial();
 
 	bool aborted = false;
 	Movie_current_framenum = 0;
@@ -155,12 +156,24 @@ int mve_PlayMovie( const char *pMovieName, oeApplication *pApp )
 	{
 		// let the OS do its thing
 		pApp->defer();
+		const unsigned current_fullscreen_change_serial =
+			GetFullscreenModeChangeSerial();
+		if (current_fullscreen_change_serial != fullscreen_change_serial)
+		{
+			// Win32 applies Alt+Enter from the application's safe post-defer
+			// boundary. Keep the movie's restoration state synchronized with the
+			// new window mode just as the platform-neutral key fallback below does.
+			fullscreen_change_serial = current_fullscreen_change_serial;
+			oldstate = Render_preferred_state;
+			Movie_vid_set = false;
+		}
 	
 		// check for bail
 		int key = ddio_KeyInKey();
 		if (IsAltEnterFullscreenEnabled() && IsAltEnterFullscreenKey(key))
 		{
 			ToggleFullscreenMode();
+			fullscreen_change_serial = GetFullscreenModeChangeSerial();
 			oldstate = Render_preferred_state;
 			Movie_vid_set = false;
 			continue;
