@@ -1,0 +1,157 @@
+cmake_minimum_required(VERSION 3.11)
+
+include("${CMAKE_CURRENT_LIST_DIR}/shader_assets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../../thirdparty/vulkan/dependencies.lock.cmake")
+
+if(NOT DEFINED GLSLANG_EXECUTABLE OR NOT EXISTS "${GLSLANG_EXECUTABLE}")
+	message(FATAL_ERROR "Set GLSLANG_EXECUTABLE to pinned glslang 16.3.0")
+endif()
+if(NOT DEFINED SPIRV_VAL_EXECUTABLE OR NOT EXISTS "${SPIRV_VAL_EXECUTABLE}")
+	message(FATAL_ERROR "Set SPIRV_VAL_EXECUTABLE to pinned SPIRV-Tools validator")
+endif()
+
+execute_process(COMMAND "${GLSLANG_EXECUTABLE}" --version
+	RESULT_VARIABLE GLSLANG_VERSION_RESULT OUTPUT_VARIABLE GLSLANG_VERSION_TEXT
+	ERROR_VARIABLE GLSLANG_VERSION_ERROR)
+if(NOT GLSLANG_VERSION_RESULT EQUAL 0 OR
+	NOT GLSLANG_VERSION_TEXT MATCHES "Glslang Version: 11:16\\.3\\.0")
+	message(FATAL_ERROR "GLSLANG_EXECUTABLE is not pinned glslang 16.3.0\n${GLSLANG_VERSION_TEXT}${GLSLANG_VERSION_ERROR}")
+endif()
+execute_process(COMMAND "${SPIRV_VAL_EXECUTABLE}" --version
+	RESULT_VARIABLE SPIRV_VAL_VERSION_RESULT OUTPUT_VARIABLE SPIRV_VAL_VERSION_TEXT
+	ERROR_VARIABLE SPIRV_VAL_VERSION_ERROR)
+if(NOT SPIRV_VAL_VERSION_RESULT EQUAL 0 OR
+	NOT SPIRV_VAL_VERSION_TEXT MATCHES "SPIRV-Tools v2026\\.2")
+	message(FATAL_ERROR "SPIRV_VAL_EXECUTABLE is not the pinned SPIRV-Tools build\n${SPIRV_VAL_VERSION_TEXT}${SPIRV_VAL_VERSION_ERROR}")
+endif()
+
+set(SHADER_ROOT "${CMAKE_CURRENT_LIST_DIR}")
+set(GENERATED_ROOT "${SHADER_ROOT}/generated")
+set(REFLECTION_MANIFEST "${SHADER_ROOT}/reflection_manifest.tsv")
+file(MAKE_DIRECTORY "${GENERATED_ROOT}")
+
+set(SHADERS ${PICCU_VULKAN_SHADER_MODULES})
+
+if(NOT EXISTS "${REFLECTION_MANIFEST}")
+	message(FATAL_ERROR "Missing frozen graph reflection manifest")
+endif()
+file(READ "${REFLECTION_MANIFEST}" REFLECTION_MAPPING)
+
+# These are the exact 40 public labels in kFrozenGraphManifest. Keep shader
+# coverage mechanically tied to that ABI even for world-draw and attachment
+# operations that do not own a sampled post fragment program.
+set(GRAPH_NODES
+	CAP_WORLD
+	CAP_DEPTH_LOGICAL
+	RES_COLOR
+	RES_DEPTH
+	RES_VEL
+	RES_ID
+	RES_MASK
+	RES_AOCLASS
+	SSAA_4_TO_2
+	SSAA_2_TO_1
+	PREP_DEPTH_LOGICAL
+	AO_DEPTH
+	AO_RAW
+	AO_BLUR_X
+	AO_BLUR_Y
+	AO_TEMPORAL
+	AO_SUPPRESS
+	AO_APPLY
+	AO_DEFERRED_COMPOSITE
+	BLOOM_THRESHOLD
+	BLOOM_DOWN_n
+	BLOOM_UP_n
+	NORMAL_COMPOSITE
+	NORMAL_BLIT
+	MOTION_NORMAL
+	MOTION_DEBUG_NORMAL
+	NORMAL_UI
+	COCKPIT_LINEAR_COPY
+	MOTION_COCKPIT_PRE
+	MOTION_DEBUG_COCKPIT_PRE
+	COCKPIT_UI_PRE
+	COCKPIT_SCENE
+	POST_ALPHA_CLEAR
+	COCKPIT_RESOLVE
+	BLOOM_DEFERRED_*
+	COCKPIT_OVER
+	COCKPIT_BLOOM_GAMMA
+	COCKPIT_GAMMA_ONLY
+	COCKPIT_UI_POST
+	PRESENT)
+foreach(NODE IN LISTS GRAPH_NODES)
+	string(FIND "${REFLECTION_MAPPING}" "\n${NODE}\t" NODE_ROW)
+	if(NODE_ROW EQUAL -1)
+		message(FATAL_ERROR "Reflection manifest is missing graph node ${NODE}")
+	endif()
+endforeach()
+
+file(WRITE "${GENERATED_ROOT}/reflection.txt"
+	"# glslang 16.3.0 Vulkan 1.3 reflection; generated, do not edit\n")
+set(HASH_ROWS "")
+foreach(SHADER IN LISTS SHADERS)
+	set(SOURCE "${SHADER_ROOT}/${SHADER}")
+	set(OUTPUT "${GENERATED_ROOT}/${SHADER}.spv")
+	if(NOT EXISTS "${SOURCE}")
+		message(FATAL_ERROR "Missing Vulkan shader source ${SHADER}")
+	endif()
+
+	execute_process(
+		COMMAND "${GLSLANG_EXECUTABLE}" -V --target-env vulkan1.3 -l -q
+			-I${SHADER_ROOT} -o "${OUTPUT}" "${SOURCE}"
+		RESULT_VARIABLE COMPILE_RESULT
+		OUTPUT_VARIABLE COMPILE_OUTPUT
+		ERROR_VARIABLE COMPILE_ERROR)
+	if(NOT COMPILE_RESULT EQUAL 0)
+		message(FATAL_ERROR
+			"glslang failed for ${SHADER}\n${COMPILE_OUTPUT}${COMPILE_ERROR}")
+	endif()
+	file(APPEND "${GENERATED_ROOT}/reflection.txt"
+		"\n## ${SHADER}\n${COMPILE_OUTPUT}${COMPILE_ERROR}")
+
+	execute_process(
+		COMMAND "${SPIRV_VAL_EXECUTABLE}" --target-env vulkan1.3 "${OUTPUT}"
+		RESULT_VARIABLE VALIDATE_RESULT
+		OUTPUT_VARIABLE VALIDATE_OUTPUT
+		ERROR_VARIABLE VALIDATE_ERROR)
+	if(NOT VALIDATE_RESULT EQUAL 0)
+		message(FATAL_ERROR
+			"spirv-val failed for ${SHADER}\n${VALIDATE_OUTPUT}${VALIDATE_ERROR}")
+	endif()
+
+	file(SHA256 "${OUTPUT}" OUTPUT_HASH)
+	string(APPEND HASH_ROWS "${OUTPUT_HASH}  ${SHADER}.spv\n")
+endforeach()
+
+file(WRITE "${GENERATED_ROOT}/shaders.sha256" "${HASH_ROWS}")
+file(SHA256 "${GENERATED_ROOT}/reflection.txt" REFLECTION_HASH)
+file(WRITE "${GENERATED_ROOT}/reflection.sha256"
+	"${REFLECTION_HASH}  reflection.txt\n")
+
+set(SOURCE_DEPENDENCIES ${PICCU_VULKAN_SHADER_MODULES}
+	${PICCU_VULKAN_SHADER_INCLUDE_SOURCES}
+	reflection_manifest.tsv
+	compile_shaders.cmake
+	shader_assets.cmake)
+set(SOURCE_HASH_ROWS "")
+foreach(SOURCE_RELATIVE IN LISTS SOURCE_DEPENDENCIES)
+	set(SOURCE_PATH "${SHADER_ROOT}/${SOURCE_RELATIVE}")
+	if(NOT EXISTS "${SOURCE_PATH}")
+		message(FATAL_ERROR "Missing Vulkan shader dependency ${SOURCE_RELATIVE}")
+	endif()
+	file(SHA256 "${SOURCE_PATH}" SOURCE_HASH)
+	string(APPEND SOURCE_HASH_ROWS "${SOURCE_HASH}  ${SOURCE_RELATIVE}\n")
+endforeach()
+file(SHA256 "${SHADER_ROOT}/../../../thirdparty/vulkan/dependencies.lock.cmake"
+	DEPENDENCY_LOCK_HASH)
+string(APPEND SOURCE_HASH_ROWS
+	"${DEPENDENCY_LOCK_HASH}  @thirdparty/vulkan/dependencies.lock.cmake\n")
+file(WRITE "${GENERATED_ROOT}/sources.sha256" "${SOURCE_HASH_ROWS}")
+file(WRITE "${GENERATED_ROOT}/toolchain.txt"
+	"glslang ${PICCU_GLSLANG_TAG} ${PICCU_GLSLANG_COMMIT}\n"
+	"SPIRV-Tools ${PICCU_SPIRV_TOOLS_TAG} ${PICCU_SPIRV_TOOLS_COMMIT}\n"
+	"target vulkan1.3 spirv1.6\n")
+list(LENGTH SHADERS SHADER_COUNT)
+message(STATUS "Compiled, reflected, and validated ${SHADER_COUNT} Vulkan shaders")

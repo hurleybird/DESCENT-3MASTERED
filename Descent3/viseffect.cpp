@@ -104,8 +104,7 @@ static float VisEffectSnowFadeInFactor(float time_live)
 
 static bool VisEffectCanUseLateCloseScreenPass()
 {
-	return Renderer_type == RENDERER_OPENGL &&
-		OpenGLProfile == GLPROFILE_CORE &&
+	return rend_SupportsLateCloseScreenPass() &&
 		VisEffectViewerIsFirstPersonLocalPlayerView();
 }
 
@@ -2068,7 +2067,7 @@ static bool VisEffectBuildParticleInstanceItem(renderer_particle_instance& item,
 	angle rot_angle, float width, float height, float z_bias, float u0, float v0, float u1, float v1,
 	float red, float green, float blue, float alpha)
 {
-	if (!Render_gl4_particle_instancing || OpenGLProfile != GLPROFILE_CORE || !rend_CanDrawParticleInstanceBatch())
+	if (!rend_CanUseParticleInstanceBatch(Render_gl4_particle_instancing))
 		return false;
 
 	g3Point center;

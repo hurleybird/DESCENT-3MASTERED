@@ -525,6 +525,20 @@ void APIENTRY GL_LogDebugMsg(GLenum source, GLenum type, GLuint id, GLenum sever
 
 // Sets up our OpenGL rendering context
 // Returns 1 if ok, 0 if something bad
+RendererCapabilities GL4Renderer::GetCapabilities() const
+{
+	RendererCapabilities capabilities = {};
+	capabilities.backend = RENDERER_BACKEND_GL4;
+	capabilities.particle_instance_batch = SupportsParticleInstanceBatch();
+	capabilities.per_pixel_lighting = true;
+	capabilities.split_and_field_specular = true;
+	capabilities.post_processing = true;
+	capabilities.pixel_motion_vectors = true;
+	capabilities.late_close_screen_pass = true;
+	capabilities.editor_readback = true;
+	return capabilities;
+}
+
 int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 {
 	//int width,height;

@@ -90,11 +90,13 @@ void SDLApplication::change_window()
 	SDL_SyncWindow(m_window);
 }
 
-SDLApplication::SDLApplication(const char* name, unsigned flags) : oeApplication(), m_title(name)
+SDLApplication::SDLApplication(const char* name, unsigned flags, bool vulkan_window) :
+	oeApplication(), m_title(name)
 {
 	m_flags = flags;
 	m_window = nullptr;
 	m_deferhandler = nullptr;
+	m_vulkan_window = vulkan_window;
 	m_AppActive = false;
 }
 
@@ -109,15 +111,8 @@ SDLApplication::~SDLApplication()
 
 void SDLApplication::init()
 {
-	SDL_WindowFlags winflags = SDL_WINDOW_OPENGL;
-
 	//The mouse system needs the application object to work
 	ddio_SDLMouseLinkApp(this);
-
-	if (m_flags & OEAPP_FULLSCREEN)
-	{
-		winflags |= SDL_WINDOW_FULLSCREEN;
-	}
 	if (m_flags & OEAPP_CONSOLE)
 	{
 		con_init(); 
@@ -125,8 +120,7 @@ void SDLApplication::init()
 		return;
 	}
 
-	m_window = SDL_CreateWindow(m_title.c_str(), 640, 480, winflags);
-	if (!m_window)
+	if (!RecreateRendererWindow(m_vulkan_window))
 	{
 		Error("Failed to create SDL Window! Error: %s", SDL_GetError());
 	}
@@ -134,6 +128,34 @@ void SDLApplication::init()
 		activate();
 	else
 		deactivate();
+}
+
+bool SDLApplication::RecreateRendererWindow(bool vulkan_window)
+{
+	if (m_flags & OEAPP_CONSOLE)
+		return false;
+
+	int width = 640;
+	int height = 480;
+	if (m_window)
+	{
+		SDL_GetWindowSize(m_window, &width, &height);
+		SDL_DestroyWindow(m_window);
+		m_window = nullptr;
+	}
+
+	m_vulkan_window = vulkan_window;
+	SDL_WindowFlags winflags = vulkan_window ? SDL_WINDOW_VULKAN : SDL_WINDOW_OPENGL;
+	if (m_flags & OEAPP_FULLSCREEN)
+		winflags |= SDL_WINDOW_FULLSCREEN;
+	m_window = SDL_CreateWindow(m_title.c_str(), width, height, winflags);
+	if (!m_window)
+		return false;
+	if (SDL_GetWindowFlags(m_window) & SDL_WINDOW_INPUT_FOCUS)
+		activate();
+	else
+		deactivate();
+	return true;
 }
 
 void SDLApplication::get_info(void* buffer)

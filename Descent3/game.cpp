@@ -83,7 +83,7 @@ float force_field_bounce_multiplier[MAX_FORCE_FIELD_BOUNCE_TEXTURES] = { 1.0f, 1
 bool Level_powerups_ignore_wind = false;
 
 //what renderer?
-renderer_type PreferredRenderer = RENDERER_OPENGL;
+renderer_type PreferredRenderer = RENDERER_VULKAN;
 
 // Rendering options
 rendering_state Render_state;

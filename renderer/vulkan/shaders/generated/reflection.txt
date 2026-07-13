@@ -1,0 +1,1532 @@
+# glslang 16.3.0 Vulkan 1.3 reflection; generated, do not edit
+
+## world.vert
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/world.vert
+Uniform reflection:
+payload_words: offset 0, type 1405, size 0, index 0, binding -1, stages 1, arrayStride 4, topLevelArrayStride 4
+WorldPush.payload_word_base: offset 12, type 1405, size 1, index 1, binding -1, stages 1
+FrameViewBlock.viewport_xywh: offset 448, type 8b52, size 1, index 2, binding -1, stages 1
+FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 2, binding -1, stages 1
+WorldPush.draw_header_base: offset 0, type 1405, size 1, index 1, binding -1, stages 1
+draw_headers.state_index: offset 0, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.material_index: offset 4, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.transform_index: offset 8, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.flags: offset 12, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.vertex_payload_offset: offset 16, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.motion_payload_offset: offset 20, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.specular_payload_offset: offset 24, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.room_or_terrain_index: offset 28, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+shader_states.shader_flags: offset 0, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.texture_type: offset 4, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.overlay_type: offset 8, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.lighting_color_model: offset 12, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_type: offset 16, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_value: offset 20, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.blend_class: offset 24, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.draw_classification: offset 28, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_factor: offset 32, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.z_bias: offset 36, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.flat_color: offset 48, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_color: offset 64, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.light_direction: offset 80, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.post_values: offset 96, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.specular_block_index: offset 120, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_object_id: offset 124, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_flags: offset 128, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.ao_class: offset 132, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.state_flags2: offset 136, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.reserved0: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+transforms.current_model: offset 0, type 8b5c, size 1, index 5, binding -1, stages 1, topLevelArrayStride 128
+transforms.previous_model: offset 64, type 8b5c, size 1, index 5, binding -1, stages 1, topLevelArrayStride 128
+FrameViewBlock.view: offset 64, type 8b5c, size 1, index 2, binding -1, stages 1
+FrameViewBlock.projection: offset 0, type 8b5c, size 1, index 2, binding -1, stages 1
+FrameViewBlock.view_projection: offset 128, type 8b5c, size 1, index 2, binding -1, stages 1
+FrameViewBlock.previous_view_projection: offset 320, type 8b5c, size 1, index 2, binding -1, stages 1
+
+Uniform block reflection:
+OptionalPayload: offset -1, type ffffffff, size 4, index 0, binding 6, stages 1, numMembers 1
+WorldPush: offset -1, type ffffffff, size 16, index 1, binding -1, stages 1, numMembers 4
+FrameViewBlock: offset -1, type ffffffff, size 512, index 2, binding 0, stages 1, numMembers 11
+DrawHeaders: offset -1, type ffffffff, size 32, index 3, binding 0, stages 1, numMembers 8
+ShaderStates: offset -1, type ffffffff, size 144, index 4, binding 1, stages 1, numMembers 24
+Transforms: offset -1, type ffffffff, size 128, index 5, binding 3, stages 1, numMembers 2
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+gl_DrawID: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+in_position: offset 0, type 8b51, size 1, index 0, binding -1, stages 1
+in_rgba8: offset 0, type 1405, size 1, index 0, binding -1, stages 1
+gl_VertexIndex: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+in_uv0: offset 0, type 8b50, size 1, index 0, binding -1, stages 1
+in_uv1: offset 0, type 8b50, size 1, index 0, binding -1, stages 1
+
+Pipeline output reflection:
+
+
+## world.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/world.frag
+Uniform reflection:
+float_images: offset -1, type 8b5e, size 0, index -1, binding 0, stages 16, arrayStride 4, topLevelArrayStride 4
+world_samplers: offset -1, type 0, size 32, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+float_array_images: offset -1, type 8dc1, size 8, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+dynamic_lights.position_radius: offset 0, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 80
+dynamic_lights.color_falloff: offset 16, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 80
+dynamic_lights.direction_dot_range: offset 32, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 80
+dynamic_lights.specular_position_radius: offset 48, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 80
+dynamic_lights.specular_and_flags: offset 64, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 80
+FrameViewBlock.history_target_flags: offset 496, type 8dc8, size 1, index 1, binding -1, stages 16
+FrameViewBlock.view_projection: offset 128, type 8b5c, size 1, index 1, binding -1, stages 16
+FrameViewBlock.previous_view_projection: offset 320, type 8b5c, size 1, index 1, binding -1, stages 16
+specular_blocks.count: offset 0, type 1404, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.exponent: offset 4, type 1404, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.strength: offset 8, type 1406, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.lightmap_mix: offset 12, type 1406, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.alpha_strength: offset 16, type 1406, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.field_mode: offset 20, type 1406, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.debug_tint: offset 24, type 1406, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.debug_authored: offset 28, type 1406, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.sources[0].center: offset 32, type 8b52, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.sources[0].color: offset 48, type 8b52, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.sources[1].center: offset 64, type 8b52, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.sources[1].color: offset 80, type 8b52, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.sources[2].center: offset 96, type 8b52, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.sources[2].color: offset 112, type 8b52, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.sources[3].center: offset 128, type 8b52, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+specular_blocks.sources[3].color: offset 144, type 8b52, size 1, index 2, binding -1, stages 16, topLevelArrayStride 160
+FrameViewBlock.inverse_modelview: offset 192, type 8b5c, size 1, index 1, binding -1, stages 16
+draw_headers.state_index: offset 0, type 1405, size 1, index 3, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.material_index: offset 4, type 1405, size 1, index 3, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.transform_index: offset 8, type 1405, size 1, index 3, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.flags: offset 12, type 1405, size 1, index 3, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.vertex_payload_offset: offset 16, type 1405, size 1, index 3, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.motion_payload_offset: offset 20, type 1405, size 1, index 3, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.specular_payload_offset: offset 24, type 1405, size 1, index 3, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.room_or_terrain_index: offset 28, type 1405, size 1, index 3, binding -1, stages 16, topLevelArrayStride 32
+shader_states.shader_flags: offset 0, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.texture_type: offset 4, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.overlay_type: offset 8, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.lighting_color_model: offset 12, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_type: offset 16, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_value: offset 20, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.blend_class: offset 24, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.draw_classification: offset 28, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_factor: offset 32, type 1406, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.z_bias: offset 36, type 1406, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.flat_color: offset 48, type 8b52, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_color: offset 64, type 8b52, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.light_direction: offset 80, type 8b52, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.post_values: offset 96, type 8b52, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.specular_block_index: offset 120, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.motion_object_id: offset 124, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.motion_flags: offset 128, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.ao_class: offset 132, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.state_flags2: offset 136, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+shader_states.reserved0: offset 140, type 1405, size 1, index 4, binding -1, stages 16, topLevelArrayStride 144
+materials.image2d: offset 0, type 8dc8, size 1, index 5, binding -1, stages 16, topLevelArrayStride 64
+materials.image2d_array: offset 16, type 8dc8, size 1, index 5, binding -1, stages 16, topLevelArrayStride 64
+materials.sampler_index: offset 32, type 8dc8, size 1, index 5, binding -1, stages 16, topLevelArrayStride 64
+materials.uv_params: offset 48, type 8b52, size 1, index 5, binding -1, stages 16, topLevelArrayStride 64
+world_aux_records.fog_color: offset 0, type 8b52, size 1, index 6, binding -1, stages 16, topLevelArrayStride 64
+world_aux_records.fog_plane: offset 16, type 8b52, size 1, index 6, binding -1, stages 16, topLevelArrayStride 64
+world_aux_records.params: offset 32, type 8b52, size 1, index 6, binding -1, stages 16, topLevelArrayStride 64
+world_aux_records.indices: offset 48, type 8dc8, size 1, index 6, binding -1, stages 16, topLevelArrayStride 64
+FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 1, binding -1, stages 16
+
+Uniform block reflection:
+DynamicLights: offset -1, type ffffffff, size 80, index 0, binding 4, stages 16, numMembers 5
+FrameViewBlock: offset -1, type ffffffff, size 512, index 1, binding 0, stages 16, numMembers 11
+SpecularBlocks: offset -1, type ffffffff, size 160, index 2, binding 5, stages 16, numMembers 16
+DrawHeaders: offset -1, type ffffffff, size 32, index 3, binding 0, stages 16, numMembers 8
+ShaderStates: offset -1, type ffffffff, size 144, index 4, binding 1, stages 16, numMembers 24
+Materials: offset -1, type ffffffff, size 64, index 5, binding 2, stages 16, numMembers 4
+WorldAuxRecords: offset -1, type ffffffff, size 64, index 6, binding 7, stages 16, numMembers 4
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+out_velocity: offset 0, type 8b50, size 1, index 0, binding -1, stages 16
+out_protection: offset 0, type 8b50, size 1, index 0, binding -1, stages 16
+out_ao_class: offset 0, type 1406, size 1, index 0, binding -1, stages 16
+out_object_id: offset 0, type 1405, size 1, index 0, binding -1, stages 16
+
+
+## ui.vert
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/ui.vert
+Uniform reflection:
+FrameViewBlock.viewport_xywh: offset 448, type 8b52, size 1, index 0, binding -1, stages 1
+FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 0, binding -1, stages 1
+WorldPush.draw_header_base: offset 0, type 1405, size 1, index 1, binding -1, stages 1
+draw_headers.state_index: offset 0, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.material_index: offset 4, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.transform_index: offset 8, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.flags: offset 12, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.vertex_payload_offset: offset 16, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.motion_payload_offset: offset 20, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.specular_payload_offset: offset 24, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.room_or_terrain_index: offset 28, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+shader_states.shader_flags: offset 0, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.texture_type: offset 4, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.overlay_type: offset 8, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.lighting_color_model: offset 12, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_type: offset 16, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_value: offset 20, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.blend_class: offset 24, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.draw_classification: offset 28, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_factor: offset 32, type 1406, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.z_bias: offset 36, type 1406, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.flat_color: offset 48, type 8b52, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_color: offset 64, type 8b52, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.light_direction: offset 80, type 8b52, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.post_values: offset 96, type 8b52, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.specular_block_index: offset 120, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_object_id: offset 124, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_flags: offset 128, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.ao_class: offset 132, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.state_flags2: offset 136, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+shader_states.reserved0: offset 140, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 144
+
+Uniform block reflection:
+FrameViewBlock: offset -1, type ffffffff, size 512, index 0, binding 0, stages 1, numMembers 11
+WorldPush: offset -1, type ffffffff, size 16, index 1, binding -1, stages 1, numMembers 4
+DrawHeaders: offset -1, type ffffffff, size 32, index 2, binding 0, stages 1, numMembers 8
+ShaderStates: offset -1, type ffffffff, size 144, index 3, binding 1, stages 1, numMembers 24
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+gl_DrawID: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+in_position: offset 0, type 8b51, size 1, index 0, binding -1, stages 1
+in_rgba8: offset 0, type 1405, size 1, index 0, binding -1, stages 1
+in_uv0: offset 0, type 8b50, size 1, index 0, binding -1, stages 1
+
+Pipeline output reflection:
+
+
+## ui.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/ui.frag
+Uniform reflection:
+float_images: offset -1, type 8b5e, size 0, index -1, binding 0, stages 16, arrayStride 4, topLevelArrayStride 4
+world_samplers: offset -1, type 0, size 32, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+draw_headers.state_index: offset 0, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.material_index: offset 4, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.transform_index: offset 8, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.flags: offset 12, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.vertex_payload_offset: offset 16, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.motion_payload_offset: offset 20, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.specular_payload_offset: offset 24, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.room_or_terrain_index: offset 28, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+shader_states.shader_flags: offset 0, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.texture_type: offset 4, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.overlay_type: offset 8, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.lighting_color_model: offset 12, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_type: offset 16, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_value: offset 20, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.blend_class: offset 24, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.draw_classification: offset 28, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_factor: offset 32, type 1406, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.z_bias: offset 36, type 1406, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.flat_color: offset 48, type 8b52, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_color: offset 64, type 8b52, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.light_direction: offset 80, type 8b52, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.post_values: offset 96, type 8b52, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.specular_block_index: offset 120, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.motion_object_id: offset 124, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.motion_flags: offset 128, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.ao_class: offset 132, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.state_flags2: offset 136, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.reserved0: offset 140, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+materials.image2d: offset 0, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
+materials.image2d_array: offset 16, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
+materials.sampler_index: offset 32, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
+materials.uv_params: offset 48, type 8b52, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
+
+Uniform block reflection:
+DrawHeaders: offset -1, type ffffffff, size 32, index 0, binding 0, stages 16, numMembers 8
+ShaderStates: offset -1, type ffffffff, size 144, index 1, binding 1, stages 16, numMembers 24
+Materials: offset -1, type ffffffff, size 64, index 2, binding 2, stages 16, numMembers 4
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+out_velocity: offset 0, type 8b50, size 1, index 0, binding -1, stages 16
+out_protection: offset 0, type 8b50, size 1, index 0, binding -1, stages 16
+out_ao_class: offset 0, type 1406, size 1, index 0, binding -1, stages 16
+out_object_id: offset 0, type 1405, size 1, index 0, binding -1, stages 16
+
+
+## font.vert
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/font.vert
+Uniform reflection:
+FrameViewBlock.viewport_xywh: offset 448, type 8b52, size 1, index 0, binding -1, stages 1
+FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 0, binding -1, stages 1
+WorldPush.draw_header_base: offset 0, type 1405, size 1, index 1, binding -1, stages 1
+draw_headers.state_index: offset 0, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.material_index: offset 4, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.transform_index: offset 8, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.flags: offset 12, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.vertex_payload_offset: offset 16, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.motion_payload_offset: offset 20, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.specular_payload_offset: offset 24, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.room_or_terrain_index: offset 28, type 1405, size 1, index 2, binding -1, stages 1, topLevelArrayStride 32
+materials.image2d: offset 0, type 8dc8, size 1, index 3, binding -1, stages 1, topLevelArrayStride 64
+materials.image2d_array: offset 16, type 8dc8, size 1, index 3, binding -1, stages 1, topLevelArrayStride 64
+materials.sampler_index: offset 32, type 8dc8, size 1, index 3, binding -1, stages 1, topLevelArrayStride 64
+materials.uv_params: offset 48, type 8b52, size 1, index 3, binding -1, stages 1, topLevelArrayStride 64
+shader_states.shader_flags: offset 0, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.texture_type: offset 4, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.overlay_type: offset 8, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.lighting_color_model: offset 12, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_type: offset 16, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_value: offset 20, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.blend_class: offset 24, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.draw_classification: offset 28, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_factor: offset 32, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.z_bias: offset 36, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.flat_color: offset 48, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_color: offset 64, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.light_direction: offset 80, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.post_values: offset 96, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.specular_block_index: offset 120, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_object_id: offset 124, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_flags: offset 128, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.ao_class: offset 132, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.state_flags2: offset 136, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.reserved0: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+
+Uniform block reflection:
+FrameViewBlock: offset -1, type ffffffff, size 512, index 0, binding 0, stages 1, numMembers 11
+WorldPush: offset -1, type ffffffff, size 16, index 1, binding -1, stages 1, numMembers 4
+DrawHeaders: offset -1, type ffffffff, size 32, index 2, binding 0, stages 1, numMembers 8
+Materials: offset -1, type ffffffff, size 64, index 3, binding 2, stages 1, numMembers 4
+ShaderStates: offset -1, type ffffffff, size 144, index 4, binding 1, stages 1, numMembers 24
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+gl_DrawID: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+in_position: offset 0, type 8b51, size 1, index 0, binding -1, stages 1
+in_rgba8: offset 0, type 1405, size 1, index 0, binding -1, stages 1
+in_uv0: offset 0, type 8b50, size 1, index 0, binding -1, stages 1
+
+Pipeline output reflection:
+
+
+## font.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/font.frag
+Uniform reflection:
+float_array_images: offset -1, type 8dc1, size 8, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+world_samplers: offset -1, type 0, size 32, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+draw_headers.state_index: offset 0, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.material_index: offset 4, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.transform_index: offset 8, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.flags: offset 12, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.vertex_payload_offset: offset 16, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.motion_payload_offset: offset 20, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.specular_payload_offset: offset 24, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.room_or_terrain_index: offset 28, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+shader_states.shader_flags: offset 0, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.texture_type: offset 4, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.overlay_type: offset 8, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.lighting_color_model: offset 12, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_type: offset 16, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_value: offset 20, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.blend_class: offset 24, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.draw_classification: offset 28, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_factor: offset 32, type 1406, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.z_bias: offset 36, type 1406, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.flat_color: offset 48, type 8b52, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_color: offset 64, type 8b52, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.light_direction: offset 80, type 8b52, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.post_values: offset 96, type 8b52, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.specular_block_index: offset 120, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.motion_object_id: offset 124, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.motion_flags: offset 128, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.ao_class: offset 132, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.state_flags2: offset 136, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.reserved0: offset 140, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+materials.image2d: offset 0, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
+materials.image2d_array: offset 16, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
+materials.sampler_index: offset 32, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
+materials.uv_params: offset 48, type 8b52, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
+
+Uniform block reflection:
+DrawHeaders: offset -1, type ffffffff, size 32, index 0, binding 0, stages 16, numMembers 8
+ShaderStates: offset -1, type ffffffff, size 144, index 1, binding 1, stages 16, numMembers 24
+Materials: offset -1, type ffffffff, size 64, index 2, binding 2, stages 16, numMembers 4
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+out_velocity: offset 0, type 8b50, size 1, index 0, binding -1, stages 16
+out_protection: offset 0, type 8b50, size 1, index 0, binding -1, stages 16
+out_ao_class: offset 0, type 1406, size 1, index 0, binding -1, stages 16
+out_object_id: offset 0, type 1405, size 1, index 0, binding -1, stages 16
+
+
+## particle.vert
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/particle.vert
+Uniform reflection:
+payload_words: offset 0, type 1405, size 0, index 0, binding -1, stages 1, arrayStride 4, topLevelArrayStride 4
+WorldPush.payload_word_base: offset 12, type 1405, size 1, index 1, binding -1, stages 1
+FrameViewBlock.viewport_xywh: offset 448, type 8b52, size 1, index 2, binding -1, stages 1
+FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 2, binding -1, stages 1
+WorldPush.draw_header_base: offset 0, type 1405, size 1, index 1, binding -1, stages 1
+draw_headers.state_index: offset 0, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.material_index: offset 4, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.transform_index: offset 8, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.flags: offset 12, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.vertex_payload_offset: offset 16, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.motion_payload_offset: offset 20, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.specular_payload_offset: offset 24, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.room_or_terrain_index: offset 28, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+shader_states.shader_flags: offset 0, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.texture_type: offset 4, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.overlay_type: offset 8, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.lighting_color_model: offset 12, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_type: offset 16, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_value: offset 20, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.blend_class: offset 24, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.draw_classification: offset 28, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_factor: offset 32, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.z_bias: offset 36, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.flat_color: offset 48, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_color: offset 64, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.light_direction: offset 80, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.post_values: offset 96, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.specular_block_index: offset 120, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_object_id: offset 124, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_flags: offset 128, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.ao_class: offset 132, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.state_flags2: offset 136, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.reserved0: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+
+Uniform block reflection:
+OptionalPayload: offset -1, type ffffffff, size 4, index 0, binding 6, stages 1, numMembers 1
+WorldPush: offset -1, type ffffffff, size 16, index 1, binding -1, stages 1, numMembers 4
+FrameViewBlock: offset -1, type ffffffff, size 512, index 2, binding 0, stages 1, numMembers 11
+DrawHeaders: offset -1, type ffffffff, size 32, index 3, binding 0, stages 1, numMembers 8
+ShaderStates: offset -1, type ffffffff, size 144, index 4, binding 1, stages 1, numMembers 24
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+gl_DrawID: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+in_position: offset 0, type 8b51, size 1, index 0, binding -1, stages 1
+in_rgba8: offset 0, type 1405, size 1, index 0, binding -1, stages 1
+gl_VertexIndex: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+in_uv0: offset 0, type 8b50, size 1, index 0, binding -1, stages 1
+
+Pipeline output reflection:
+
+
+## particle.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/particle.frag
+Uniform reflection:
+float_images: offset -1, type 8b5e, size 0, index -1, binding 0, stages 16, arrayStride 4, topLevelArrayStride 4
+world_samplers: offset -1, type 0, size 32, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+draw_headers.state_index: offset 0, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.material_index: offset 4, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.transform_index: offset 8, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.flags: offset 12, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.vertex_payload_offset: offset 16, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.motion_payload_offset: offset 20, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.specular_payload_offset: offset 24, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+draw_headers.room_or_terrain_index: offset 28, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
+shader_states.shader_flags: offset 0, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.texture_type: offset 4, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.overlay_type: offset 8, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.lighting_color_model: offset 12, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_type: offset 16, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_value: offset 20, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.blend_class: offset 24, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.draw_classification: offset 28, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_factor: offset 32, type 1406, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.z_bias: offset 36, type 1406, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.flat_color: offset 48, type 8b52, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_color: offset 64, type 8b52, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.light_direction: offset 80, type 8b52, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.post_values: offset 96, type 8b52, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.specular_block_index: offset 120, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.motion_object_id: offset 124, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.motion_flags: offset 128, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.ao_class: offset 132, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.state_flags2: offset 136, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+shader_states.reserved0: offset 140, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 144
+materials.image2d: offset 0, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
+materials.image2d_array: offset 16, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
+materials.sampler_index: offset 32, type 8dc8, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
+materials.uv_params: offset 48, type 8b52, size 1, index 2, binding -1, stages 16, topLevelArrayStride 64
+FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 3, binding -1, stages 16
+
+Uniform block reflection:
+DrawHeaders: offset -1, type ffffffff, size 32, index 0, binding 0, stages 16, numMembers 8
+ShaderStates: offset -1, type ffffffff, size 144, index 1, binding 1, stages 16, numMembers 24
+Materials: offset -1, type ffffffff, size 64, index 2, binding 2, stages 16, numMembers 4
+FrameViewBlock: offset -1, type ffffffff, size 512, index 3, binding 0, stages 16, numMembers 11
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+out_velocity: offset 0, type 8b50, size 1, index 0, binding -1, stages 16
+out_protection: offset 0, type 8b50, size 1, index 0, binding -1, stages 16
+out_ao_class: offset 0, type 1406, size 1, index 0, binding -1, stages 16
+out_object_id: offset 0, type 1405, size 1, index 0, binding -1, stages 16
+
+
+## line.vert
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/line.vert
+Uniform reflection:
+payload_words: offset 0, type 1405, size 0, index 0, binding -1, stages 1, arrayStride 4, topLevelArrayStride 4
+WorldPush.payload_word_base: offset 12, type 1405, size 1, index 1, binding -1, stages 1
+FrameViewBlock.viewport_xywh: offset 448, type 8b52, size 1, index 2, binding -1, stages 1
+FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 2, binding -1, stages 1
+WorldPush.draw_header_base: offset 0, type 1405, size 1, index 1, binding -1, stages 1
+draw_headers.state_index: offset 0, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.material_index: offset 4, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.transform_index: offset 8, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.flags: offset 12, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.vertex_payload_offset: offset 16, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.motion_payload_offset: offset 20, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.specular_payload_offset: offset 24, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.room_or_terrain_index: offset 28, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+shader_states.shader_flags: offset 0, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.texture_type: offset 4, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.overlay_type: offset 8, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.lighting_color_model: offset 12, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_type: offset 16, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_value: offset 20, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.blend_class: offset 24, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.draw_classification: offset 28, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_factor: offset 32, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.z_bias: offset 36, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.flat_color: offset 48, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_color: offset 64, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.light_direction: offset 80, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.post_values: offset 96, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.specular_block_index: offset 120, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_object_id: offset 124, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_flags: offset 128, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.ao_class: offset 132, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.state_flags2: offset 136, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.reserved0: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+
+Uniform block reflection:
+OptionalPayload: offset -1, type ffffffff, size 4, index 0, binding 6, stages 1, numMembers 1
+WorldPush: offset -1, type ffffffff, size 16, index 1, binding -1, stages 1, numMembers 4
+FrameViewBlock: offset -1, type ffffffff, size 512, index 2, binding 0, stages 1, numMembers 11
+DrawHeaders: offset -1, type ffffffff, size 32, index 3, binding 0, stages 1, numMembers 8
+ShaderStates: offset -1, type ffffffff, size 144, index 4, binding 1, stages 1, numMembers 24
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+gl_DrawID: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+gl_InstanceIndex: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+gl_VertexIndex: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+
+Pipeline output reflection:
+
+
+## line.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/line.frag
+Uniform reflection:
+shader_states.shader_flags: offset 0, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.texture_type: offset 4, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.overlay_type: offset 8, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.lighting_color_model: offset 12, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_type: offset 16, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_value: offset 20, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.blend_class: offset 24, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.draw_classification: offset 28, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_factor: offset 32, type 1406, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.z_bias: offset 36, type 1406, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.flat_color: offset 48, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_color: offset 64, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.light_direction: offset 80, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.post_values: offset 96, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.specular_block_index: offset 120, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.motion_object_id: offset 124, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.motion_flags: offset 128, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.ao_class: offset 132, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.state_flags2: offset 136, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.reserved0: offset 140, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+draw_headers.state_index: offset 0, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 32
+
+Uniform block reflection:
+ShaderStates: offset -1, type ffffffff, size 144, index 0, binding 1, stages 16, numMembers 24
+DrawHeaders: offset -1, type ffffffff, size 32, index 1, binding 0, stages 16, numMembers 8
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+out_velocity: offset 0, type 8b50, size 1, index 0, binding -1, stages 16
+out_protection: offset 0, type 8b50, size 1, index 0, binding -1, stages 16
+out_ao_class: offset 0, type 1406, size 1, index 0, binding -1, stages 16
+out_object_id: offset 0, type 1405, size 1, index 0, binding -1, stages 16
+
+
+## point.vert
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/point.vert
+Uniform reflection:
+payload_words: offset 0, type 1405, size 0, index 0, binding -1, stages 1, arrayStride 4, topLevelArrayStride 4
+WorldPush.payload_word_base: offset 12, type 1405, size 1, index 1, binding -1, stages 1
+FrameViewBlock.viewport_xywh: offset 448, type 8b52, size 1, index 2, binding -1, stages 1
+FrameViewBlock.target_extent_inv_extent: offset 480, type 8b52, size 1, index 2, binding -1, stages 1
+WorldPush.draw_header_base: offset 0, type 1405, size 1, index 1, binding -1, stages 1
+draw_headers.state_index: offset 0, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.material_index: offset 4, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.transform_index: offset 8, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.flags: offset 12, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.vertex_payload_offset: offset 16, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.motion_payload_offset: offset 20, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.specular_payload_offset: offset 24, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+draw_headers.room_or_terrain_index: offset 28, type 1405, size 1, index 3, binding -1, stages 1, topLevelArrayStride 32
+shader_states.shader_flags: offset 0, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.texture_type: offset 4, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.overlay_type: offset 8, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.lighting_color_model: offset 12, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_type: offset 16, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_value: offset 20, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.blend_class: offset 24, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.draw_classification: offset 28, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.alpha_factor: offset 32, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.z_bias: offset 36, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.flat_color: offset 48, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.fog_color: offset 64, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.light_direction: offset 80, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.post_values: offset 96, type 8b52, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.specular_block_index: offset 120, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_object_id: offset 124, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.motion_flags: offset 128, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.ao_class: offset 132, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.state_flags2: offset 136, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+shader_states.reserved0: offset 140, type 1405, size 1, index 4, binding -1, stages 1, topLevelArrayStride 144
+
+Uniform block reflection:
+OptionalPayload: offset -1, type ffffffff, size 4, index 0, binding 6, stages 1, numMembers 1
+WorldPush: offset -1, type ffffffff, size 16, index 1, binding -1, stages 1, numMembers 4
+FrameViewBlock: offset -1, type ffffffff, size 512, index 2, binding 0, stages 1, numMembers 11
+DrawHeaders: offset -1, type ffffffff, size 32, index 3, binding 0, stages 1, numMembers 8
+ShaderStates: offset -1, type ffffffff, size 144, index 4, binding 1, stages 1, numMembers 24
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+gl_DrawID: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+gl_InstanceIndex: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+gl_VertexIndex: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+
+Pipeline output reflection:
+
+
+## point.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/point.frag
+Uniform reflection:
+shader_states.shader_flags: offset 0, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.texture_type: offset 4, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.overlay_type: offset 8, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.lighting_color_model: offset 12, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_type: offset 16, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_value: offset 20, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.blend_class: offset 24, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.draw_classification: offset 28, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.alpha_factor: offset 32, type 1406, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.z_bias: offset 36, type 1406, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_near_mapped: offset 40, type 1406, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_far_mapped: offset 44, type 1406, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.flat_color: offset 48, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.fog_color: offset 64, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.light_direction: offset 80, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.post_values: offset 96, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.dynamic_light_first: offset 112, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.dynamic_light_count: offset 116, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.specular_block_index: offset 120, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.motion_object_id: offset 124, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.motion_flags: offset 128, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.ao_class: offset 132, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.state_flags2: offset 136, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+shader_states.reserved0: offset 140, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 144
+draw_headers.state_index: offset 0, type 1405, size 1, index 1, binding -1, stages 16, topLevelArrayStride 32
+
+Uniform block reflection:
+ShaderStates: offset -1, type ffffffff, size 144, index 0, binding 1, stages 16, numMembers 24
+DrawHeaders: offset -1, type ffffffff, size 32, index 1, binding 0, stages 16, numMembers 8
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+out_velocity: offset 0, type 8b50, size 1, index 0, binding -1, stages 16
+out_protection: offset 0, type 8b50, size 1, index 0, binding -1, stages 16
+out_ao_class: offset 0, type 1406, size 1, index 0, binding -1, stages 16
+out_object_id: offset 0, type 1405, size 1, index 0, binding -1, stages 16
+
+
+## terrain_classify.comp
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/terrain_classify.comp
+Uniform reflection:
+terrain_work.cell_index: offset 0, type 1405, size 1, index 0, binding -1, stages 32, topLevelArrayStride 16
+terrain_work.source_texture: offset 4, type 1404, size 1, index 0, binding -1, stages 32, topLevelArrayStride 16
+terrain_work.source_flags: offset 8, type 1405, size 1, index 0, binding -1, stages 32, topLevelArrayStride 16
+terrain_work.full_draw_order: offset 12, type 1405, size 1, index 0, binding -1, stages 32, topLevelArrayStride 16
+terrain_cells.packed: offset 0, type 8dc8, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_cells.height: offset 16, type 8b52, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_views.terrain_row0: offset 0, type 8b52, size 1, index 2, binding -1, stages 32, topLevelArrayStride 112
+terrain_views.terrain_x_step: offset 16, type 8b52, size 1, index 2, binding -1, stages 32, topLevelArrayStride 112
+terrain_views.terrain_z_step: offset 32, type 8b52, size 1, index 2, binding -1, stages 32, topLevelArrayStride 112
+terrain_views.terrain_y_step: offset 48, type 8b52, size 1, index 2, binding -1, stages 32, topLevelArrayStride 112
+terrain_views.projection_center_half_size: offset 64, type 8b52, size 1, index 2, binding -1, stages 32, topLevelArrayStride 112
+terrain_views.viewport_size_inv_size: offset 80, type 8b52, size 1, index 2, binding -1, stages 32, topLevelArrayStride 112
+terrain_views.clip_scale: offset 96, type 8b52, size 1, index 2, binding -1, stages 32, topLevelArrayStride 112
+TerrainPush.work_item_count: offset 0, type 1405, size 1, index 3, binding -1, stages 32
+terrain_scratch: offset 0, type 8dc6, size 0, index 4, binding -1, stages 32, arrayStride 8, topLevelArrayStride 8
+
+Uniform block reflection:
+TerrainWorkItems: offset -1, type ffffffff, size 16, index 0, binding 1, stages 32, numMembers 4
+TerrainCells: offset -1, type ffffffff, size 32, index 1, binding 0, stages 32, numMembers 2
+TerrainViews: offset -1, type ffffffff, size 112, index 2, binding 3, stages 32, numMembers 7
+TerrainPush: offset -1, type ffffffff, size 16, index 3, binding -1, stages 32, numMembers 4
+TerrainScratch: offset -1, type ffffffff, size 8, index 4, binding 4, stages 32, numMembers 1
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+
+Local size X: 256
+
+
+## terrain_scan.comp
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/terrain_scan.comp
+Uniform reflection:
+TerrainPush.batch_count: offset 4, type 1405, size 1, index 0, binding -1, stages 32
+terrain_batches.source_texture: offset 0, type 1404, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_batches.texture_layer: offset 4, type 1405, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_batches.first_work_item: offset 8, type 1405, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_batches.work_item_count: offset 12, type 1405, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_batches.first_output_vertex: offset 16, type 1405, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_batches.output_vertex_capacity: offset 20, type 1405, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_batches.indirect_command_index: offset 24, type 1405, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_batches.reserved0: offset 28, type 1405, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_scratch: offset 0, type 8dc6, size 0, index 2, binding -1, stages 32, arrayStride 8, topLevelArrayStride 8
+terrain_indirect_output: offset 0, type 8dc8, size 0, index 3, binding -1, stages 32, arrayStride 16, topLevelArrayStride 16
+
+Uniform block reflection:
+TerrainPush: offset -1, type ffffffff, size 16, index 0, binding -1, stages 32, numMembers 4
+TerrainBatches: offset -1, type ffffffff, size 32, index 1, binding 2, stages 32, numMembers 8
+TerrainScratch: offset -1, type ffffffff, size 8, index 2, binding 4, stages 32, numMembers 1
+TerrainIndirectOutput: offset -1, type ffffffff, size 16, index 3, binding 7, stages 32, numMembers 1
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+
+Local size X: 256
+
+
+## terrain_emit.comp
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/terrain_emit.comp
+Uniform reflection:
+TerrainPush.output_vertex_capacity: offset 8, type 1405, size 1, index 0, binding -1, stages 32
+terrain_base_output.position: offset 0, type 8b51, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_base_output.rgba8: offset 12, type 1405, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_base_output.uv0: offset 16, type 8b50, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_base_output.uv1: offset 24, type 8b50, size 1, index 1, binding -1, stages 32, topLevelArrayStride 32
+terrain_payload_output.world_q: offset 0, type 8b52, size 1, index 2, binding -1, stages 32, topLevelArrayStride 32
+terrain_payload_output.packed_pages: offset 16, type 1405, size 1, index 2, binding -1, stages 32, topLevelArrayStride 32
+terrain_payload_output.reserved0: offset 20, type 1405, size 1, index 2, binding -1, stages 32, topLevelArrayStride 32
+terrain_payload_output.reserved1: offset 24, type 1405, size 1, index 2, binding -1, stages 32, topLevelArrayStride 32
+terrain_payload_output.reserved2: offset 28, type 1405, size 1, index 2, binding -1, stages 32, topLevelArrayStride 32
+terrain_work.cell_index: offset 0, type 1405, size 1, index 3, binding -1, stages 32, topLevelArrayStride 16
+terrain_work.source_texture: offset 4, type 1404, size 1, index 3, binding -1, stages 32, topLevelArrayStride 16
+terrain_work.source_flags: offset 8, type 1405, size 1, index 3, binding -1, stages 32, topLevelArrayStride 16
+terrain_work.full_draw_order: offset 12, type 1405, size 1, index 3, binding -1, stages 32, topLevelArrayStride 16
+terrain_cells.packed: offset 0, type 8dc8, size 1, index 4, binding -1, stages 32, topLevelArrayStride 32
+terrain_cells.height: offset 16, type 8b52, size 1, index 4, binding -1, stages 32, topLevelArrayStride 32
+terrain_views.terrain_row0: offset 0, type 8b52, size 1, index 5, binding -1, stages 32, topLevelArrayStride 112
+terrain_views.terrain_x_step: offset 16, type 8b52, size 1, index 5, binding -1, stages 32, topLevelArrayStride 112
+terrain_views.terrain_z_step: offset 32, type 8b52, size 1, index 5, binding -1, stages 32, topLevelArrayStride 112
+terrain_views.terrain_y_step: offset 48, type 8b52, size 1, index 5, binding -1, stages 32, topLevelArrayStride 112
+terrain_views.projection_center_half_size: offset 64, type 8b52, size 1, index 5, binding -1, stages 32, topLevelArrayStride 112
+terrain_views.viewport_size_inv_size: offset 80, type 8b52, size 1, index 5, binding -1, stages 32, topLevelArrayStride 112
+terrain_views.clip_scale: offset 96, type 8b52, size 1, index 5, binding -1, stages 32, topLevelArrayStride 112
+terrain_scratch: offset 0, type 8dc6, size 0, index 6, binding -1, stages 32, arrayStride 8, topLevelArrayStride 8
+TerrainPush.work_item_count: offset 0, type 1405, size 1, index 0, binding -1, stages 32
+
+Uniform block reflection:
+TerrainPush: offset -1, type ffffffff, size 16, index 0, binding -1, stages 32, numMembers 4
+TerrainBaseOutput: offset -1, type ffffffff, size 32, index 1, binding 5, stages 32, numMembers 4
+TerrainPayloadOutput: offset -1, type ffffffff, size 32, index 2, binding 6, stages 32, numMembers 5
+TerrainWorkItems: offset -1, type ffffffff, size 16, index 3, binding 1, stages 32, numMembers 4
+TerrainCells: offset -1, type ffffffff, size 32, index 4, binding 0, stages 32, numMembers 2
+TerrainViews: offset -1, type ffffffff, size 112, index 5, binding 3, stages 32, numMembers 7
+TerrainScratch: offset -1, type ffffffff, size 8, index 6, binding 4, stages 32, numMembers 1
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+
+Local size X: 256
+
+
+## fullscreen.vert
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/fullscreen.vert
+Uniform reflection:
+
+Uniform block reflection:
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+gl_VertexIndex: offset 0, type 1404, size 1, index 0, binding -1, stages 1
+
+Pipeline output reflection:
+
+
+## alpha_clear.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/alpha_clear.frag
+Uniform reflection:
+
+Uniform block reflection:
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## bloom_composite.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/bloom_composite.frag
+Uniform reflection:
+PostPassUniformBlock.feature_flags: offset 592, type 8dc8, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.uv_origin_scale: offset 256, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.scene_uv_origin_scale: offset 304, type 8b52, size 1, index 0, binding -1, stages 16
+authored_color_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 6, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+bloom_image: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+PostPassUniformBlock.bloom_gamma_threshold_intensity_spread: offset 448, type 8b52, size 1, index 0, binding -1, stages 16
+protection_image: offset -1, type 8b5e, size 1, index -1, binding 4, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## bloom_down.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/bloom_down.frag
+Uniform reflection:
+source_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 5, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+
+Uniform block reflection:
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## bloom_threshold.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/bloom_threshold.frag
+Uniform reflection:
+PostPassUniformBlock.feature_flags: offset 592, type 8dc8, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.bloom_gamma_threshold_intensity_spread: offset 448, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.alpha_mask_uv_origin_scale: offset 336, type 8b52, size 1, index 0, binding -1, stages 16
+alpha_occlusion_image: offset -1, type 8b5e, size 1, index -1, binding 5, stages 16
+post_samplers: offset -1, type 0, size 7, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+depth_image: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+protection_image: offset -1, type 8b5e, size 1, index -1, binding 4, stages 16
+source_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## bloom_up.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/bloom_up.frag
+Uniform reflection:
+smaller_level_image: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+post_samplers: offset -1, type 0, size 5, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+current_level_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+PostPassUniformBlock.bloom_gamma_threshold_intensity_spread: offset 448, type 8b52, size 1, index 0, binding -1, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## capture_color.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/capture_color.frag
+Uniform reflection:
+PostPassUniformBlock.uv_origin_scale: offset 256, type 8b52, size 1, index 0, binding -1, stages 16
+scene_color_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 1, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## capture_color_ms.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/capture_color_ms.frag
+Uniform reflection:
+PostPassUniformBlock.uv_origin_scale: offset 256, type 8b52, size 1, index 0, binding -1, stages 16
+scene_color_image: offset -1, type 9108, size 1, index -1, binding 2, stages 16
+PostPassUniformBlock.sample_counts: offset 576, type 8dc8, size 1, index 0, binding -1, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## capture_ssaa_2_to_1.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/capture_ssaa_2_to_1.frag
+Uniform reflection:
+PostPassUniformBlock.uv_origin_scale: offset 256, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.bloom_gamma_threshold_intensity_spread: offset 448, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.source_visible_origin_size: offset 240, type 8b52, size 1, index 0, binding -1, stages 16
+post_samplers: offset -1, type 0, size 2, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+PostPassUniformBlock.frame_branch: offset 624, type 8dc8, size 1, index 0, binding -1, stages 16
+ssaa_intermediate_texture: offset -1, type 8b5e, size 1, index -1, binding 4, stages 16
+msaa_resolved_texture: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+single_sample_texture: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## capture_ssaa_4_to_2.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/capture_ssaa_4_to_2.frag
+Uniform reflection:
+PostPassUniformBlock.uv_origin_scale: offset 256, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.bloom_gamma_threshold_intensity_spread: offset 448, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.source_visible_origin_size: offset 240, type 8b52, size 1, index 0, binding -1, stages 16
+post_samplers: offset -1, type 0, size 2, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+PostPassUniformBlock.frame_branch: offset 624, type 8dc8, size 1, index 0, binding -1, stages 16
+msaa_resolved_texture: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+single_sample_texture: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## cockpit_bloom_gamma.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/cockpit_bloom_gamma.frag
+Uniform reflection:
+PostPassUniformBlock.feature_flags: offset 592, type 8dc8, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.uv_origin_scale: offset 256, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.secondary_uv_origin_scale: offset 272, type 8b52, size 1, index 0, binding -1, stages 16
+scene_texture: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 6, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+bloom_texture: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+protection_mask_texture: offset -1, type 8b5e, size 1, index -1, binding 4, stages 16
+PostPassUniformBlock.bloom_gamma_threshold_intensity_spread: offset 448, type 8b52, size 1, index 0, binding -1, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## cockpit_over.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/cockpit_over.frag
+Uniform reflection:
+PostPassUniformBlock.uv_origin_scale: offset 256, type 8b52, size 1, index 0, binding -1, stages 16
+cockpit_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 2, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## depth_map.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/depth_map.frag
+Uniform reflection:
+PostPassUniformBlock.source_extent_inv_extent: offset 192, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.destination_extent_inv_extent: offset 208, type 8b52, size 1, index 0, binding -1, stages 16
+source_depth: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 7, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+gl_FragDepth: offset 0, type 1406, size 1, index 0, binding -1, stages 16
+
+
+## depth_map_ms.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/depth_map_ms.frag
+Uniform reflection:
+PostPassUniformBlock.source_extent_inv_extent: offset 192, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.destination_extent_inv_extent: offset 208, type 8b52, size 1, index 0, binding -1, stages 16
+source_depth: offset -1, type 9108, size 1, index -1, binding 2, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+gl_FragDepth: offset 0, type 1406, size 1, index 0, binding -1, stages 16
+
+
+## gtao_apply.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/gtao_apply.frag
+Uniform reflection:
+PostPassUniformBlock.feature_flags: offset 592, type 8dc8, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.ao_uv_origin_scale: offset 320, type 8b52, size 1, index 0, binding -1, stages 16
+ao_image: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+post_samplers: offset -1, type 0, size 2, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+PostPassUniformBlock.integer_params: offset 608, type 8b55, size 1, index 0, binding -1, stages 16
+suppression_image: offset -1, type 8b5e, size 1, index -1, binding 4, stages 16
+PostPassUniformBlock.ao_max_radius_neg_inv_radius2_bias_intensity: offset 464, type 8b52, size 1, index 0, binding -1, stages 16
+authored_color_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## gtao_blur.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/gtao_blur.frag
+Uniform reflection:
+ao_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 1, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+PostPassUniformBlock.integer_params: offset 608, type 8b55, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.blur_delta_sharpness_reserved: offset 432, type 8b52, size 1, index 0, binding -1, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_ao: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## gtao_deferred.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/gtao_deferred.frag
+Uniform reflection:
+PostPassUniformBlock.feature_flags: offset 592, type 8dc8, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.scene_uv_origin_scale: offset 304, type 8b52, size 1, index 0, binding -1, stages 16
+final_color_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 6, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+captured_scene_image: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+ao_scene_image: offset -1, type 8b5e, size 1, index -1, binding 4, stages 16
+PostPassUniformBlock.visible_origin_size: offset 224, type 8b52, size 1, index 0, binding -1, stages 16
+protection_image: offset -1, type 8b5e, size 1, index -1, binding 5, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## gtao_depth.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/gtao_depth.frag
+Uniform reflection:
+PostPassUniformBlock.feature_flags: offset 592, type 8dc8, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.screen_size_inv_size: offset 352, type 8b52, size 1, index 0, binding -1, stages 16
+depth_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 7, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+PostPassUniformBlock.ao_class_weights: offset 480, type 8b52, size 1, index 0, binding -1, stages 16
+ao_class_image: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+PostPassUniformBlock.ao_screen_size_inv_size: offset 368, type 8b52, size 1, index 0, binding -1, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_depth_weight: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## gtao_raw.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/gtao_raw.frag
+Uniform reflection:
+PostPassUniformBlock.near_far_radius_radius_pixels: offset 400, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.ao_screen_size_inv_size: offset 368, type 8b52, size 1, index 0, binding -1, stages 16
+depth_weight_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 7, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+PostPassUniformBlock.projection_info: offset 384, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.ao_max_radius_neg_inv_radius2_bias_intensity: offset 464, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.sample_counts: offset 576, type 8dc8, size 1, index 0, binding -1, stages 16
+noise_image: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+PostPassUniformBlock.noise_origin_jitter: offset 416, type 8b52, size 1, index 0, binding -1, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_ao: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## gtao_suppress.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/gtao_suppress.frag
+Uniform reflection:
+PostPassUniformBlock.feature_flags: offset 592, type 8dc8, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.screen_size_inv_size: offset 352, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.source_visible_origin_size: offset 240, type 8b52, size 1, index 0, binding -1, stages 16
+protection_mask_texture: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 1, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+PostPassUniformBlock.bloom_gamma_threshold_intensity_spread: offset 448, type 8b52, size 1, index 0, binding -1, stages 16
+authored_color_texture: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+PostPassUniformBlock.ao_screen_size_inv_size: offset 368, type 8b52, size 1, index 0, binding -1, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## gtao_temporal.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/gtao_temporal.frag
+Uniform reflection:
+PostPassUniformBlock.feature_flags: offset 592, type 8dc8, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.velocity_uv_origin_scale: offset 288, type 8b52, size 1, index 0, binding -1, stages 16
+depth_texture: offset -1, type 8b5e, size 1, index -1, binding 6, stages 16
+post_samplers: offset -1, type 0, size 7, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+PostPassUniformBlock.current_projection: offset 0, type 8b5c, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.current_inverse_modelview: offset 64, type 8b5c, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.previous_view_projection: offset 128, type 8b5c, size 1, index 0, binding -1, stages 16
+object_id_texture: offset -1, type 8dd2, size 1, index -1, binding 5, stages 16
+velocity_texture: offset -1, type 8b5e, size 1, index -1, binding 4, stages 16
+PostPassUniformBlock.temporal_blend_depth_velocity_frame_time: offset 496, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.screen_size_inv_size: offset 352, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.source_extent_inv_extent: offset 192, type 8b52, size 1, index 0, binding -1, stages 16
+current_ao_texture: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+history_ao_texture: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## motion_blur.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/motion_blur.frag
+Uniform reflection:
+PostPassUniformBlock.feature_flags: offset 592, type 8dc8, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.velocity_uv_origin_scale: offset 288, type 8b52, size 1, index 0, binding -1, stages 16
+depth_image: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+post_samplers: offset -1, type 0, size 7, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+PostPassUniformBlock.current_projection: offset 0, type 8b5c, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.current_inverse_modelview: offset 64, type 8b5c, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.previous_view_projection: offset 128, type 8b5c, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.motion_strength_legacy_object_centers: offset 512, type 8b52, size 1, index 0, binding -1, stages 16
+object_id_image: offset -1, type 8dd2, size 1, index -1, binding 5, stages 16
+velocity_image: offset -1, type 8b5e, size 1, index -1, binding 4, stages 16
+color_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+PostPassUniformBlock.sample_counts: offset 576, type 8dc8, size 1, index 0, binding -1, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## motion_copy.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/motion_copy.frag
+Uniform reflection:
+PostPassUniformBlock.velocity_uv_origin_scale: offset 288, type 8b52, size 1, index 0, binding -1, stages 16
+velocity_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 1, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_velocity: offset 0, type 8b50, size 1, index 0, binding -1, stages 16
+
+
+## motion_debug.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/motion_debug.frag
+Uniform reflection:
+PostPassUniformBlock.feature_flags: offset 592, type 8dc8, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.velocity_uv_origin_scale: offset 288, type 8b52, size 1, index 0, binding -1, stages 16
+depth_image: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
+post_samplers: offset -1, type 0, size 7, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+PostPassUniformBlock.current_projection: offset 0, type 8b5c, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.current_inverse_modelview: offset 64, type 8b5c, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.previous_view_projection: offset 128, type 8b5c, size 1, index 0, binding -1, stages 16
+object_id_image: offset -1, type 8dd2, size 1, index -1, binding 4, stages 16
+velocity_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+PostPassUniformBlock.screen_size_inv_size: offset 352, type 8b52, size 1, index 0, binding -1, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## post_blit.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/post_blit.frag
+Uniform reflection:
+PostPassUniformBlock.uv_origin_scale: offset 256, type 8b52, size 1, index 0, binding -1, stages 16
+source_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 1, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+PostPassUniformBlock.bloom_gamma_threshold_intensity_spread: offset 448, type 8b52, size 1, index 0, binding -1, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## present.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/present.frag
+Uniform reflection:
+PostPassUniformBlock.uv_origin_scale: offset 256, type 8b52, size 1, index 0, binding -1, stages 16
+post_present_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+post_samplers: offset -1, type 0, size 1, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## resolve_depth_ms.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/resolve_depth_ms.frag
+Uniform reflection:
+source_depth: offset -1, type 9108, size 1, index -1, binding 2, stages 16
+
+Uniform block reflection:
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+gl_FragDepth: offset 0, type 1406, size 1, index 0, binding -1, stages 16
+
+
+## resolve_float_ms.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/resolve_float_ms.frag
+Uniform reflection:
+source_image: offset -1, type 9108, size 1, index -1, binding 2, stages 16
+PostPassUniformBlock.sample_counts: offset 576, type 8dc8, size 1, index 0, binding -1, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_value: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+
+
+## resolve_uint_ms.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/resolve_uint_ms.frag
+Uniform reflection:
+source_image: offset -1, type 910a, size 1, index -1, binding 2, stages 16
+
+Uniform block reflection:
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_value: offset 0, type 1405, size 1, index 0, binding -1, stages 16
+
+
+## ssaa_downsample.frag
+C:/Repos/PiccuEngine/renderer/vulkan/shaders/ssaa_downsample.frag
+Uniform reflection:
+PostPassUniformBlock.bloom_gamma_threshold_intensity_spread: offset 448, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.source_visible_origin_size: offset 240, type 8b52, size 1, index 0, binding -1, stages 16
+post_samplers: offset -1, type 0, size 2, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
+PostPassUniformBlock.integer_params: offset 608, type 8b55, size 1, index 0, binding -1, stages 16
+source_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
+
+Uniform block reflection:
+PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31
+
+Buffer variable reflection:
+
+Buffer block reflection:
+
+Pipeline input reflection:
+
+Pipeline output reflection:
+out_color: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
+

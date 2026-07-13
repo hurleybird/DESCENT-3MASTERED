@@ -1,0 +1,64 @@
+node	variant_or_phase	shader	set_0_descriptor_reflection	attachment_or_output_contract
+CAP_WORLD	SingleSample	capture_color.frag	0:ubo(std140,640);1:sampler[7];2:float2D(SceneColor)	RGBA8 CapturedWorldColor
+CAP_WORLD	Multisample	capture_color_ms.frag	0:ubo(std140,640);1:sampler[7];2:float2DMS(SceneColor)	RGBA8 CapturedWorldColor or CapturedWorldMsaaResolved
+CAP_WORLD	SsaaFourToTwo	capture_ssaa_4_to_2.frag	0:ubo(std140,640);1:sampler[7];2:float2D?(SceneColor);3:float2D?(CapturedWorldMsaaResolved)	RGBA8 CapturedWorldIntermediate2x; frame_branch.y selects binding 2/3
+CAP_WORLD	SsaaTwoToOne	capture_ssaa_2_to_1.frag	0:ubo(std140,640);1:sampler[7];2:float2D?(SceneColor);3:float2D?(CapturedWorldMsaaResolved);4:float2D?(CapturedWorldIntermediate2x)	RGBA8 CapturedWorldColor; frame_branch.y selects binding 2/3/4
+CAP_WORLD	AttachmentAlphaOnlyClear	alpha_clear.frag	none; attachment operation	SceneColor alpha-only clear; RGB LOAD
+CAP_DEPTH_LOGICAL	SingleSample	depth_map.frag	0:ubo(std140,640);1:sampler[7];2:depth2D(SceneDepth)	D32 CapturedWorldDepth
+CAP_DEPTH_LOGICAL	Multisample	depth_map_ms.frag	0:ubo(std140,640);1:sampler[7];2:depth2DMS(SceneDepth)	D32 CapturedWorldDepth; sample zero
+RES_COLOR	Multisample	resolve_float_ms.frag	0:ubo(std140,640);1:sampler[7];2:float2DMS(SceneColor)	RGBA8 ResolvedColor; arithmetic sample mean
+RES_DEPTH	Multisample	resolve_depth_ms.frag	0:ubo(std140,640);1:sampler[7];2:depth2DMS(SceneDepth)	D32 ResolvedDepth; sample zero
+RES_VEL	Multisample	resolve_float_ms.frag	0:ubo(std140,640);1:sampler[7];2:float2DMS(SceneVelocity)	RG16F ResolvedVelocity; arithmetic sample mean
+RES_ID	Multisample	resolve_uint_ms.frag	0:ubo(std140,640);1:sampler[7];2:uint2DMS(SceneObjectId)	R32U ResolvedObjectId; sample zero
+RES_MASK	Multisample	resolve_float_ms.frag	0:ubo(std140,640);1:sampler[7];2:float2DMS(SceneProtectionMask)	RG8 ResolvedProtectionMask; arithmetic sample mean
+RES_AOCLASS	Multisample	resolve_float_ms.frag	0:ubo(std140,640);1:sampler[7];2:float2DMS(SceneAoClass)	R8 ResolvedAoClass; arithmetic sample mean
+SSAA_4_TO_2	Only	ssaa_downsample.frag	0:ubo(std140,640);1:sampler[7];2:float2D(SceneColorAfterMsaa)	RGBA8 SsaaIntermediate2x; gamma-aware Wronski filter
+SSAA_2_TO_1	Only	ssaa_downsample.frag	0:ubo(std140,640);1:sampler[7];2:float2D(SsaaTwoToOneColor)	RGBA8 ResolvedColor; gamma-aware Wronski filter
+PREP_DEPTH_LOGICAL	Only	depth_map.frag	0:ubo(std140,640);1:sampler[7];2:depth2D(PostDepthSource)	D32 PostLogicalDepth; nearest spatial map
+AO_DEPTH	Only	gtao_depth.frag	0:ubo(std140,640);1:sampler[7];2:depth2D(PostLogicalDepth);3:float2D(AoClassSource)	RG16F GtaoDepthWeight
+AO_RAW	Only	gtao_raw.frag	0:ubo(std140,640);1:sampler[7];2:float2D(GtaoDepthWeight);3:float2D(GtaoNoise)	RGBA16F GtaoRaw
+AO_BLUR_X	Only	gtao_blur.frag	0:ubo(std140,640);1:sampler[7];2:float2D(GtaoRaw)	RGBA16F GtaoBlurTemporary
+AO_BLUR_Y	Only	gtao_blur.frag	0:ubo(std140,640);1:sampler[7];2:float2D(GtaoBlurTemporary)	RGBA16F GtaoBlurred
+AO_TEMPORAL	Only	gtao_temporal.frag	0:ubo(std140,640);1:sampler[7];2:float2D(AoPreTemporalSource);3:float2D?(TemporalHistorySource);4:float2D(VelocitySource);5:uint2D(ObjectIdSource);6:depth2D?(PostLogicalDepth)	RGBA16F GtaoHistoryNext
+AO_SUPPRESS	Only	gtao_suppress.frag	0:ubo(std140,640);1:sampler[7];2:float2D(ProtectionMaskSource);3:float2D(AuthoredBaseColor)	R8 GtaoSuppression
+AO_APPLY	Only	gtao_apply.frag	0:ubo(std140,640);1:sampler[7];2:float2D(AuthoredBaseColor);3:float2D(AoFinalSource);4:float2D(GtaoSuppression)	RGBA8 GtaoApplied
+AO_DEFERRED_COMPOSITE	Only	gtao_deferred.frag	0:ubo(std140,640);1:sampler[7];2:float2D(AuthoredBaseColor);3:float2D(CapturedWorldColor);4:float2D(GtaoApplied);5:float2D(ProtectionMaskSource)	RGBA8 authored composite
+BLOOM_THRESHOLD	Only	bloom_threshold.frag	0:ubo(std140,640);1:sampler[7];2:float2D(FinalAuthoredColor);3:depth2D(PostLogicalDepth);4:float2D(ProtectionMaskSource);5:float2D?(CockpitAlpha)	RGBA8 BloomCurrentLevel
+BLOOM_DOWN_n	Only	bloom_down.frag	0:ubo(std140,640);1:sampler[7];2:float2D(BloomCurrentLevel)	RGBA8 BloomSmallerLevel
+BLOOM_UP_n	Only	bloom_up.frag	0:ubo(std140,640);1:sampler[7];2:float2D(BloomCurrentLevel);3:float2D(BloomSmallerLevel)	RGBA8 BloomMerged
+NORMAL_COMPOSITE	Only	bloom_composite.frag	0:ubo(std140,640);1:sampler[7];2:float2D(FinalAuthoredColor);3:float2D(BloomMerged);4:float2D(ProtectionMaskSource)	RGBA8 PostPresent; gamma encoded
+NORMAL_BLIT	Only	post_blit.frag	0:ubo(std140,640);1:sampler[7];2:float2D(FinalAuthoredColor)	RGBA8 PostPresent; gamma encoded
+MOTION_NORMAL	Only	motion_blur.frag	0:ubo(std140,640);1:sampler[7];2:float2D(PostPresent);3:depth2D(PostLogicalDepth);4:float2D(VelocitySource);5:uint2D(ObjectIdSource)	RGBA8 PostPresent ping-pong
+MOTION_DEBUG_NORMAL	Only	motion_debug.frag	0:ubo(std140,640);1:sampler[7];2:float2D(VelocitySource);3:depth2D?(PostLogicalDepth);4:uint2D?(ObjectIdSource)	PostPresent attachment LOAD; alpha blend overlay
+NORMAL_UI	Only	<world-pipeline>	WorldDescriptorAbi	PostPresent attachment LOAD
+COCKPIT_LINEAR_COPY	Only	post_blit.frag	0:ubo(std140,640);1:sampler[7];2:float2D(FinalAuthoredColor)	RGBA8 PostPresent; authored linear copy
+MOTION_COCKPIT_PRE	Only	motion_blur.frag	0:ubo(std140,640);1:sampler[7];2:float2D(PostPresent);3:depth2D(PostLogicalDepth);4:float2D(VelocitySource);5:uint2D(ObjectIdSource)	RGBA8 PostPresent ping-pong
+MOTION_DEBUG_COCKPIT_PRE	Only	motion_debug.frag	0:ubo(std140,640);1:sampler[7];2:float2D(VelocitySource);3:depth2D?(PostLogicalDepth);4:uint2D?(ObjectIdSource)	PostPresent attachment LOAD; alpha blend overlay
+COCKPIT_UI_PRE	Only	<world-pipeline>	WorldDescriptorAbi	PostPresent attachment LOAD
+COCKPIT_SCENE	Only	<world-pipeline>	WorldDescriptorAbi	CockpitScene color/depth
+POST_ALPHA_CLEAR	Only	alpha_clear.frag	none; attachment operation	PostPresent alpha-only clear; RGB LOAD
+COCKPIT_RESOLVE	SingleSample	capture_color.frag	0:ubo(std140,640);1:sampler[7];2:float2D(CockpitScene)	RGBA8 CockpitResolved
+COCKPIT_RESOLVE	Multisample	capture_color_ms.frag	0:ubo(std140,640);1:sampler[7];2:float2DMS(CockpitScene)	RGBA8 CockpitResolved or CockpitMsaaResolved
+COCKPIT_RESOLVE	SsaaFourToTwo	capture_ssaa_4_to_2.frag	0:ubo(std140,640);1:sampler[7];2:float2D?(CockpitScene);3:float2D?(CockpitMsaaResolved)	RGBA8 CockpitSsaaIntermediate2x; frame_branch.y selects binding 2/3
+COCKPIT_RESOLVE	SsaaTwoToOne	capture_ssaa_2_to_1.frag	0:ubo(std140,640);1:sampler[7];2:float2D?(CockpitScene);3:float2D?(CockpitMsaaResolved);4:float2D?(CockpitSsaaIntermediate2x)	RGBA8 CockpitResolved; frame_branch.y selects binding 2/3/4
+COCKPIT_RESOLVE	ResourceChannelAlias	<resource-alias>	none	CockpitAlpha aliases CockpitResolved alpha
+BLOOM_DEFERRED_*	BloomThresholdPhase	bloom_threshold.frag	0:ubo(std140,640);1:sampler[7];2:float2D(PostPresent);3:depth2D(PostLogicalDepth);4:float2D(ProtectionMaskSource);5:float2D(CockpitAlpha)	RGBA8 BloomCurrentLevel
+BLOOM_DEFERRED_*	BloomDownsamplePhase	bloom_down.frag	0:ubo(std140,640);1:sampler[7];2:float2D(BloomCurrentLevel)	RGBA8 BloomSmallerLevel
+BLOOM_DEFERRED_*	BloomMergePhase	bloom_up.frag	0:ubo(std140,640);1:sampler[7];2:float2D(BloomCurrentLevel);3:float2D(BloomSmallerLevel)	RGBA8 BloomMerged
+COCKPIT_OVER	Only	cockpit_over.frag	0:ubo(std140,640);1:sampler[7];2:float2D(CockpitResolved)	PostPresent attachment LOAD; ONE,ONE_MINUS_SRC_ALPHA
+COCKPIT_BLOOM_GAMMA	Only	cockpit_bloom_gamma.frag	0:ubo(std140,640);1:sampler[7];2:float2D(PostPresent);3:float2D(BloomMerged);4:float2D(ProtectionMaskSource)	RGBA8 PostPresent; gamma encoded
+COCKPIT_GAMMA_ONLY	Only	post_blit.frag	0:ubo(std140,640);1:sampler[7];2:float2D(PostPresent)	RGBA8 PostPresent ping-pong; gamma encoded
+COCKPIT_UI_POST	Only	<world-pipeline>	WorldDescriptorAbi	PostPresent attachment LOAD
+PRESENT	Only	present.frag	0:ubo(std140,640);1:sampler[7];2:float2D(PostPresent)	UNORM swapchain; already gamma encoded
+@FULLSCREEN_VERTEX	Utility	fullscreen.vert	none	procedural full-screen triangle with top-left UV
+@MOTION_COPY	Utility	motion_copy.frag	0:ubo(std140,640);1:sampler[7];2:float2D(SceneVelocity)	RG16F velocity copy
+@WORLD_STREAM	Utility	world.vert+world.frag	WorldDescriptorAbi sets 0-2; push_constant(WorldBatchPush,16); GpuWorldAux room/cockpit records	Scene MRT locations 0-4 plus D32 depth
+@WORLD_RETAINED	Utility	world.vert+world.frag	WorldDescriptorAbi sets 0-2; gl_DrawID draw header indexing; T2 payload stride 32 at set2/binding6; aux.indices page ranges=(relative-first<<8)|count	Scene MRT locations 0-4 plus D32 depth; T2 array base/lightmap, page lights, terrain fog
+@UI	Utility	ui.vert+ui.frag	WorldDescriptorAbi sets 0-2	Color plus protection/AO auxiliary MRT
+@FONT	Utility	font.vert+font.frag	WorldDescriptorAbi sets 0-2; sampled float2DArray	Color plus protection/AO auxiliary MRT
+@PARTICLE	Utility	particle.vert+particle.frag	WorldDescriptorAbi sets 0-2; soft depth image slot 3 and uv_params.w fade range	Color plus auxiliary MRT
+@LINES	Utility	line.vert+line.frag	WorldDescriptorAbi sets 0-2; 20-word ExpandedLineInstance	Six-vertex instanced triangle-list quad plus auxiliary MRT
+@POINTS	Utility	point.vert+point.frag	WorldDescriptorAbi sets 0-2; 12-word ExpandedPointInstance	Six-vertex instanced triangle-list quad plus auxiliary MRT
+@TERRAIN_CLASSIFY	Utility	terrain_classify.comp	set0 storage bindings 0..7; push(work,batch,capacity,flags); local_size_x=256	One exact clipped vertex count per full-draw TerrainWorkItem
+@TERRAIN_SCAN	Utility	terrain_scan.comp	set0 storage bindings 0..7; push(work,batch,capacity,flags); local_size_x=256	Stable per-batch exclusive offsets and VkDrawIndirectCommand
+@TERRAIN_EMIT	Utility	terrain_emit.comp	set0 storage bindings 0..7; push(work,batch,capacity,flags); local_size_x=256	BaseVertex and TerrainVertexPayload output streams

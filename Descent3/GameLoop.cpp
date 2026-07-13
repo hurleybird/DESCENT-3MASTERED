@@ -2362,6 +2362,16 @@ void GameRenderFrame(void)
 	if (Dedicated_server)
 		return;
 
+	// Snapshot the exact live values GL4 consumes directly from these globals.
+	// Vulkan receives the same values without making renderer code depend on
+	// game globals.  GL backends intentionally keep their existing direct path.
+	renderer_frame_dynamic_state renderer_dynamic = {};
+	renderer_dynamic.frame_time = Frametime;
+	renderer_dynamic.afterburner_scalar = Render_afterburner_visual_factor;
+	renderer_dynamic.paused = Game_paused;
+	renderer_dynamic.histories_frozen = Game_paused;
+	rend_SetFrameDynamicState(&renderer_dynamic);
+
 	PerfMarkersBeginFrame();
 
 #ifndef RELEASE

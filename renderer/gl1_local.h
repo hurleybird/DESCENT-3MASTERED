@@ -246,6 +246,7 @@ public:
 	int Init(oeApplication* app, renderer_preferred_state* pref_state) override;
 	// de-init the renderer
 	void Close() override;
+	RendererCapabilities GetCapabilities() const override;
 
 	//STATE
 

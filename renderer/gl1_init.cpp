@@ -275,6 +275,14 @@ void GLCompatibilityRenderer::GetInformation()
 
 // Sets up our OpenGL rendering context
 // Returns 1 if ok, 0 if something bad
+RendererCapabilities GLCompatibilityRenderer::GetCapabilities() const
+{
+	RendererCapabilities capabilities = {};
+	capabilities.backend = RENDERER_BACKEND_GL1;
+	capabilities.editor_readback = true;
+	return capabilities;
+}
+
 int GLCompatibilityRenderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 {
 	//int width,height;

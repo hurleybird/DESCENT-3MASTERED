@@ -1,0 +1,32 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "shared/terrain_emitter.glsl"
+layout(local_size_x=256,local_size_y=1,local_size_z=1) in;
+shared uint prefix_values[256];
+shared uint chunk_total;
+shared uint running_total;
+void main(){
+    uint batch_index=gl_WorkGroupID.x;if(batch_index>=terrain_push.batch_count)return;
+    TerrainBatch batch=terrain_batches[batch_index];uint lane=gl_LocalInvocationID.x;
+    if(lane==0u)running_total=0u;barrier();
+    for(uint base=0u;base<batch.work_item_count;base+=256u){
+        uint local=base+lane;uint value=local<batch.work_item_count?
+            terrain_scratch[batch.first_work_item+local].x:0u;
+        prefix_values[lane]=value;barrier();
+        for(uint offset=1u;offset<256u;offset<<=1u){
+            uint add=lane>=offset?prefix_values[lane-offset]:0u;barrier();
+            prefix_values[lane]+=add;barrier();
+        }
+        if(lane==255u)chunk_total=prefix_values[255];barrier();
+        uint exclusive=lane==0u?0u:prefix_values[lane-1u];
+        if(local<batch.work_item_count)
+            terrain_scratch[batch.first_work_item+local].y=
+                batch.first_output_vertex+running_total+exclusive;
+        barrier();if(lane==0u)running_total+=chunk_total;barrier();
+    }
+    if(lane==0u){
+        uint count=min(running_total,batch.output_vertex_capacity);
+        terrain_indirect_output[batch.indirect_command_index]=
+            uvec4(count,1u,batch.first_output_vertex,0u);
+    }
+}

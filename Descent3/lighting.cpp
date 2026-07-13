@@ -104,7 +104,8 @@ constexpr float PER_PIXEL_HEADLIGHT_FALLOFF = 1.5f;
 
 static bool UsePerPixelRoomLighting()
 {
-	return Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender();
+	return Render_preferred_state.per_pixel_lighting && UseHardware &&
+		rend_SupportsPerPixelLighting();
 }
 
 static float PerPixelLightImportance(const renderer_per_pixel_light &light)

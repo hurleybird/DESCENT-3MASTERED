@@ -27,6 +27,18 @@
 struct g3Point;
 struct chunked_bitmap;
 struct vector;
+struct RendererCapabilities;
+
+// Live game state consumed by frame-level post processing.  Keeping this
+// separate from renderer_preferred_state prevents transient values from being
+// mistaken for persisted configuration.
+struct renderer_frame_dynamic_state
+{
+	float frame_time;
+	float afterburner_scalar;
+	bool paused;
+	bool histories_frozen;
+};
 
 //	for rend_Init prototype
 class oeApplication;
@@ -50,6 +62,8 @@ enum renderer_type
 	RENDERER_DIRECT3D,
 	RENDERER_GLIDE,
 	RENDERER_NONE,
+	// Appended to preserve every persisted numeric value above.
+	RENDERER_VULKAN,
 };
 
 enum opengl_profile
@@ -94,6 +108,20 @@ extern bool UseWBuffer;
 
 // Sets our renderer
 void rend_SetRendererType (renderer_type state);
+
+// Returns false until a backend has initialized successfully.  Capabilities
+// are not published for a requested backend that later falls back.
+bool rend_GetCapabilities(RendererCapabilities *capabilities);
+
+// Narrow feature queries for engine code. Callers must not infer these from
+// Renderer_type, OpenGLProfile, or the newrender debug toggle.
+bool rend_SupportsPerPixelLighting();
+bool rend_SupportsSplitAndFieldSpecular();
+bool rend_SupportsRoomFaceBatching();
+bool rend_SupportsRetainedRooms();
+bool rend_SupportsRetainedPolymodels();
+bool rend_SupportsRetainedTerrain();
+bool rend_SupportsLateCloseScreenPass();
 
 #define MAP_TYPE_BITMAP			0
 #define MAP_TYPE_LIGHTMAP		1
@@ -412,6 +440,106 @@ struct renderer_poly_batch_item
 	int nv;
 };
 
+// Backend-neutral source identity for ordinary room/model faces that are
+// eligible for the retained-world path.  The point list remains authoritative
+// for current lighting/UV values and exact live clip codes; world_positions
+// supplies the positions frozen at this exact ordered flush.
+enum renderer_retained_source_kind
+{
+	RENDERER_RETAINED_ROOM_BASE = 0,
+	RENDERER_RETAINED_ROOM_POSTRENDER,
+	RENDERER_RETAINED_ROOM_SPECULAR,
+	RENDERER_RETAINED_STATIC_POLYMODEL,
+};
+
+enum renderer_retained_exclusion_bits
+{
+	RENDERER_RETAINED_EXCLUDE_MIRROR = 1u << 0,
+	RENDERER_RETAINED_EXCLUDE_ROOM_FOG = 1u << 1,
+	RENDERER_RETAINED_EXCLUDE_EFFECT_OR_EDITOR = 1u << 2,
+	RENDERER_RETAINED_EXCLUDE_SOF_CUSTOM = 1u << 3,
+	RENDERER_RETAINED_EXCLUDE_GENERATED_OR_MORPHED = 1u << 4,
+	RENDERER_RETAINED_EXCLUDE_TERRAIN = 1u << 5,
+};
+
+struct renderer_retained_poly_batch_item
+{
+	g3Point **pointlist;
+	const vector *world_positions;
+	int nv;
+	renderer_retained_source_kind source_kind;
+	uint32_t source_id;
+	uint32_t source_generation;
+	uint32_t subobject;
+	uint32_t face;
+	uint32_t classification;
+	uint32_t exclusion_bits;
+	bool payload_representable;
+};
+
+// Frozen backend-neutral T2 terrain inputs. The Vulkan backend deep-copies
+// every pointed range before this call returns.
+struct renderer_retained_terrain_cell
+{
+	uint32_t packed[4];
+	float height[4];
+};
+
+struct renderer_retained_terrain_work
+{
+	uint32_t cell_index;
+	int32_t source_texture;
+	uint32_t source_flags;
+	uint32_t full_draw_order;
+};
+
+struct renderer_retained_terrain_batch
+{
+	int32_t source_texture;
+	uint32_t texture_layer;
+	uint32_t first_work_item;
+	uint32_t work_item_count;
+	uint32_t first_output_vertex;
+	uint32_t output_vertex_capacity;
+	uint32_t indirect_command_index;
+	uint32_t reserved0;
+};
+
+struct renderer_retained_terrain_view
+{
+	float terrain_row0[4];
+	float terrain_x_step[4];
+	float terrain_z_step[4];
+	float terrain_y_step[4];
+	float projection_center_half_size[4];
+	float viewport_size_inv_size[4];
+	float clip_scale[4];
+};
+
+struct renderer_retained_terrain_submission
+{
+	uint32_t source_id;
+	uint32_t source_generation;
+	const renderer_retained_terrain_cell *cells;
+	uint32_t cell_count;
+	const renderer_retained_terrain_work *work;
+	uint32_t work_count;
+	const renderer_retained_terrain_batch *batches;
+	uint32_t batch_count;
+	const int32_t *base_bitmap_handles;
+	uint32_t base_bitmap_count;
+	int32_t lightmap_handles[4];
+	renderer_retained_terrain_view view;
+	uint32_t scissor_enabled;
+	int32_t scissor_left;
+	int32_t scissor_top;
+	int32_t scissor_right;
+	int32_t scissor_bottom;
+	uint32_t dynamic_light_count[4];
+	// Fixed page-major storage: page*8 + local light.
+	renderer_per_pixel_light dynamic_lights[32];
+};
+
 struct renderer_line_batch_item
 {
 	g3Point *p0;
@@ -493,8 +621,24 @@ void rend_DrawPolygon3D(int handle,g3Point **p,int nv,int map_type=MAP_TYPE_BITM
 // Draws several 3D polygons that share the current renderer state and texture.
 void rend_DrawPolygon3DBatch(int handle,const renderer_poly_batch_item *items,int count,int map_type=MAP_TYPE_BITMAP);
 
+// Emits ordinary room/model faces at their existing ordered batch flush.  The
+// active Vulkan backend evaluates the frozen T1 predicate per item; ineligible
+// entries take the exact existing T0 path.  GL callers continue to use
+// rend_DrawPolygon3DBatch and are unaffected by this seam.
+void rend_DrawRetainedPolygon3DBatch(int handle,
+	const renderer_retained_poly_batch_item *items,int count,
+	int map_type=MAP_TYPE_BITMAP);
+
+// Returns false when the active backend cannot accept the retained terrain;
+// the engine must then take its existing CPU terrain fallback.
+bool rend_DrawRetainedTerrain(
+	const renderer_retained_terrain_submission *submission);
+
 bool rend_SupportsParticleInstanceBatch();
 bool rend_CanDrawParticleInstanceBatch();
+// GL4 keeps its existing opt-in; backends with a mandatory native instance
+// path (Vulkan) ignore optional_path_enabled after advertising the capability.
+bool rend_CanUseParticleInstanceBatch(bool optional_path_enabled);
 bool rend_DrawParticleInstanceBatch(int handle,const renderer_particle_instance *items,int count,
 	int map_type=MAP_TYPE_BITMAP);
 
@@ -545,6 +689,10 @@ void rend_SetFlatColor (ddgr_color color);
 // Tells the renderer we're starting a frame.  Clear flags tells the renderer
 // what buffer (if any) to clear
 void rend_StartFrame(int x1,int y1,int x2,int y2,int clear_flags=RF_CLEAR_ZBUFFER);
+
+// Supplies the live values used by temporal effects for the presented frame.
+// Backends that do not consume them leave their existing behavior unchanged.
+void rend_SetFrameDynamicState(const renderer_frame_dynamic_state *state);
 
 // Tells the renderer the frame is over
 void rend_EndFrame();
@@ -835,7 +983,8 @@ void rend_BindLightmap(int handle);
 //only needed for Core backend. 
 void rend_RestoreLegacy();
 
-//[ISB] Returns true if Newrender is capable of using the current backend.
+// Returns true only for the GL4 core backend. Vulkan retained rooms are a
+// separate path and must never enter the GL4 newrender experiment.
 bool rend_CanUseNewrender();
 
 void rend_GetScreenSize(int& screen_width, int& screen_height);

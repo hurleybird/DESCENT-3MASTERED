@@ -222,6 +222,7 @@ static constexpr int TERRAIN_COMPUTE_VERTS_PER_CELL = TERRAIN_COMPUTE_VERTS_PER_
 static constexpr int TERRAIN_COMPUTE_LIGHTMAP_LAYERS = 4;
 static constexpr bool TERRAIN_ISSUE_LOGGING_ENABLED = false;
 static uint32_t Terrain_compute_renderer_generation = 0;
+static uint32_t Terrain_retained_source_generation = 0;
 static bool Terrain_compute_release_registered = false;
 
 static void SetTerrainComputeBaseTextureFilter()
@@ -1458,6 +1459,9 @@ static bool TerrainComputeNoFarCullOrLod()
 	if (View_mode == EDITOR_MODE)
 		return false;
 #endif
+	if (rend_SupportsRetainedTerrain())
+		return !(Viewer_object && Viewer_object->effect_info &&
+			(Viewer_object->effect_info->type_flags & EF_DEFORM));
 
 	if (Terrain_compute_unavailable)
 		return false;
@@ -1637,6 +1641,8 @@ static void BuildTerrainComputeFullDrawWork()
 	Terrain_compute_draw_work_checksum = Terrain_checksum;
 	Terrain_compute_draw_work_signature = TerrainComputeDrawWorkSignature();
 	Terrain_compute_draw_work_show_invisible = Show_invisible_terrain;
+	if (++Terrain_retained_source_generation == 0)
+		++Terrain_retained_source_generation;
 	InvalidateTerrainComputeInputUpload();
 }
 
@@ -2102,6 +2108,160 @@ static void SetTerrainComputeViewUniforms()
 		Window_height > 0 ? (float)Window_height : 1.0f);
 	glUniform4f(Terrain_compute_clip_scale_uniform,
 		Window_clip_left, Window_clip_right, Window_clip_bot, Window_clip_top);
+}
+
+static bool DisplayTerrainListRetained(int cellcount, bool from_automap,
+	bool fog_enabled, bool scissor_to_window, int left, int top, int right,
+	int bot, int render_width, int render_height)
+{
+	PERF_MARKER_SCOPE("DisplayTerrainListRetained");
+	(void)cellcount;
+	(void)fog_enabled;
+	(void)render_width;
+	(void)render_height;
+#if (defined(EDITOR) || defined(NEWEDITOR))
+	if (View_mode == EDITOR_MODE) return false;
+#endif
+	if (!rend_SupportsRetainedTerrain() || from_automap ||
+		StateLimited || !UseMultitexture || !UseHardware ||
+		(Viewer_object && Viewer_object->effect_info &&
+		 (Viewer_object->effect_info->type_flags & EF_DEFORM)))
+		return false;
+	EnsureTerrainComputeFullDrawWork();
+	GlobalTransCount = static_cast<int>(Terrain_compute_cell_inputs.size() * 4u);
+	TotalDepth = 0;
+	if (Terrain_compute_cell_inputs.empty())
+	{
+		SetTerrainComputeStatusActive(0);
+		return true;
+	}
+	std::vector<renderer_retained_terrain_work> work(
+		Terrain_compute_cell_inputs.size());
+	std::vector<renderer_retained_terrain_batch> batches(
+		Terrain_compute_batches.size());
+	std::vector<int32_t> bitmap_handles(Terrain_compute_batches.size());
+	for (size_t batch_index = 0; batch_index < Terrain_compute_batches.size();
+		++batch_index)
+	{
+		const TerrainGpuBatch &source = Terrain_compute_batches[batch_index];
+		renderer_retained_terrain_batch &batch = batches[batch_index];
+		batch.source_texture = source.texture;
+		batch.texture_layer = static_cast<uint32_t>(batch_index);
+		batch.first_work_item = static_cast<uint32_t>(source.first_cell);
+		batch.work_item_count = static_cast<uint32_t>(source.cell_count);
+		batch.first_output_vertex = static_cast<uint32_t>(source.first_vertex);
+		batch.output_vertex_capacity = static_cast<uint32_t>(source.cell_count) *
+			TERRAIN_COMPUTE_VERTS_PER_CELL;
+		batch.indirect_command_index = static_cast<uint32_t>(batch_index);
+		bitmap_handles[batch_index] = GetTextureBitmap(source.texture, 0);
+		if (bitmap_handles[batch_index] < BAD_BITMAP_HANDLE)
+			bitmap_handles[batch_index] = BAD_BITMAP_HANDLE;
+		for (uint32_t local = 0; local < batch.work_item_count; ++local)
+		{
+			const uint32_t index = batch.first_work_item + local;
+			work[index].cell_index = index;
+			work[index].source_texture = source.texture;
+			const uint32_t segment = Terrain_compute_cell_inputs[index].packed[0];
+			work[index].source_flags = static_cast<uint32_t>(
+				Terrain_seg[segment].flags) &
+				(TF_DYNAMIC | TF_SPECIAL_WATER | TF_SPECIAL_MINE |
+				 TF_INVISIBLE | 0xe0u);
+			work[index].full_draw_order = index;
+		}
+	}
+
+	renderer_retained_terrain_submission submission = {};
+	submission.source_id = 1;
+	submission.source_generation = Terrain_retained_source_generation;
+	submission.cells = reinterpret_cast<const renderer_retained_terrain_cell *>(
+		Terrain_compute_cell_inputs.data());
+	submission.cell_count = static_cast<uint32_t>(
+		Terrain_compute_cell_inputs.size());
+	submission.work = work.data();
+	submission.work_count = static_cast<uint32_t>(work.size());
+	submission.batches = batches.data();
+	submission.batch_count = static_cast<uint32_t>(batches.size());
+	submission.base_bitmap_handles = bitmap_handles.data();
+	submission.base_bitmap_count = static_cast<uint32_t>(bitmap_handles.size());
+	for (uint32_t page = 0; page < TERRAIN_COMPUTE_LIGHTMAP_LAYERS; ++page)
+		submission.lightmap_handles[page] = TerrainLightmaps[page];
+
+	vector viewer_eye;
+	matrix viewer_orient;
+	g3_GetViewPosition(&viewer_eye);
+	g3_GetViewMatrix(&viewer_orient);
+	const vector origin = { 0.0f, 0.0f, 0.0f };
+	const vector x_axis = { 1.0f, 0.0f, 0.0f };
+	const vector z_axis = { 0.0f, 0.0f, 1.0f };
+	const vector y_axis = { 0.0f, 1.0f, 0.0f };
+	const vector row0 = (origin - viewer_eye) * viewer_orient;
+	const vector x_step = x_axis * viewer_orient;
+	const vector z_step = z_axis * viewer_orient;
+	const vector y_step = y_axis * viewer_orient;
+	auto copy_vector = [](float output[4], const vector &value) {
+		output[0] = value.x;
+		output[1] = value.y;
+		output[2] = value.z;
+		output[3] = 0.0f;
+	};
+	copy_vector(submission.view.terrain_row0, row0);
+	copy_vector(submission.view.terrain_x_step, x_step);
+	copy_vector(submission.view.terrain_z_step, z_step);
+	copy_vector(submission.view.terrain_y_step, y_step);
+	submission.view.projection_center_half_size[0] = Window_cx;
+	submission.view.projection_center_half_size[1] = Window_cy;
+	submission.view.projection_center_half_size[2] = Window_w2;
+	submission.view.projection_center_half_size[3] = Window_h2;
+	const float viewport_width = Window_width > 0 ?
+		static_cast<float>(Window_width) : 1.0f;
+	const float viewport_height = Window_height > 0 ?
+		static_cast<float>(Window_height) : 1.0f;
+	submission.view.viewport_size_inv_size[0] = viewport_width;
+	submission.view.viewport_size_inv_size[1] = viewport_height;
+	submission.view.viewport_size_inv_size[2] = 1.0f / viewport_width;
+	submission.view.viewport_size_inv_size[3] = 1.0f / viewport_height;
+	submission.view.clip_scale[0] = Window_clip_left;
+	submission.view.clip_scale[1] = Window_clip_right;
+	submission.view.clip_scale[2] = Window_clip_bot;
+	submission.view.clip_scale[3] = Window_clip_top;
+	submission.scissor_enabled = scissor_to_window ? 1u : 0u;
+	submission.scissor_left = left;
+	submission.scissor_top = top;
+	submission.scissor_right = right;
+	submission.scissor_bottom = bot;
+	if (Render_preferred_state.per_pixel_lighting)
+		for (uint32_t page = 0; page < TERRAIN_COMPUTE_LIGHTMAP_LAYERS; ++page)
+		{
+			const int count = GetPerPixelLightmapTextureLights(
+				TerrainLightmaps[page],
+				&submission.dynamic_lights[page *
+					RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS],
+				RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+			const int clamped_count = count < 0 ? 0 :
+				(count > RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS ?
+				 RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS : count);
+			submission.dynamic_light_count[page] =
+				static_cast<uint32_t>(clamped_count);
+		}
+
+	rend_SetColorModel(CM_RGB);
+	rend_SetTextureType(TT_LINEAR);
+	rend_SetAlphaType(ATF_CONSTANT + ATF_TEXTURE);
+	rend_SetAlphaValue(255);
+	rend_SetLighting(LS_NONE);
+	rend_SetWrapType(WT_WRAP);
+	if (!rend_DrawRetainedTerrain(&submission))
+	{
+		// The backend reports a hard renderer failure. Do not silently replace a
+		// required T2 draw with the CPU performance fallback.
+		SetTerrainComputeStatus("retained terrain submit failed");
+		return true;
+	}
+	mprintf_at((2, 1, 0, "%5d cells", (int)Terrain_compute_cell_inputs.size()));
+	mprintf_at((2, 2, 0, "%5d trans", GlobalTransCount));
+	mprintf_at((2, 3, 0, "Tdepth=%5d", TotalDepth));
+	SetTerrainComputeStatusActive((int)Terrain_compute_cell_inputs.size());
+	return true;
 }
 
 static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog_enabled, bool scissor_to_window,
@@ -2850,7 +3010,9 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 
 	rend_SetFlatColor(Terrain_sky.sky_color);
 	View_mode = GetFunctionMode();
-	Terrain_renderer_mode = (UseHardware && OpenGLProfile == GLPROFILE_CORE) ? TERRAIN_RENDERER_COMPUTE : TERRAIN_RENDERER_LEGACY;
+	Terrain_renderer_mode = (rend_SupportsRetainedTerrain() ||
+		(UseHardware && OpenGLProfile == GLPROFILE_CORE)) ?
+		TERRAIN_RENDERER_COMPUTE : TERRAIN_RENDERER_LEGACY;
 
 	// Set this so we don't do reentrant rendering between terrain/mine
 	Terrain_from_mine = from_mine;
@@ -2924,10 +3086,19 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 	if (Terrain_renderer_mode == TERRAIN_RENDERER_COMPUTE)
 	{
 		PERF_MARKER_SCOPE("Terrain.Surface.Compute");
+		const bool retained_terrain = rend_SupportsRetainedTerrain();
 		if (use_compute_no_far_lod)
 		{
-			if (!DisplayTerrainListCompute(0, false, (Terrain_sky.flags & TF_FOG) != 0,
-				from_mine && valid_render_window, left, top, right, bot, render_width, render_height))
+			const bool rendered = retained_terrain ?
+				DisplayTerrainListRetained(0, false,
+					(Terrain_sky.flags & TF_FOG) != 0,
+					from_mine && valid_render_window, left, top, right, bot,
+					render_width, render_height) :
+				DisplayTerrainListCompute(0, false,
+					(Terrain_sky.flags & TF_FOG) != 0,
+					from_mine && valid_render_window, left, top, right, bot,
+					render_width, render_height);
+			if (!rendered)
 			{
 				PERF_MARKER_SCOPE("Terrain.ComputeFallbackLegacy");
 				int saved_terrain_lod_engine_off = Terrain_LOD_engine_off;
@@ -2950,8 +3121,15 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 			SetTerrainComputeStatus("ACTIVE 0c 0t 0b");
 			CheckTerrainComputeSurfaceSkippedBadState("visible0", nt, use_compute_no_far_lod);
 		}
-		else if (!DisplayTerrainListCompute(nt, false, (Terrain_sky.flags & TF_FOG) != 0,
-			from_mine && valid_render_window, left, top, right, bot, render_width, render_height))
+		else if (!(retained_terrain ?
+			DisplayTerrainListRetained(nt, false,
+				(Terrain_sky.flags & TF_FOG) != 0,
+				from_mine && valid_render_window, left, top, right, bot,
+				render_width, render_height) :
+			DisplayTerrainListCompute(nt, false,
+				(Terrain_sky.flags & TF_FOG) != 0,
+				from_mine && valid_render_window, left, top, right, bot,
+				render_width, render_height)))
 		{
 			DisplayTerrainList(nt);
 		}

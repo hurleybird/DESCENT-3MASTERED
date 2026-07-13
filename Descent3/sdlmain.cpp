@@ -157,6 +157,8 @@ int SharedMain(int argc, char** argv)
 	}
 	else
 	{
+		const renderer_type startup_renderer =
+			(renderer_type)ConfigResolveStartupRenderer();
 		int temp;
 		Database->read_int("RS_fullscreen", &temp);
 		Game_fullscreen = !!temp;
@@ -173,7 +175,8 @@ int SharedMain(int argc, char** argv)
 
 		SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK);
 
-		d3 = new SDLApplication(ENGINE_NAME, flags);
+		d3 = new SDLApplication(ENGINE_NAME, flags,
+			startup_renderer == RENDERER_VULKAN);
 	}
 	atexit(D3End);
 

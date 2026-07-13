@@ -34,6 +34,7 @@ protected:
 	uint32_t m_flags;
 	std::string m_title;
 	void (*m_deferhandler)(bool);
+	bool m_vulkan_window;
 
 	SDL_Rect m_winrect = {};
 private:
@@ -43,7 +44,7 @@ private:
 	void change_window();
 public:
 	//Initializes the SDL state 
-	SDLApplication(const char* name, unsigned flags);
+	SDLApplication(const char* name, unsigned flags, bool vulkan_window = false);
 	virtual ~SDLApplication();
 	//	initializes the object
 	void init() override;
@@ -66,5 +67,9 @@ public:
 	{
 		return m_window;
 	}
+
+	bool UsesVulkanWindow() const { return m_vulkan_window; }
+	// Used only by transactional startup fallback before gameplay begins.
+	bool RecreateRendererWindow(bool vulkan_window);
 };
 #endif

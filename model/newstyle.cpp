@@ -369,6 +369,12 @@ struct PolymodelBatchedFace
 	int nv;
 	g3Point point_storage[100];
 	g3Point *pointlist[100];
+	vector retained_positions[100];
+	uint32_t model_id;
+	uint32_t submodel_id;
+	uint32_t face_id;
+	uint32_t retained_exclusion_bits;
+	bool retained_payload_representable;
 
 	void RefreshPointList()
 	{
@@ -566,18 +572,50 @@ public:
 			PolymodelPerfAdd(Polymodel_perf_face_base_time, state_setup_start_time);
 
 			double batch_prepare_start_time = PolymodelPerfNow();
-			m_batch_items.resize(batch.faces.size());
-			for (size_t face_index = 0; face_index < batch.faces.size(); face_index++)
+			const bool retained = rend_SupportsRetainedPolymodels();
+			m_batch_items.resize(retained ? 0 : batch.faces.size());
+			m_retained_batch_items.resize(retained ? batch.faces.size() : 0);
+			for (size_t face_index = 0; face_index < batch.faces.size();
+				face_index++)
 			{
-				batch.faces[face_index].RefreshPointList();
-				m_batch_items[face_index].pointlist = batch.faces[face_index].pointlist;
-				m_batch_items[face_index].nv = batch.faces[face_index].nv;
+				PolymodelBatchedFace &face = batch.faces[face_index];
+				face.RefreshPointList();
+				if (retained)
+				{
+					renderer_retained_poly_batch_item &item =
+						m_retained_batch_items[face_index];
+					item.pointlist = face.pointlist;
+					item.world_positions = face.retained_positions;
+					item.nv = face.nv;
+					item.source_kind = RENDERER_RETAINED_STATIC_POLYMODEL;
+					item.source_id = face.model_id;
+					item.source_generation = 1;
+					item.subobject = face.submodel_id;
+					item.face = face.face_id;
+					item.classification = face.face_id;
+					item.exclusion_bits = face.retained_exclusion_bits;
+					item.payload_representable =
+						face.retained_payload_representable;
+				}
+				else
+				{
+					m_batch_items[face_index].pointlist = face.pointlist;
+					m_batch_items[face_index].nv = face.nv;
+				}
 			}
 			PolymodelPerfAdd(Polymodel_perf_face_base_batch_prepare_time, batch_prepare_start_time);
 			PolymodelPerfAdd(Polymodel_perf_face_base_time, batch_prepare_start_time);
 
 			double draw_start_time = PolymodelPerfNow();
-			rend_DrawPolygon3DBatch(batch.key.bitmap_handle, m_batch_items.data(), (int)m_batch_items.size(), MAP_TYPE_BITMAP);
+			if (retained)
+				rend_DrawRetainedPolygon3DBatch(batch.key.bitmap_handle,
+					m_retained_batch_items.data(),
+					static_cast<int>(m_retained_batch_items.size()),
+					MAP_TYPE_BITMAP);
+			else
+				rend_DrawPolygon3DBatch(batch.key.bitmap_handle,
+					m_batch_items.data(), static_cast<int>(m_batch_items.size()),
+					MAP_TYPE_BITMAP);
 			if (Perf_markers_enabled)
 				Polymodel_perf_draw_poly_count++;
 			PolymodelPerfAdd(Polymodel_perf_face_base_draw_time, draw_start_time);
@@ -598,6 +636,7 @@ private:
 
 	std::vector<PolymodelBaseFaceBatch> m_batches;
 	std::vector<renderer_poly_batch_item> m_batch_items;
+	std::vector<renderer_retained_poly_batch_item> m_retained_batch_items;
 	BatchLookup m_batch_lookup;
 	size_t m_last_batch_index = (size_t)-1;
 };
@@ -957,6 +996,31 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 
 	double copy_start_time = PolymodelPerfNow();
 	CopyPolymodelBatchPoints(batched_face, draw_pointlist, draw_nv);
+	batched_face.model_id = static_cast<uint32_t>(pm - Poly_models);
+	batched_face.submodel_id = static_cast<uint32_t>(modelnum);
+	batched_face.face_id = static_cast<uint32_t>(facenum);
+	batched_face.retained_exclusion_bits = 0;
+	batched_face.retained_payload_representable = key.lighting != LS_PHONG;
+	if (was_clipped ||
+		(Polymodel_use_effect && (Polymodel_effect.type & PEF_DEFORM)) ||
+		(sm->flags & SOF_JITTER))
+		batched_face.retained_exclusion_bits |=
+			RENDERER_RETAINED_EXCLUDE_GENERATED_OR_MORPHED;
+	if (sm->flags & SOF_CUSTOM)
+		batched_face.retained_exclusion_bits |=
+			RENDERER_RETAINED_EXCLUDE_SOF_CUSTOM;
+	for (int vertex = 0; vertex < draw_nv; ++vertex)
+	{
+		const g3Point &point = *draw_pointlist[vertex];
+		if (point.p3_motion_world_valid)
+			batched_face.retained_positions[vertex] =
+				point.p3_motion_world_pos;
+		else
+		{
+			batched_face.retained_positions[vertex] = point.p3_vecPreRot;
+			batched_face.retained_payload_representable = false;
+		}
+	}
 	PolymodelPerfAdd(Polymodel_perf_face_base_copy_time, copy_start_time);
 
 	if (was_clipped)
@@ -1942,7 +2006,8 @@ void DoneLightInstance();
 
 static bool UsePerPixelPolymodelLighting()
 {
-	return UseHardware && Render_preferred_state.per_pixel_lighting && rend_CanUseNewrender();
+	return UseHardware && Render_preferred_state.per_pixel_lighting &&
+		rend_SupportsPerPixelLighting();
 }
 
 static light_state GetPolymodelGouraudLightingState()

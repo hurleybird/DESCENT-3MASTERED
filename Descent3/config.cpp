@@ -54,6 +54,8 @@
 #include "d3music.h"
 #include "gameloop.h"
 #include "renderer.h"
+#include "../renderer/core/render_capabilities.h"
+#include "args.h"
 
 #if defined(SDL3)
 #include <SDL3/SDL_video.h>
@@ -146,17 +148,45 @@ bool DesiredOpenGLProfileExplicit = false;
 
 static bool ConfigCanUsePerPixelLighting()
 {
-	return OpenGLProfile == GLPROFILE_CORE;
+	RendererCapabilities capabilities = {};
+	if (rend_GetCapabilities(&capabilities))
+		return capabilities.per_pixel_lighting;
+	return PreferredRenderer == RENDERER_VULKAN ||
+		(PreferredRenderer == RENDERER_OPENGL && DesiredOpenGLProfile == GLPROFILE_CORE);
 }
 
 static bool ConfigCanUseGTAO()
 {
-	return OpenGLProfile == GLPROFILE_CORE;
+	RendererCapabilities capabilities = {};
+	if (rend_GetCapabilities(&capabilities))
+		return capabilities.post_processing;
+	return PreferredRenderer == RENDERER_VULKAN ||
+		(PreferredRenderer == RENDERER_OPENGL && DesiredOpenGLProfile == GLPROFILE_CORE);
 }
 
 static bool ConfigShowsLegacyTerrainControls()
 {
-	return OpenGLProfile != GLPROFILE_CORE;
+	RendererCapabilities capabilities = {};
+	if (rend_GetCapabilities(&capabilities))
+		return capabilities.backend == RENDERER_BACKEND_GL1;
+	return PreferredRenderer == RENDERER_OPENGL &&
+		DesiredOpenGLProfile != GLPROFILE_CORE;
+}
+
+int ConfigResolveStartupRenderer()
+{
+	int requested = RENDERER_VULKAN;
+	if (Database)
+		Database->read_int("PreferredRenderer", &requested);
+	if (requested != RENDERER_VULKAN && requested != RENDERER_OPENGL)
+		requested = RENDERER_VULKAN;
+
+	if (FindArg("-vulkan") || FindArg("-vk"))
+		requested = RENDERER_VULKAN;
+	if (FindArg("-glcore") || FindArg("-gl4") || FindArg("-opengl") ||
+		FindArg("-novulkan"))
+		requested = RENDERER_OPENGL;
+	return requested;
 }
 
 int ConfigNormalizeSupersamplingFactor(int factor)
@@ -1635,10 +1665,10 @@ struct video_menu
 		frame_limit = sheet->AddSlider("Frame Limit", (short)(frame_limit_max - 30),
 			(short)(Game_frame_limit_fps - 30), &frame_limit_settings);
 
-		sheet->NewGroup("OpenGL profile", 0, 134);
-		backend = sheet->AddFirstLongRadioButton("Compat (for NV)");
-		sheet->AddLongRadioButton("Core (for AMD)");
-		*backend = DesiredOpenGLProfile;
+		sheet->NewGroup("Renderer", 0, 134);
+		backend = sheet->AddFirstLongRadioButton("Vulkan");
+		sheet->AddLongRadioButton("OpenGL 4");
+		*backend = PreferredRenderer == RENDERER_VULKAN ? 0 : 1;
 
 		// video settings
 		sheet->NewGroup(TXT_TOGGLES, 0, 170);
@@ -1760,20 +1790,18 @@ struct video_menu
 
 		if (backend)
 		{
-			int olddesired = DesiredOpenGLProfile;
-			DesiredOpenGLProfile = (opengl_profile)*backend;
-			if (olddesired != DesiredOpenGLProfile)
+			const renderer_type old_renderer = PreferredRenderer;
+			PreferredRenderer = *backend == 0 ? RENDERER_VULKAN : RENDERER_OPENGL;
+			if (PreferredRenderer == RENDERER_OPENGL)
+			{
+				DesiredOpenGLProfile = GLPROFILE_CORE;
 				DesiredOpenGLProfileExplicit = true;
-			if (olddesired != DesiredOpenGLProfile && DesiredOpenGLProfile != OpenGLProfile)
-			{
-				DoMessageBox(TXT_WARNING, "Changing the OpenGL profile will apply the next time you start Piccu Engine.", MSGBOX_OK);
 			}
-			if (DesiredOpenGLProfile != GLPROFILE_CORE)
-				Render_preferred_state.per_pixel_lighting = false;
-			if (DesiredOpenGLProfile != GLPROFILE_CORE)
+			if (old_renderer != PreferredRenderer)
 			{
-				ApplyGTAOPresetFromIndex(0);
-				ConfigFinalizeMotionVectorUse();
+				DoMessageBox(TXT_WARNING,
+					"Changing the renderer will apply the next time you start Piccu Engine.",
+					MSGBOX_OK);
 			}
 		}
 

@@ -6,25 +6,59 @@ SET( CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS TRUE )
 
 PROJECT(Descent3)
 
+include(CTest)
+
+add_custom_target(piccu_vulkan_dependencies_verify ALL
+	COMMAND ${CMAKE_COMMAND} -P
+		"${CMAKE_SOURCE_DIR}/thirdparty/vulkan/verify_dependencies.cmake"
+	SOURCES
+		"${CMAKE_SOURCE_DIR}/thirdparty/vulkan/dependencies.lock.cmake"
+		"${CMAKE_SOURCE_DIR}/thirdparty/vulkan/dependency-files.sha256"
+		"${CMAKE_SOURCE_DIR}/thirdparty/vulkan/verify_dependencies.cmake"
+	VERBATIM)
+
 function(add_hog_file HOG_NAME HOG_SRC_DIR)
 	string( REPLACE "." "_" HOG_TARGET ${HOG_NAME} )
+	set(HOG_EXTRA_SOURCES ${ARGN})
 	
 	#message(${HOG_SRC_DIR})
 	
 	#Iterate all the files in the hog source dir, for usage in a target.
 	file(GLOB_RECURSE HOG_SOURCES ${HOG_SRC_DIR}/*)
 	
+	# Stage the ordinary HOG tree plus optional generated assets. HOG2 stores
+	# flat names, so Vulkan's CFILE loader tries its packaged basename after the
+	# loose runtime prefix.
+	set(HOG_STAGE_DIR "${CMAKE_BINARY_DIR}/hog-staging/${HOG_TARGET}")
+	set(HOG_STAGE_COMMANDS
+		COMMAND ${CMAKE_COMMAND} -E remove_directory "${HOG_STAGE_DIR}"
+		COMMAND ${CMAKE_COMMAND} -E make_directory "${HOG_STAGE_DIR}"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+			"${HOG_SRC_DIR}" "${HOG_STAGE_DIR}")
+	if(PICCU_HOG_VERIFY_SCRIPT)
+		list(INSERT HOG_STAGE_COMMANDS 0
+			COMMAND ${CMAKE_COMMAND} -P "${PICCU_HOG_VERIFY_SCRIPT}")
+	endif()
+	foreach(HOG_EXTRA_SOURCE IN LISTS HOG_EXTRA_SOURCES)
+		list(APPEND HOG_STAGE_COMMANDS
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${HOG_EXTRA_SOURCE}" "${HOG_STAGE_DIR}")
+	endforeach()
+
 	#Create the command that actually invokes hogdir to build the hogfile.
 	add_custom_command( OUTPUT ${CMAKE_BINARY_DIR}/${HOG_NAME}
-		COMMAND hogdir ${CMAKE_BINARY_DIR}/${HOG_NAME} ${HOG_SRC_DIR}
-		DEPENDS hogdir )
+		${HOG_STAGE_COMMANDS}
+		COMMAND $<TARGET_FILE:hogdir> ${CMAKE_BINARY_DIR}/${HOG_NAME}
+			"${HOG_STAGE_DIR}"
+		DEPENDS hogdir ${HOG_SOURCES} ${HOG_EXTRA_SOURCES}
+		VERBATIM )
 		
 	#Create the target that uses this command to build the hogfile.
 	#From GZDoom: Touch the hogdir binary to ensure that this rule always rebuilds
 	add_custom_target( ${HOG_TARGET} ALL
 		COMMAND ${CMAKE_COMMAND} -E touch $<TARGET_FILE:hogdir>
 		DEPENDS ${CMAKE_BINARY_DIR}/${HOG_NAME}
-		SOURCES ${HOG_SOURCES})
+		SOURCES ${HOG_SOURCES} ${HOG_EXTRA_SOURCES})
 	install(FILES ${CMAKE_BINARY_DIR}/${HOG_NAME} DESTINATION ${D3_GAMEDIR})
 endfunction()
 
@@ -89,7 +123,10 @@ ENDIF ()
 
 MESSAGE("Install will copy files to ${D3_GAMEDIR}")
 
-include_directories("lib" "Descent3" "netcon/includes" ${PLATFORM_INCLUDES})
+include_directories("lib" "Descent3" "netcon/includes" ${PLATFORM_INCLUDES}
+	"thirdparty/vulkan/Vulkan-Headers/include"
+	"thirdparty/vulkan/volk"
+	"thirdparty/vulkan/VulkanMemoryAllocator")
 
 IF (WIN32)
 	SET (PLATFORM_LIBS wsock32.lib winmm.lib Glu32.lib OpenGL32.lib dbghelp.lib wininet.lib
@@ -242,6 +279,8 @@ SET (DESCENT3_SOURCES
 ENDIF()
 
 add_executable(PiccuEngine ${DESCENT3_SOURCES})
+add_dependencies(PiccuEngine piccu_vulkan_dependencies_verify
+	piccu_vulkan_shader_runtime_assets)
 	
 IF (WIN32)
 	if (USE_SDL) #for convenience SDL will compile as a console app, and dump mono there

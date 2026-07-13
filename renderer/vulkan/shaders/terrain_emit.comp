@@ -1,0 +1,6 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "shared/terrain_emitter.glsl"
+layout(local_size_x=256,local_size_y=1,local_size_z=1) in;
+void main(){uint work_index=gl_GlobalInvocationID.x;
+    if(work_index<terrain_push.work_item_count)EmitWorkItem(work_index);}

@@ -482,8 +482,9 @@ void SaveGameSettings()
 
 #ifndef RELEASE			// never save this value out in release.
 	Database->write("SoundMixer", Sound_mixer);
-	Database->write("PreferredRenderer",PreferredRenderer);
 #endif
+	// Renderer choice is a user-facing F2 video preference in every build.
+	Database->write("PreferredRenderer", PreferredRenderer);
 	
 	tempint = Sound_quality;
 	Database->write("SoundQuality", tempint);
@@ -944,7 +945,7 @@ void LoadGameSettings()
 	if(force_gain>100) force_gain = 100;
 	D3Force_gain = ((float)force_gain)/100.0f;
 	Database->read("LimitMousePolling", &Mouse_limitpolling);
-	Database->read_int("PreferredRenderer",&PreferredRenderer);
+	PreferredRenderer = (renderer_type)ConfigResolveStartupRenderer();
 	Database->read_int("MissileView",&Missile_camera_window);
 	Database->read("FastHeadlight",&Detail_settings.Fast_headlight_on);
 	Database->read("MirrorSurfaces",&Detail_settings.Mirrored_surfaces);
@@ -958,8 +959,11 @@ void LoadGameSettings()
 		DesiredOpenGLProfile = GLPROFILE_COMPAT;
 	if (FindArg("-glcore") || FindArg("-gl4") || FindArg("-gl45") || FindArg("-openglcore"))
 		DesiredOpenGLProfile = GLPROFILE_CORE;
-	Terrain_renderer_mode = DesiredOpenGLProfile == GLPROFILE_CORE ? TERRAIN_RENDERER_COMPUTE : TERRAIN_RENDERER_LEGACY;
-	if (DesiredOpenGLProfile != GLPROFILE_CORE)
+	Terrain_renderer_mode = (PreferredRenderer == RENDERER_VULKAN ||
+		(PreferredRenderer == RENDERER_OPENGL &&
+		 DesiredOpenGLProfile == GLPROFILE_CORE)) ?
+		TERRAIN_RENDERER_COMPUTE : TERRAIN_RENDERER_LEGACY;
+	if (PreferredRenderer == RENDERER_OPENGL && DesiredOpenGLProfile != GLPROFILE_CORE)
 	{
 		Render_preferred_state.per_pixel_lighting = false;
 		Render_preferred_state.gtao_enabled = false;
@@ -1111,8 +1115,6 @@ void LoadGameSettings()
 		Detail_settings.Procedurals_enabled = 0;
 	}
 
-	// We only support OpenGL now...
-	PreferredRenderer = RENDERER_OPENGL;
 }
 
 

@@ -22,9 +22,11 @@
 #include "pserror.h"
 #include "gl_local.h"
 #include "gl1_local.h"
+#include "vulkan/vk_renderer.h"
+#include "vulkan/vk_runtime.h"
 
 //TODO: Remove
-renderer_type Renderer_type = RENDERER_OPENGL;
+renderer_type Renderer_type = RENDERER_VULKAN;
 
 opengl_profile OpenGLProfile = GLPROFILE_CORE;
 int RendererOpenGLMajorVersion = 0;
@@ -61,6 +63,8 @@ float Z_bias;
 
 static IRenderer* rend_CreateRendererInstance()
 {
+	if (Renderer_type == RENDERER_VULKAN)
+		return new VulkanRenderer(piccu::render::vk::VulkanRuntimeSingleton());
 	switch (OpenGLProfile)
 	{
 	case GLPROFILE_CORE:
@@ -71,6 +75,16 @@ static IRenderer* rend_CreateRendererInstance()
 		Error("Unsupported backend");
 		return nullptr;
 	}
+}
+
+static bool rend_PrepareGl4FallbackWindow()
+{
+#if defined(SDL3)
+	SDLApplication* app = dynamic_cast<SDLApplication*>(Renderer_app);
+	return app && app->RecreateRendererWindow(false);
+#else
+	return true;
+#endif
 }
 
 static bool rend_PreferredStateRequiresFreshRenderer(const renderer_preferred_state& old_state,
@@ -90,7 +104,7 @@ static int rend_RecreateRenderer(renderer_preferred_state* pref_state)
 	if (!pref_state)
 		return 0;
 
-	mprintf((0, "Renderer framebuffer state changed; recreating GL renderer/context from scratch.\n"));
+	mprintf((0, "Renderer framebuffer state changed; recreating renderer/context from scratch.\n"));
 
 	if (renderer_inst)
 	{
@@ -142,6 +156,38 @@ int rend_Init(renderer_type state, oeApplication* app, renderer_preferred_state*
 
 	Renderer_initted = true;
 	retval = renderer_inst->Init(app, pref_state);
+	if (retval == 0 && state == RENDERER_VULKAN)
+	{
+		const char* diagnostic = piccu::render::vk::VulkanRuntimeLastDiagnostic();
+		mprintf((0, "Vulkan startup failed: %s\n",
+			diagnostic && diagnostic[0] ? diagnostic : "no diagnostic available"));
+		(void)diagnostic;
+		renderer_inst->Close();
+		delete renderer_inst;
+		renderer_inst = nullptr;
+		Renderer_initted = false;
+		if (rend_PrepareGl4FallbackWindow())
+		{
+			renderer_type requested = Renderer_type;
+			OpenGLProfile = GLPROFILE_CORE;
+			rend_SetRendererType(RENDERER_OPENGL);
+			renderer_inst = rend_CreateRendererInstance();
+			Renderer_initted = renderer_inst != nullptr;
+			retval = renderer_inst ? renderer_inst->Init(app, pref_state) : 0;
+			mprintf((0, retval ?
+				"Vulkan startup fallback selected GL4 for this session.\n" :
+				"Vulkan startup fallback to GL4 also failed.\n"));
+			(void)requested;
+		}
+	}
+	if (retval != 0 && Renderer_type == RENDERER_VULKAN)
+	{
+		const char *diagnostic = piccu::render::vk::VulkanRuntimeLastDiagnostic();
+		mprintf((0, "Vulkan renderer initialized:\n%s\n",
+			diagnostic && diagnostic[0] ? diagnostic :
+			"device profile unavailable"));
+		(void)diagnostic;
+	}
 	if (retval == 0)
 		rend_Close(); //Having renderer_inst->Init clean up would cause reentrancy problems, I suspect
 	else
@@ -205,6 +251,66 @@ void rend_SetRendererType(renderer_type state)
 {
 	Renderer_type = state;
 	mprintf((0, "RendererType is set to %d.\n", state));
+}
+
+bool rend_GetCapabilities(RendererCapabilities *capabilities)
+{
+	if (!capabilities || !Renderer_initted || !renderer_inst)
+		return false;
+
+	*capabilities = renderer_inst->GetCapabilities();
+	return true;
+}
+
+bool rend_SupportsPerPixelLighting()
+{
+	RendererCapabilities capabilities = {};
+	return rend_GetCapabilities(&capabilities) && capabilities.per_pixel_lighting;
+}
+
+bool rend_SupportsSplitAndFieldSpecular()
+{
+	RendererCapabilities capabilities = {};
+	return rend_GetCapabilities(&capabilities) &&
+		capabilities.split_and_field_specular;
+}
+
+bool rend_SupportsRoomFaceBatching()
+{
+	RendererCapabilities capabilities = {};
+	if (!rend_GetCapabilities(&capabilities))
+		return false;
+
+	// GL4 keeps its existing CPU face batcher. Vulkan reaches the same ordered
+	// engine batching point through retained_rooms without pretending to be GL4.
+	return capabilities.backend == RENDERER_BACKEND_GL4 ||
+		capabilities.retained_rooms;
+}
+
+bool rend_SupportsRetainedRooms()
+{
+	RendererCapabilities capabilities = {};
+	return rend_GetCapabilities(&capabilities) && capabilities.retained_rooms;
+}
+
+bool rend_SupportsRetainedPolymodels()
+{
+	RendererCapabilities capabilities = {};
+	return rend_GetCapabilities(&capabilities) &&
+		capabilities.retained_polymodels;
+}
+
+bool rend_SupportsRetainedTerrain()
+{
+	RendererCapabilities capabilities = {};
+	return rend_GetCapabilities(&capabilities) && capabilities.retained_terrain;
+}
+
+bool rend_SupportsLateCloseScreenPass()
+{
+	RendererCapabilities capabilities = {};
+	return rend_GetCapabilities(&capabilities) &&
+		capabilities.late_close_screen_pass;
 }
 
 void rend_GetStatistics(tRendererStats* stats)
@@ -300,12 +406,27 @@ void rend_DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, 
 	renderer_inst->DrawPolygon3DBatch(handle, items, count, map_type);
 }
 
+void rend_DrawRetainedPolygon3DBatch(int handle,
+	const renderer_retained_poly_batch_item *items, int count, int map_type)
+{
+	if (!Renderer_initted || !items || count <= 0)
+		return;
+
+	renderer_inst->DrawRetainedPolygon3DBatch(handle, items, count, map_type);
+}
+
+bool rend_DrawRetainedTerrain(
+	const renderer_retained_terrain_submission *submission)
+{
+	return Renderer_initted && submission &&
+		renderer_inst->DrawRetainedTerrain(submission);
+}
+
 bool rend_SupportsParticleInstanceBatch()
 {
-	if (!Renderer_initted)
-		return false;
-
-	return renderer_inst->SupportsParticleInstanceBatch();
+	RendererCapabilities capabilities = {};
+	return rend_GetCapabilities(&capabilities) &&
+		capabilities.particle_instance_batch;
 }
 
 bool rend_CanDrawParticleInstanceBatch()
@@ -314,6 +435,19 @@ bool rend_CanDrawParticleInstanceBatch()
 		return false;
 
 	return renderer_inst->CanDrawParticleInstanceBatch();
+}
+
+bool rend_CanUseParticleInstanceBatch(bool optional_path_enabled)
+{
+	RendererCapabilities capabilities = {};
+	if (!rend_GetCapabilities(&capabilities) ||
+		!capabilities.particle_instance_batch ||
+		!renderer_inst->CanDrawParticleInstanceBatch())
+		return false;
+
+	// The existing option is explicitly a GL4 experiment. Vulkan's native
+	// capture path is part of its advertised baseline and does not inherit it.
+	return capabilities.backend != RENDERER_BACKEND_GL4 || optional_path_enabled;
 }
 
 bool rend_DrawParticleInstanceBatch(int handle, const renderer_particle_instance *items, int count, int map_type)
@@ -481,6 +615,14 @@ void rend_StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		return;
 
 	renderer_inst->StartFrame(x1, y1, x2, y2, clear_flags);
+}
+
+void rend_SetFrameDynamicState(const renderer_frame_dynamic_state *state)
+{
+	if (!Renderer_initted || !state)
+		return;
+
+	renderer_inst->SetFrameDynamicState(*state);
 }
 
 // Tells the renderer the frame is over
@@ -913,15 +1055,32 @@ int rend_SetPreferredState(renderer_preferred_state* pref_state)
 	if (!pref_state)
 		return 0;
 
-	if (!Renderer_last_preferred_state_valid ||
-		rend_PreferredStateRequiresFreshRenderer(Renderer_last_preferred_state, *pref_state))
+	// Vulkan owns an explicit, transactional swapchain/target replacement path.
+	// Recreating the whole facade here would tear down the SDL Vulkan window and
+	// then attempt to initialize a second surface during routine resolution
+	// changes.  Keep the legacy fresh-context behavior for GL, whose resources
+	// are registered against the context generation.
+	if (Renderer_type != RENDERER_VULKAN &&
+		(!Renderer_last_preferred_state_valid ||
+		 rend_PreferredStateRequiresFreshRenderer(Renderer_last_preferred_state, *pref_state)))
 	{
 		return rend_RecreateRenderer(pref_state);
 	}
 
 	int retval = renderer_inst->SetPreferredState(pref_state);
 	if (retval != 0)
+	{
 		Renderer_last_preferred_state = *pref_state;
+		Renderer_last_preferred_state_valid = true;
+	}
+	else if (Renderer_type == RENDERER_VULKAN)
+	{
+		const char *diagnostic = piccu::render::vk::VulkanRuntimeLastDiagnostic();
+		mprintf((0, "Vulkan preferred-state update failed: %s\n",
+			diagnostic && diagnostic[0] ? diagnostic :
+			"no diagnostic available"));
+		(void)diagnostic;
+	}
 	return retval;
 }
 
@@ -1258,7 +1417,9 @@ bool rend_CanUseNewrender()
 		Error("rend_CanUseNewrender: Called in dedicated!");
 	}
 
-	return OpenGLProfile == GLPROFILE_CORE;
+	RendererCapabilities capabilities = {};
+	return rend_GetCapabilities(&capabilities) &&
+		capabilities.backend == RENDERER_BACKEND_GL4;
 }
 
 void rend_ClearBoundTextures()

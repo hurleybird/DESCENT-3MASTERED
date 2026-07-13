@@ -309,7 +309,7 @@ static bool SplitSpecularTexturePathEnabled()
 {
 	return (Render_split_specular_textures || Render_per_pixel_field_static_specular) &&
 		Render_preferred_state.per_pixel_lighting &&
-		UseHardware && rend_CanUseNewrender();
+		UseHardware && rend_SupportsSplitAndFieldSpecular();
 }
 
 static SplitSpecularTexturePair ComputeSplitSpecularTexturePair(int tmap)
@@ -1730,7 +1730,8 @@ static bool SpecularCanUseFieldStaticFace(room* rp, face* fp)
 {
 	if (!Render_per_pixel_field_static_specular)
 		return false;
-	if (!Render_preferred_state.per_pixel_lighting || !UseHardware || !rend_CanUseNewrender())
+	if (!Render_preferred_state.per_pixel_lighting || !UseHardware ||
+		!rend_SupportsSplitAndFieldSpecular())
 		return false;
 	if (rp->flags & RF_EXTERNAL)
 		return false;
@@ -3178,7 +3179,8 @@ static void PrepareSpecularDynamicLight(renderer_per_pixel_light& light)
 
 static bool PerPixelSpecularMaterialEnabled()
 {
-	return Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender();
+	return Render_preferred_state.per_pixel_lighting && UseHardware &&
+		rend_SupportsSplitAndFieldSpecular();
 }
 
 static bool UseFieldStaticSpecularForFace(face* fp)
@@ -3347,8 +3349,7 @@ void RenderSpecularFacesFlat(room* rp)
 	rend_SetAlphaType(AT_SPECULAR);
 	rend_SetZBufferWriteMask(0);
 
-	const bool per_pixel_shader_specular = Render_preferred_state.per_pixel_lighting &&
-		UseHardware && rend_CanUseNewrender();
+	const bool per_pixel_shader_specular = PerPixelSpecularMaterialEnabled();
 	if (per_pixel_shader_specular)
 	{
 		for (int i = 0; i < Num_specular_faces_to_render; i++)
@@ -3438,7 +3439,8 @@ void RenderSpecularFacesFlat(room* rp)
 
 		renderer_per_pixel_light dynamic_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
 		int dynamic_light_count = 0;
-		if (Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender())
+		if (Render_preferred_state.per_pixel_lighting && UseHardware &&
+			rend_SupportsPerPixelLighting())
 		{
 			dynamic_light_count = GetPerPixelLightmapLights(fp->lmi_handle, dynamic_lights,
 				RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
@@ -3691,7 +3693,7 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 	g3Point* pointlist[MAX_VERTS_PER_FACE];
 	g3Point  pointbuffer[MAX_VERTS_PER_FACE];
 	std::vector<RoomFogBatchedFace> batched_faces;
-	const bool batch_fog = UseHardware && rend_CanUseNewrender();
+	const bool batch_fog = UseHardware && rend_SupportsRoomFaceBatching();
 	rend_SetOverlayType(OT_NONE);
 	rend_SetTextureType(TT_FLAT);
 	rend_SetLighting(LS_NONE);
@@ -3855,6 +3857,9 @@ struct RoomBatchedFace
 	int nv;
 	g3Point point_storage[MAX_VERTS_PER_FACE];
 	g3Point* pointlist[MAX_VERTS_PER_FACE];
+	vector object_positions[MAX_VERTS_PER_FACE];
+	uint32_t room_id;
+	uint32_t face_id;
 
 	void RefreshPointList()
 	{
@@ -3932,15 +3937,43 @@ public:
 			rend_SetTextureType(TT_PERSPECTIVE);
 			rend_SetAOClass(batch.key.ao_class);
 
-			std::vector<renderer_poly_batch_item> items(batch.faces.size());
-			for (size_t face_index = 0; face_index < batch.faces.size(); face_index++)
+			if (rend_SupportsRetainedRooms())
 			{
-				batch.faces[face_index].RefreshPointList();
-				items[face_index].pointlist = batch.faces[face_index].pointlist;
-				items[face_index].nv = batch.faces[face_index].nv;
+				std::vector<renderer_retained_poly_batch_item> items(
+					batch.faces.size());
+				for (size_t face_index = 0; face_index < batch.faces.size();
+					face_index++)
+				{
+					RoomBatchedFace &face = batch.faces[face_index];
+					face.RefreshPointList();
+					items[face_index].pointlist = face.pointlist;
+					items[face_index].world_positions = face.object_positions;
+					items[face_index].nv = face.nv;
+					items[face_index].source_kind = RENDERER_RETAINED_ROOM_BASE;
+					items[face_index].source_id = face.room_id;
+					items[face_index].source_generation = 1;
+					items[face_index].subobject = 0;
+					items[face_index].face = face.face_id;
+					items[face_index].classification = face.face_id;
+					items[face_index].payload_representable = true;
+				}
+				rend_DrawRetainedPolygon3DBatch(batch.key.bitmap_handle,
+					items.data(), static_cast<int>(items.size()), MAP_TYPE_BITMAP);
 			}
+			else
+			{
+				std::vector<renderer_poly_batch_item> items(batch.faces.size());
+				for (size_t face_index = 0; face_index < batch.faces.size();
+					face_index++)
+				{
+					batch.faces[face_index].RefreshPointList();
+					items[face_index].pointlist = batch.faces[face_index].pointlist;
+					items[face_index].nv = batch.faces[face_index].nv;
+				}
 
-			rend_DrawPolygon3DBatch(batch.key.bitmap_handle, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
+				rend_DrawPolygon3DBatch(batch.key.bitmap_handle, items.data(),
+					static_cast<int>(items.size()), MAP_TYPE_BITMAP);
+			}
 		}
 
 		rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
@@ -4138,7 +4171,7 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 		return false;
 
 	if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting &&
-		UseHardware && rend_CanUseNewrender())
+		UseHardware && rend_SupportsPerPixelLighting())
 	{
 		renderer_per_pixel_light per_pixel_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
 		int per_pixel_light_count = GetPerPixelLightmapLights(fp->lmi_handle, per_pixel_lights,
@@ -4167,6 +4200,11 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 
 	RoomBatchedFace batched_face;
 	CopyRoomBatchPoints(batched_face, pointlist, fp->num_verts);
+	batched_face.room_id = static_cast<uint32_t>(rp - Rooms);
+	batched_face.face_id = static_cast<uint32_t>(facenum);
+	for (int vertex = 0; vertex < fp->num_verts; ++vertex)
+		batched_face.object_positions[vertex] =
+			rp->verts[fp->face_verts[vertex]];
 	batcher.Add(key, batched_face);
 	AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face);
 	return true;
@@ -4428,7 +4466,9 @@ void RenderFace(room* rp, int facenum)
 			specular_material_face = false;
 		}
 	}
-	else if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender())
+	else if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) &&
+		Render_preferred_state.per_pixel_lighting && UseHardware &&
+		rend_SupportsPerPixelLighting())
 	{
 		per_pixel_light_count = GetPerPixelLightmapLights(fp->lmi_handle, per_pixel_lights,
 			RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
@@ -4686,7 +4726,7 @@ void RenderRoomUnsorted(room* rp)
 {
 	int rcount = 0;
 	RoomBaseFaceBatcher base_face_batcher;
-	const bool batch_room_faces = UseHardware && rend_CanUseNewrender();
+	const bool batch_room_faces = UseHardware && rend_SupportsRoomFaceBatching();
 	ASSERT(rp->num_faces <= MAX_FACES_PER_ROOM);
 
 	// Rotate points in this room if need be

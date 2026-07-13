@@ -19,6 +19,7 @@
 #pragma once
 
 #include "renderer.h"
+#include "core/render_capabilities.h"
 
 //Base renderer interface. 
 //Renderer.cpp will call into this abstractly. 
@@ -35,10 +36,17 @@ public:
 	// de-init the renderer
 	virtual void Close() = 0;
 
+	// API-neutral feature query.  Callers must not infer capabilities from an
+	// OpenGL profile or backend enum.
+	virtual RendererCapabilities GetCapabilities() const = 0;
+
 	//STATE
 
 	// Tells the software renderer whether or not to use mipping
 	virtual void SetMipState(sbyte) = 0;
+
+	// Live, non-persisted inputs for frame-level temporal/post processing.
+	virtual void SetFrameDynamicState(const renderer_frame_dynamic_state &) {}
 
 	// Sets the fog state to TRUE or FALSE
 	virtual void SetFogState(sbyte on) = 0;
@@ -182,6 +190,21 @@ public:
 	{
 		for (int i = 0; i < count; i++)
 			DrawPolygon3D(handle, items[i].pointlist, items[i].nv, map_type);
+	}
+
+	virtual void DrawRetainedPolygon3DBatch(int handle,
+		const renderer_retained_poly_batch_item *items, int count,
+		int map_type = MAP_TYPE_BITMAP)
+	{
+		for (int i = 0; i < count; ++i)
+			DrawPolygon3D(handle, items[i].pointlist, items[i].nv, map_type);
+	}
+
+	virtual bool DrawRetainedTerrain(
+		const renderer_retained_terrain_submission *submission)
+	{
+		(void)submission;
+		return false;
 	}
 
 	virtual bool SupportsParticleInstanceBatch() const

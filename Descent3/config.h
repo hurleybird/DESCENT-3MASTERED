@@ -94,6 +94,10 @@ extern bool Cockpit_alt_mode;
 //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
 extern int DesiredOpenGLProfile;
 extern bool DesiredOpenGLProfileExplicit;
+// Resolves the persisted/command-line backend before renderer or SDL window
+// creation. Returns a renderer_type value without requiring this header to
+// expose renderer internals.
+int ConfigResolveStartupRenderer();
 int ConfigNormalizeSupersamplingFactor(int factor);
 int ConfigGetDesktopRefreshRate();
 int ConfigNormalizeFrameLimitFps(int fps);
