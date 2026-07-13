@@ -246,6 +246,7 @@ private:
 	VkSampler world_samplers_[kWorldSamplerCount];
 	TextureVersionId diagnostic_2d_;
 	TextureVersionId diagnostic_array_;
+	uint64_t diagnostic_capture_key_;
 	uint64_t next_content_serial_;
 	uint64_t resolve_serial_;
 	TextureResidencyStats stats_;

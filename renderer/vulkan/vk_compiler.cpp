@@ -1,7 +1,10 @@
 #include "vk_compiler.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <sstream>
@@ -34,6 +37,7 @@ struct DrawWork
 	int32_t vertex_offset = 0;
 	uint32_t draw_header_index = 0;
 	uint32_t page_index = 0;
+	uint32_t indirect_index = kInvalidId;
 	uint32_t expanded_instance_count = 0;
 	PayloadDataId cockpit_backing = kInvalidId;
 	GeometryMode geometry_mode = GeometryMode::T0Stream;
@@ -97,6 +101,7 @@ struct StagedTables
 	FrameBufferSlice specular;
 	FrameBufferSlice payload_words;
 	FrameBufferSlice world_aux;
+	FrameBufferSlice indirect;
 };
 
 class StateTrackerTransaction
@@ -171,6 +176,24 @@ bool IsExpandedFamily(WorldPipelineFamily family)
 {
 	return family == WorldPipelineFamily::ExpandedLine ||
 		family == WorldPipelineFamily::ExpandedPoint;
+}
+
+bool IsWorldDrawCommand(CaptureCommandType type)
+{
+	return type == CaptureCommandType::DrawStream ||
+		type == CaptureCommandType::DrawRetained ||
+		type == CaptureCommandType::FlushFontBatches;
+}
+
+bool DrawCommandsAreContiguous(const RenderCaptureSegment &capture,
+	uint32_t first_command, uint32_t last_command)
+{
+	if (first_command > last_command || last_command >= capture.Commands().size())
+		return false;
+	for (uint32_t command = first_command; command <= last_command; ++command)
+		if (!IsWorldDrawCommand(capture.Commands()[command].type))
+			return false;
+	return true;
 }
 
 void GtaoSamplePattern(uint32_t requested, uint32_t *directions,
@@ -272,6 +295,23 @@ struct FrameCompiler::Impl
 	FramePlan last_plan;
 	std::string last_error;
 	std::vector<ResourceStateSnapshot> snapshots;
+	// CompileAndSubmit is single-threaded.  Reuse its high-water allocations so
+	// a warm frame does not rebuild the complete lowering workspace on the heap.
+	std::vector<BaseVertex> scratch_vertices;
+	std::vector<uint32_t> scratch_indices;
+	std::vector<DrawWork> scratch_draws;
+	std::vector<WorldPipelineKey> scratch_world_pipelines;
+	std::vector<GpuDrawHeader> scratch_headers;
+	std::vector<GpuShaderState> scratch_states;
+	std::vector<GpuMaterial> scratch_materials;
+	std::vector<GpuTransform> scratch_transforms;
+	std::vector<GpuDynamicLight> scratch_lights;
+	std::vector<GpuSpecularBlock> scratch_specular;
+	std::vector<uint32_t> scratch_payload_words;
+	std::vector<GpuWorldAux> scratch_world_aux;
+	std::vector<RetainedPayloadCopy> scratch_retained_copies;
+	std::vector<DescriptorPage> scratch_pages;
+	std::vector<VkDrawIndexedIndirectCommand> scratch_indirect_commands;
 	uint64_t next_snapshot_serial = 0;
 	bool ready = false;
 
@@ -820,8 +860,17 @@ struct FrameCompiler::Impl
 			return false;
 		for (DrawWork &draw : *draws)
 		{
-			std::vector<TextureDescriptorKey> needed_2d;
-			std::vector<TextureDescriptorKey> needed_array;
+			TextureDescriptorKey needed_2d[4] = {};
+			TextureDescriptorKey needed_array[4] = {};
+			uint32_t needed_2d_count = 0;
+			uint32_t needed_array_count = 0;
+			auto append_unique = [](TextureDescriptorKey (&keys)[4],
+				uint32_t *count, const TextureDescriptorKey &key) {
+				for (uint32_t index = 0; index < *count; ++index)
+					if (keys[index] == key)
+						return;
+				keys[(*count)++] = key;
+			};
 			for (uint32_t i = 0; i < 4; ++i)
 			{
 				const TextureVersionId image_id = i == 3 &&
@@ -831,14 +880,12 @@ struct FrameCompiler::Impl
 					draw.material.sampler[i] };
 				const TextureDescriptorKey array = {
 					draw.material.image2d_array[i], draw.material.sampler[i] };
-				if (image.image != kInvalidId && std::find(needed_2d.begin(),
-					needed_2d.end(), image) == needed_2d.end())
-					needed_2d.push_back(image);
-				if (array.image != kInvalidId && std::find(needed_array.begin(),
-					needed_array.end(), array) == needed_array.end())
-					needed_array.push_back(array);
+				if (image.image != kInvalidId)
+					append_unique(needed_2d, &needed_2d_count, image);
+				if (array.image != kInvalidId)
+					append_unique(needed_array, &needed_array_count, array);
 			}
-			if (needed_2d.size() > tier || needed_array.size() > 8)
+			if (needed_2d_count > tier || needed_array_count > 8)
 				return false;
 			DescriptorPage *page = pages->empty() ? nullptr : &pages->back();
 			uint32_t new_2d = 0, new_array = 0;
@@ -847,12 +894,18 @@ struct FrameCompiler::Impl
 				page = nullptr;
 			if (page)
 			{
-				for (const TextureDescriptorKey &key : needed_2d)
+				for (uint32_t index = 0; index < needed_2d_count; ++index)
+				{
+					const TextureDescriptorKey &key = needed_2d[index];
 					if (std::find(page->images.begin(), page->images.end(), key) ==
 						page->images.end()) ++new_2d;
-				for (const TextureDescriptorKey &key : needed_array)
+				}
+				for (uint32_t index = 0; index < needed_array_count; ++index)
+				{
+					const TextureDescriptorKey &key = needed_array[index];
 					if (std::find(page->arrays.begin(), page->arrays.end(), key) ==
 						page->arrays.end()) ++new_array;
+				}
 				if (page->images.size() + new_2d > tier ||
 					page->arrays.size() + new_array > 8)
 					page = nullptr;
@@ -868,12 +921,18 @@ struct FrameCompiler::Impl
 				pages->push_back(created);
 				page = &pages->back();
 			}
-			for (const TextureDescriptorKey &key : needed_2d)
+			for (uint32_t index = 0; index < needed_2d_count; ++index)
+			{
+				const TextureDescriptorKey &key = needed_2d[index];
 				if (std::find(page->images.begin(), page->images.end(), key) ==
 					page->images.end()) page->images.push_back(key);
-			for (const TextureDescriptorKey &key : needed_array)
+			}
+			for (uint32_t index = 0; index < needed_array_count; ++index)
+			{
+				const TextureDescriptorKey &key = needed_array[index];
 				if (std::find(page->arrays.begin(), page->arrays.end(), key) ==
 					page->arrays.end()) page->arrays.push_back(key);
+			}
 			draw.page_index = static_cast<uint32_t>(pages->size() - 1);
 			GpuMaterial &gpu = (*materials)[draw.draw_header_index];
 			for (uint32_t i = 0; i < 4; ++i)
@@ -1300,10 +1359,37 @@ struct FrameCompiler::Impl
 		return key;
 	}
 
-	bool EncodeDraw(const RenderCaptureSegment &capture, const DrawWork &draw,
-		const StagedTables &tables, const DescriptorPage &page,
-		VkCommandBuffer command) const
+	bool CanBatchDraws(const DrawWork &left, const DrawWork &right) const
 	{
+		if (left.geometry_mode == GeometryMode::T2Terrain ||
+			right.geometry_mode == GeometryMode::T2Terrain ||
+			left.page_index != right.page_index || left.target != right.target ||
+			left.indexed != right.indexed ||
+			left.raster.viewport != right.raster.viewport ||
+			left.raster.scissor != right.raster.scissor ||
+			left.raster.depth_bias_factor != right.raster.depth_bias_factor ||
+			left.raster.depth_bias_units != right.raster.depth_bias_units ||
+			left.indirect_index == kInvalidId ||
+			right.indirect_index != left.indirect_index + 1u ||
+			!(DrawPipelineKey(left) == DrawPipelineKey(right)))
+			return false;
+		if (left.geometry_mode != right.geometry_mode)
+			return false;
+		if (left.geometry_mode == GeometryMode::T1Retained)
+			return left.retained.vertices.buffer == right.retained.vertices.buffer &&
+				left.retained.indices.buffer == right.retained.indices.buffer;
+		return true;
+	}
+
+	bool EncodeDrawRun(const RenderCaptureSegment &capture,
+		const std::vector<DrawWork> &draws, uint32_t first_draw,
+		uint32_t draw_count, const StagedTables &tables,
+		const DescriptorPage &page, VkCommandBuffer command) const
+	{
+		if (first_draw >= draws.size() || draw_count == 0 ||
+			draw_count > draws.size() - first_draw)
+			return false;
+		const DrawWork &draw = draws[first_draw];
 		const WorldPipelineKey key = DrawPipelineKey(draw);
 		const VkPipeline pipeline = ci.pipelines->FindWorldPipeline(key);
 		if (pipeline == VK_NULL_HANDLE)
@@ -1366,6 +1452,14 @@ struct FrameCompiler::Impl
 				{ VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
 				  VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT,
 				  ci.platform->GraphicsQueueFamily(), ResourceIntent::Read });
+		else
+			ci.state_tracker->UseBuffer(tables.indirect.buffer,
+				tables.indirect.offset + VkDeviceSize(draw.indirect_index) *
+					sizeof(VkDrawIndexedIndirectCommand),
+				VkDeviceSize(draw_count) * sizeof(VkDrawIndexedIndirectCommand),
+				{ VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT,
+				  VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT,
+				  ci.platform->GraphicsQueueFamily(), ResourceIntent::Read });
 		ci.state_tracker->Flush(command);
 
 		vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -1387,13 +1481,6 @@ struct FrameCompiler::Impl
 		const uint32_t dynamic_offset = 0;
 		vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
 			ci.pipelines->WorldPipelineLayout(), 0, 3, sets, 1, &dynamic_offset);
-		WorldBatchPush push = {};
-		push.draw_header_base = draw.draw_header_index;
-		push.target_flags = static_cast<uint32_t>(draw.target);
-		vkCmdPushConstants(command, ci.pipelines->WorldPipelineLayout(),
-			VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-			sizeof(push), &push);
-
 		VkViewport viewport_info = {};
 		VkRect2D scissor_info = {};
 		const CapturedTargetLayout &layout = draw.target == RenderTargetClass::Scene ?
@@ -1430,20 +1517,44 @@ struct FrameCompiler::Impl
 			draw.raster.depth_bias_factor);
 		if (terrain)
 		{
+			WorldBatchPush push = {};
+			push.draw_header_base = draw.draw_header_index;
+			push.target_flags = static_cast<uint32_t>(draw.target);
+			vkCmdPushConstants(command, ci.pipelines->WorldPipelineLayout(),
+				VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+				sizeof(push), &push);
 			for (uint32_t batch = 0; batch < draw.terrain_batch_count; ++batch)
 				vkCmdDrawIndirect(command, draw.terrain_indirect_output.buffer,
 					draw.terrain_indirect_output.offset +
 						VkDeviceSize(batch) * sizeof(TerrainIndirectCommand),
 					1, sizeof(TerrainIndirectCommand));
 		}
-		else if (expanded)
-			vkCmdDraw(command, kExpandedPrimitiveVertexCount,
-				draw.expanded_instance_count, 0, 0);
-		else if (draw.indexed)
-			vkCmdDrawIndexed(command, draw.index_count, 1, draw.first_index,
-				draw.vertex_offset, 0);
 		else
-			vkCmdDraw(command, draw.vertex_count, 1, draw.first_vertex, 0);
+		{
+			const uint32_t maximum = std::max(1u,
+				ci.platform->SelectedDevice().properties.limits.maxDrawIndirectCount);
+			uint32_t emitted = 0;
+			while (emitted < draw_count)
+			{
+				const uint32_t chunk = std::min(maximum, draw_count - emitted);
+				WorldBatchPush push = {};
+				push.draw_header_base = draws[first_draw + emitted].draw_header_index;
+				push.target_flags = static_cast<uint32_t>(draw.target);
+				vkCmdPushConstants(command, ci.pipelines->WorldPipelineLayout(),
+					VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+					sizeof(push), &push);
+				const VkDeviceSize offset = tables.indirect.offset +
+					VkDeviceSize(draw.indirect_index + emitted) *
+						sizeof(VkDrawIndexedIndirectCommand);
+				if (expanded || !draw.indexed)
+					vkCmdDrawIndirect(command, tables.indirect.buffer, offset,
+						chunk, sizeof(VkDrawIndexedIndirectCommand));
+				else
+					vkCmdDrawIndexedIndirect(command, tables.indirect.buffer,
+						offset, chunk, sizeof(VkDrawIndexedIndirectCommand));
+				emitted += chunk;
+			}
+		}
 		return true;
 	}
 
@@ -1981,6 +2092,18 @@ const ResourceStateSnapshot *FrameCompiler::FindSnapshot(uint64_t serial) const
 bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 	bool present, CompilerSubmission *submission)
 {
+	using CpuClock = std::chrono::steady_clock;
+	const CpuClock::time_point cpu_begin = CpuClock::now();
+	CpuClock::time_point cpu_plan = cpu_begin;
+	CpuClock::time_point cpu_draw_lowering = cpu_begin;
+	CpuClock::time_point cpu_pipelines = cpu_begin;
+	CpuClock::time_point cpu_tables = cpu_begin;
+	CpuClock::time_point cpu_pages = cpu_begin;
+	CpuClock::time_point cpu_frame_begin = cpu_begin;
+	CpuClock::time_point cpu_prepare = cpu_begin;
+	CpuClock::time_point cpu_record = cpu_begin;
+	CpuClock::time_point cpu_submit = cpu_begin;
+
 	if (!Ready() || !capture || !submission || !capture->IsFrozen())
 		return false;
 	*submission = CompilerSubmission();
@@ -2010,35 +2133,50 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 		}
 		return impl_->Fail("frame-plan", reason.str().c_str());
 	}
+	cpu_plan = CpuClock::now();
 
-	std::vector<BaseVertex> vertices = capture->StreamVertices();
-	std::vector<uint32_t> indices = capture->StreamIndices();
-	std::vector<DrawWork> draws;
+	std::vector<BaseVertex> &vertices = impl_->scratch_vertices;
+	vertices.assign(capture->StreamVertices().begin(),
+		capture->StreamVertices().end());
+	std::vector<uint32_t> &indices = impl_->scratch_indices;
+	indices.assign(capture->StreamIndices().begin(),
+		capture->StreamIndices().end());
+	std::vector<DrawWork> &draws = impl_->scratch_draws;
+	draws.clear();
 	draws.reserve(impl_->last_plan.direct_draw_count + 16);
 	if (!impl_->BuildDrawWork(*capture, &vertices, &draws))
 		return impl_->Fail("draw-lowering", "invalid or unsupported draw record");
-	std::vector<WorldPipelineKey> required_world_pipelines;
+	cpu_draw_lowering = CpuClock::now();
+	std::vector<WorldPipelineKey> &required_world_pipelines =
+		impl_->scratch_world_pipelines;
+	required_world_pipelines.clear();
 	required_world_pipelines.reserve(draws.size());
 	for (const DrawWork &draw : draws)
 		required_world_pipelines.push_back(impl_->DrawPipelineKey(draw));
 	if (!impl_->ci.pipelines->EnsureWorldPipelines(required_world_pipelines))
 		return impl_->Fail("world-pipelines",
 			"required draw-state pipeline could not be created");
-	std::vector<GpuDrawHeader> headers;
-	std::vector<GpuShaderState> states;
-	std::vector<GpuMaterial> materials;
-	std::vector<GpuTransform> transforms;
-	std::vector<GpuDynamicLight> lights;
-	std::vector<GpuSpecularBlock> specular;
-	std::vector<uint32_t> payload_words;
-	std::vector<GpuWorldAux> world_aux;
-	std::vector<RetainedPayloadCopy> retained_copies;
+	cpu_pipelines = CpuClock::now();
+	std::vector<GpuDrawHeader> &headers = impl_->scratch_headers;
+	std::vector<GpuShaderState> &states = impl_->scratch_states;
+	std::vector<GpuMaterial> &materials = impl_->scratch_materials;
+	std::vector<GpuTransform> &transforms = impl_->scratch_transforms;
+	std::vector<GpuDynamicLight> &lights = impl_->scratch_lights;
+	std::vector<GpuSpecularBlock> &specular = impl_->scratch_specular;
+	std::vector<uint32_t> &payload_words = impl_->scratch_payload_words;
+	std::vector<GpuWorldAux> &world_aux = impl_->scratch_world_aux;
+	std::vector<RetainedPayloadCopy> &retained_copies =
+		impl_->scratch_retained_copies;
+	headers.clear(); states.clear(); materials.clear(); transforms.clear();
+	lights.clear(); specular.clear(); payload_words.clear(); world_aux.clear();
+	retained_copies.clear();
 	headers.reserve(draws.size()); states.reserve(draws.size());
 	materials.reserve(draws.size()); transforms.reserve(draws.size());
 	if (!impl_->BuildGpuTables(*capture, vertices, &draws, &headers, &states, &materials,
 		&transforms, &lights, &specular, &payload_words, &world_aux,
 		&retained_copies))
 		return impl_->Fail("gpu-table-lowering", "typed payload lowering failed");
+	cpu_tables = CpuClock::now();
 	// Descriptor bindings remain valid for frames containing only clears, post
 	// work, or presentation.  No draw references these null records.
 	if (headers.empty()) headers.push_back(GpuDrawHeader{});
@@ -2046,10 +2184,50 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 	if (materials.empty()) materials.push_back(GpuMaterial{});
 	if (transforms.empty()) transforms.push_back(GpuTransform{});
 	if (payload_words.empty()) payload_words.push_back(0);
-	std::vector<DescriptorPage> pages;
+	std::vector<DescriptorPage> &pages = impl_->scratch_pages;
+	pages.clear();
 	pages.reserve(draws.size() / 32 + 4);
 	if (!impl_->BuildDescriptorPages(*capture, &draws, &materials, &pages))
 		return impl_->Fail("descriptor-pages", "a draw does not fit a typed page");
+	std::vector<VkDrawIndexedIndirectCommand> &indirect_commands =
+		impl_->scratch_indirect_commands;
+	indirect_commands.clear();
+	indirect_commands.reserve(draws.size());
+	for (DrawWork &draw : draws)
+	{
+		if (draw.geometry_mode == GeometryMode::T2Terrain)
+			continue;
+		VkDrawIndexedIndirectCommand indirect = {};
+		const bool expanded = IsExpandedFamily(impl_->DrawPipelineKey(draw).family);
+		if (expanded)
+		{
+			// VkDrawIndexedIndirectCommand is deliberately used as a 20-byte
+			// storage stride for both command forms.  Its first four words are
+			// layout-compatible with VkDrawIndirectCommand when vertexOffset is
+			// zero, and Vulkan permits a larger aligned indirect stride.
+			indirect.indexCount = kExpandedPrimitiveVertexCount;
+			indirect.instanceCount = draw.expanded_instance_count;
+			indirect.firstIndex = 0;
+			indirect.vertexOffset = 0;
+		}
+		else if (draw.indexed)
+		{
+			indirect.indexCount = draw.index_count;
+			indirect.instanceCount = 1;
+			indirect.firstIndex = draw.first_index;
+			indirect.vertexOffset = draw.vertex_offset;
+		}
+		else
+		{
+			indirect.indexCount = draw.vertex_count;
+			indirect.instanceCount = 1;
+			indirect.firstIndex = draw.first_vertex;
+			indirect.vertexOffset = 0;
+		}
+		draw.indirect_index = static_cast<uint32_t>(indirect_commands.size());
+		indirect_commands.push_back(indirect);
+	}
+	cpu_pages = CpuClock::now();
 
 	FrameRequirements requirements = impl_->last_plan.requirements;
 	requirements.vertex_bytes = std::max<VkDeviceSize>(sizeof(BaseVertex),
@@ -2067,6 +2245,10 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 		VkDeviceSize(world_aux.size()) * sizeof(GpuWorldAux) +
 		VkDeviceSize(pages.size()) * sizeof(FrameViewGlobals) +
 		VkDeviceSize(impl_->last_plan.graph_pass_count) * sizeof(PostPassUniforms));
+	requirements.indirect_bytes = std::max<VkDeviceSize>(
+		sizeof(VkDrawIndexedIndirectCommand),
+		VkDeviceSize(indirect_commands.size()) *
+			sizeof(VkDrawIndexedIndirectCommand));
 	uint32_t terrain_draw_count = 0;
 	for (const DrawWork &draw : draws)
 		if (draw.geometry_mode == GeometryMode::T2Terrain)
@@ -2080,7 +2262,8 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 					sizeof(TerrainVertexPayload) + sizeof(TerrainViewInput);
 		}
 	requirements.upload_bytes = requirements.vertex_bytes +
-		requirements.index_bytes + requirements.storage_bytes;
+		requirements.index_bytes + requirements.storage_bytes +
+		requirements.indirect_bytes;
 	if (!capture->TargetSignatures().empty() &&
 		capture->TargetSignatures().back().preferred.gtao_enabled)
 		requirements.upload_bytes += 32;
@@ -2132,7 +2315,17 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 	FrameContext *frame = impl_->ci.frames->BeginFrame();
 	if (!frame)
 		return impl_->Fail("frame-begin", "frame context timeline wait/reset failed");
+	cpu_frame_begin = CpuClock::now();
 	VkCommandBuffer command = frame->recording_command;
+	const SelectedDeviceInfo &selected_device = impl_->ci.platform->SelectedDevice();
+	const bool gpu_timestamps_enabled = frame->timestamp_capacity >= 2 &&
+		selected_device.timestamp_valid_bits != 0 &&
+		selected_device.properties.limits.timestampPeriod > 0.0f;
+	const double completed_gpu_frame_ms = frame->completed_gpu_frame_ms;
+	const bool completed_gpu_frame_valid = frame->completed_gpu_frame_valid;
+	if (gpu_timestamps_enabled)
+		vkCmdWriteTimestamp2(command, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+			frame->timestamp_pool, 0);
 	StateTrackerTransaction state_transaction(impl_->ci.state_tracker);
 	impl_->ci.state_tracker->BeginRecording();
 	if (!impl_->ci.retained_world->RecordPendingUploads(command))
@@ -2146,6 +2339,8 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 	StagedTables tables;
 	if (vertices.empty()) vertices.push_back(BaseVertex{});
 	if (indices.empty()) indices.push_back(0);
+	if (indirect_commands.empty())
+		indirect_commands.push_back(VkDrawIndexedIndirectCommand{});
 	if (!impl_->StageVector(vertices, FrameBufferClass::Vertex, 16,
 		&tables.vertices) ||
 		!impl_->StageVector(indices, FrameBufferClass::Index, 4,
@@ -2165,7 +2360,9 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 		!impl_->StageVector(payload_words, FrameBufferClass::Storage, 16,
 			&tables.payload_words) ||
 		!impl_->StageVector(world_aux, FrameBufferClass::Storage, 16,
-			&tables.world_aux))
+			&tables.world_aux) ||
+		!impl_->StageVector(indirect_commands, FrameBufferClass::Indirect, 4,
+			&tables.indirect))
 	{
 		impl_->ci.frames->AbandonCurrentRecording();
 		impl_->ci.retained_world->AbandonPendingUploadRecording();
@@ -2175,7 +2372,7 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 	const FrameBufferSlice transfer_slices[] = {
 		tables.vertices, tables.indices, tables.draw_headers, tables.states,
 		tables.materials, tables.transforms, tables.lights, tables.specular,
-		tables.payload_words, tables.world_aux
+		tables.payload_words, tables.world_aux, tables.indirect
 	};
 	for (const FrameBufferSlice &slice : transfer_slices)
 		impl_->ci.state_tracker->UseBuffer(slice.buffer, slice.offset, slice.size,
@@ -2228,6 +2425,7 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 		return impl_->Fail("descriptor-residency",
 			"texture upload or immutable descriptor initialization failed");
 	}
+	cpu_prepare = CpuClock::now();
 
 	bool rendering_open = false;
 	RenderTargetClass rendering_target = RenderTargetClass::Count;
@@ -2326,6 +2524,7 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 	};
 
 	uint32_t draw_cursor = 0;
+	uint32_t indirect_batch_count = 0;
 	auto fail_recording = [&](const char *stage, const char *message) -> bool {
 		end_rendering();
 		impl_->ci.frames->AbandonCurrentRecording();
@@ -2417,13 +2616,25 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 		case CaptureCommandType::DrawRetained:
 		case CaptureCommandType::FlushFontBatches:
 			while (draw_cursor < draws.size() &&
-				draws[draw_cursor].capture_command == operation.capture_command_index)
+				DrawCommandsAreContiguous(*capture,
+					operation.capture_command_index,
+					draws[draw_cursor].capture_command))
 			{
-				if (!rendering_open || !impl_->EncodeDraw(*capture, draws[draw_cursor],
-					tables, pages[draws[draw_cursor].page_index], command))
+				uint32_t run_count = 1;
+				while (draw_cursor + run_count < draws.size() &&
+					DrawCommandsAreContiguous(*capture,
+						draws[draw_cursor + run_count - 1].capture_command,
+						draws[draw_cursor + run_count].capture_command) &&
+					impl_->CanBatchDraws(draws[draw_cursor + run_count - 1],
+						draws[draw_cursor + run_count]))
+					++run_count;
+				if (!rendering_open || !impl_->EncodeDrawRun(*capture, draws,
+					draw_cursor, run_count, tables,
+					pages[draws[draw_cursor].page_index], command))
 					return fail_recording("world-draw",
 						"precreated exact world pipeline is unavailable");
-				++draw_cursor;
+				draw_cursor += run_count;
+				++indirect_batch_count;
 			}
 			break;
 		case CaptureCommandType::ReadPixel:
@@ -2654,8 +2865,15 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 			return fail_recording("acquire", impl_->ci.wsi->LastError().c_str());
 	}
 
+	if (gpu_timestamps_enabled)
+	{
+		vkCmdWriteTimestamp2(command, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+			frame->timestamp_pool, 1);
+		frame->recorded_timestamp_count = 2;
+	}
 	if (!impl_->ci.frames->EndRecording())
 		return fail_recording("command-end", "vkEndCommandBuffer failed");
+	cpu_record = CpuClock::now();
 	FrameSubmitInfo submit_info;
 	if (acquired_image)
 	{
@@ -2690,6 +2908,7 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 		impl_->ci.retained_world->AbandonPendingUploadRecording();
 		return impl_->Fail("queue-submit", "vkQueueSubmit2 failed");
 	}
+	cpu_submit = CpuClock::now();
 	// From this point onward the tracked transitions exist on the queue and
 	// must never be rolled back, even if WSI bookkeeping subsequently fails.
 	state_transaction.MarkSubmitted();
@@ -2713,10 +2932,14 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 	submission->timeline_value = timeline;
 	submission->resource_state_snapshot_serial = snapshot.serial;
 	submission->wsi_token = acquired_image ? acquired.token : 0;
-	submission->direct_draws = static_cast<uint32_t>(draws.size());
+	submission->direct_draws = 0;
+	submission->indirect_commands = 0;
 	for (const DrawWork &draw : draws)
 		if (draw.geometry_mode == GeometryMode::T2Terrain)
 			submission->indirect_commands += draw.terrain_batch_count;
+		else
+			++submission->indirect_commands;
+	submission->indirect_batches = indirect_batch_count;
 	submission->graph_passes = impl_->last_plan.graph_pass_count;
 	submission->dynamic_rendering_instances = rendering_instances;
 	submission->descriptor_page_binds = static_cast<uint32_t>(pages.size());
@@ -2724,6 +2947,77 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 		submission->presentation = impl_->ci.wsi->Present(acquired.token);
 	else if (present)
 		submission->presentation.status = WsiStatus::Paused;
+
+	const CpuClock::time_point cpu_end = CpuClock::now();
+	const char *profile_path = std::getenv("PICCU_VK_PERF_LOG");
+	if (profile_path && profile_path[0])
+	{
+		auto milliseconds = [](CpuClock::time_point first,
+			CpuClock::time_point last) {
+			return std::chrono::duration<double, std::milli>(last - first).count();
+		};
+		FILE *profile = std::fopen(profile_path, "ab+");
+		if (profile)
+		{
+			std::fseek(profile, 0, SEEK_END);
+			if (std::ftell(profile) == 0)
+				std::fprintf(profile,
+					"frame\tpresent\tcommands\tdraws\tstream\tretained\tterrain\tpages\tbatches\t"
+					"stream_other\tstream_room\tstream_terrain\tstream_object\t"
+					"stream_cockpit\tstream_gauge\tstream_effect\tstream_vertices\tstream_indices\t"
+					"plan_ms\tlower_ms\tpipelines_ms\ttables_ms\tpage_build_ms\t"
+					"reserve_begin_ms\tprepare_ms\trecord_ms\tsubmit_ms\tpresent_ms\ttotal_ms\t"
+					"gpu_ms\n");
+			uint32_t stream_draws = 0;
+			uint32_t retained_draws = 0;
+			uint32_t terrain_draws = 0;
+			uint32_t stream_categories[7] = {};
+			uint64_t stream_vertices = 0;
+			uint64_t stream_indices = 0;
+			for (const DrawWork &draw : draws)
+			{
+				if (draw.geometry_mode == GeometryMode::T1Retained)
+					++retained_draws;
+				else if (draw.geometry_mode == GeometryMode::T2Terrain)
+					++terrain_draws;
+				else
+				{
+					++stream_draws;
+					const uint32_t category_3d =
+						(draw.raster.shader.draw_classification >> 16u) & 0xffffu;
+					if (category_3d < 7)
+						++stream_categories[category_3d];
+					stream_vertices += draw.vertex_count;
+					stream_indices += draw.index_count;
+				}
+			}
+			std::fprintf(profile,
+				"%u\t%u\t%zu\t%zu\t%u\t%u\t%u\t%zu\t%u\t"
+				"%u\t%u\t%u\t%u\t%u\t%u\t%u\t%llu\t%llu\t"
+				"%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n",
+				capture->PresentedFrameSerial(), present ? 1u : 0u,
+				capture->Commands().size(), draws.size(), stream_draws,
+				retained_draws, terrain_draws, pages.size(), indirect_batch_count,
+				stream_categories[0], stream_categories[1], stream_categories[2],
+				stream_categories[3], stream_categories[4], stream_categories[5],
+				stream_categories[6],
+				static_cast<unsigned long long>(stream_vertices),
+				static_cast<unsigned long long>(stream_indices),
+				milliseconds(cpu_begin, cpu_plan),
+				milliseconds(cpu_plan, cpu_draw_lowering),
+				milliseconds(cpu_draw_lowering, cpu_pipelines),
+				milliseconds(cpu_pipelines, cpu_tables),
+				milliseconds(cpu_tables, cpu_pages),
+				milliseconds(cpu_pages, cpu_frame_begin),
+				milliseconds(cpu_frame_begin, cpu_prepare),
+				milliseconds(cpu_prepare, cpu_record),
+				milliseconds(cpu_record, cpu_submit),
+				milliseconds(cpu_submit, cpu_end),
+				milliseconds(cpu_begin, cpu_end),
+				completed_gpu_frame_valid ? completed_gpu_frame_ms : -1.0);
+			std::fclose(profile);
+		}
+	}
 	return true;
 }
 

@@ -125,12 +125,14 @@ private:
 	static VkDeviceSize RangeEnd(VkDeviceSize offset, VkDeviceSize size);
 	void ReplaceBufferRange(VkBuffer buffer, VkDeviceSize begin,
 		VkDeviceSize end, const BufferUse &use);
+	void TouchBuffer(VkBuffer buffer, VkDeviceSize begin, VkDeviceSize end);
 	ImageRecord *FindImage(VkImage image, VkImageAspectFlagBits aspect,
 		uint32_t mip, uint32_t layer);
 	const ImageRecord *FindImage(VkImage image, VkImageAspectFlagBits aspect,
 		uint32_t mip, uint32_t layer) const;
 
 	std::vector<BufferRecord> buffers_;
+	std::vector<BufferRecord> buffer_replacement_scratch_;
 	std::vector<ImageRecord> images_;
 	std::vector<VkBufferMemoryBarrier2> buffer_barriers_;
 	std::vector<VkImageMemoryBarrier2> image_barriers_;

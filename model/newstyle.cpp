@@ -367,21 +367,36 @@ static void SetPolymodelGouraudPointLighting(g3Point& point, const vector& norma
 struct PolymodelBatchedFace
 {
 	int nv;
-	g3Point point_storage[100];
-	g3Point *pointlist[100];
-	vector retained_positions[100];
+	size_t first_point;
 	uint32_t model_id;
 	uint32_t submodel_id;
 	uint32_t face_id;
 	uint32_t retained_exclusion_bits;
 	bool retained_payload_representable;
-
-	void RefreshPointList()
-	{
-		for (int i = 0; i < nv; i++)
-			pointlist[i] = &point_storage[i];
-	}
 };
+
+static void AppendPolymodelBatchPoints(PolymodelBatchedFace& face,
+	std::vector<g3Point>& points, std::vector<vector>* retained_positions,
+	g3Point **pointlist, int nv)
+{
+	face.nv = nv;
+	face.first_point = points.size();
+	points.resize(face.first_point + static_cast<size_t>(nv));
+	if (retained_positions)
+		retained_positions->resize(points.size());
+	for (int i = 0; i < nv; i++)
+	{
+		g3Point& point = points[face.first_point + static_cast<size_t>(i)];
+		point = *pointlist[i];
+		point.p3_flags &= ~PF_TEMP_POINT;
+		if (!(point.p3_flags & PF_PROJECTED))
+			g3_ProjectPoint(&point);
+		if (retained_positions)
+			(*retained_positions)[face.first_point + static_cast<size_t>(i)] =
+				point.p3_motion_world_valid ? point.p3_motion_world_pos :
+				point.p3_vecPreRot;
+	}
+}
 
 struct PolymodelBaseFaceBatchKey
 {
@@ -473,14 +488,27 @@ class PolymodelBaseFaceBatcher
 public:
 	void Reserve(size_t batch_count, size_t face_count)
 	{
-		if (!Render_cpu_batch_cache)
-			return;
 		if (batch_count > m_batches.capacity())
 			m_batches.reserve(batch_count);
 		if (batch_count > m_batch_lookup.bucket_count())
 			m_batch_lookup.reserve(batch_count);
 		if (face_count > m_batch_items.capacity())
 			m_batch_items.reserve(face_count);
+		if (face_count > m_retained_batch_items.capacity())
+			m_retained_batch_items.reserve(face_count);
+		const size_t point_count = face_count * 4u;
+		if (point_count > m_points.capacity())
+			m_points.reserve(point_count);
+		if (point_count > m_point_pointers.capacity())
+			m_point_pointers.reserve(point_count);
+		if (point_count > m_retained_positions.capacity())
+			m_retained_positions.reserve(point_count);
+	}
+
+	void CopyPoints(PolymodelBatchedFace& face, g3Point **pointlist, int nv)
+	{
+		AppendPolymodelBatchPoints(face, m_points, &m_retained_positions,
+			pointlist, nv);
 	}
 
 	PolymodelBatchedFace& Add(const PolymodelBaseFaceBatchKey& key)
@@ -549,6 +577,9 @@ public:
 			Polymodel_perf_base_batch_flushed_count += (int)m_batches.size();
 			PolymodelPerfUpdateMax(Polymodel_perf_base_batch_max_batches_per_flush, m_batches.size());
 		}
+		m_point_pointers.resize(m_points.size());
+		for (size_t point_index = 0; point_index < m_points.size(); ++point_index)
+			m_point_pointers[point_index] = &m_points[point_index];
 
 		for (size_t i = 0; i < m_batches.size(); i++)
 		{
@@ -579,13 +610,14 @@ public:
 				face_index++)
 			{
 				PolymodelBatchedFace &face = batch.faces[face_index];
-				face.RefreshPointList();
+				g3Point **pointlist = m_point_pointers.data() + face.first_point;
 				if (retained)
 				{
 					renderer_retained_poly_batch_item &item =
 						m_retained_batch_items[face_index];
-					item.pointlist = face.pointlist;
-					item.world_positions = face.retained_positions;
+					item.pointlist = pointlist;
+					item.world_positions = m_retained_positions.data() +
+						face.first_point;
 					item.nv = face.nv;
 					item.source_kind = RENDERER_RETAINED_STATIC_POLYMODEL;
 					item.source_id = face.model_id;
@@ -599,7 +631,7 @@ public:
 				}
 				else
 				{
-					m_batch_items[face_index].pointlist = face.pointlist;
+					m_batch_items[face_index].pointlist = pointlist;
 					m_batch_items[face_index].nv = face.nv;
 				}
 			}
@@ -627,6 +659,9 @@ public:
 
 		m_batches.clear();
 		m_batch_lookup.clear();
+		m_points.clear();
+		m_point_pointers.clear();
+		m_retained_positions.clear();
 		m_last_batch_index = (size_t)-1;
 	}
 
@@ -637,6 +672,9 @@ private:
 	std::vector<PolymodelBaseFaceBatch> m_batches;
 	std::vector<renderer_poly_batch_item> m_batch_items;
 	std::vector<renderer_retained_poly_batch_item> m_retained_batch_items;
+	std::vector<g3Point> m_points;
+	std::vector<g3Point*> m_point_pointers;
+	std::vector<vector> m_retained_positions;
 	BatchLookup m_batch_lookup;
 	size_t m_last_batch_index = (size_t)-1;
 };
@@ -646,17 +684,22 @@ class PolymodelFogFaceBatcher
 public:
 	void Reserve(size_t face_count)
 	{
-		if (!Render_cpu_batch_cache)
-			return;
 		if (face_count > m_faces.capacity())
 			m_faces.reserve(face_count);
 		if (face_count > m_batch_items.capacity())
 			m_batch_items.reserve(face_count);
+		const size_t point_count = face_count * 4u;
+		if (point_count > m_points.capacity())
+			m_points.reserve(point_count);
+		if (point_count > m_point_pointers.capacity())
+			m_point_pointers.reserve(point_count);
 	}
 
-	void Add(const PolymodelBatchedFace& face)
+	void Add(g3Point **pointlist, int nv)
 	{
-		m_faces.push_back(face);
+		m_faces.emplace_back();
+		AppendPolymodelBatchPoints(m_faces.back(), m_points, nullptr,
+			pointlist, nv);
 	}
 
 	void Flush()
@@ -664,42 +707,35 @@ public:
 		if (m_faces.empty())
 			return;
 
-		std::vector<renderer_poly_batch_item> local_items;
-		std::vector<renderer_poly_batch_item>& items = Render_cpu_batch_cache ? m_batch_items : local_items;
-		items.clear();
-		items.resize(m_faces.size());
+		m_batch_items.resize(m_faces.size());
+		m_point_pointers.resize(m_points.size());
+		for (size_t point_index = 0; point_index < m_points.size(); ++point_index)
+			m_point_pointers[point_index] = &m_points[point_index];
 		for (size_t face_index = 0; face_index < m_faces.size(); face_index++)
 		{
-			m_faces[face_index].RefreshPointList();
-			items[face_index].pointlist = m_faces[face_index].pointlist;
-			items[face_index].nv = m_faces[face_index].nv;
+			m_batch_items[face_index].pointlist = m_point_pointers.data() +
+				m_faces[face_index].first_point;
+			m_batch_items[face_index].nv = m_faces[face_index].nv;
 		}
 
-		rend_DrawPolygon3DBatch(0, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
+		rend_DrawPolygon3DBatch(0, m_batch_items.data(),
+			static_cast<int>(m_batch_items.size()), MAP_TYPE_BITMAP);
 		if (Perf_markers_enabled)
 			Polymodel_perf_draw_poly_count++;
 		m_faces.clear();
+		m_points.clear();
+		m_point_pointers.clear();
 	}
 
 private:
 	std::vector<PolymodelBatchedFace> m_faces;
 	std::vector<renderer_poly_batch_item> m_batch_items;
+	std::vector<g3Point> m_points;
+	std::vector<g3Point*> m_point_pointers;
 };
 
 static PolymodelBaseFaceBatcher *Polymodel_active_opaque_batcher = nullptr;
 static PolymodelBaseFaceBatcher *Polymodel_active_alpha_batcher = nullptr;
-
-static void CopyPolymodelBatchPoints(PolymodelBatchedFace& batched_face, g3Point **pointlist, int nv)
-{
-	batched_face.nv = nv;
-	for (int i = 0; i < nv; i++)
-	{
-		batched_face.point_storage[i] = *pointlist[i];
-		batched_face.point_storage[i].p3_flags &= ~PF_TEMP_POINT;
-		if (!(batched_face.point_storage[i].p3_flags & PF_PROJECTED))
-			g3_ProjectPoint(&batched_face.point_storage[i]);
-	}
-}
 
 static ddgr_color GetPolymodelCustomFlatColor(ddgr_color base_color)
 {
@@ -995,7 +1031,7 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	PolymodelPerfAdd(Polymodel_perf_face_base_batch_add_time, batch_add_start_time);
 
 	double copy_start_time = PolymodelPerfNow();
-	CopyPolymodelBatchPoints(batched_face, draw_pointlist, draw_nv);
+	batcher.CopyPoints(batched_face, draw_pointlist, draw_nv);
 	batched_face.model_id = static_cast<uint32_t>(pm - Poly_models);
 	batched_face.submodel_id = static_cast<uint32_t>(modelnum);
 	batched_face.face_id = static_cast<uint32_t>(facenum);
@@ -1012,14 +1048,8 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	for (int vertex = 0; vertex < draw_nv; ++vertex)
 	{
 		const g3Point &point = *draw_pointlist[vertex];
-		if (point.p3_motion_world_valid)
-			batched_face.retained_positions[vertex] =
-				point.p3_motion_world_pos;
-		else
-		{
-			batched_face.retained_positions[vertex] = point.p3_vecPreRot;
+		if (!point.p3_motion_world_valid)
 			batched_face.retained_payload_representable = false;
-		}
 	}
 	PolymodelPerfAdd(Polymodel_perf_face_base_copy_time, copy_start_time);
 
@@ -1549,9 +1579,7 @@ static bool TryBatchSubmodelFaceFogged(poly_model *pm, bsp_info *sm, int facenum
 		p->p3_flags |= PF_RGBA;
 	}
 
-	PolymodelBatchedFace batched_face;
-	CopyPolymodelBatchPoints(batched_face, pointlist, fp->nverts);
-	batcher.Add(batched_face);
+	batcher.Add(pointlist, fp->nverts);
 	if (Perf_markers_enabled)
 		Polymodel_perf_fog_face_count++;
 	return true;

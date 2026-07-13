@@ -354,6 +354,8 @@ bool FrameScheduler::EnsureQueryPool(FrameContext *context,
 		&context->timestamp_pool) != VK_SUCCESS)
 		return false;
 	context->timestamp_capacity = capacity;
+	context->recorded_timestamp_count = 0;
+	context->completed_gpu_frame_valid = false;
 	return true;
 }
 
@@ -442,6 +444,27 @@ FrameContext *FrameScheduler::BeginFrame(uint64_t timeout_nanoseconds)
 		!WaitTimeline(context.last_submitted_timeline, timeout_nanoseconds))
 		return nullptr;
 	const VkDevice device = platform_->Device();
+	context.completed_gpu_frame_valid = false;
+	if (context.recorded_timestamp_count >= 2 && context.timestamp_pool)
+	{
+		uint64_t timestamps[2] = {};
+		const VkResult timestamp_result = vkGetQueryPoolResults(device,
+			context.timestamp_pool, 0, 2, sizeof(timestamps), timestamps,
+			sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
+		platform_->NotifyDeviceResult(timestamp_result);
+		const SelectedDeviceInfo &selected = platform_->SelectedDevice();
+		const uint32_t valid_bits = selected.timestamp_valid_bits;
+		const double period = selected.properties.limits.timestampPeriod;
+		if (timestamp_result == VK_SUCCESS && valid_bits != 0 && period > 0.0)
+		{
+			const uint64_t elapsed = valid_bits >= 64 ?
+				timestamps[1] - timestamps[0] :
+				(timestamps[1] - timestamps[0]) & ((uint64_t(1) << valid_bits) - 1);
+			context.completed_gpu_frame_ms = double(elapsed) * period / 1000000.0;
+			context.completed_gpu_frame_valid = true;
+		}
+	}
+	context.recorded_timestamp_count = 0;
 	VkResult result = vkResetCommandPool(device, context.command_pool, 0);
 	platform_->NotifyDeviceResult(result);
 	if (result != VK_SUCCESS)
@@ -522,6 +545,7 @@ void FrameScheduler::AbandonCurrentRecording() noexcept
 	current_->recording = false;
 	current_->recording_command = VK_NULL_HANDLE;
 	current_->executable_command = VK_NULL_HANDLE;
+	current_->recorded_timestamp_count = 0;
 	current_->abandoned = true;
 	current_ = nullptr;
 }

@@ -2,6 +2,7 @@
 #pragma once
 
 #include "../IRenderer.h"
+#include "../core/render_coordinate_contract.h"
 #include "../core/render_state_contract.h"
 #include "vk_renderer_runtime.h"
 
@@ -288,6 +289,10 @@ private:
 
 	std::vector<piccu::render::BaseVertex> scratch_vertices_;
 	std::vector<uint32_t> scratch_indices_;
+	std::vector<g3Point *> scratch_source_points_;
+	std::vector<renderer_poly_batch_item> scratch_poly_batch_items_;
+	std::vector<piccu::render::T1EligibilityResult>
+		scratch_retained_eligibility_;
 	std::vector<piccu::render::PerspectiveVertexPayload> scratch_perspective_;
 	std::vector<piccu::render::MotionVertexPayload> scratch_motion_;
 	std::vector<piccu::render::SpecularVertexPayload> scratch_specular_;

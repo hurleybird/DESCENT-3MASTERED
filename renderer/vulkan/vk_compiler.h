@@ -39,6 +39,7 @@ struct CompilerSubmission
 	std::vector<CompiledReadback> readbacks;
 	uint32_t direct_draws = 0;
 	uint32_t indirect_commands = 0;
+	uint32_t indirect_batches = 0;
 	uint32_t graph_passes = 0;
 	uint32_t dynamic_rendering_instances = 0;
 	uint32_t descriptor_page_binds = 0;

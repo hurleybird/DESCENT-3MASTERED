@@ -108,7 +108,8 @@ void ConvertLegacy4444ToRgba8(uint16_t source, uint8_t output[4]) noexcept
 TextureManager::TextureManager()
 	: platform_(nullptr), allocator_(nullptr), frames_(nullptr),
 	  state_tracker_(nullptr), diagnostic_2d_(kInvalidId),
-	  diagnostic_array_(kInvalidId), terrain_base_version_(kInvalidId),
+	  diagnostic_array_(kInvalidId), diagnostic_capture_key_(0),
+	  terrain_base_version_(kInvalidId),
 	  terrain_lightmap_version_(kInvalidId), terrain_base_signature_(0),
 	  terrain_lightmap_signature_(0), terrain_array_generation_(0),
 	  terrain_sources_valid_(false),
@@ -210,6 +211,7 @@ void TextureManager::Shutdown(bool device_lost) noexcept
 	state_tracker_ = nullptr;
 	diagnostic_2d_ = kInvalidId;
 	diagnostic_array_ = kInvalidId;
+	diagnostic_capture_key_ = 0;
 	terrain_base_version_ = terrain_lightmap_version_ = kInvalidId;
 	terrain_base_signature_ = terrain_lightmap_signature_ = 0;
 	terrain_array_generation_ = 0;
@@ -871,16 +873,35 @@ bool TextureManager::Resolve(const TextureRequest &request,
 		request.role == TextureRole::ReservedArray;
 	// Descriptor Set 1 is deliberately fully populated on devices without
 	// nullDescriptor. Every page reserves slot zero in both typed arrays for
-	// these immutable fallbacks, so make both versions part of the capture even
-	// when the draw itself only references one texture type.
+	// these immutable fallbacks. Register them once per capture segment, not
+	// once per texture slot of every logical draw.
 	ResolvedTexture diagnostic_2d = {};
 	ResolvedTexture diagnostic_array = {};
-	if (!ResolveDiagnostic(false, capture, &diagnostic_2d) ||
-		!ResolveDiagnostic(true, capture, &diagnostic_array))
-		return false;
+	const uint64_t capture_key = CaptureKey(*capture);
+	if (diagnostic_capture_key_ != capture_key)
+	{
+		if (!ResolveDiagnostic(false, capture, &diagnostic_2d) ||
+			!ResolveDiagnostic(true, capture, &diagnostic_array))
+			return false;
+		diagnostic_capture_key_ = capture_key;
+	}
+	else
+	{
+		Version *diagnostic_version_2d = FindVersion(diagnostic_2d_);
+		Version *diagnostic_version_array = FindVersion(diagnostic_array_);
+		if (!diagnostic_version_2d || !diagnostic_version_array)
+			return false;
+		diagnostic_2d.version = diagnostic_version_2d->captured;
+		diagnostic_array.version = diagnostic_version_array->captured;
+		diagnostic_2d.uv_scale[0] = diagnostic_2d.uv_scale[1] = 1.0f;
+		diagnostic_array.uv_scale[0] = diagnostic_array.uv_scale[1] = 1.0f;
+	}
 	bool success = false;
 	if (request.logical_handle < 0)
-		success = ResolveDiagnostic(array_role, capture, resolved);
+	{
+		*resolved = array_role ? diagnostic_array : diagnostic_2d;
+		success = true;
+	}
 	else if (request.role == TextureRole::FontArray)
 		success = ResolveFont(request, capture, resolved);
 	else if (array_role)

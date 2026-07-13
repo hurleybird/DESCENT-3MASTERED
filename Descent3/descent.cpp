@@ -46,6 +46,7 @@
 #include "multi_dll_mgr.h"
 #include "localization.h"
 #include "mem.h"
+#include "gameloop.h"
 
 //	---------------------------------------------------------------------------
 //	Variables
@@ -105,6 +106,8 @@ void Descent3()
 	{
 		//Init a bunch of stuff
 		InitD3Systems1(false);
+		if (FindArg("-perfmarkers"))
+			PerfMarkersSetEnabled(true);
 
 		int proxyarg = FindArg("-httpproxy");
 		if(proxyarg)

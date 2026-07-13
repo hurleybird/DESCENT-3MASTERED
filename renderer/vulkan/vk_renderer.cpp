@@ -188,6 +188,9 @@ VulkanRenderer::VulkanRenderer(IVulkanRuntime *runtime)
 	ResetFacadeState();
 	scratch_vertices_.reserve(512);
 	scratch_indices_.reserve(1536);
+	scratch_source_points_.reserve(512);
+	scratch_poly_batch_items_.reserve(128);
+	scratch_retained_eligibility_.reserve(128);
 	scratch_perspective_.reserve(512);
 	scratch_motion_.reserve(512);
 	scratch_specular_.reserve(512);
@@ -1555,12 +1558,8 @@ bool VulkanRenderer::ResolveTexture(const TextureRequest &request,
 		Fail(RuntimeFailure::TextureResolutionFailed, operation);
 		return false;
 	}
-	if (!capture->RegisterTextureVersion(resolved->version))
-	{
-		if (capture)
-			Fail(RuntimeFailure::CaptureRejected, operation);
-		return false;
-	}
+	// TextureManager::Resolve owns capture registration. Registering the same
+	// immutable version here repeated a linear lookup for every material slot.
 	if (capture->TextureVersions().size() != version_count &&
 		resolved->version.immutable_upload_payload != kInvalidId)
 		++current_stats_.texture_uploads;
@@ -2412,7 +2411,10 @@ bool VulkanRenderer::EmitRetainedBatch(int handle,
 		return false;
 	}
 
-	std::vector<T1EligibilityResult> eligibility(static_cast<size_t>(count));
+	scratch_retained_eligibility_.assign(static_cast<size_t>(count),
+		T1EligibilityResult{});
+	std::vector<T1EligibilityResult> &eligibility =
+		scratch_retained_eligibility_;
 	uint32_t retained_count = 0;
 	for (int item_index = 0; item_index < count; ++item_index)
 	{
@@ -2467,13 +2469,33 @@ bool VulkanRenderer::EmitRetainedBatch(int handle,
 		if (eligibility[static_cast<size_t>(item_index)].eligible)
 			++retained_count;
 	}
+	auto emit_stream_fallback = [&]() {
+		scratch_poly_batch_items_.clear();
+		try
+		{
+			scratch_poly_batch_items_.reserve(static_cast<size_t>(count));
+			for (int item_index = 0; item_index < count; ++item_index)
+				if (!eligibility[static_cast<size_t>(item_index)].whole_primitive_rejected)
+					scratch_poly_batch_items_.push_back({
+						items[item_index].pointlist, items[item_index].nv });
+		}
+		catch (const std::bad_alloc &)
+		{
+			// Preserve the exact fallback even under memory pressure.
+			for (int item_index = 0; item_index < count; ++item_index)
+				if (!eligibility[static_cast<size_t>(item_index)].whole_primitive_rejected)
+					DrawPolygon3D(handle, items[item_index].pointlist,
+						items[item_index].nv, map_type);
+			return;
+		}
+		if (!scratch_poly_batch_items_.empty())
+			DrawPolygon3DBatch(handle, scratch_poly_batch_items_.data(),
+				static_cast<int>(scratch_poly_batch_items_.size()), map_type);
+	};
 
 	if (retained_count == 0)
 	{
-		for (int item_index = 0; item_index < count; ++item_index)
-			if (!eligibility[static_cast<size_t>(item_index)].whole_primitive_rejected)
-				DrawPolygon3D(handle, items[item_index].pointlist,
-					items[item_index].nv, map_type);
+		emit_stream_fallback();
 		return true;
 	}
 	CapturedShaderRasterState prototype_state = {};
@@ -2490,10 +2512,7 @@ bool VulkanRenderer::EmitRetainedBatch(int handle,
 		(prototype_state.shader.shader_flags &
 			(kShaderPerPixelSpecular | kShaderFieldSpecular)) != 0)
 	{
-		for (int item_index = 0; item_index < count; ++item_index)
-			if (!eligibility[static_cast<size_t>(item_index)].whole_primitive_rejected)
-				DrawPolygon3D(handle, items[item_index].pointlist,
-					items[item_index].nv, map_type);
+		emit_stream_fallback();
 		return true;
 	}
 
@@ -2506,10 +2525,7 @@ bool VulkanRenderer::EmitRetainedBatch(int handle,
 	catch (const std::bad_alloc &)
 	{
 		// Retention is an optimization seam.  The ordered T0 path remains exact.
-		for (int item_index = 0; item_index < count; ++item_index)
-			if (!eligibility[static_cast<size_t>(item_index)].whole_primitive_rejected)
-				DrawPolygon3D(handle, items[item_index].pointlist,
-					items[item_index].nv, map_type);
+		emit_stream_fallback();
 		return true;
 	}
 
@@ -2930,13 +2946,89 @@ void VulkanRenderer::DrawPolygon3D(int handle, g3Point **points, int count,
 void VulkanRenderer::DrawPolygon3DBatch(int handle,
 	const renderer_poly_batch_item *items, int count, int map_type)
 {
-	if (!items || count < 0)
+	if (!items || count <= 0)
 	{
 		Fail(RuntimeFailure::InvalidArgument, "DrawPolygon3DBatch");
 		return;
 	}
-	for (int i = 0; i < count; ++i)
-		DrawPolygon3D(handle, items[i].pointlist, items[i].nv, map_type);
+
+	uint64_t vertex_count = 0;
+	uint64_t index_count = 0;
+	uint32_t polygon_count = 0;
+	for (int item_index = 0; item_index < count; ++item_index)
+	{
+		const renderer_poly_batch_item &item = items[item_index];
+		// Match GL4's live batch contract: malformed/oversized faces are skipped.
+		if (!item.pointlist || item.nv < 3 || item.nv >= 100)
+			continue;
+		vertex_count += static_cast<uint32_t>(item.nv);
+		index_count += static_cast<uint32_t>(item.nv - 2) * 3u;
+		++polygon_count;
+	}
+	if (polygon_count == 0)
+		return;
+	if (vertex_count > UINT32_MAX || index_count > UINT32_MAX)
+	{
+		Fail(RuntimeFailure::ResourceExhausted, "DrawPolygon3DBatch.Size");
+		return;
+	}
+
+	scratch_vertices_.clear();
+	scratch_indices_.clear();
+	scratch_source_points_.clear();
+	try
+	{
+		scratch_vertices_.reserve(static_cast<size_t>(vertex_count));
+		scratch_indices_.reserve(static_cast<size_t>(index_count));
+		scratch_source_points_.reserve(static_cast<size_t>(vertex_count));
+	}
+	catch (const std::bad_alloc &)
+	{
+		Fail(RuntimeFailure::ResourceExhausted, "DrawPolygon3DBatch.Reserve");
+		return;
+	}
+
+	for (int item_index = 0; item_index < count; ++item_index)
+	{
+		const renderer_poly_batch_item &item = items[item_index];
+		if (!item.pointlist || item.nv < 3 || item.nv >= 100)
+			continue;
+		const uint32_t base_vertex =
+			static_cast<uint32_t>(scratch_vertices_.size());
+		for (int vertex = 0; vertex < item.nv; ++vertex)
+		{
+			g3Point *point = item.pointlist[vertex];
+			BaseVertex output = {};
+			if (!point || !BuildPointVertex(*point, &output))
+			{
+				Fail(RuntimeFailure::InvalidArgument,
+					"DrawPolygon3DBatch.Vertex");
+				return;
+			}
+			scratch_vertices_.push_back(output);
+			scratch_source_points_.push_back(point);
+		}
+		for (uint32_t triangle = 0;
+			triangle < static_cast<uint32_t>(item.nv - 2); ++triangle)
+		{
+			scratch_indices_.push_back(base_vertex);
+			scratch_indices_.push_back(base_vertex + triangle + 1);
+			scratch_indices_.push_back(base_vertex + triangle + 2);
+		}
+	}
+
+	if (EmitStream(scratch_vertices_.data(),
+		static_cast<uint32_t>(scratch_vertices_.size()),
+		scratch_indices_.data(), static_cast<uint32_t>(scratch_indices_.size()),
+		DepthInterpretation::EyeZLegacyMapped, PrimitiveSourceKind::PolygonFan,
+		RENDERER_DRAW_CALL_3D,
+		static_cast<uint32_t>(rend_Get3DDrawCallCategory()), handle, map_type,
+		scratch_source_points_.data(), "DrawPolygon3DBatch"))
+	{
+		// EmitStream accounts for one polygon; compatibility statistics count
+		// the original faces represented by this one logical batch record.
+		current_stats_.poly_count += static_cast<int>(polygon_count - 1);
+	}
 }
 
 void VulkanRenderer::DrawRetainedPolygon3DBatch(int handle,

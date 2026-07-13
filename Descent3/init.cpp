@@ -347,6 +347,21 @@ void PreInitD3Systems()
 /*
 	Save game variables to the registry
 */
+static bool HasRendererCommandLineOverride()
+{
+	return FindArg("-vulkan") || FindArg("-vk") || FindArg("-glcore") ||
+		FindArg("-gl4") || FindArg("-gl45") || FindArg("-opengl") ||
+		FindArg("-openglcore") || FindArg("-novulkan");
+}
+
+static int FindRenderResolutionArgument()
+{
+	int argument = FindArg("-render-resolution");
+	if (!argument)
+		argument = FindArg("-renderresolution");
+	return argument;
+}
+
 void SaveGameSettings()
 {
 	char tempbuffer[TEMPBUFFERSIZE];
@@ -372,9 +387,13 @@ void SaveGameSettings()
 
 	sprintf(tempbuffer,"%f",Detail_settings.Terrain_render_distance/((float)TERRAIN_SIZE));
 	Database->write("RS_terraindist",tempbuffer,strlen(tempbuffer)+1);
-	Database->write("RS_antialiased", Render_preferred_state.antialised);
-	Database->write("RS_msaa_samples", Render_preferred_state.msaa_samples);
-	Database->write("RS_supersampling", Render_preferred_state.supersampling_factor);
+	if (!FindArg("-msaa"))
+	{
+		Database->write("RS_antialiased", Render_preferred_state.antialised);
+		Database->write("RS_msaa_samples", Render_preferred_state.msaa_samples);
+	}
+	if (!FindArg("-ssaa"))
+		Database->write("RS_supersampling", Render_preferred_state.supersampling_factor);
 	Database->write("RS_per_pixel_lighting", Render_preferred_state.per_pixel_lighting);
 	Database->write("RS_bloom_enabled", Render_preferred_state.bloom_enabled);
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_threshold);
@@ -454,17 +473,26 @@ void SaveGameSettings()
 	Database->write("DetailObjectComp",Detail_settings.Object_complexity);
 	Database->write("DetailPowerupHalos",Detail_settings.Powerup_halos);
 
-	Database->write("RS_resolution", Game_video_resolution);
-	Database->write("RS_windowwidth", Game_window_res_width);
-	Database->write("RS_windowheight", Game_window_res_height);
-	Database->write("RS_windowaspect", Game_window_aspect);
-	Database->write("RS_fullscreen", Game_fullscreen);
-	Database->write("RS_frame_limit_fps", Game_frame_limit_fps);
+	if (!FindRenderResolutionArgument())
+	{
+		Database->write("RS_resolution", Game_video_resolution);
+		Database->write("RS_windowwidth", Game_window_res_width);
+		Database->write("RS_windowheight", Game_window_res_height);
+		Database->write("RS_windowaspect", Game_window_aspect);
+	}
+	if (!FindArg("-windowed") && !FindArg("-windowpos") &&
+		!FindArg("-window-position"))
+		Database->write("RS_fullscreen", Game_fullscreen);
+	if (!FindArg("-framecap") && !FindArg("-limitframe"))
+		Database->write("RS_frame_limit_fps", Game_frame_limit_fps);
 	Database->write("RS_fovdesired", Render_FOV_desired);
 
 	Database->write("RS_bitdepth",Render_preferred_bitdepth);
-	Database->write("RS_bilear",Render_preferred_state.filtering);
-	Database->write("RS_mipping",Render_preferred_state.mipping);
+	if (!FindArg("-texturefilter"))
+	{
+		Database->write("RS_bilear",Render_preferred_state.filtering);
+		Database->write("RS_mipping",Render_preferred_state.mipping);
+	}
 	Database->write("RS_color_model",Render_state.cur_color_model);
 	Database->write("RS_light",Render_state.cur_light_state);
 	Database->write("RS_texture_quality",Render_state.cur_texture_quality);
@@ -484,7 +512,8 @@ void SaveGameSettings()
 	Database->write("SoundMixer", Sound_mixer);
 #endif
 	// Renderer choice is a user-facing F2 video preference in every build.
-	Database->write("PreferredRenderer", PreferredRenderer);
+	if (!HasRendererCommandLineOverride())
+		Database->write("PreferredRenderer", PreferredRenderer);
 	
 	tempint = Sound_quality;
 	Database->write("SoundQuality", tempint);
@@ -744,6 +773,25 @@ void LoadGameSettings()
 	Database->read_int("RS_windowwidth", &Game_window_res_width);
 	Database->read_int("RS_windowheight", &Game_window_res_height);
 	Database->read_int("RS_windowaspect", &Game_window_aspect);
+	const int render_resolution_arg = FindRenderResolutionArgument();
+	const char* render_width_value = render_resolution_arg ?
+		GetArg(render_resolution_arg + 1) : nullptr;
+	const char* render_height_value = render_resolution_arg ?
+		GetArg(render_resolution_arg + 2) : nullptr;
+	if (render_width_value && render_height_value)
+	{
+		char* width_end = nullptr;
+		char* height_end = nullptr;
+		const long width = strtol(render_width_value, &width_end, 10);
+		const long height = strtol(render_height_value, &height_end, 10);
+		if (width_end != render_width_value && *width_end == '\0' &&
+			height_end != render_height_value && *height_end == '\0' &&
+			width >= 320 && width <= 8192 && height >= 240 && height <= 8192)
+		{
+			Game_window_res_width = static_cast<int>(width);
+			Game_window_res_height = static_cast<int>(height);
+		}
+	}
 	ConfigValidateGameWindowSize();
 	Game_frame_limit_fps = ConfigNormalizeFrameLimitFps(ConfigGetDesktopRefreshRate());
 	Database->read_int("RS_frame_limit_fps", &Game_frame_limit_fps);
@@ -794,9 +842,27 @@ void LoadGameSettings()
 		Render_preferred_state.msaa_samples = 2;
 	else
 		Render_preferred_state.msaa_samples = 0;
+	const int msaa_arg = FindArg("-msaa");
+	const char* msaa_value = msaa_arg ? GetArg(msaa_arg + 1) : nullptr;
+	if (msaa_value)
+	{
+		const int requested_samples = atoi(msaa_value);
+		if (requested_samples >= 8)
+			Render_preferred_state.msaa_samples = 8;
+		else if (requested_samples >= 4)
+			Render_preferred_state.msaa_samples = 4;
+		else if (requested_samples >= 2)
+			Render_preferred_state.msaa_samples = 2;
+		else
+			Render_preferred_state.msaa_samples = 0;
+	}
 	Render_preferred_state.antialised = Render_preferred_state.msaa_samples > 0;
 	tempint = Render_preferred_state.supersampling_factor;
 	Database->read_int("RS_supersampling", &tempint);
+	const int ssaa_arg = FindArg("-ssaa");
+	const char* ssaa_value = ssaa_arg ? GetArg(ssaa_arg + 1) : nullptr;
+	if (ssaa_value)
+		tempint = atoi(ssaa_value);
 	Render_preferred_state.supersampling_factor = (ubyte)ConfigNormalizeSupersamplingFactor(tempint);
 	Database->read("RS_per_pixel_lighting", &Render_preferred_state.per_pixel_lighting);
 	Database->read("RS_bloom_enabled", &Render_preferred_state.bloom_enabled);

@@ -37,6 +37,7 @@ void ResourceStateTracker::Reserve(uint32_t buffer_ranges,
 	uint32_t image_subresources, uint32_t pending_barriers)
 {
 	buffers_.reserve(buffer_ranges);
+	buffer_replacement_scratch_.reserve(buffer_ranges + 2u);
 	images_.reserve(image_subresources);
 	buffer_barriers_.reserve(pending_barriers);
 	image_barriers_.reserve(pending_barriers);
@@ -192,14 +193,14 @@ void ResourceStateTracker::ImportFreshImage(VkImage image,
 void ResourceStateTracker::ReplaceBufferRange(VkBuffer buffer,
 	VkDeviceSize begin, VkDeviceSize end, const BufferUse &use)
 {
-	std::vector<BufferRecord> replacement;
-	replacement.reserve(buffers_.size() + 2);
+	buffer_replacement_scratch_.clear();
+	buffer_replacement_scratch_.reserve(buffers_.size() + 2);
 	uint64_t inherited_last_use = 0;
 	for (const BufferRecord &record : buffers_)
 	{
 		if (record.buffer != buffer || record.end <= begin || record.begin >= end)
 		{
-			replacement.push_back(record);
+			buffer_replacement_scratch_.push_back(record);
 			continue;
 		}
 		inherited_last_use = std::max(inherited_last_use,
@@ -208,13 +209,13 @@ void ResourceStateTracker::ReplaceBufferRange(VkBuffer buffer,
 		{
 			BufferRecord left = record;
 			left.end = begin;
-			replacement.push_back(left);
+			buffer_replacement_scratch_.push_back(left);
 		}
 		if (record.end > end)
 		{
 			BufferRecord right = record;
 			right.begin = end;
-			replacement.push_back(right);
+			buffer_replacement_scratch_.push_back(right);
 		}
 	}
 	BufferRecord added = {};
@@ -223,15 +224,16 @@ void ResourceStateTracker::ReplaceBufferRange(VkBuffer buffer,
 	added.end = end;
 	added.use = use;
 	added.last_use_timeline = inherited_last_use;
-	replacement.push_back(added);
-	std::sort(replacement.begin(), replacement.end(),
+	buffer_replacement_scratch_.push_back(added);
+	std::sort(buffer_replacement_scratch_.begin(),
+		buffer_replacement_scratch_.end(),
 		[](const BufferRecord &left, const BufferRecord &right) {
 			const uint64_t lh = HandleValue(left.buffer);
 			const uint64_t rh = HandleValue(right.buffer);
 			return lh != rh ? lh < rh : left.begin < right.begin;
 		});
 	buffers_.clear();
-	for (const BufferRecord &record : replacement)
+	for (const BufferRecord &record : buffer_replacement_scratch_)
 	{
 		if (!buffers_.empty())
 		{
@@ -248,12 +250,37 @@ void ResourceStateTracker::ReplaceBufferRange(VkBuffer buffer,
 	}
 }
 
+void ResourceStateTracker::TouchBuffer(VkBuffer buffer, VkDeviceSize begin,
+	VkDeviceSize end)
+{
+	for (TouchedBuffer &touched : touched_buffers_)
+	{
+		if (touched.buffer != buffer || touched.end < begin || touched.begin > end)
+			continue;
+		touched.begin = std::min(touched.begin, begin);
+		touched.end = std::max(touched.end, end);
+		return;
+	}
+	touched_buffers_.push_back({ buffer, begin, end });
+}
+
 bool ResourceStateTracker::UseBuffer(VkBuffer buffer, VkDeviceSize offset,
 	VkDeviceSize size, const BufferUse &use)
 {
 	if (buffer == VK_NULL_HANDLE || size == 0 || use.stages == 0)
 		return false;
 	const VkDeviceSize end = RangeEnd(offset, size);
+	// Read-only state is idempotent.  Most compiler runs reuse the same frame
+	// tables and retained shards; avoid rebuilding and sorting the complete
+	// range table for every indirect batch once a covering state already exists.
+	if (!Writes(use.intent))
+		for (const BufferRecord &old : buffers_)
+			if (old.buffer == buffer && old.begin <= offset && old.end >= end &&
+				!Writes(old.use.intent) && Same(old.use, use))
+			{
+				TouchBuffer(buffer, offset, end);
+				return true;
+			}
 	for (const BufferRecord &old : buffers_)
 	{
 		if (old.buffer != buffer || old.end <= offset || old.begin >= end)
@@ -280,7 +307,7 @@ bool ResourceStateTracker::UseBuffer(VkBuffer buffer, VkDeviceSize offset,
 		}
 	}
 	ReplaceBufferRange(buffer, offset, end, use);
-	touched_buffers_.push_back({ buffer, offset, end });
+	TouchBuffer(buffer, offset, end);
 	return true;
 }
 

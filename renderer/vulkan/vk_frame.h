@@ -88,6 +88,9 @@ struct FrameContext
 	uint32_t descriptor_capacity = 0;
 	uint32_t descriptor_sampled_image_capacity = 0;
 	uint32_t timestamp_capacity = 0;
+	uint32_t recorded_timestamp_count = 0;
+	double completed_gpu_frame_ms = 0.0;
+	bool completed_gpu_frame_valid = false;
 	uint64_t last_submitted_timeline = 0;
 	uint32_t frame_slot = 0;
 	bool recording = false;
