@@ -1625,14 +1625,31 @@ struct FrameCompiler::Impl
 		}
 	}
 
+	const CapturedWorldView *CapturedSceneView(
+		const RenderCaptureSegment &capture) const
+	{
+		for (auto command = capture.Commands().rbegin();
+			command != capture.Commands().rend(); ++command)
+		{
+			if (command->type != CaptureCommandType::CaptureBloomSource)
+				continue;
+			const ViewStateId view =
+				command->payload.capture_bloom_source.projection;
+			if (view < capture.Views().size())
+				return &capture.Views()[view];
+		}
+		return capture.Views().empty() ? nullptr : &capture.Views().back();
+	}
+
 	PostPassUniforms MakePostUniforms(const RenderCaptureSegment &capture,
 		const PlanOperation &operation, const TargetImageRef &source,
 		const TargetImageRef &destination) const
 	{
 		PostPassUniforms uniforms = {};
-		if (!capture.Views().empty())
+		const CapturedWorldView *scene_view = CapturedSceneView(capture);
+		if (scene_view)
 		{
-			const CapturedWorldView &view = capture.Views().back();
+			const CapturedWorldView &view = *scene_view;
 			CopyMatrix(uniforms.current_projection, view.projection);
 			CopyMatrix(uniforms.current_inverse_modelview,
 				view.inverse_modelview);
@@ -1643,6 +1660,8 @@ struct FrameCompiler::Impl
 		const float sh = static_cast<float>(std::max(1u, source.extent.height));
 		const float dw = static_cast<float>(std::max(1u, destination.extent.width));
 		const float dh = static_cast<float>(std::max(1u, destination.extent.height));
+		float logical_screen_width = dw;
+		float logical_screen_height = dh;
 		const float source_extent[4] = { sw, sh, 1.0f / sw, 1.0f / sh };
 		const float destination_extent[4] = { dw, dh, 1.0f / dw, 1.0f / dh };
 		std::memcpy(uniforms.source_extent_inv_extent, source_extent,
@@ -1656,12 +1675,6 @@ struct FrameCompiler::Impl
 		std::memcpy(uniforms.scene_uv_origin_scale, uv, sizeof(uv));
 		std::memcpy(uniforms.ao_uv_origin_scale, uv, sizeof(uv));
 		std::memcpy(uniforms.alpha_mask_uv_origin_scale, uv, sizeof(uv));
-		uniforms.screen_size_inv_size[0] = uniforms.visible_origin_size[2];
-		uniforms.screen_size_inv_size[1] = uniforms.visible_origin_size[3];
-		uniforms.screen_size_inv_size[2] = 1.0f /
-			std::max(1.0f, uniforms.screen_size_inv_size[0]);
-		uniforms.screen_size_inv_size[3] = 1.0f /
-			std::max(1.0f, uniforms.screen_size_inv_size[1]);
 		uniforms.ao_screen_size_inv_size[0] = dw;
 		uniforms.ao_screen_size_inv_size[1] = dh;
 		uniforms.ao_screen_size_inv_size[2] = 1.0f / dw;
@@ -1672,11 +1685,25 @@ struct FrameCompiler::Impl
 		{
 			const CapturedPreferredState &p = signature->preferred;
 			const CapturedPostDynamicState &dynamic = signature->dynamic;
+			logical_screen_width = static_cast<float>(std::max(1u, p.width));
+			logical_screen_height = static_cast<float>(std::max(1u, p.height));
 			std::memcpy(uniforms.visible_origin_size,
 				dynamic.visible_origin_size, sizeof(uniforms.visible_origin_size));
 			std::memcpy(uniforms.source_visible_origin_size,
 				dynamic.visible_origin_size,
 				sizeof(uniforms.source_visible_origin_size));
+			const float velocity_width = std::max(1.0f,
+				dynamic.source_destination_extent[0]);
+			const float velocity_height = std::max(1.0f,
+				dynamic.source_destination_extent[1]);
+			uniforms.velocity_uv_origin_scale[0] =
+				dynamic.visible_origin_size[0] / velocity_width;
+			uniforms.velocity_uv_origin_scale[1] =
+				dynamic.visible_origin_size[1] / velocity_height;
+			uniforms.velocity_uv_origin_scale[2] =
+				dynamic.visible_origin_size[2] / velocity_width;
+			uniforms.velocity_uv_origin_scale[3] =
+				dynamic.visible_origin_size[3] / velocity_height;
 			if (source.extent.width == ci.targets->SceneLayout().internal_width &&
 				source.extent.height == ci.targets->SceneLayout().internal_height &&
 				dynamic.visible_origin_size[2] > 0.0f &&
@@ -1746,8 +1773,20 @@ struct FrameCompiler::Impl
 			uniforms.temporal_blend_depth_velocity_frame_time[1] = p.gtao_temporal_depth_reject;
 			uniforms.temporal_blend_depth_velocity_frame_time[2] = p.gtao_temporal_velocity_reject;
 			uniforms.temporal_blend_depth_velocity_frame_time[3] = dynamic.frame_time;
-			uniforms.motion_strength_legacy_object_centers[0] = p.pixel_motion_blur_strength;
-			uniforms.motion_strength_legacy_object_centers[1] = p.pixel_motion_blur_legacy_object_strength;
+			constexpr float kMotionReferenceFrameTime = 1.0f / 60.0f;
+			const float motion_frame_time = dynamic.frame_time < 0.001f ?
+				kMotionReferenceFrameTime : dynamic.frame_time;
+			const float motion_frame_scale = std::max(0.25f, std::min(4.0f,
+				kMotionReferenceFrameTime / motion_frame_time));
+			const float afterburner_scale = 1.0f +
+				std::max(0.0f, std::min(1.0f, dynamic.afterburner_scalar)) *
+				std::max(0.0f, std::min(4.0f,
+					p.afterburner_pixel_blur_multiplier));
+			uniforms.motion_strength_legacy_object_centers[0] =
+				p.pixel_motion_blur_strength * motion_frame_scale * afterburner_scale;
+			uniforms.motion_strength_legacy_object_centers[1] =
+				p.pixel_motion_blur_legacy_object_strength * motion_frame_scale *
+				afterburner_scale;
 			uniforms.motion_strength_legacy_object_centers[2] = p.pixel_motion_blur_center_suppression;
 			uniforms.motion_strength_legacy_object_centers[3] = p.pixel_motion_blur_legacy_object_center_suppression;
 			uniforms.motion_legacy_frame_sphere_density_exponent[0] = dynamic.frame_time;
@@ -1781,7 +1820,10 @@ struct FrameCompiler::Impl
 			uniforms.integer_params[1] = static_cast<int32_t>(p.motion_vector_debug_preview);
 			uniforms.frame_branch[0] = dynamic.frame_serial;
 			uniforms.frame_branch[2] = dynamic.gtao_history_valid;
-			uint32_t features = kPostUniformHasStaticReconstruction;
+			uint32_t features = 0;
+			if (scene_view && dynamic.captured_depth_valid &&
+				dynamic.motion_history_valid)
+				features |= kPostUniformHasStaticReconstruction;
 			if (last_plan.graph.motion_consumer_active)
 				features |= kPostUniformHasDynamicVelocity;
 			if (dynamic.paused || dynamic.histories_frozen)
@@ -1856,6 +1898,12 @@ struct FrameCompiler::Impl
 			std::memcpy(uniforms.source_visible_origin_size,
 				uniforms.visible_origin_size, sizeof(uniforms.visible_origin_size));
 		}
+		uniforms.screen_size_inv_size[0] = logical_screen_width;
+		uniforms.screen_size_inv_size[1] = logical_screen_height;
+		uniforms.screen_size_inv_size[2] = 1.0f /
+			std::max(1.0f, uniforms.screen_size_inv_size[0]);
+		uniforms.screen_size_inv_size[3] = 1.0f /
+			std::max(1.0f, uniforms.screen_size_inv_size[1]);
 		uniforms.sample_counts[0] = last_plan.graph.msaa_samples;
 		uniforms.frame_branch[1] = static_cast<uint32_t>(operation.source_selector);
 		uniforms.frame_branch[3] = operation.graph_invocation;

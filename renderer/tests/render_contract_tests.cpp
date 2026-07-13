@@ -54,7 +54,8 @@ ABI_OFFSET(GpuSpecularBlock, sources, 32);
 ABI_OFFSET(GpuWorldAux, fog_color, 0); ABI_OFFSET(GpuWorldAux, fog_plane, 16);
 ABI_OFFSET(GpuWorldAux, params, 32); ABI_OFFSET(GpuWorldAux, indices, 48);
 ABI_OFFSET(PerspectiveVertexPayload, value_q, 0);
-ABI_OFFSET(MotionVertexPayload, current_q, 0); ABI_OFFSET(MotionVertexPayload, previous_q, 16);
+ABI_OFFSET(MotionVertexPayload, shading_position_q, 0);
+ABI_OFFSET(MotionVertexPayload, current_q, 16); ABI_OFFSET(MotionVertexPayload, previous_q, 32);
 ABI_OFFSET(SpecularVertexPayload, normal_or_position_q, 0);
 ABI_OFFSET(SpecularVertexPayload, field_center_q, 16); ABI_OFFSET(SpecularVertexPayload, field_color, 80);
 ABI_OFFSET(TerrainVertexPayload, world_q, 0); ABI_OFFSET(TerrainVertexPayload, packed_pages, 16);
@@ -171,6 +172,16 @@ static void Check(bool value, const char *message)
 static bool Near(float a, float b, float epsilon = 1.0e-7f)
 {
 	return fabsf(a - b) <= epsilon;
+}
+
+static void TestMotionResourceSelection()
+{
+	CapturedPreferredState state = {};
+	Check(!WantsMotionResources(state),
+		"motion resources stay disabled without a consumer");
+	state.motion_vector_debug_preview = 1;
+	Check(WantsMotionResources(state),
+		"motion-vector debug preview requests motion resources");
 }
 
 static const DeviceLimitRequirement *FindLimit(DeviceLimit limit)
@@ -3371,6 +3382,7 @@ static void TestWsiDecisionContract()
 
 int main()
 {
+	TestMotionResourceSelection();
 	TestFrozenTables();
 	TestGraphSelections();
 	TestExecutableGraphEvaluation();

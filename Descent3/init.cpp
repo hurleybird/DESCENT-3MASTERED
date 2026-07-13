@@ -423,40 +423,54 @@ void SaveGameSettings()
 	Database->write("RS_gtao_overscan_percent", Render_preferred_state.gtao_overscan_percent);
 	Database->write("RS_gtao_debug_preview", Render_preferred_state.gtao_debug_preview);
 	Database->write("RS_gtao_temporal_debug_preview", Render_preferred_state.gtao_temporal_debug_preview);
-	Database->write("RS_motion_vector_mode", Render_preferred_state.motion_vector_mode);
-	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
+	if (!FindArg("-motion-vector-debug") && !FindArg("-motion-blur-new"))
+	{
+		Database->write("RS_motion_vector_mode", Render_preferred_state.motion_vector_mode);
+		Database->write("RS_motion_vector_debug_preview",
+			Render_preferred_state.motion_vector_debug_preview);
+	}
 	Database->write("RS_face_probe", Render_face_probe);
 	Database->write("RS_soft_vis_effects", Render_soft_vis_effects);
 	Database->write("RS_cpu_batch_cache", Render_cpu_batch_cache);
 	Database->write("RS_disable_powerup_sparkles", Render_disable_powerup_sparkles);
 	Database->write("RS_simd_particle_builder", Render_simd_particle_builder);
 	Database->write("RS_gl4_particle_instancing", Render_gl4_particle_instancing);
-	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
-	Database->write("RS_combined_motion_blur", Render_preferred_state.combined_motion_blur);
-	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_strength",
-		Render_preferred_state.combined_motion_blur_legacy_strength);
-	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_frame_time",
-		Render_preferred_state.combined_motion_blur_legacy_frame_time);
-	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_sphere_size",
-		Render_preferred_state.combined_motion_blur_legacy_sphere_size);
-	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_copy_density",
-		Render_preferred_state.combined_motion_blur_legacy_copy_density);
-	Database->write("RS_combined_motion_blur_legacy_max_iterations",
-		Render_preferred_state.combined_motion_blur_legacy_max_iterations);
-	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_alpha_exponent",
-		Render_preferred_state.combined_motion_blur_legacy_alpha_exponent);
-	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_periphery_strength", Render_preferred_state.pixel_motion_blur_periphery_strength);
-	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_legacy_object_strength", Render_preferred_state.pixel_motion_blur_legacy_object_strength);
-	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_center_suppression", Render_preferred_state.pixel_motion_blur_center_suppression);
-	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_legacy_object_center_suppression",
-		Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression);
-	Database->write("RS_pixel_motion_blur_samples", Render_preferred_state.pixel_motion_blur_samples);
-	WRITE_FLOAT_SETTING("RS_afterburner_fov_multiplier", Render_preferred_state.afterburner_fov_multiplier);
-	WRITE_FLOAT_SETTING("RS_afterburner_pixel_blur_multiplier",
-		Render_preferred_state.afterburner_pixel_blur_multiplier);
-	Database->write("RS_motion_blur_mode", ConfigGetMotionBlurPreset());
-	tempint = Use_motion_blur ? 1 : 0;
-	Database->write("RS_motion_blur_type", tempint);
+	if (!FindArg("-motion-blur-new"))
+	{
+		WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength",
+			Render_preferred_state.pixel_motion_blur_strength);
+		Database->write("RS_combined_motion_blur",
+			Render_preferred_state.combined_motion_blur);
+		WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_strength",
+			Render_preferred_state.combined_motion_blur_legacy_strength);
+		WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_frame_time",
+			Render_preferred_state.combined_motion_blur_legacy_frame_time);
+		WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_sphere_size",
+			Render_preferred_state.combined_motion_blur_legacy_sphere_size);
+		WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_copy_density",
+			Render_preferred_state.combined_motion_blur_legacy_copy_density);
+		Database->write("RS_combined_motion_blur_legacy_max_iterations",
+			Render_preferred_state.combined_motion_blur_legacy_max_iterations);
+		WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_alpha_exponent",
+			Render_preferred_state.combined_motion_blur_legacy_alpha_exponent);
+		WRITE_FLOAT_SETTING("RS_pixel_motion_blur_periphery_strength",
+			Render_preferred_state.pixel_motion_blur_periphery_strength);
+		WRITE_FLOAT_SETTING("RS_pixel_motion_blur_legacy_object_strength",
+			Render_preferred_state.pixel_motion_blur_legacy_object_strength);
+		WRITE_FLOAT_SETTING("RS_pixel_motion_blur_center_suppression",
+			Render_preferred_state.pixel_motion_blur_center_suppression);
+		WRITE_FLOAT_SETTING("RS_pixel_motion_blur_legacy_object_center_suppression",
+			Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression);
+		Database->write("RS_pixel_motion_blur_samples",
+			Render_preferred_state.pixel_motion_blur_samples);
+		WRITE_FLOAT_SETTING("RS_afterburner_fov_multiplier",
+			Render_preferred_state.afterburner_fov_multiplier);
+		WRITE_FLOAT_SETTING("RS_afterburner_pixel_blur_multiplier",
+			Render_preferred_state.afterburner_pixel_blur_multiplier);
+		Database->write("RS_motion_blur_mode", ConfigGetMotionBlurPreset());
+		tempint = Use_motion_blur ? 1 : 0;
+		Database->write("RS_motion_blur_type", tempint);
+	}
 	WRITE_FLOAT_SETTING("RS_legacy_motion_blur_frame_time", Legacy_motion_blur_frame_time);
 	WRITE_FLOAT_SETTING("RS_legacy_motion_blur_sphere_percent", Legacy_motion_blur_sphere_size_percent);
 	WRITE_FLOAT_SETTING("RS_legacy_motion_blur_copy_density", Legacy_motion_blur_copy_density);
@@ -946,6 +960,13 @@ void LoadGameSettings()
 		tempint = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_mode = (ubyte)tempint;
 	Database->read("RS_motion_vector_debug_preview", &Render_preferred_state.motion_vector_debug_preview);
+	// Non-persistent automated diagnostics: render the resolved/reconstructed
+	// vector field without changing the player's saved video configuration.
+	if (FindArg("-motion-vector-debug"))
+	{
+		Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_PIXEL;
+		Render_preferred_state.motion_vector_debug_preview = true;
+	}
 	Database->read("RS_face_probe", &Render_face_probe);
 	Database->read("RS_soft_vis_effects", &Render_soft_vis_effects);
 	Database->read("RS_cpu_batch_cache", &Render_cpu_batch_cache);
@@ -1206,6 +1227,8 @@ void LoadGameSettings()
 	}
 	if (no_motion_blur)
 		motion_blur_mode = MOTION_BLUR_UI_OFF;
+	else if (FindArg("-motion-blur-new"))
+		motion_blur_mode = MOTION_BLUR_UI_NEW;
 	ConfigApplyMotionBlurPreset(motion_blur_mode);
 
 	Render_powerup_sparkles = false;

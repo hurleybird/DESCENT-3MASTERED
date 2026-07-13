@@ -229,7 +229,8 @@ bool GL4Renderer::PixelMotionVectorConsumerActive() const
 		OpenGL_preferred_state.combined_motion_blur &&
 		(OpenGL_preferred_state.pixel_motion_blur_strength > 0.0f ||
 			OpenGL_preferred_state.pixel_motion_blur_legacy_object_strength > 0.0f);
-	return gtao_temporal_vectors || new_motion_blur_vectors;
+	return OpenGL_preferred_state.motion_vector_debug_preview ||
+		gtao_temporal_vectors || new_motion_blur_vectors;
 }
 
 bool GL4Renderer::MotionVectorTargetEnabled() const

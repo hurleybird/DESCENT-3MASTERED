@@ -243,6 +243,7 @@ private:
 	piccu::render::ViewStateId active_view_;
 	piccu::render::CapturedTargetVersion active_version_record_;
 	piccu::render::CapturedWorldView current_view_;
+	float previous_scene_view_projection_[16];
 	piccu::render::vk::PresentationDescription presentation_;
 	piccu::render::RenderTargetSignatureId presentation_signature_;
 	piccu::render::WsiSignatureId presentation_wsi_;

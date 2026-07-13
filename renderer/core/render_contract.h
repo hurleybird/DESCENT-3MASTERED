@@ -236,6 +236,7 @@ struct alignas(16) PerspectiveVertexPayload
 
 struct alignas(16) MotionVertexPayload
 {
+	float shading_position_q[4];
 	float current_q[4];
 	float previous_q[4];
 };
@@ -1360,7 +1361,7 @@ bool IsCaptureCommandTypeValid(CaptureCommandType type);
 
 static_assert(sizeof(BaseVertex) == 32, "BaseVertex ABI must remain 32 bytes");
 static_assert(sizeof(PerspectiveVertexPayload) == 16, "Perspective payload ABI changed");
-static_assert(sizeof(MotionVertexPayload) == 32, "Motion payload ABI changed");
+static_assert(sizeof(MotionVertexPayload) == 48, "Motion payload ABI changed");
 static_assert(sizeof(SpecularVertexPayload) == 144, "Specular payload ABI changed");
 static_assert(sizeof(TerrainEmitterCell) == 32, "TerrainEmitterCell ABI changed");
 static_assert(sizeof(TerrainWorkItem) == 16, "TerrainWorkItem ABI changed");

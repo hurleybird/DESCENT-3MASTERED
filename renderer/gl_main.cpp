@@ -739,7 +739,8 @@ static bool GL4StateWantsPixelMotionVectors(const renderer_preferred_state& stat
 		state.combined_motion_blur &&
 		(state.pixel_motion_blur_strength > 0.0f ||
 			state.pixel_motion_blur_legacy_object_strength > 0.0f);
-	return gtao_temporal_vectors || new_motion_blur_vectors;
+	return state.motion_vector_debug_preview || gtao_temporal_vectors ||
+		new_motion_blur_vectors;
 }
 
 int GL4Renderer::FramebufferWidth() const

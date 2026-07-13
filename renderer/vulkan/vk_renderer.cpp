@@ -283,6 +283,7 @@ void VulkanRenderer::ResetFacadeState()
 	Identity(current_view_.inverse_view_projection);
 	Identity(current_view_.previous_view_projection);
 	Identity(current_view_.cockpit_previous_view_projection);
+	Identity(previous_scene_view_projection_);
 
 	public_state_.cur_bilinear_state = 1;
 	public_state_.cur_zbuffer_state = 1;
@@ -1179,6 +1180,10 @@ void VulkanRenderer::CaptureBloomSource()
 		input.frozen = frame_dynamic_.histories_frozen ? 1u : 0u;
 		legacy_state_.motion_capture_locked =
 			EvaluateMotionCaptureLockTransition(input).resulting_locked;
+		if (!frame_dynamic_.histories_frozen)
+			std::memcpy(previous_scene_view_projection_,
+				current_view_.view_projection,
+				sizeof(previous_scene_view_projection_));
 		AdvanceTargetVersion(true, false, "CaptureBloomSource");
 	}
 }
@@ -1375,9 +1380,6 @@ void VulkanRenderer::ResetPerPresentedFrameState()
 		sizeof(legacy_state_.previous_view));
 	std::memcpy(legacy_state_.previous_object, legacy_state_.current_object,
 		sizeof(legacy_state_.previous_object));
-	std::memcpy(current_view_.previous_view_projection,
-		current_view_.view_projection,
-		sizeof(current_view_.previous_view_projection));
 	last_stats_ = current_stats_;
 	std::memset(&current_stats_, 0, sizeof(current_stats_));
 	frame_interval_open_ = false;
@@ -1913,6 +1915,7 @@ bool VulkanRenderer::BuildPayload(g3Point *const *points,
 		for (uint32_t i = 0; i < vertex_count; ++i)
 		{
 			const g3Point &point = *points[i];
+			MotionVertexPayload &motion = scratch_motion_[i];
 			if (specular_position_payload || room_position_payload)
 			{
 				const float denominator = point.p3_z + legacy_state_.z_bias;
@@ -1928,12 +1931,10 @@ bool VulkanRenderer::BuildPayload(g3Point *const *points,
 					return false;
 				}
 				have_motion_payload = true;
-				MotionVertexPayload &motion = scratch_motion_[i];
-				motion.current_q[0] = view_position.x * q;
-				motion.current_q[1] = view_position.y * q;
-				motion.current_q[2] = view_position.z * q;
-				motion.current_q[3] = q;
-				continue;
+				motion.shading_position_q[0] = view_position.x * q;
+				motion.shading_position_q[1] = view_position.y * q;
+				motion.shading_position_q[2] = view_position.z * q;
+				motion.shading_position_q[3] = q;
 			}
 			if (!point.p3_motion_world_valid && !point.p3_motion_prev_world_valid)
 				continue;
@@ -1950,7 +1951,6 @@ bool VulkanRenderer::BuildPayload(g3Point *const *points,
 				return false;
 			}
 			have_motion_payload = true;
-			MotionVertexPayload &motion = scratch_motion_[i];
 			motion.current_q[0] = point.p3_motion_world_pos.x;
 			motion.current_q[1] = point.p3_motion_world_pos.y;
 			motion.current_q[2] = point.p3_motion_world_pos.z;
@@ -3906,6 +3906,10 @@ void VulkanRenderer::UpdateCommon(float *projection, float *modelview, int depth
 		std::memcpy(current_view_.unscaled_view, modelview,
 			sizeof(current_view_.unscaled_view));
 		Multiply4x4(current_view_.view_projection, projection, modelview);
+		if (active_target_ == RenderTargetClass::Scene)
+			std::memcpy(current_view_.previous_view_projection,
+				previous_scene_view_projection_,
+				sizeof(current_view_.previous_view_projection));
 		current_view_.matrix_scale[0] = Matrix_scale.x;
 		current_view_.matrix_scale[1] = Matrix_scale.y;
 		current_view_.matrix_scale[2] = Matrix_scale.z;

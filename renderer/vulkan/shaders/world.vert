@@ -94,13 +94,14 @@ void main() {
         out_primary_q : vec4(world.xyz, 1.0);
     out_velocity = vec2(0.0);
     if ((header.flags & DRAW_HAS_MOTION_PAYLOAD) != 0u) {
-        uint payload = header.motion_payload_offset + payload_vertex_index * 8u;
-        vec4 current_world = LoadPayloadVec4(payload);
-        vec4 previous_world = LoadPayloadVec4(payload + 4u);
-        if (abs(current_world.w) > 0.000001 &&
+        uint payload = header.motion_payload_offset + payload_vertex_index * 12u;
+        vec4 shading_position_q = LoadPayloadVec4(payload);
+        vec4 current_world = LoadPayloadVec4(payload + 4u);
+        vec4 previous_world = LoadPayloadVec4(payload + 8u);
+        if (abs(shading_position_q.w) > 0.000001 &&
             (((state.state_flags2 >> 4u) & 3u) == 1u ||
              (state.shader_flags & SHADER_GENERIC_FOG) != 0u))
-            out_primary_smooth = current_world;
+            out_primary_smooth = shading_position_q;
         if (current_world.w > 0.0 && previous_world.w > 0.0) {
             vec4 current_clip = frame_view.view_projection * vec4(current_world.xyz, 1.0);
             vec4 previous_clip = frame_view.previous_view_projection * vec4(previous_world.xyz, 1.0);

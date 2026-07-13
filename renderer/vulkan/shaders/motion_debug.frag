@@ -34,21 +34,21 @@ vec2 ReconstructStaticVelocity(vec2 canonical_uv)
         (current_ndc - previous_ndc) * 0.5);
 }
 
-vec2 ResolveVelocity(vec2 canonical_uv)
+vec2 ResolveVelocity(vec2 canonical_uv, vec2 velocity_uv)
 {
     if (!PostFeature(POST_HAS_DYNAMIC_VELOCITY))
         return ReconstructStaticVelocity(canonical_uv);
     uint object_id = texture(usampler2D(object_id_image,
-        post_samplers[5]), canonical_uv).r;
+        post_samplers[5]), velocity_uv).r;
     if (object_id != 0u)
         return PostLegacyVelocityToTopLeft(texture(
-            sampler2D(velocity_image, post_samplers[0]), canonical_uv).xy);
+            sampler2D(velocity_image, post_samplers[0]), velocity_uv).xy);
     return ReconstructStaticVelocity(canonical_uv);
 }
 
 void main()
 {
-    vec2 velocity = ResolveVelocity(PostVelocityUv(in_uv));
+    vec2 velocity = ResolveVelocity(in_uv, PostVelocityUv(in_uv));
     vec2 pixels = velocity * post.screen_size_inv_size.xy;
     vec2 signed_visualization = sign(pixels) *
         (1.0 - exp(-abs(pixels) * 4.0));

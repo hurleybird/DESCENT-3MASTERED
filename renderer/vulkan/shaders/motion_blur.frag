@@ -37,7 +37,8 @@ vec2 ReconstructStaticVelocity(vec2 canonical_uv)
         (current_ndc - previous_ndc) * 0.5);
 }
 
-vec2 ResolveVelocity(vec2 canonical_uv, out float motion_strength,
+vec2 ResolveVelocity(vec2 canonical_uv, vec2 velocity_uv,
+    out float motion_strength,
     out float center_suppression)
 {
     motion_strength = post.motion_strength_legacy_object_centers.x;
@@ -45,7 +46,7 @@ vec2 ResolveVelocity(vec2 canonical_uv, out float motion_strength,
     if (!PostFeature(POST_HAS_DYNAMIC_VELOCITY))
         return ReconstructStaticVelocity(canonical_uv);
     uint object_id = texture(usampler2D(object_id_image,
-        post_samplers[5]), canonical_uv).r;
+        post_samplers[5]), velocity_uv).r;
     if (object_id != 0u)
     {
         if ((object_id & MOTION_OBJECT_LEGACY_BLUR_MASK) != 0u)
@@ -54,7 +55,7 @@ vec2 ResolveVelocity(vec2 canonical_uv, out float motion_strength,
             center_suppression = post.motion_strength_legacy_object_centers.w;
         }
         return PostLegacyVelocityToTopLeft(texture(
-            sampler2D(velocity_image, post_samplers[0]), canonical_uv).xy);
+            sampler2D(velocity_image, post_samplers[0]), velocity_uv).xy);
     }
     return ReconstructStaticVelocity(canonical_uv);
 }
@@ -65,7 +66,7 @@ void main()
     vec2 velocity_uv = PostVelocityUv(in_uv);
     float motion_strength;
     float center_suppression;
-    vec2 velocity = ResolveVelocity(velocity_uv,
+    vec2 velocity = ResolveVelocity(in_uv, velocity_uv,
         motion_strength, center_suppression);
     vec2 centered = in_uv * 2.0 - vec2(1.0);
     float periphery = smoothstep(0.15, 1.0, length(centered));

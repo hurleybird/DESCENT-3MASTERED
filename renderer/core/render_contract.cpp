@@ -158,7 +158,8 @@ bool WantsMotionResources(const CapturedPreferredState &state)
 	const bool combined_motion = state.combined_motion_blur != 0 &&
 		(state.pixel_motion_blur_strength > 0.0f ||
 		 state.pixel_motion_blur_legacy_object_strength > 0.0f);
-	return gtao_temporal || combined_motion;
+	return state.motion_vector_debug_preview != 0 || gtao_temporal ||
+		combined_motion;
 }
 
 bool IsLegalMrtWriteMask(uint32_t mask)
