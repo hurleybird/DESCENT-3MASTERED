@@ -399,12 +399,13 @@ struct FrameCompiler::Impl
 				const DrawStreamCommand &draw = command.payload.draw_stream;
 				if (draw.state >= capture.States().size() ||
 					draw.material >= capture.Materials().size() ||
-					draw.transform >= capture.Transforms().size())
+					draw.transform >= capture.Transforms().size() ||
+					draw.view >= capture.Views().size())
 					return false;
 				DrawWork work = {};
 				work.capture_command = command_index;
 				work.target = target;
-				work.view = view;
+				work.view = draw.view;
 				work.raster = capture.States()[draw.state];
 				work.material = capture.Materials()[draw.material];
 				work.transform = capture.Transforms()[draw.transform];
@@ -427,6 +428,7 @@ struct FrameCompiler::Impl
 				if (draw.state >= capture.States().size() ||
 					draw.material >= capture.Materials().size() ||
 					draw.transform >= capture.Transforms().size() ||
+					draw.view >= capture.Views().size() ||
 					(draw.geometry_mode != GeometryMode::T1Retained &&
 					 draw.geometry_mode != GeometryMode::T2Terrain) ||
 					!ci.retained_world)
@@ -434,7 +436,7 @@ struct FrameCompiler::Impl
 				DrawWork work = {};
 				work.capture_command = command_index;
 				work.target = target;
-				work.view = view;
+				work.view = draw.view;
 				work.raster = capture.States()[draw.state];
 				work.material = capture.Materials()[draw.material];
 				work.transform = capture.Transforms()[draw.transform];
@@ -1676,7 +1678,10 @@ struct FrameCompiler::Impl
 				uniforms.uv_origin_scale[2] = dynamic.visible_origin_size[2] / sw;
 				uniforms.uv_origin_scale[3] = dynamic.visible_origin_size[3] / sh;
 			}
-			uniforms.bloom_gamma_threshold_intensity_spread[0] = p.gamma;
+			// CapturedPreferredState stores the user-facing gamma value. GL4's
+			// post shaders receive the display exponent, 1 / user_gamma.
+			uniforms.bloom_gamma_threshold_intensity_spread[0] =
+				1.0f / std::max(p.gamma, 0.0001f);
 			uniforms.bloom_gamma_threshold_intensity_spread[1] = p.bloom_threshold;
 			uniforms.bloom_gamma_threshold_intensity_spread[2] = p.bloom_intensity;
 			uniforms.bloom_gamma_threshold_intensity_spread[3] = p.bloom_spread;

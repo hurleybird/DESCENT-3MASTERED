@@ -17,7 +17,7 @@ namespace render
 {
 
 constexpr uint32_t kRenderContractVersion = 1;
-constexpr uint32_t kCaptureSchemaVersion = 1;
+constexpr uint32_t kCaptureSchemaVersion = 2;
 constexpr uint32_t kShaderAbiVersion = 1;
 constexpr uint32_t kInvalidId = 0xffffffffu;
 constexpr uint32_t kMaxSpecularSources = 4;
@@ -1038,6 +1038,9 @@ struct DrawStreamCommand
 	TransformId transform;
 	MaterialRef material;
 	PayloadRef optional_payload;
+	// The view is draw-owned. A later g3_StartFrame (for example a HUD pass)
+	// must not retroactively change already captured world geometry.
+	ViewStateId view;
 	DrawClassification classification;
 };
 
@@ -1058,6 +1061,7 @@ struct DrawRetainedCommand
 	TransformId transform;
 	MaterialRef material;
 	PayloadRef optional_payload;
+	ViewStateId view;
 	DrawClassification classification;
 };
 

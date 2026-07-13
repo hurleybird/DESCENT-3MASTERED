@@ -122,8 +122,8 @@ public:
 	bool RegisterTextureVersion(const CapturedTextureVersion &version);
 	TransformId InternTransform(const CapturedTransform &transform);
 	ViewStateId InternView(const CapturedWorldView &view);
-	// Refreshes a capture-owned view in place before Freeze. BeginFrameTarget
-	// holds this stable ID while g3_StartFrame supplies the real matrices.
+	// Replaces a capture-owned view before Freeze. Emitted draw commands own
+	// immutable view IDs and must never rely on a later replacement.
 	bool ReplaceView(ViewStateId id, const CapturedWorldView &view);
 	ViewportId InternViewport(const CapturedViewport &viewport);
 	TargetLayoutId InternTargetLayout(const CapturedTargetLayout &layout);

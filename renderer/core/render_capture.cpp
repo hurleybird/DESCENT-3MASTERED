@@ -1573,6 +1573,7 @@ bool RenderCaptureSegment::Validate(CaptureValidationResult *out_result) const
 				record_error(kCaptureInvalidEnum, ci, kInvalidId);
 			if (draw.state >= states_.size() || draw.transform >= transforms_.size() ||
 				draw.material >= materials_.size() ||
+				draw.view >= views_.size() ||
 				(draw.optional_payload != kInvalidId &&
 				 draw.optional_payload >= payload_bindings_.size()))
 				record_error(kCaptureInvalidTableReference, ci, kInvalidId);
@@ -1626,6 +1627,7 @@ bool RenderCaptureSegment::Validate(CaptureValidationResult *out_result) const
 				record_error(kCaptureInvalidGeometry, ci, kInvalidId);
 			if (draw.state >= states_.size() || draw.transform >= transforms_.size() ||
 				draw.material >= materials_.size() ||
+				draw.view >= views_.size() ||
 				(draw.optional_payload != kInvalidId &&
 				 draw.optional_payload >= payload_bindings_.size()))
 				record_error(kCaptureInvalidTableReference, ci, kInvalidId);

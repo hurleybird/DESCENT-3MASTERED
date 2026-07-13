@@ -394,15 +394,29 @@ void SaveGameSettings()
 	}
 	if (!FindArg("-ssaa"))
 		Database->write("RS_supersampling", Render_preferred_state.supersampling_factor);
-	Database->write("RS_per_pixel_lighting", Render_preferred_state.per_pixel_lighting);
+	if (!FindArg("-noperpixellighting") &&
+		!FindArg("-no-per-pixel-lighting") &&
+		!FindArg("-perpixellighting") &&
+		!FindArg("-per-pixel-lighting"))
+		Database->write("RS_per_pixel_lighting",
+			Render_preferred_state.per_pixel_lighting);
 	Database->write("RS_bloom_enabled", Render_preferred_state.bloom_enabled);
-	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_threshold);
-	Database->write("RS_bloom_threshold", tempbuffer, strlen(tempbuffer) + 1);
-	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_intensity);
-	Database->write("RS_bloom_intensity", tempbuffer, strlen(tempbuffer) + 1);
+	if (!FindArg("-bloomthreshold") && !FindArg("-bloom-threshold"))
+	{
+		sprintf(tempbuffer, "%f", Render_preferred_state.bloom_threshold);
+		Database->write("RS_bloom_threshold", tempbuffer,
+			strlen(tempbuffer) + 1);
+	}
+	if (!FindArg("-bloomintensity") && !FindArg("-bloom-intensity"))
+	{
+		sprintf(tempbuffer, "%f", Render_preferred_state.bloom_intensity);
+		Database->write("RS_bloom_intensity", tempbuffer,
+			strlen(tempbuffer) + 1);
+	}
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_spread);
 	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
-	Database->write("RS_gtao_enabled", Render_preferred_state.gtao_enabled);
+	if (!FindArg("-nogtao") && !FindArg("-no-gtao"))
+		Database->write("RS_gtao_enabled", Render_preferred_state.gtao_enabled);
 	Database->write("RS_gtao_resolution", Render_preferred_state.gtao_resolution);
 	Database->write("RS_gtao_overscan_percent", Render_preferred_state.gtao_overscan_percent);
 	Database->write("RS_gtao_debug_preview", Render_preferred_state.gtao_debug_preview);
@@ -790,6 +804,10 @@ void LoadGameSettings()
 		{
 			Game_window_res_width = static_cast<int>(width);
 			Game_window_res_height = static_cast<int>(height);
+			// An explicit automation/test resolution must describe the gameplay
+			// viewport too; otherwise the pilot's legacy resizable-HUD dimensions
+			// can leave a smaller, stale box inside the requested capture.
+			ForceFullGameWindowOnNextGameMode();
 		}
 	}
 	ConfigValidateGameWindowSize();
@@ -865,6 +883,12 @@ void LoadGameSettings()
 		tempint = atoi(ssaa_value);
 	Render_preferred_state.supersampling_factor = (ubyte)ConfigNormalizeSupersamplingFactor(tempint);
 	Database->read("RS_per_pixel_lighting", &Render_preferred_state.per_pixel_lighting);
+	// Non-persistent comparison/recovery switches. These make lighting parity
+	// captures independent of the active pilot without rewriting its settings.
+	if (FindArg("-noperpixellighting") || FindArg("-no-per-pixel-lighting"))
+		Render_preferred_state.per_pixel_lighting = false;
+	else if (FindArg("-perpixellighting") || FindArg("-per-pixel-lighting"))
+		Render_preferred_state.per_pixel_lighting = true;
 	Database->read("RS_bloom_enabled", &Render_preferred_state.bloom_enabled);
 	templen = TEMPBUFFERSIZE;
 	if (Database->read("RS_bloom_threshold", tempbuffer, &templen))

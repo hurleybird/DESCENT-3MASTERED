@@ -538,9 +538,31 @@ struct VulkanRuntime::Impl
 		flags |= state.fullscreen ? OEAPP_FULLSCREEN : OEAPP_WINDOWED;
 		application->set_flags(flags);
 		if (!state.fullscreen)
+		{
+			int outer_width = static_cast<int>(state.window_width);
+			int outer_height = static_cast<int>(state.window_height);
+#if defined(WIN32)
+			// oeApplication sizes the native outer window. Vulkan's preferred
+			// dimensions describe the drawable client area, just like GL4's.
+			tWin32AppInfo information = {};
+			application->get_info(&information);
+			HWND window = reinterpret_cast<HWND>(
+				static_cast<uintptr_t>(information.hwnd));
+			if (!window)
+				return false;
+			RECT client = { 0, 0, outer_width, outer_height };
+			const DWORD style = static_cast<DWORD>(
+				GetWindowLongPtr(window, GWL_STYLE));
+			const DWORD extended_style = static_cast<DWORD>(
+				GetWindowLongPtr(window, GWL_EXSTYLE));
+			if (!AdjustWindowRectEx(&client, style, FALSE, extended_style))
+				return false;
+			outer_width = client.right - client.left;
+			outer_height = client.bottom - client.top;
+#endif
 			application->set_sizepos(OEAPP_COORD_CENTERED, OEAPP_COORD_CENTERED,
-				static_cast<int>(state.window_width),
-				static_cast<int>(state.window_height));
+				outer_width, outer_height);
+		}
 		return true;
 	}
 
@@ -792,6 +814,11 @@ bool VulkanRuntime::Initialize(oeApplication *app,
 	impl_->fatal = false;
 	impl_->application = app;
 	impl_->preferred = preferred;
+	// The Win32 application starts at a legacy desktop-sized default. Establish
+	// the requested client/fullscreen state before the surface and swapchain
+	// observe its drawable extent.
+	if (!impl_->ConfigureApplicationWindow(preferred))
+		return impl_->Fail("initialize", "platform window configuration failed");
 	SurfaceSource surface;
 	uint32_t drawable_width = 0;
 	uint32_t drawable_height = 0;
@@ -1314,8 +1341,9 @@ bool VulkanRuntime::CompleteReadback(const ReadbackCompletion &completion)
 	if (prefix.Commands().empty())
 		return impl_->Fail("readback", "capture contains no readback command");
 	const CaptureCommand &terminal = prefix.Commands().back();
-	if (terminal.type == CaptureCommandType::ReadImage &&
-		terminal.payload.read_image.request == completion.request)
+	const bool matching_image = terminal.type == CaptureCommandType::ReadImage &&
+		terminal.payload.read_image.request == completion.request;
+	if (matching_image && completion.destination == ReadbackDestination::PngPath)
 	{
 		for (const Impl::PendingReadback &existing : impl_->pending_readbacks)
 			if (existing.completion.request == completion.request)
@@ -1330,8 +1358,9 @@ bool VulkanRuntime::CompleteReadback(const ReadbackCompletion &completion)
 		impl_->pending_readbacks.push_back(pending);
 		return true;
 	}
-	if (terminal.type != CaptureCommandType::ReadPixel ||
-		terminal.payload.read_pixel.request != completion.request)
+	const bool matching_pixel = terminal.type == CaptureCommandType::ReadPixel &&
+		terminal.payload.read_pixel.request == completion.request;
+	if (!matching_image && !matching_pixel)
 		return impl_->Fail("readback",
 			"request does not match the terminal readback command");
 	CaptureValidationResult validation = {};

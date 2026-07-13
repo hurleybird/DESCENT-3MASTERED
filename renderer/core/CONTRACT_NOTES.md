@@ -22,8 +22,12 @@ consumes those same declarations. Capture validation locks their semantic IDs,
 validity bits, offsets, alignments, batch/work/cell relationships, output
 capacity, source ordering, reserved lanes, and the exact one-view shape.
 
-The command stream therefore remains schema version 1 and contains no
-backend-local extension to the supplied capture schema.
+Capture schema version 2 adds an immutable `ViewStateId` to `DrawStream` and
+`DrawRetained`. The engine can issue a later `g3_StartFrame` (for example for
+HUD rendering) without a matching target transition, so a frame-target view
+alone cannot preserve the view that authored earlier world draws. Draw-owned
+view identity prevents later matrix updates from retroactively changing
+captured retained geometry.
 
 `BeginFrameTarget::active_target_version` is a `TargetVersionId` table index,
 not the target record's generation value. It identifies the exact physical

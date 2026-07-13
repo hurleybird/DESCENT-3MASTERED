@@ -2379,6 +2379,7 @@ bool VulkanRenderer::EmitRetainedTerrain(
 	draw.transform = transform_id;
 	draw.material = material_id;
 	draw.optional_payload = payload;
+	draw.view = active_view_;
 	draw.classification = { RENDERER_DRAW_CALL_3D,
 		static_cast<uint32_t>(rend_Get3DDrawCallCategory()),
 		PrimitiveSourceKind::TerrainEmitter, 0 };
@@ -2792,6 +2793,7 @@ bool VulkanRenderer::EmitRetainedBatch(int handle,
 		draw.transform = transform_id;
 		draw.material = material_id;
 		draw.optional_payload = payload;
+		draw.view = active_view_;
 		draw.classification = { RENDERER_DRAW_CALL_3D,
 			static_cast<uint32_t>(rend_Get3DDrawCallCategory()),
 			PrimitiveSourceKind::PolygonFan, item.classification };
@@ -2886,6 +2888,7 @@ bool VulkanRenderer::EmitStream(const BaseVertex *vertices,
 	command.payload.draw_stream.transform = transform_id;
 	command.payload.draw_stream.material = material_id;
 	command.payload.draw_stream.optional_payload = payload;
+	command.payload.draw_stream.view = active_view_;
 	command.payload.draw_stream.classification =
 		{ category, category_3d, source, 0 };
 	if (!Append(command, operation))
@@ -3284,6 +3287,7 @@ void VulkanRenderer::FillMotionVectorRegion(int object_handle)
 		command.payload.draw_stream.transform = transform_id;
 		command.payload.draw_stream.material = material_id;
 		command.payload.draw_stream.optional_payload = kInvalidId;
+		command.payload.draw_stream.view = active_view_;
 		command.payload.draw_stream.classification = {
 			RENDERER_DRAW_CALL_PRIMITIVE, RENDERER_DRAW_CALL_3D_OTHER,
 			PrimitiveSourceKind::Editor, 0 };
@@ -3912,10 +3916,11 @@ void VulkanRenderer::UpdateCommon(float *projection, float *modelview, int depth
 		// Retained room vertices are world-space, while the frame view already
 		// contains the world-to-eye transform.
 		Identity(legacy_state_.current_object);
-		if (frame_interval_open_ && active_view_ != kInvalidId)
+		if (frame_interval_open_)
 		{
 			RenderCaptureSegment *capture = Capture("UpdateCommon");
-			if (!capture || !capture->ReplaceView(active_view_, current_view_))
+			if (!capture ||
+				(active_view_ = capture->InternView(current_view_)) == kInvalidId)
 			{
 				Fail(RuntimeFailure::CaptureRejected, "UpdateCommon.View");
 				return;
