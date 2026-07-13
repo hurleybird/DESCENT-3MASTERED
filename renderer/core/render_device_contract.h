@@ -250,6 +250,8 @@ enum class DescriptorKind : uint32_t
 	Sampler,
 	SampledFloat2D,
 	SampledFloat2DArray,
+	CombinedFloat2D,
+	CombinedFloat2DArray,
 	StorageBuffer,
 };
 

@@ -928,6 +928,8 @@ bool ShouldCaptureMouse()
 {
 	if (Dedicated_server)
 		return false;
+	if (AutomatedCaptureSuppressesInput())
+		return false;
 
 	if (!Descent->active())
 		return false; //Never grab when the app isn't active

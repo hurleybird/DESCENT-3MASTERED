@@ -63,6 +63,10 @@ double PerfMarkersNow();
 void PerfMarkersRecordDuration(const char* marker_name, double start_time, double duration);
 bool RendererShouldCountMsaaTransitionFrame();
 
+// Automated renderer captures must not consume live workstation input.  This
+// is based on the command line request so it is valid before gameplay starts.
+bool AutomatedCaptureSuppressesInput();
+
 class PerfMarkerScope
 {
 public:

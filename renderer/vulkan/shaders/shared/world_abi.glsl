@@ -57,9 +57,8 @@ layout(std140, set=0, binding=0) uniform FrameViewBlock {
     mat4 cockpit_previous_view_projection; vec4 viewport_xywh;
     vec4 visible_origin_size; vec4 target_extent_inv_extent; uvec4 history_target_flags;
 } frame_view;
-layout(set=0, binding=1) uniform sampler world_samplers[32];
-layout(set=1, binding=0) uniform texture2D float_images[];
-layout(set=1, binding=1) uniform texture2DArray float_array_images[8];
+layout(set=1, binding=0) uniform sampler2D float_images[];
+layout(set=1, binding=1) uniform sampler2DArray float_array_images[8];
 layout(std430, set=2, binding=0) readonly buffer DrawHeaders { DrawHeader draw_headers[]; };
 layout(std430, set=2, binding=1) readonly buffer ShaderStates { ShaderState shader_states[]; };
 layout(std430, set=2, binding=2) readonly buffer Materials { Material materials[]; };
@@ -74,27 +73,21 @@ layout(push_constant) uniform WorldPush {
 } world_push;
 
 vec4 SampleWorld2D(uint image_index, uint sampler_index, vec2 uv) {
-    return texture(sampler2D(float_images[nonuniformEXT(image_index)],
-        world_samplers[nonuniformEXT(sampler_index)]), uv);
+    return texture(float_images[nonuniformEXT(image_index)], uv);
 }
 
 vec4 SampleWorldArray(uint image_index, uint sampler_index, vec3 uv) {
-    return texture(sampler2DArray(float_array_images[nonuniformEXT(image_index)],
-        world_samplers[nonuniformEXT(sampler_index)]), uv);
+    return texture(float_array_images[nonuniformEXT(image_index)], uv);
 }
 
 vec4 SampleWorldArrayGrad(uint image_index, uint sampler_index, vec3 uv,
     vec2 gradient_x, vec2 gradient_y) {
-    return textureGrad(sampler2DArray(
-        float_array_images[nonuniformEXT(image_index)],
-        world_samplers[nonuniformEXT(sampler_index)]), uv,
+    return textureGrad(float_array_images[nonuniformEXT(image_index)], uv,
         gradient_x, gradient_y);
 }
 
 ivec3 WorldArrayTextureSize(uint image_index, uint sampler_index, int lod) {
-    return textureSize(sampler2DArray(
-        float_array_images[nonuniformEXT(image_index)],
-        world_samplers[nonuniformEXT(sampler_index)]), lod);
+    return textureSize(float_array_images[nonuniformEXT(image_index)], lod);
 }
 
 uint PayloadUint(uint word) { return payload_words[world_push.payload_word_base + word]; }

@@ -301,9 +301,8 @@ PhysicalDeviceSelection SelectPhysicalDevice(
 
 const WorldDescriptorBindingContract kWorldDescriptorBindings[] = {
 	{ 0, 0, DescriptorKind::DynamicUniformBuffer, 1, 0, kStageVertex | kStageFragment | kStageCompute },
-	{ 0, 1, DescriptorKind::Sampler, kWorldSamplerCount, 0, kStageVertex | kStageFragment | kStageCompute },
-	{ 1, 0, DescriptorKind::SampledFloat2D, 0, 1, kStageVertex | kStageFragment | kStageCompute },
-	{ 1, 1, DescriptorKind::SampledFloat2DArray, kWorldArrayImageCount, 0, kStageVertex | kStageFragment | kStageCompute },
+	{ 1, 0, DescriptorKind::CombinedFloat2D, 0, 1, kStageVertex | kStageFragment | kStageCompute },
+	{ 1, 1, DescriptorKind::CombinedFloat2DArray, kWorldArrayImageCount, 0, kStageVertex | kStageFragment | kStageCompute },
 	{ 2, 0, DescriptorKind::StorageBuffer, 1, 0, kStageVertex | kStageFragment | kStageCompute },
 	{ 2, 1, DescriptorKind::StorageBuffer, 1, 0, kStageVertex | kStageFragment | kStageCompute },
 	{ 2, 2, DescriptorKind::StorageBuffer, 1, 0, kStageVertex | kStageFragment | kStageCompute },

@@ -138,6 +138,11 @@ struct automated_capture_state
 
 static automated_capture_state Automated_capture = {};
 
+bool AutomatedCaptureSuppressesInput()
+{
+	return FindArg("-capture-frame") || FindArg("-screenshot-frame");
+}
+
 static int FindAutomatedCaptureArg(const char* primary, const char* alias)
 {
 	int argument = FindArg((char*)primary);

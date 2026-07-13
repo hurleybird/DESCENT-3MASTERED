@@ -74,7 +74,6 @@ Pipeline output reflection:
 C:/Repos/PiccuEngine/renderer/vulkan/shaders/world.frag
 Uniform reflection:
 float_images: offset -1, type 8b5e, size 0, index -1, binding 0, stages 16, arrayStride 4, topLevelArrayStride 4
-world_samplers: offset -1, type 0, size 32, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
 float_array_images: offset -1, type 8dc1, size 8, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
 dynamic_lights.position_radius: offset 0, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 80
 dynamic_lights.color_falloff: offset 16, type 8b52, size 1, index 0, binding -1, stages 16, topLevelArrayStride 80
@@ -228,7 +227,6 @@ Pipeline output reflection:
 C:/Repos/PiccuEngine/renderer/vulkan/shaders/ui.frag
 Uniform reflection:
 float_images: offset -1, type 8b5e, size 0, index -1, binding 0, stages 16, arrayStride 4, topLevelArrayStride 4
-world_samplers: offset -1, type 0, size 32, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
 draw_headers.state_index: offset 0, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
 draw_headers.material_index: offset 4, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
 draw_headers.transform_index: offset 8, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
@@ -348,7 +346,6 @@ Pipeline output reflection:
 C:/Repos/PiccuEngine/renderer/vulkan/shaders/font.frag
 Uniform reflection:
 float_array_images: offset -1, type 8dc1, size 8, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
-world_samplers: offset -1, type 0, size 32, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
 draw_headers.state_index: offset 0, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
 draw_headers.material_index: offset 4, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
 draw_headers.transform_index: offset 8, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
@@ -471,7 +468,6 @@ Pipeline output reflection:
 C:/Repos/PiccuEngine/renderer/vulkan/shaders/particle.frag
 Uniform reflection:
 float_images: offset -1, type 8b5e, size 0, index -1, binding 0, stages 16, arrayStride 4, topLevelArrayStride 4
-world_samplers: offset -1, type 0, size 32, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
 draw_headers.state_index: offset 0, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
 draw_headers.material_index: offset 4, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32
 draw_headers.transform_index: offset 8, type 1405, size 1, index 0, binding -1, stages 16, topLevelArrayStride 32

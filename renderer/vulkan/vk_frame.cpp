@@ -316,7 +316,7 @@ bool FrameScheduler::EnsureDescriptorPool(FrameContext *context,
 		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, capacity * 8u },
 		{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, sampled_image_capacity },
 		{ VK_DESCRIPTOR_TYPE_SAMPLER, capacity * 8u },
-		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, capacity * 16u },
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sampled_image_capacity },
 	};
 	VkDescriptorPoolCreateInfo info = {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO

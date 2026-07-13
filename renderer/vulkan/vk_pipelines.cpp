@@ -109,6 +109,9 @@ VkDescriptorType DescriptorType(DescriptorKind kind)
 	case DescriptorKind::Sampler: return VK_DESCRIPTOR_TYPE_SAMPLER;
 	case DescriptorKind::SampledFloat2D:
 	case DescriptorKind::SampledFloat2DArray: return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+	case DescriptorKind::CombinedFloat2D:
+	case DescriptorKind::CombinedFloat2DArray:
+		return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	case DescriptorKind::StorageBuffer: return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	default: return VK_DESCRIPTOR_TYPE_MAX_ENUM;
 	}
@@ -1205,7 +1208,7 @@ bool PipelineLibrary::UpdateWorldSet0(VkDescriptorSet set,const WorldSet0Write&w
 }
 bool PipelineLibrary::UpdateWorldSet1(VkDescriptorSet set,const WorldSet1Write&w)const
 {
-	if(!Ready()||!set||!w.float_images_2d||w.float_image_count!=impl_->page_tier||!w.float_image_arrays||w.float_image_array_count!=kWorldArrayImageCount)return false;std::vector<VkDescriptorImageInfo>a(w.float_image_count),b(w.float_image_array_count);for(uint32_t i=0;i<w.float_image_count;++i){a[i].imageView=w.float_images_2d[i];a[i].imageLayout=w.layout;if(!a[i].imageView)return false;}for(uint32_t i=0;i<w.float_image_array_count;++i){b[i].imageView=w.float_image_arrays[i];b[i].imageLayout=w.layout;if(!b[i].imageView)return false;}VkWriteDescriptorSet d[2]={};for(int i=0;i<2;++i)d[i].sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;d[0].dstSet=d[1].dstSet=set;d[0].dstBinding=0;d[0].descriptorCount=w.float_image_count;d[0].descriptorType=VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;d[0].pImageInfo=a.data();d[1].dstBinding=1;d[1].descriptorCount=w.float_image_array_count;d[1].descriptorType=VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;d[1].pImageInfo=b.data();vkUpdateDescriptorSets(impl_->device,2,d,0,nullptr);return true;
+	if(!Ready()||!set||!w.float_images_2d||!w.float_image_samplers||w.float_image_count!=impl_->page_tier||!w.float_image_arrays||!w.float_image_array_samplers||w.float_image_array_count!=kWorldArrayImageCount)return false;std::vector<VkDescriptorImageInfo>a(w.float_image_count),b(w.float_image_array_count);for(uint32_t i=0;i<w.float_image_count;++i){a[i].sampler=w.float_image_samplers[i];a[i].imageView=w.float_images_2d[i];a[i].imageLayout=w.layout;if(!a[i].sampler||!a[i].imageView)return false;}for(uint32_t i=0;i<w.float_image_array_count;++i){b[i].sampler=w.float_image_array_samplers[i];b[i].imageView=w.float_image_arrays[i];b[i].imageLayout=w.layout;if(!b[i].sampler||!b[i].imageView)return false;}VkWriteDescriptorSet d[2]={};for(int i=0;i<2;++i)d[i].sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;d[0].dstSet=d[1].dstSet=set;d[0].dstBinding=0;d[0].descriptorCount=w.float_image_count;d[0].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;d[0].pImageInfo=a.data();d[1].dstBinding=1;d[1].descriptorCount=w.float_image_array_count;d[1].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;d[1].pImageInfo=b.data();vkUpdateDescriptorSets(impl_->device,2,d,0,nullptr);return true;
 }
 bool PipelineLibrary::UpdateWorldSet2(VkDescriptorSet set,const WorldSet2Write&w)const
 {

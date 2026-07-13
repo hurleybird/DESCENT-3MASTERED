@@ -58,14 +58,27 @@ struct RetainedPayloadCopy
 	VkDeviceSize byte_size = 0;
 };
 
+struct TextureDescriptorKey
+{
+	TextureVersionId image = kInvalidId;
+	uint32_t sampler = 0;
+
+	bool operator==(const TextureDescriptorKey &other) const noexcept
+	{
+		return image == other.image && sampler == other.sampler;
+	}
+};
+
 struct DescriptorPage
 {
 	ViewStateId view = kInvalidId;
 	RenderTargetClass target = RenderTargetClass::Scene;
-	std::vector<TextureVersionId> image_ids;
-	std::vector<TextureVersionId> array_ids;
+	std::vector<TextureDescriptorKey> images;
+	std::vector<TextureDescriptorKey> arrays;
 	std::vector<VkImageView> image_views;
 	std::vector<VkImageView> array_views;
+	std::vector<VkSampler> image_samplers;
+	std::vector<VkSampler> array_samplers;
 	WorldDescriptorSets sets;
 	FrameBufferSlice frame_view;
 	FrameBufferSlice payload_override;
@@ -810,21 +823,23 @@ struct FrameCompiler::Impl
 			return false;
 		for (DrawWork &draw : *draws)
 		{
-			std::vector<TextureVersionId> needed_2d;
-			std::vector<TextureVersionId> needed_array;
+			std::vector<TextureDescriptorKey> needed_2d;
+			std::vector<TextureDescriptorKey> needed_array;
 			for (uint32_t i = 0; i < 4; ++i)
 			{
 				const TextureVersionId image_id = i == 3 &&
 					(draw.raster.shader.shader_flags & kShaderSoftParticle) != 0 ?
 					kSoftDepthTextureSentinel : draw.material.image2d[i];
-				if (image_id != kInvalidId &&
-					std::find(needed_2d.begin(), needed_2d.end(),
-						image_id) == needed_2d.end())
-					needed_2d.push_back(image_id);
-				if (draw.material.image2d_array[i] != kInvalidId &&
-					std::find(needed_array.begin(), needed_array.end(),
-						draw.material.image2d_array[i]) == needed_array.end())
-					needed_array.push_back(draw.material.image2d_array[i]);
+				const TextureDescriptorKey image = { image_id,
+					draw.material.sampler[i] };
+				const TextureDescriptorKey array = {
+					draw.material.image2d_array[i], draw.material.sampler[i] };
+				if (image.image != kInvalidId && std::find(needed_2d.begin(),
+					needed_2d.end(), image) == needed_2d.end())
+					needed_2d.push_back(image);
+				if (array.image != kInvalidId && std::find(needed_array.begin(),
+					needed_array.end(), array) == needed_array.end())
+					needed_array.push_back(array);
 			}
 			if (needed_2d.size() > tier || needed_array.size() > 8)
 				return false;
@@ -835,14 +850,14 @@ struct FrameCompiler::Impl
 				page = nullptr;
 			if (page)
 			{
-				for (TextureVersionId id : needed_2d)
-					if (std::find(page->image_ids.begin(), page->image_ids.end(), id) ==
-						page->image_ids.end()) ++new_2d;
-				for (TextureVersionId id : needed_array)
-					if (std::find(page->array_ids.begin(), page->array_ids.end(), id) ==
-						page->array_ids.end()) ++new_array;
-				if (page->image_ids.size() + new_2d > tier ||
-					page->array_ids.size() + new_array > 8)
+				for (const TextureDescriptorKey &key : needed_2d)
+					if (std::find(page->images.begin(), page->images.end(), key) ==
+						page->images.end()) ++new_2d;
+				for (const TextureDescriptorKey &key : needed_array)
+					if (std::find(page->arrays.begin(), page->arrays.end(), key) ==
+						page->arrays.end()) ++new_array;
+				if (page->images.size() + new_2d > tier ||
+					page->arrays.size() + new_array > 8)
 					page = nullptr;
 			}
 			if (!page)
@@ -851,17 +866,17 @@ struct FrameCompiler::Impl
 				created.view = draw.view;
 				created.target = draw.target;
 				created.exclusive = draw.geometry_mode == GeometryMode::T2Terrain;
-				created.image_ids.push_back(ci.textures->Diagnostic2D());
-				created.array_ids.push_back(ci.textures->DiagnosticArray());
+				created.images.push_back({ ci.textures->Diagnostic2D(), 0u });
+				created.arrays.push_back({ ci.textures->DiagnosticArray(), 16u });
 				pages->push_back(created);
 				page = &pages->back();
 			}
-			for (TextureVersionId id : needed_2d)
-				if (std::find(page->image_ids.begin(), page->image_ids.end(), id) ==
-					page->image_ids.end()) page->image_ids.push_back(id);
-			for (TextureVersionId id : needed_array)
-				if (std::find(page->array_ids.begin(), page->array_ids.end(), id) ==
-					page->array_ids.end()) page->array_ids.push_back(id);
+			for (const TextureDescriptorKey &key : needed_2d)
+				if (std::find(page->images.begin(), page->images.end(), key) ==
+					page->images.end()) page->images.push_back(key);
+			for (const TextureDescriptorKey &key : needed_array)
+				if (std::find(page->arrays.begin(), page->arrays.end(), key) ==
+					page->arrays.end()) page->arrays.push_back(key);
 			draw.page_index = static_cast<uint32_t>(pages->size() - 1);
 			GpuMaterial &gpu = (*materials)[draw.draw_header_index];
 			for (uint32_t i = 0; i < 4; ++i)
@@ -869,14 +884,18 @@ struct FrameCompiler::Impl
 				const TextureVersionId image_id = i == 3 &&
 					(draw.raster.shader.shader_flags & kShaderSoftParticle) != 0 ?
 					kSoftDepthTextureSentinel : draw.material.image2d[i];
-				const auto image = std::find(page->image_ids.begin(),
-					page->image_ids.end(), image_id);
-				const auto array = std::find(page->array_ids.begin(),
-					page->array_ids.end(), draw.material.image2d_array[i]);
-				gpu.image2d[i] = image == page->image_ids.end() ? 0u :
-					static_cast<uint32_t>(image - page->image_ids.begin());
-				gpu.image2d_array[i] = array == page->array_ids.end() ? 0u :
-					static_cast<uint32_t>(array - page->array_ids.begin());
+				const TextureDescriptorKey image_key = { image_id,
+					draw.material.sampler[i] };
+				const TextureDescriptorKey array_key = {
+					draw.material.image2d_array[i], draw.material.sampler[i] };
+				const auto image = std::find(page->images.begin(),
+					page->images.end(), image_key);
+				const auto array = std::find(page->arrays.begin(),
+					page->arrays.end(), array_key);
+				gpu.image2d[i] = image == page->images.end() ? 0u :
+					static_cast<uint32_t>(image - page->images.begin());
+				gpu.image2d_array[i] = array == page->arrays.end() ? 0u :
+					static_cast<uint32_t>(array - page->arrays.begin());
 			}
 		}
 		(void)capture;
@@ -1148,41 +1167,57 @@ struct FrameCompiler::Impl
 			page.image_views.assign(ci.pipelines->DescriptorPageTier(),
 				VK_NULL_HANDLE);
 			page.array_views.assign(8, VK_NULL_HANDLE);
-			for (uint32_t i = 0; i < page.image_ids.size(); ++i)
+			page.image_samplers.assign(page.image_views.size(), VK_NULL_HANDLE);
+			page.array_samplers.assign(page.array_views.size(), VK_NULL_HANDLE);
+			for (uint32_t i = 0; i < page.images.size(); ++i)
 			{
-				if (page.image_ids[i] == kSoftDepthTextureSentinel)
+				if (page.images[i].image == kSoftDepthTextureSentinel)
 				{
 					const TargetImageRef soft_depth = ci.targets->GraphImage(
 						GraphResource::SoftDepthSnapshot);
 					if (!soft_depth.Valid())
 						return false;
 					page.image_views[i] = soft_depth.view;
-					continue;
 				}
-				const CapturedTextureVersion *captured = FindCapturedTexture(capture,
-					page.image_ids[i]);
-				ResidentTexture resident = {};
-				if (!captured || !ci.textures->EnsureResident(*captured, capture,
-					&resident))
-					return false;
-				page.image_views[i] = resident.view;
+				else
+				{
+					const CapturedTextureVersion *captured = FindCapturedTexture(capture,
+						page.images[i].image);
+					ResidentTexture resident = {};
+					if (!captured || !ci.textures->EnsureResident(*captured, capture,
+						&resident))
+						return false;
+					page.image_views[i] = resident.view;
+				}
+				page.image_samplers[i] = ci.textures->WorldSampler(
+					page.images[i].sampler);
+				if (!page.image_samplers[i]) return false;
 			}
-			for (uint32_t i = 0; i < page.array_ids.size(); ++i)
+			for (uint32_t i = 0; i < page.arrays.size(); ++i)
 			{
 				const CapturedTextureVersion *captured = FindCapturedTexture(capture,
-					page.array_ids[i]);
+					page.arrays[i].image);
 				ResidentTexture resident = {};
 				if (!captured || !ci.textures->EnsureResident(*captured, capture,
 					&resident))
 					return false;
 				page.array_views[i] = resident.view;
+				page.array_samplers[i] = ci.textures->WorldSampler(
+					page.arrays[i].sampler);
+				if (!page.array_samplers[i]) return false;
 			}
-			for (uint32_t i = static_cast<uint32_t>(page.image_ids.size());
+			for (uint32_t i = static_cast<uint32_t>(page.images.size());
 				i < page.image_views.size(); ++i)
+			{
 				page.image_views[i] = page.image_views[0];
-			for (uint32_t i = static_cast<uint32_t>(page.array_ids.size());
+				page.image_samplers[i] = page.image_samplers[0];
+			}
+			for (uint32_t i = static_cast<uint32_t>(page.arrays.size());
 				i < page.array_views.size(); ++i)
+			{
 				page.array_views[i] = page.array_views[0];
+				page.array_samplers[i] = page.array_samplers[0];
+			}
 
 			const FrameViewGlobals globals = MakeFrameView(capture, page);
 			if (!ci.frames->StageBuffer(&globals, sizeof(globals),
@@ -1199,8 +1234,10 @@ struct FrameCompiler::Impl
 			set0.offset = page.frame_view.offset;
 			WorldSet1Write set1 = {};
 			set1.float_images_2d = page.image_views.data();
+			set1.float_image_samplers = page.image_samplers.data();
 			set1.float_image_count = static_cast<uint32_t>(page.image_views.size());
 			set1.float_image_arrays = page.array_views.data();
+			set1.float_image_array_samplers = page.array_samplers.data();
 			set1.float_image_array_count = static_cast<uint32_t>(page.array_views.size());
 			WorldSet2Write set2 = {};
 			const FrameBufferSlice slices[8] = {

@@ -279,7 +279,7 @@ static void TestFrozenTables()
 		FindLimit(DeviceLimit::MaxComputeSharedMemorySize)->minimum == 16*1024,
 		"T2 compute limits");
 	Check(kRequiredFormatCount == static_cast<size_t>(FormatSemantic::Count), "format schema");
-	Check(kWorldDescriptorBindingCount == 12, "world descriptor ABI entries");
+	Check(kWorldDescriptorBindingCount == 11, "world descriptor ABI entries");
 	for (size_t i = 0; i < kWorldDescriptorBindingCount; ++i)
 	{
 		const WorldDescriptorBindingContract &binding = kWorldDescriptorBindings[i];
@@ -289,10 +289,10 @@ static void TestFrozenTables()
 	}
 	Check(kWorldDescriptorBindings[0].kind == DescriptorKind::DynamicUniformBuffer &&
 		kWorldDescriptorBindings[0].count == 1, "set zero frame globals");
-	Check(kWorldDescriptorBindings[1].kind == DescriptorKind::Sampler &&
-		kWorldDescriptorBindings[1].count == 32, "set zero fixed samplers");
-	Check(kWorldDescriptorBindings[2].page_tier_count == 1 &&
-		kWorldDescriptorBindings[3].count == 8, "set one typed image page");
+	Check(kWorldDescriptorBindings[1].kind == DescriptorKind::CombinedFloat2D &&
+		kWorldDescriptorBindings[1].page_tier_count == 1 &&
+		kWorldDescriptorBindings[2].kind == DescriptorKind::CombinedFloat2DArray &&
+		kWorldDescriptorBindings[2].count == 8, "set one combined image page");
 	Check(kSamplerContractCount == static_cast<size_t>(SamplerSemantic::Count), "sampler matrix");
 	Check(kHistoryEventContractCount == static_cast<size_t>(HistoryEvent::Count), "history contract");
 	Check(kTextureMappingInvalidationContractCount ==

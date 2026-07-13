@@ -134,8 +134,10 @@ struct WorldSet0Write
 struct WorldSet1Write
 {
 	const VkImageView *float_images_2d = nullptr;
+	const VkSampler *float_image_samplers = nullptr;
 	uint32_t float_image_count = 0;
 	const VkImageView *float_image_arrays = nullptr;
+	const VkSampler *float_image_array_samplers = nullptr;
 	uint32_t float_image_array_count = 0;
 	VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 };

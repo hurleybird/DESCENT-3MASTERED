@@ -21,6 +21,7 @@
 #include "object.h"
 #include "pserror.h"
 #include "game.h"
+#include "GameLoop.h"
 #include "ddio.h" 
 #include "joystick.h"
 #include "descent.h"
@@ -342,6 +343,11 @@ void PollControls()
 //Read the keyboard & other controllers.  Fills in the specified structure.
 void ReadPlayerControls(game_controls *controls)
 {
+	if (AutomatedCaptureSuppressesInput())
+	{
+		memset(controls, 0, sizeof(game_controls));
+		return;
+	}
 	if( !Control_system_init )
 	{
 		memset(controls,0,sizeof(game_controls));
