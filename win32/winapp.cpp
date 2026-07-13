@@ -138,6 +138,10 @@ oeWin32Application::oeWin32Application(const char *name, unsigned flags, HInstan
 
 	m_hInstance = hinst;
 	m_Flags = flags;
+	m_PositionOverride = false;
+	m_OverrideX = 0;
+	m_OverrideY = 0;
+	m_BackgroundMode = false;
 	strncpy(m_WndName, name, sizeof(m_WndName));
 	m_WndName[sizeof(m_WndName) - 1] = '\0';
 
@@ -161,6 +165,10 @@ oeWin32Application::oeWin32Application(tWin32AppInfo *appinfo)
 	m_hWnd = appinfo->hwnd;
 	m_hInstance = appinfo->hinst;
 	m_Flags = appinfo->flags;
+	m_PositionOverride = false;
+	m_OverrideX = 0;
+	m_OverrideY = 0;
+	m_BackgroundMode = false;
 
 //	returns the dimensions of the window
 	GetWindowRect((HWND)m_hWnd, &rect);
@@ -212,11 +220,13 @@ void oeWin32Application::init()
 		style = 0;
 		winstyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_BORDER | WS_MINIMIZEBOX;
 	}
-	else 
+	else
 	{
 		style = (m_Flags & OEAPP_TOPMOST) ? WS_EX_TOPMOST : 0;
 		winstyle = WS_POPUP | WS_SYSMENU;
 	}
+	if (m_BackgroundMode)
+		style |= WS_EX_NOACTIVATE;
 
 	m_hWnd = (HWnd)CreateWindowEx(style,
 						(LPCSTR)m_WndName, 
@@ -235,18 +245,25 @@ void oeWin32Application::init()
 		return;
 	}
 	if (m_Flags & OEAPP_FULLSCREEN)
-		ShowWindow((HWND)m_hWnd, SW_SHOWMAXIMIZED);
+		ShowWindow((HWND)m_hWnd,
+			m_BackgroundMode ? SW_SHOWNOACTIVATE : SW_SHOWMAXIMIZED);
 	else
-		ShowWindow((HWND)m_hWnd, SW_SHOWNORMAL);
+		ShowWindow((HWND)m_hWnd,
+			m_BackgroundMode ? SW_SHOWNOACTIVATE : SW_SHOWNORMAL);
 	UpdateWindow((HWND)m_hWnd);
 }
 
 void oeWin32Application::change_window()
 {
-	if (m_Flags & OEAPP_FULLSCREEN) 
+	const UINT position_flags = SWP_NOZORDER | SWP_FRAMECHANGED |
+		(m_BackgroundMode ? SWP_NOACTIVATE : 0);
+	const int show_command = m_BackgroundMode ? SW_SHOWNOACTIVATE : SW_NORMAL;
+
+	if (m_Flags & OEAPP_FULLSCREEN)
 	{
 		SetWindowLongPtr((HWND)m_hWnd, GWL_STYLE, 0);
-		SetWindowLongPtr((HWND)m_hWnd, GWL_EXSTYLE, WS_EX_TOPMOST);
+		SetWindowLongPtr((HWND)m_hWnd, GWL_EXSTYLE,
+			WS_EX_TOPMOST | (m_BackgroundMode ? WS_EX_NOACTIVATE : 0));
 
 		RECT r{};
 		GetWindowRect((HWND)m_hWnd, &r);
@@ -259,16 +276,19 @@ void oeWin32Application::change_window()
 		int hehwidth = GetSystemMetrics(SM_CXSCREEN);
 		int hehheight = GetSystemMetrics(SM_CYSCREEN);
 
-		SetWindowPos((HWND)m_hWnd, HWND_TOP, 0, 0, hehwidth, hehheight, SWP_NOZORDER | SWP_FRAMECHANGED);
-		ShowWindow((HWND)m_hWnd, SW_NORMAL);
+		SetWindowPos((HWND)m_hWnd, HWND_TOP, 0, 0, hehwidth, hehheight,
+			position_flags);
+		ShowWindow((HWND)m_hWnd, show_command);
 	}
-	else 
+	else
 	{
 		SetWindowLongPtr((HWND)m_hWnd, GWL_STYLE, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_BORDER | WS_MINIMIZEBOX);
-		SetWindowLongPtr((HWND)m_hWnd, GWL_EXSTYLE, 0);
+		SetWindowLongPtr((HWND)m_hWnd, GWL_EXSTYLE,
+			m_BackgroundMode ? WS_EX_NOACTIVATE : 0);
 
-		ShowWindow((HWND)m_hWnd, SW_NORMAL);
-		SetWindowPos((HWND)m_hWnd, HWND_TOP, m_X, m_Y, m_W, m_H, SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED);
+		ShowWindow((HWND)m_hWnd, show_command);
+		SetWindowPos((HWND)m_hWnd, HWND_TOP, m_X, m_Y, m_W, m_H,
+			position_flags);
 	}
 }
 
@@ -304,27 +324,46 @@ int oeWin32Application::flags(void) const
 
 void oeWin32Application::set_sizepos(int x, int y, int w, int h)
 {
-	if (!m_hWnd) 
-		return;
-
 	m_W = w;
 	m_H = h;
 
 	if (x == OEAPP_COORD_CENTERED)
 	{
 		int hehwidth = GetSystemMetrics(SM_CXSCREEN);
-		x = hehwidth / 2 - x / 2;
+		x = hehwidth / 2 - w / 2;
 	}
 	if (y == OEAPP_COORD_CENTERED)
 	{
 		int hehheight = GetSystemMetrics(SM_CYSCREEN);
-		y = hehheight / 2 - y / 2;
+		y = hehheight / 2 - h / 2;
+	}
+	if (m_PositionOverride)
+	{
+		x = m_OverrideX;
+		y = m_OverrideY;
 	}
 
 	m_X = x;
 	m_Y = y;
 
-	MoveWindow((HWND)m_hWnd, x, y, w, h, TRUE);
+	if (m_hWnd)
+	{
+		SetWindowPos((HWND)m_hWnd, NULL, x, y, w, h,
+			SWP_NOZORDER | (m_BackgroundMode ? SWP_NOACTIVATE : 0));
+	}
+}
+
+void oeWin32Application::set_position_override(int x, int y)
+{
+	m_PositionOverride = true;
+	m_OverrideX = x;
+	m_OverrideY = y;
+	set_sizepos(x, y, m_W, m_H);
+}
+
+void oeWin32Application::set_background_mode(bool enabled)
+{
+	m_BackgroundMode = enabled;
 }
 
 

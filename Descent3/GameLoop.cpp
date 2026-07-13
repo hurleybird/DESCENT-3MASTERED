@@ -17,8 +17,10 @@
 */
 
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <chrono>
 #include <vector>
 #include "gameloop.h"
@@ -138,6 +140,22 @@ struct automated_capture_state
 
 static automated_capture_state Automated_capture = {};
 
+void AutomatedCaptureLog(const char* format, ...)
+{
+	const char* path = getenv("PICCU_CAPTURE_LOG");
+	if (!path || !path[0] || !format)
+		return;
+	FILE* file = fopen(path, "ab");
+	if (!file)
+		return;
+	va_list arguments;
+	va_start(arguments, format);
+	vfprintf(file, format, arguments);
+	va_end(arguments);
+	fputc('\n', file);
+	fclose(file);
+}
+
 bool AutomatedCaptureSuppressesInput()
 {
 	return FindArg("-capture-frame") || FindArg("-screenshot-frame");
@@ -204,6 +222,9 @@ static void InitAutomatedCapture()
 
 	Automated_capture.enabled = true;
 	Automated_capture.target_frame = (int)target_frame;
+	AutomatedCaptureLog("armed frame=%d output=%s dt=%.9f",
+		Automated_capture.target_frame, Automated_capture.output_path,
+		Automated_capture.fixed_delta);
 	mprintf((0, "Automated capture armed: gameplay frame %d -> %s (dt %.6f).\n",
 		Automated_capture.target_frame, Automated_capture.output_path,
 		Automated_capture.fixed_delta));
@@ -214,10 +235,23 @@ static void BeginAutomatedCaptureFrame()
 	InitAutomatedCapture();
 	Automated_capture.gameplay_frame_active = false;
 	Automated_capture.capture_pending = false;
-	if (!Automated_capture.enabled || Automated_capture.exit_pending ||
-		Game_state != GAMESTATE_LVLPLAYING ||
-		Game_interface_mode != GAME_INTERFACE || Menu_interface_mode ||
-		Skip_render_game_frame || Dedicated_server)
+	uint32_t gates = 0;
+	if (!Automated_capture.enabled) gates |= 1u << 0;
+	if (Automated_capture.exit_pending) gates |= 1u << 1;
+	if (Game_state != GAMESTATE_LVLPLAYING) gates |= 1u << 2;
+	if (Game_interface_mode != GAME_INTERFACE) gates |= 1u << 3;
+	if (Menu_interface_mode) gates |= 1u << 4;
+	if (Skip_render_game_frame) gates |= 1u << 5;
+	if (Dedicated_server) gates |= 1u << 6;
+	static uint32_t last_gates = UINT32_MAX;
+	if (gates != last_gates)
+	{
+		AutomatedCaptureLog("gates=0x%02x game_state=%d interface=%d menu=%d skip=%d",
+			gates, Game_state, Game_interface_mode,
+			Menu_interface_mode ? 1 : 0, Skip_render_game_frame ? 1 : 0);
+		last_gates = gates;
+	}
+	if (gates != 0)
 		return;
 
 	Automated_capture.gameplay_frame_active = true;
@@ -237,6 +271,9 @@ static void CaptureAutomatedFrameIfRequested()
 	mprintf((0, "Automated capture %s: gameplay frame %d -> %s.\n",
 		saved ? "saved" : "failed", Automated_capture.gameplay_frame,
 		Automated_capture.output_path));
+	AutomatedCaptureLog("capture %s frame=%d output=%s",
+		saved ? "saved" : "failed", Automated_capture.gameplay_frame,
+		Automated_capture.output_path);
 	Automated_capture.exit_pending = true;
 }
 

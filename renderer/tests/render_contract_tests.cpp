@@ -2101,6 +2101,21 @@ static void TestCapture()
 	motion[0].current_q[0]=99;
 	Check(reinterpret_cast<const MotionVertexPayload*>(segment.PayloadBytes().data()+16)->current_q[0]==11,
 		"payload deep copy");
+	auto external_owner = std::make_shared<std::vector<uint8_t>>(4, 0);
+	(*external_owner)[0] = 73;
+	std::shared_ptr<const std::vector<uint8_t>> external_immutable = external_owner;
+	std::weak_ptr<const std::vector<uint8_t>> external_lifetime = external_immutable;
+	const size_t local_payload_bytes = segment.PayloadBytes().size();
+	PayloadDataId external_id = segment.ReferencePayloadData(external_immutable, 4,
+		kPayloadTextureUpload);
+	Check(external_id != kInvalidId &&
+		segment.PayloadBytes().size() == local_payload_bytes &&
+		segment.PayloadData(external_id) && segment.PayloadData(external_id)[0] == 73,
+		"capture references immutable resource payload without cloning it");
+	external_owner.reset();
+	external_immutable.reset();
+	Check(!external_lifetime.expired(),
+		"capture keeps referenced resource payload alive");
 	CapturedCockpitBackingEffect backing = {};
 	PayloadDataId backing_id=segment.CopyPayloadData(&backing,sizeof(backing),4,
 		kPayloadCockpitBacking);
@@ -2181,6 +2196,8 @@ static void TestCapture()
 		segment.PayloadBindings().empty() && segment.PayloadRecords().empty() &&
 		segment.PayloadBytes().empty() && segment.StreamVertices().empty() &&
 		segment.StreamIndices().empty() && segment.StreamPayloadWords().empty(),"reset clears all tables");
+	Check(external_lifetime.expired(),
+		"capture reset releases referenced resource payload");
 }
 
 static void TestCaptureRejectsTargetMismatch()

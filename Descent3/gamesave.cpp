@@ -557,6 +557,7 @@ bool SetLoadGamePath(const char *pathname)
 bool LoadCurrentSaveGame()
 {
 	int retval = LoadGameState(LGS_Path);
+	AutomatedCaptureLog("loadgame result=%d path=%s", retval, LGS_Path);
 	if (retval != LGS_OK)
 	{
 		Int3();

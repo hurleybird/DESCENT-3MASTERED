@@ -59,11 +59,11 @@ bool PayloadRange(const RenderCaptureSegment &capture, PayloadDataId id,
 		return false;
 	const CapturedPayloadRecord &record = capture.PayloadRecords()[id];
 	if (record.semantic != kPayloadTextureUpload || record.alignment !=
-		kCapturedTextureUploadPayloadAlignment ||
-		record.byte_offset > capture.PayloadBytes().size() ||
-		record.byte_size > capture.PayloadBytes().size() - record.byte_offset)
+		kCapturedTextureUploadPayloadAlignment)
 		return false;
-	*bytes = capture.PayloadBytes().data() + record.byte_offset;
+	*bytes = capture.PayloadData(id);
+	if (!*bytes)
+		return false;
 	*byte_size = record.byte_size;
 	return true;
 }
@@ -111,6 +111,7 @@ TextureManager::TextureManager()
 	  diagnostic_array_(kInvalidId), terrain_base_version_(kInvalidId),
 	  terrain_lightmap_version_(kInvalidId), terrain_base_signature_(0),
 	  terrain_lightmap_signature_(0), terrain_array_generation_(0),
+	  terrain_sources_valid_(false),
 	  next_content_serial_(1),
 	  resolve_serial_(0), ready_(false)
 {
@@ -190,6 +191,8 @@ void TextureManager::Shutdown(bool device_lost) noexcept
 			GameBitmaps[layer.handle].cache_slot = -1;
 	if (allocator_ && allocator_->Ready())
 	{
+		for (PendingStaging &staging : pending_staging_)
+			allocator_->RetireBuffer(&staging.buffer, 0);
 		for (Version &version : versions_)
 			if (version.allocation.Valid())
 				allocator_->RetireImage(&version.allocation,
@@ -199,6 +202,7 @@ void TextureManager::Shutdown(bool device_lost) noexcept
 	bitmap_mappings_.clear();
 	lightmap_mappings_.clear();
 	versions_.clear();
+	pending_staging_.clear();
 	font_array_ = FontArray();
 	platform_ = nullptr;
 	allocator_ = nullptr;
@@ -209,6 +213,12 @@ void TextureManager::Shutdown(bool device_lost) noexcept
 	terrain_base_version_ = terrain_lightmap_version_ = kInvalidId;
 	terrain_base_signature_ = terrain_lightmap_signature_ = 0;
 	terrain_array_generation_ = 0;
+	terrain_base_sources_.clear();
+	std::memset(terrain_lightmap_sources_, 0,
+		sizeof(terrain_lightmap_sources_));
+	for (TerrainArraySource &source : terrain_lightmap_sources_)
+		source.handle = -1;
+	terrain_sources_valid_ = false;
 	next_content_serial_ = 1;
 	resolve_serial_ = 0;
 	stats_ = TextureResidencyStats();
@@ -237,6 +247,16 @@ bool TextureManager::IdentityEqual(const LegacyIdentity &left,
 		left.height == right.height && left.storage_width == right.storage_width &&
 		left.mip_count == right.mip_count && left.format == right.format &&
 		left.used == right.used && left.cache_cookie == right.cache_cookie;
+}
+
+bool TextureManager::TerrainIdentityEqual(const LegacyIdentity &left,
+	const LegacyIdentity &right) noexcept
+{
+	// cache_cookie describes another logical Vulkan mapping, not source texels.
+	return left.data == right.data && left.width == right.width &&
+		left.height == right.height && left.storage_width == right.storage_width &&
+		left.mip_count == right.mip_count && left.format == right.format &&
+		left.used == right.used;
 }
 
 VkDeviceSize TextureManager::TextureBytes(uint32_t width, uint32_t height,
@@ -288,7 +308,8 @@ TextureManager::Version *TextureManager::CreateVersion(uint32_t width,
 	version.captured.residency = static_cast<uint32_t>(
 		TextureResidencyState::CpuSnapshot);
 	version.captured.immutable_upload_payload = kInvalidId;
-	version.cpu_snapshot = std::move(snapshot);
+	version.cpu_snapshot =
+		std::make_shared<const std::vector<uint8_t>>(std::move(snapshot));
 	version.recycle_candidate = recycle_candidate;
 	version.byte_size = byte_size;
 	version.array_texture = array_texture ? 1u : 0u;
@@ -526,12 +547,11 @@ bool TextureManager::EmitCapturedVersion(Version *version,
 	captured->immutable_upload_payload = kInvalidId;
 	if (!version->allocation.Valid())
 	{
-		if (version->cpu_snapshot.empty() ||
-			version->cpu_snapshot.size() > static_cast<size_t>(UINT32_MAX))
+		if (!version->cpu_snapshot || version->cpu_snapshot->empty() ||
+			version->cpu_snapshot->size() > static_cast<size_t>(UINT32_MAX))
 			return false;
-		const PayloadDataId payload = capture->CopyPayloadData(
-			version->cpu_snapshot.data(),
-			static_cast<uint32_t>(version->cpu_snapshot.size()),
+		const PayloadDataId payload = capture->ReferencePayloadData(
+			version->cpu_snapshot,
 			kCapturedTextureUploadPayloadAlignment, kPayloadTextureUpload);
 		if (payload == kInvalidId)
 			return false;
@@ -906,6 +926,63 @@ bool TextureManager::ResolveTerrainArrays(const TerrainArrayRequest &request,
 	};
 	try
 	{
+		std::vector<TerrainArraySource> observed_base_sources(
+			request.base_bitmap_count);
+		TerrainArraySource observed_lightmap_sources[4];
+		bool sources_match = terrain_sources_valid_ &&
+			terrain_base_sources_.size() == request.base_bitmap_count;
+		for (uint32_t layer = 0; layer < request.base_bitmap_count; ++layer)
+		{
+			TerrainArraySource &source = observed_base_sources[layer];
+			source.handle = request.base_bitmap_handles[layer];
+			uint32_t dirty = 0;
+			if (!ObserveBitmap(source.handle, &source.identity, &dirty))
+				return false;
+			if (dirty != 0 || !sources_match ||
+				terrain_base_sources_[layer].handle != source.handle ||
+				!TerrainIdentityEqual(terrain_base_sources_[layer].identity,
+					source.identity))
+				sources_match = false;
+		}
+		for (uint32_t layer = 0; layer < 4; ++layer)
+		{
+			TerrainArraySource &source = observed_lightmap_sources[layer];
+			source.handle = request.lightmap_handles[layer];
+			uint32_t dirty = 0;
+			float scale[2] = {};
+			if (!ObserveLightmap(source.handle, &source.identity, &dirty, scale))
+				return false;
+			if (dirty != 0 || !sources_match ||
+				terrain_lightmap_sources_[layer].handle != source.handle ||
+				!TerrainIdentityEqual(
+					terrain_lightmap_sources_[layer].identity, source.identity))
+				sources_match = false;
+		}
+
+		if (sources_match)
+		{
+			Version *base_version = FindVersion(terrain_base_version_);
+			Version *lightmap_version = FindVersion(terrain_lightmap_version_);
+			if (base_version && lightmap_version &&
+				EmitCapturedVersion(base_version, capture, &base->version) &&
+				EmitCapturedVersion(lightmap_version, capture,
+					&lightmap->version))
+			{
+				TextureRequest sampler_request = {};
+				sampler_request.logical_handle = request.base_bitmap_handles[0];
+				sampler_request.map_type = kLegacyMapTypeBitmap;
+				sampler_request.role = TextureRole::TerrainBaseArray;
+				sampler_request.filtering = request.filtering;
+				sampler_request.mipping = request.mipping;
+				base->sampler_index = SelectWorldSamplerIndex(
+					sampler_request, true);
+				lightmap->sampler_index = 13u;
+				base->uv_scale[0] = base->uv_scale[1] = 1.0f;
+				lightmap->uv_scale[0] = lightmap->uv_scale[1] = 1.0f;
+				return true;
+			}
+		}
+
 		uint32_t width = 0, height = 0;
 		for (uint32_t layer = 0; layer < request.base_bitmap_count; ++layer)
 		{
@@ -923,10 +1000,12 @@ bool TextureManager::ResolveTerrainArrays(const TerrainArrayRequest &request,
 		const VkDeviceSize base_bytes = TextureBytes(width, height,
 			request.base_bitmap_count, mip_count);
 		if (base_bytes == 0 || base_bytes > SIZE_MAX) return false;
-		std::vector<uint8_t> base_snapshot;
-		base_snapshot.reserve(static_cast<size_t>(base_bytes));
-		std::vector<uint8_t> level(static_cast<size_t>(width) * height *
-			request.base_bitmap_count * 4u);
+		// Build the immutable mip-major upload image in its final allocation.
+		// Keeping a separate full-resolution level would transiently double the
+		// largest terrain resource before capture or staging even begins.
+		std::vector<uint8_t> base_snapshot(static_cast<size_t>(base_bytes));
+		const size_t base_level_bytes = static_cast<size_t>(width) * height *
+			request.base_bitmap_count * 4u;
 		for (uint32_t layer = 0; layer < request.base_bitmap_count; ++layer)
 		{
 			const int32_t handle = request.base_bitmap_handles[layer];
@@ -940,7 +1019,7 @@ bool TextureManager::ResolveTerrainArrays(const TerrainArrayRequest &request,
 				{
 					const uint32_t source_x = x * source_width / width;
 					const uint32_t source_y = y * source_height / height;
-					uint8_t *destination = level.data() +
+					uint8_t *destination = base_snapshot.data() +
 						((static_cast<size_t>(layer) * height + y) * width + x) * 4u;
 					if (format == BITMAP_FORMAT_4444)
 						ConvertLegacy4444ToRgba8(source[source_y * source_width + source_x],
@@ -951,13 +1030,12 @@ bool TextureManager::ResolveTerrainArrays(const TerrainArrayRequest &request,
 				}
 		}
 		uint32_t level_width = width, level_height = height;
-		base_snapshot.insert(base_snapshot.end(), level.begin(), level.end());
+		size_t level_offset = 0;
+		size_t next_offset = base_level_bytes;
 		for (uint32_t mip = 1; mip < mip_count; ++mip)
 		{
 			const uint32_t next_width = level_width > 1 ? level_width / 2 : 1;
 			const uint32_t next_height = level_height > 1 ? level_height / 2 : 1;
-			std::vector<uint8_t> next(static_cast<size_t>(next_width) * next_height *
-				request.base_bitmap_count * 4u);
 			for (uint32_t layer = 0; layer < request.base_bitmap_count; ++layer)
 				for (uint32_t y = 0; y < next_height; ++y)
 					for (uint32_t x = 0; x < next_width; ++x)
@@ -971,18 +1049,23 @@ bool TextureManager::ResolveTerrainArrays(const TerrainArrayRequest &request,
 										level_width - 1u);
 									const uint32_t sy = std::min(y * 2u + oy,
 										level_height - 1u);
-									sum += level[((static_cast<size_t>(layer) *
-										level_height + sy) * level_width + sx) * 4u + channel];
+									sum += base_snapshot[level_offset +
+										((static_cast<size_t>(layer) * level_height + sy) *
+										level_width + sx) * 4u + channel];
 								}
-							next[((static_cast<size_t>(layer) * next_height + y) *
+							base_snapshot[next_offset +
+								((static_cast<size_t>(layer) * next_height + y) *
 								next_width + x) * 4u + channel] =
 								static_cast<uint8_t>((sum + 2u) >> 2u);
 						}
-			base_snapshot.insert(base_snapshot.end(), next.begin(), next.end());
-			level.swap(next);
+			level_offset = next_offset;
+			next_offset += static_cast<size_t>(next_width) * next_height *
+				request.base_bitmap_count * 4u;
 			level_width = next_width;
 			level_height = next_height;
 		}
+		if (next_offset != base_snapshot.size())
+			return false;
 
 		const int32_t first_lightmap = request.lightmap_handles[0];
 		if (first_lightmap < 0 || first_lightmap >= MAX_LIGHTMAPS ||
@@ -1061,6 +1144,46 @@ bool TextureManager::ResolveTerrainArrays(const TerrainArrayRequest &request,
 		lightmap->sampler_index = 13u;
 		base->uv_scale[0] = base->uv_scale[1] = 1.0f;
 		lightmap->uv_scale[0] = lightmap->uv_scale[1] = 1.0f;
+
+		// The array snapshots now own the current texel generation. Consume the
+		// legacy dirty bits and detach only stale standalone mappings so a later
+		// 2D resolve cannot accidentally reuse pre-array content.
+		for (TerrainArraySource &source : observed_base_sources)
+		{
+			LogicalMapping &mapping = bitmap_mappings_[source.handle];
+			const uint32_t dirty = GameBitmaps[source.handle].flags &
+				(BF_CHANGED | BF_BRAND_NEW);
+			if (mapping.version != kInvalidId && (dirty != 0 ||
+				!TerrainIdentityEqual(mapping.identity, source.identity)))
+			{
+				ClearCurrentMapping(mapping.version);
+				mapping = LogicalMapping();
+				GameBitmaps[source.handle].cache_slot = -1;
+			}
+			GameBitmaps[source.handle].flags &=
+				static_cast<ubyte>(~(BF_CHANGED | BF_BRAND_NEW));
+			source.identity.cache_cookie = GameBitmaps[source.handle].cache_slot;
+		}
+		for (uint32_t layer = 0; layer < 4; ++layer)
+		{
+			TerrainArraySource &source = observed_lightmap_sources[layer];
+			LogicalMapping &mapping = lightmap_mappings_[source.handle];
+			const uint32_t dirty = GameLightmaps[source.handle].flags &
+				(LF_CHANGED | LF_BRAND_NEW);
+			if (mapping.version != kInvalidId && (dirty != 0 ||
+				!TerrainIdentityEqual(mapping.identity, source.identity)))
+			{
+				ClearCurrentMapping(mapping.version);
+				mapping = LogicalMapping();
+				GameLightmaps[source.handle].cache_slot = -1;
+			}
+			GameLightmaps[source.handle].flags &=
+				static_cast<ubyte>(~(LF_CHANGED | LF_BRAND_NEW));
+			source.identity.cache_cookie = GameLightmaps[source.handle].cache_slot;
+			terrain_lightmap_sources_[layer] = source;
+		}
+		terrain_base_sources_ = std::move(observed_base_sources);
+		terrain_sources_valid_ = true;
 		return true;
 	}
 	catch (const std::bad_alloc &)
@@ -1131,8 +1254,35 @@ bool TextureManager::EnsureResident(const CapturedTextureVersion &captured,
 	if (staging_size == 0 || staging_size >
 		static_cast<VkDeviceSize>(std::numeric_limits<size_t>::max()))
 		return false;
-	FrameBufferSlice upload = frames_->AllocateUpload(staging_size,
-		offset_alignment);
+	FrameBufferSlice upload = {};
+	AllocatedBuffer *upload_allocation = nullptr;
+	if (staging_size >= kDedicatedTextureUploadThreshold)
+	{
+		pending_staging_.push_back(PendingStaging());
+		PendingStaging &staging = pending_staging_.back();
+		staging.capture_key = CaptureKey(capture);
+		BufferCreateRequest request = {};
+		request.size = staging_size;
+		request.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		request.memory_class = BufferMemoryClass::Upload;
+		request.minimum_alignment = offset_alignment;
+		request.debug_name = "vk.texture.staging";
+		if (!allocator_->CreateBuffer(request, &staging.buffer))
+		{
+			pending_staging_.pop_back();
+			return false;
+		}
+		upload.buffer = staging.buffer.handle;
+		upload.offset = 0;
+		upload.size = staging_size;
+		upload.mapped = staging.buffer.mapped;
+		upload_allocation = &staging.buffer;
+	}
+	else
+	{
+		upload = frames_->AllocateUpload(staging_size, offset_alignment);
+		upload_allocation = &frame->upload;
+	}
 	if (!upload.Valid() || !upload.mapped)
 		return false;
 	std::memset(upload.mapped, 0, static_cast<size_t>(staging_size));
@@ -1142,7 +1292,7 @@ bool TextureManager::EnsureResident(const CapturedTextureVersion &captured,
 				staging_offsets[i] + staging_row_pitches[i] * row,
 				payload + layouts[i].byte_offset + layouts[i].row_pitch_bytes * row,
 				static_cast<size_t>(layouts[i].row_pitch_bytes));
-	if (!allocator_->Flush(frame->upload, upload.offset, upload.size))
+	if (!allocator_->Flush(*upload_allocation, upload.offset, upload.size))
 		return false;
 	std::vector<VkBufferImageCopy2> regions(layouts.size());
 	for (size_t i = 0; i < layouts.size(); ++i)
@@ -1194,6 +1344,10 @@ bool TextureManager::EnsureResident(const CapturedTextureVersion &captured,
 		++stats_.resident_images;
 		stats_.resident_bytes += version->byte_size;
 	}
+	// Residency becomes authoritative only after the command buffer is
+	// submitted. Keep the immutable CPU snapshot alive so an abandoned compile
+	// can retire this image and retry the upload on a later capture.
+	version->pending_upload_capture_key = CaptureKey(capture);
 
 	BufferUse host_write = {};
 	host_write.stages = VK_PIPELINE_STAGE_2_HOST_BIT;
@@ -1245,11 +1399,8 @@ bool TextureManager::EnsureResident(const CapturedTextureVersion &captured,
 		sampled_read))
 		return false;
 	state_tracker_->Flush(frame->recording_command);
-	version->captured.residency = static_cast<uint32_t>(version->current_mapping ||
-		version->diagnostic ? TextureResidencyState::Resident :
-		TextureResidencyState::Evictable);
-	if (!version->diagnostic)
-		version->cpu_snapshot.clear();
+	version->captured.residency = static_cast<uint32_t>(
+		TextureResidencyState::PendingUpload);
 	++stats_.uploads;
 	stats_.upload_bytes += payload_size;
 	if (config_.resident_byte_budget != 0 &&
@@ -1311,11 +1462,22 @@ bool TextureManager::PinCapture(const RenderCaptureSegment &capture,
 			version->captured.last_use_timeline, submission_timeline);
 		version->allocation.last_use_timeline = std::max(
 			version->allocation.last_use_timeline, submission_timeline);
+		if (version->pending_upload_capture_key == key)
+		{
+			version->pending_upload_capture_key = 0;
+			version->captured.residency = static_cast<uint32_t>(
+				version->current_mapping || version->diagnostic ?
+				TextureResidencyState::Resident :
+				TextureResidencyState::Evictable);
+			if (!version->diagnostic)
+				version->cpu_snapshot.reset();
+		}
 		version->pending_capture_keys.erase(std::remove(
 			version->pending_capture_keys.begin(),
 			version->pending_capture_keys.end(), key),
 			version->pending_capture_keys.end());
 	}
+	RetireCaptureStaging(key, submission_timeline);
 	return success;
 }
 
@@ -1327,6 +1489,13 @@ void TextureManager::DiscardCapture(const RenderCaptureSegment &capture)
 		Version *version = FindVersion(captured.id);
 		if (!version)
 			continue;
+		if (version->pending_upload_capture_key == key)
+		{
+			version->pending_upload_capture_key = 0;
+			RetireVersion(version, frames_ ? frames_->CompletedTimeline() : 0);
+			version->captured.residency = static_cast<uint32_t>(
+				TextureResidencyState::CpuSnapshot);
+		}
 		version->pending_capture_keys.erase(std::remove(
 			version->pending_capture_keys.begin(),
 			version->pending_capture_keys.end(), key),
@@ -1337,10 +1506,30 @@ void TextureManager::DiscardCapture(const RenderCaptureSegment &capture)
 		else if (!version->current_mapping && !version->allocation.Valid() &&
 			!version->diagnostic && version->pending_capture_keys.empty())
 		{
-			version->cpu_snapshot.clear();
+			version->cpu_snapshot.reset();
 			version->captured.residency = static_cast<uint32_t>(
 				TextureResidencyState::Retired);
 		}
+	}
+	RetireCaptureStaging(key, 0);
+}
+
+void TextureManager::RetireCaptureStaging(uint64_t capture_key,
+	uint64_t timeline)
+{
+	if (!allocator_)
+		return;
+	for (size_t i = 0; i < pending_staging_.size();)
+	{
+		if (pending_staging_[i].capture_key != capture_key)
+		{
+			++i;
+			continue;
+		}
+		allocator_->RetireBuffer(&pending_staging_[i].buffer, timeline);
+		if (i + 1 != pending_staging_.size())
+			pending_staging_[i] = std::move(pending_staging_.back());
+		pending_staging_.pop_back();
 	}
 }
 

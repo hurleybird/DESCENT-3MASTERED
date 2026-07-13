@@ -137,6 +137,12 @@ public:
 //	Sizes the displayable region of the app (the window)
 	virtual void set_sizepos(int x, int y, int w, int h);
 
+	// Keep explicit command-line placement across renderer initialization.
+	void set_position_override(int x, int y);
+
+	// Prevent an automated capture window from taking focus.
+	void set_background_mode(bool enabled);
+
 	void set_flags(int newflags);
 
 //	returns -1 if we pass to default window handler.
@@ -173,6 +179,9 @@ private:
 	HInstance m_hInstance;
 	unsigned m_Flags;
 	int m_X, m_Y, m_W, m_H;				// window dimensions.
+	bool m_PositionOverride;
+	int m_OverrideX, m_OverrideY;
+	bool m_BackgroundMode;
 
 private:
 	void os_init();						// initializes OS components.

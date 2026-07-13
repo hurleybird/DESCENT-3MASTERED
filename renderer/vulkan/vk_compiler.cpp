@@ -249,10 +249,7 @@ const CapturedPayloadRecord *PayloadRecord(const RenderCaptureSegment &capture,
 const uint8_t *PayloadData(const RenderCaptureSegment &capture,
 	PayloadDataId id)
 {
-	const CapturedPayloadRecord *record = PayloadRecord(capture, id);
-	return record && record->byte_offset <= capture.PayloadBytes().size() &&
-		record->byte_size <= capture.PayloadBytes().size() - record->byte_offset ?
-		capture.PayloadBytes().data() + record->byte_offset : nullptr;
+	return capture.PayloadData(id);
 }
 
 void CopyMatrix(float output[16], const float input[16])
@@ -2090,9 +2087,12 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 	for (const CapturedTextureVersion &version : capture->TextureVersions())
 		if (version.immutable_upload_payload != kInvalidId &&
 			version.immutable_upload_payload < capture->PayloadRecords().size())
-			requirements.upload_bytes += AlignUp(
-				capture->PayloadRecords()[version.immutable_upload_payload].byte_size,
-				256);
+		{
+			const VkDeviceSize bytes =
+				capture->PayloadRecords()[version.immutable_upload_payload].byte_size;
+			if (bytes < kDedicatedTextureUploadThreshold)
+				requirements.upload_bytes += AlignUp(bytes, 256);
+		}
 	// Color readbacks use an RGBA8 transfer representation even when the legacy
 	// destination is RGB565/RGB8.
 	VkDeviceSize rgba_readback_bytes = 0;

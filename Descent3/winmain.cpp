@@ -33,6 +33,34 @@
 #include "config.h"
 #include "ddio.h"
 
+static bool GetWindowPositionArgument(int *x, int *y)
+{
+	int argument = FindArg("-windowpos");
+	if (!argument)
+		argument = FindArg("-window-position");
+	if (!argument)
+		return false;
+
+	const char *x_value = GetArg(argument + 1);
+	const char *y_value = GetArg(argument + 2);
+	char *x_end = NULL;
+	char *y_end = NULL;
+	const long parsed_x = x_value ? strtol(x_value, &x_end, 10) : 0;
+	const long parsed_y = y_value ? strtol(y_value, &y_end, 10) : 0;
+	if (!x_value || !y_value || x_end == x_value || y_end == y_value ||
+		*x_end != '\0' || *y_end != '\0' ||
+		parsed_x < -1000000 || parsed_x > 1000000 ||
+		parsed_y < -1000000 || parsed_y > 1000000)
+	{
+		mprintf((0, "Ignoring invalid -windowpos X Y command-line argument.\n"));
+		return false;
+	}
+
+	*x = (int)parsed_x;
+	*y = (int)parsed_y;
+	return true;
+}
+
 const char *English_strings[] = {
 	"Descent 3 under Windows NT requires version 4.0 or greater of NT to run.",
 	"Descent 3 requires  Windows 9x, NT 4.0 or greater to run.",
@@ -652,10 +680,14 @@ int PASCAL HandledWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine,
 	else
 	{
 		int temp;
+		int window_x = 0;
+		int window_y = 0;
+		const bool has_window_position =
+			GetWindowPositionArgument(&window_x, &window_y);
 		Database->read_int("RS_fullscreen", &temp);
 		Game_fullscreen = !!temp;
 
-		if (FindArg("-windowed"))
+		if (FindArg("-windowed") || has_window_position)
 			Game_fullscreen = false;
 
 		unsigned int flags = OEAPP_FULLSCREEN;
@@ -666,6 +698,10 @@ int PASCAL HandledWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine,
 		}
 
 		d3 = new oeD3Win32App(flags, (HInstance)hInst);
+		if (has_window_position)
+			d3->set_position_override(window_x, window_y);
+		if (FindArg("-capture-frame") || FindArg("-screenshot-frame"))
+			d3->set_background_mode(true);
 	}
 	atexit(D3End);
 

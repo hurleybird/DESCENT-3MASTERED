@@ -66,6 +66,9 @@ bool RendererShouldCountMsaaTransitionFrame();
 // Automated renderer captures must not consume live workstation input.  This
 // is based on the command line request so it is valid before gameplay starts.
 bool AutomatedCaptureSuppressesInput();
+// Writes an opt-in lifecycle trace when PICCU_CAPTURE_LOG names a file.
+// Used by background automation to diagnose startup without stealing focus.
+void AutomatedCaptureLog(const char* format, ...);
 
 class PerfMarkerScope
 {

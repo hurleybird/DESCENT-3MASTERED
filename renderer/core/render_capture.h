@@ -4,6 +4,7 @@
 #include "render_contract.h"
 #include "render_wsi_contract.h"
 
+#include <memory>
 #include <vector>
 
 namespace piccu
@@ -132,6 +133,13 @@ public:
 	WsiSignatureId InternWsiSignature(const CapturedWsiSignature &signature);
 	PayloadDataId CopyPayloadData(const void *data, uint32_t byte_size,
 		uint32_t alignment, CapturedPayloadSemantic semantic);
+	// Shares an already-immutable payload with the capture instead of copying it
+	// into the small transient payload arena. This is intended for persistent,
+	// potentially large resource uploads such as texture snapshots.
+	PayloadDataId ReferencePayloadData(
+		const std::shared_ptr<const std::vector<uint8_t>> &data,
+		uint32_t alignment, CapturedPayloadSemantic semantic);
+	const uint8_t *PayloadData(PayloadDataId id) const;
 	PayloadRef InternPayloadBinding(const CapturedPayloadBinding &binding);
 
 	StreamGeometryRef CopyStreamGeometry(const BaseVertex *vertices,
@@ -203,6 +211,9 @@ private:
 	std::vector<CapturedPayloadBinding> payload_bindings_;
 	std::vector<CapturedPayloadRecord> payload_records_;
 	std::vector<uint8_t> payload_bytes_;
+	// Parallel to payload_records_. Null entries name data in payload_bytes_;
+	// non-null entries keep external immutable storage alive through compile.
+	std::vector<std::shared_ptr<const std::vector<uint8_t>>> external_payloads_;
 	std::vector<BaseVertex> stream_vertices_;
 	std::vector<uint32_t> stream_indices_;
 	std::vector<uint32_t> stream_payload_words_;

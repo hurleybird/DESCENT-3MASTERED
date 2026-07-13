@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -48,6 +49,19 @@ namespace
 constexpr uint32_t kInitialPresentedFrameSerial = 1;
 constexpr VkDeviceSize kRequestedStorageRange = 8u * 1024u * 1024u;
 constexpr VkDeviceSize kRequestedMaximumBuffer = 8u * 1024u * 1024u;
+
+void AppendAutomationDiagnostic(const std::string &message) noexcept
+{
+	const char *path = std::getenv("PICCU_VULKAN_LOG");
+	if (!path || !path[0])
+		return;
+	FILE *file = std::fopen(path, "ab");
+	if (!file)
+		return;
+	std::fwrite(message.data(), 1, message.size(), file);
+	std::fwrite("\n", 1, 1, file);
+	std::fclose(file);
+}
 
 const char *FailureName(RuntimeFailure failure) noexcept
 {
@@ -441,14 +455,18 @@ struct VulkanRuntime::Impl
 			"error" : severity == DiagnosticSeverity::Warning ? "warning" :
 			"info") << " [" << (stage ? stage : "runtime") << "]: "
 			<< (message ? message : "no diagnostic text");
-		self->SetDiagnostic(stream.str());
+		const std::string diagnostic = stream.str();
+		self->SetDiagnostic(diagnostic);
+		AppendAutomationDiagnostic(diagnostic);
 	}
 
 	bool Fail(const char *stage, const std::string &message, bool terminal = false)
 	{
 		std::ostringstream stream;
 		stream << (stage ? stage : "runtime") << ": " << message;
-		SetDiagnostic(stream.str());
+		const std::string diagnostic = stream.str();
+		SetDiagnostic(diagnostic);
+		AppendAutomationDiagnostic(std::string("Vulkan failure: ") + diagnostic);
 		mprintf((0, "Vulkan failure [%s]: %s\n",
 			stage ? stage : "runtime", message.c_str()));
 		fatal = fatal || terminal;
@@ -1662,6 +1680,7 @@ void VulkanRuntime::ReportFailure(RuntimeFailure failure,
 		stream << "; Vulkan detail: " << detail;
 	const std::string message = stream.str();
 	impl_->SetDiagnostic(message);
+	AppendAutomationDiagnostic(std::string("Vulkan failure: ") + message);
 	if (concrete_detail)
 		mprintf((0, "Vulkan failure [facade]: %s\n", message.c_str()));
 }

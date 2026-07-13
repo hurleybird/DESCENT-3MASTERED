@@ -283,6 +283,10 @@ add_dependencies(PiccuEngine piccu_vulkan_dependencies_verify
 	piccu_vulkan_shader_runtime_assets)
 	
 IF (WIN32)
+	# PiccuEngine remains x86 for legacy module ABI compatibility. Vulkan and
+	# modern driver allocations require the full 4 GB user address space on
+	# 64-bit Windows rather than the historical 2 GB PE default.
+	target_link_options(PiccuEngine PUBLIC /LARGEADDRESSAWARE)
 	if (USE_SDL) #for convenience SDL will compile as a console app, and dump mono there
 		target_link_options(PiccuEngine PUBLIC /SAFESEH:NO /NODEFAULTLIB:LIBC)
 	else()

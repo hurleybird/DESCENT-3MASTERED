@@ -8,6 +8,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <memory>
 #include <vector>
 
 namespace piccu
@@ -16,6 +17,10 @@ namespace render
 {
 namespace vk
 {
+
+// Large, one-shot texture transfers must not permanently inflate every frame
+// context's mapped upload arena. They use a timeline-retired staging buffer.
+constexpr VkDeviceSize kDedicatedTextureUploadThreshold = 16u * 1024u * 1024u;
 
 struct TextureResidencyConfig
 {
@@ -136,12 +141,13 @@ private:
 	{
 		CapturedTextureVersion captured = {};
 		AllocatedImage allocation;
-		std::vector<uint8_t> cpu_snapshot;
+		std::shared_ptr<const std::vector<uint8_t>> cpu_snapshot;
 		TextureVersionId recycle_candidate = kInvalidId;
 		VkDeviceSize byte_size = 0;
 		uint32_t array_texture = 0;
 		uint32_t diagnostic = 0;
 		uint32_t current_mapping = 0;
+		uint64_t pending_upload_capture_key = 0;
 		uint64_t last_resolve_serial = 0;
 		std::vector<uint64_t> pending_capture_keys;
 	};
@@ -161,6 +167,18 @@ private:
 		TextureVersionId version = kInvalidId;
 		std::vector<FontLayer> layers;
 		std::vector<uint8_t> rgba;
+	};
+
+	struct TerrainArraySource
+	{
+		int32_t handle = -1;
+		LegacyIdentity identity;
+	};
+
+	struct PendingStaging
+	{
+		uint64_t capture_key = 0;
+		AllocatedBuffer buffer;
 	};
 
 	Version *FindVersion(TextureVersionId id);
@@ -199,9 +217,12 @@ private:
 		TextureVersionId id) const;
 	static bool IdentityEqual(const LegacyIdentity &left,
 		const LegacyIdentity &right) noexcept;
+	static bool TerrainIdentityEqual(const LegacyIdentity &left,
+		const LegacyIdentity &right) noexcept;
 	static VkDeviceSize TextureBytes(uint32_t width, uint32_t height,
 		uint32_t layers, uint32_t mip_count) noexcept;
 	static uint64_t CaptureKey(const RenderCaptureSegment &capture) noexcept;
+	void RetireCaptureStaging(uint64_t capture_key, uint64_t timeline);
 
 	Platform *platform_;
 	ResourceAllocator *allocator_;
@@ -211,12 +232,16 @@ private:
 	std::vector<LogicalMapping> bitmap_mappings_;
 	std::vector<LogicalMapping> lightmap_mappings_;
 	std::vector<Version> versions_;
+	std::vector<PendingStaging> pending_staging_;
 	FontArray font_array_;
 	TextureVersionId terrain_base_version_;
 	TextureVersionId terrain_lightmap_version_;
 	uint64_t terrain_base_signature_;
 	uint64_t terrain_lightmap_signature_;
 	uint32_t terrain_array_generation_;
+	std::vector<TerrainArraySource> terrain_base_sources_;
+	TerrainArraySource terrain_lightmap_sources_[4];
+	bool terrain_sources_valid_;
 	VkSampler samplers_[static_cast<uint32_t>(SamplerSemantic::Count)];
 	VkSampler world_samplers_[kWorldSamplerCount];
 	TextureVersionId diagnostic_2d_;

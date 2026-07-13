@@ -269,6 +269,7 @@ void RenderCaptureSegment::Reserve(const CaptureReserve &reserve)
 	wsi_signatures_.reserve(reserve.wsi_signatures);
 	payload_bindings_.reserve(reserve.payload_bindings);
 	payload_records_.reserve(reserve.payload_records);
+	external_payloads_.reserve(reserve.payload_records);
 	payload_bytes_.reserve(reserve.payload_bytes);
 	stream_vertices_.reserve(reserve.stream_vertices);
 	stream_indices_.reserve(reserve.stream_indices);
@@ -303,6 +304,7 @@ bool RenderCaptureSegment::Reset(uint32_t presented_frame_serial,
 	wsi_signatures_.clear();
 	payload_bindings_.clear();
 	payload_records_.clear();
+	external_payloads_.clear();
 	payload_bytes_.clear();
 	stream_vertices_.clear();
 	stream_indices_.clear();
@@ -345,6 +347,7 @@ bool RenderCaptureSegment::ResetContinuationFrom(
 	wsi_signatures_ = prefix.wsi_signatures_;
 	payload_bindings_ = prefix.payload_bindings_;
 	payload_records_ = prefix.payload_records_;
+	external_payloads_ = prefix.external_payloads_;
 	payload_bytes_ = prefix.payload_bytes_;
 	RebuildStateHash(states_.size() * 2 + 1);
 	RebuildMaterialHash(materials_.size() * 2 + 1);
@@ -635,7 +638,42 @@ PayloadDataId RenderCaptureSegment::CopyPayloadData(const void *data, uint32_t b
 
 	CapturedPayloadRecord record = { offset, byte_size, alignment, static_cast<uint32_t>(semantic) };
 	payload_records_.push_back(record);
+	external_payloads_.push_back(nullptr);
 	return static_cast<PayloadDataId>(payload_records_.size() - 1);
+}
+
+PayloadDataId RenderCaptureSegment::ReferencePayloadData(
+	const std::shared_ptr<const std::vector<uint8_t>> &data,
+	uint32_t alignment, CapturedPayloadSemantic semantic)
+{
+	if (!CanMutate() || !data || data->empty() ||
+		data->size() >= static_cast<size_t>(kInvalidId) ||
+		!IsPowerOfTwo(alignment) ||
+		!IsPayloadShapeValid(semantic, static_cast<uint32_t>(data->size()), alignment) ||
+		payload_records_.size() >= static_cast<size_t>(kInvalidId))
+		return kInvalidId;
+
+	CapturedPayloadRecord record = { kInvalidId,
+		static_cast<uint32_t>(data->size()), alignment,
+		static_cast<uint32_t>(semantic) };
+	payload_records_.push_back(record);
+	external_payloads_.push_back(data);
+	return static_cast<PayloadDataId>(payload_records_.size() - 1);
+}
+
+const uint8_t *RenderCaptureSegment::PayloadData(PayloadDataId id) const
+{
+	if (id == kInvalidId || id >= payload_records_.size() ||
+		id >= external_payloads_.size())
+		return nullptr;
+	const CapturedPayloadRecord &record = payload_records_[id];
+	const std::shared_ptr<const std::vector<uint8_t>> &external =
+		external_payloads_[id];
+	if (external)
+		return external->size() == record.byte_size ? external->data() : nullptr;
+	return record.byte_offset <= payload_bytes_.size() &&
+		record.byte_size <= payload_bytes_.size() - record.byte_offset ?
+		payload_bytes_.data() + record.byte_offset : nullptr;
 }
 
 PayloadRef RenderCaptureSegment::InternPayloadBinding(const CapturedPayloadBinding &binding)
@@ -1057,15 +1095,15 @@ bool RenderCaptureSegment::Validate(CaptureValidationResult *out_result) const
 	for (size_t i = 0; i < payload_records_.size(); ++i)
 	{
 		const CapturedPayloadRecord &record = payload_records_[i];
-		if (record.byte_offset > payload_bytes_.size() ||
-			record.byte_size > payload_bytes_.size() - record.byte_offset ||
+		const uint8_t *payload = PayloadData(static_cast<PayloadDataId>(i));
+		if (!payload ||
 			!IsPayloadShapeValid(static_cast<CapturedPayloadSemantic>(record.semantic),
 				record.byte_size, record.alignment))
 			record_error(kCaptureInvalidPayloadShape, kInvalidId, static_cast<uint32_t>(i));
 		else if (record.semantic == kPayloadSpecularBlock)
 		{
 			GpuSpecularBlock block = {};
-			memcpy(&block, payload_bytes_.data() + record.byte_offset, sizeof(block));
+			memcpy(&block, payload, sizeof(block));
 			if (block.count < 0 || block.count > static_cast<int32_t>(kMaxSpecularSources))
 				record_error(kCaptureInvalidPayloadShape, kInvalidId, static_cast<uint32_t>(i));
 		}
