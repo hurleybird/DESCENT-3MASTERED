@@ -46,8 +46,11 @@ void main() {
         vec4 eye = frame_view.view * world;
         float zv = -eye.z;
         vec4 projected = frame_view.projection * eye;
-        float depth = clamp(1.0 - 1.0 / max(zv, 0.0001), 0.0, 1.0);
-        clip = vec4(projected.x, -projected.y, depth * zv, zv);
+        // GL4 uses the complete finite-far projection for depth. Convert its
+        // [-w,+w] clip range to Vulkan's [0,+w] range without replacing it
+        // with the old infinite-far approximation.
+        float vulkan_clip_z = 0.5 * (projected.z + projected.w);
+        clip = vec4(projected.x, -projected.y, vulkan_clip_z, projected.w);
     }
     gl_Position = clip;
     out_color = unpackUnorm4x8(in_rgba8);

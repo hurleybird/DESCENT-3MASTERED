@@ -48,7 +48,9 @@ const GraphNodeContract kFrozenGraphNodeContract[] = {
 		GraphExtentRule::Logical, GraphDomain::Resolve,
 		RenderFormat::D32Sfloat, GraphHistoryRule::None, 0 },
 	{ GraphNodeId::AoDepth, GraphPredicate::Gtao,
-		R(PostLogicalDepth) | R(ResolvedAoClass) | R(SceneAoClass), R(GtaoDepthWeight),
+		R(CapturedWorldDepth) | R(SceneDepth) |
+		R(ResolvedDepth) | R(ResolvedAoClass) | R(SceneAoClass),
+		R(GtaoDepthWeight),
 		GraphExtentRule::GtaoConfigured, GraphDomain::PostAuthored,
 		RenderFormat::R32G32Sfloat, GraphHistoryRule::None, 0 },
 	{ GraphNodeId::AoRaw, GraphPredicate::Gtao,
@@ -74,7 +76,8 @@ const GraphNodeContract kFrozenGraphNodeContract[] = {
 		RenderFormat::R8Unorm, GraphHistoryRule::None, 0 },
 	{ GraphNodeId::AoApply, GraphPredicate::Gtao,
 		R(SceneColor) | R(ResolvedColor) | R(LogicalAuthoredColor) |
-		R(GtaoCurrent) | R(GtaoRaw) | R(GtaoSuppression), R(GtaoApplied),
+		R(CapturedWorldColor) | R(GtaoCurrent) | R(GtaoRaw) |
+		R(GtaoHistoryNext) | R(GtaoSuppression), R(GtaoApplied),
 		GraphExtentRule::Logical, GraphDomain::PostAuthored,
 		RenderFormat::R8G8B8A8Unorm, GraphHistoryRule::PreserveAlpha, 1 },
 	{ GraphNodeId::AoDeferredComposite, GraphPredicate::GtaoDeferred,
@@ -501,8 +504,8 @@ const GraphInputRuleContract kGraphInputRuleContract[] = {
 	{ GraphNodeId::PrepareDepthLogical, 0, 0,
 		{ GraphInputSemantic::PostDepthSource, GraphInputSemantic::None,
 		  GraphInputSemantic::None, GraphInputSemantic::None } },
-	{ GraphNodeId::AoDepth, R(PostLogicalDepth), 0,
-		{ GraphInputSemantic::AoClassSource, GraphInputSemantic::None,
+	{ GraphNodeId::AoDepth, 0, 0,
+		{ GraphInputSemantic::PostDepthSource, GraphInputSemantic::AoClassSource,
 		  GraphInputSemantic::None, GraphInputSemantic::None } },
 	{ GraphNodeId::AoRaw, R(GtaoDepthWeight) | R(GtaoNoise), 0,
 		{ GraphInputSemantic::None, GraphInputSemantic::None,
@@ -515,7 +518,7 @@ const GraphInputRuleContract kGraphInputRuleContract[] = {
 		{ GraphInputSemantic::ProtectionMaskSource, GraphInputSemantic::AuthoredBaseColor,
 		  GraphInputSemantic::None, GraphInputSemantic::None } },
 	{ GraphNodeId::AoApply, R(GtaoSuppression), 0,
-		{ GraphInputSemantic::AuthoredBaseColor,
+		{ GraphInputSemantic::AoSceneColorSource,
 		  GraphInputSemantic::AoFinalSource,
 		  GraphInputSemantic::None, GraphInputSemantic::None } },
 	{ GraphNodeId::AoDeferredComposite,
@@ -619,12 +622,19 @@ GraphResource SelectGraphInputSource(GraphInputSemantic semantic,
 			GraphResource::SceneProtectionMask;
 	case GraphInputSemantic::AoClassSource:
 		return multisampled ? GraphResource::ResolvedAoClass : GraphResource::SceneAoClass;
+	case GraphInputSemantic::AoSceneColorSource:
+		if (context.gtao_deferred_output_valid != 0)
+			return GraphResource::CapturedWorldColor;
+		if (context.ssaa_factor > 1)
+			return GraphResource::LogicalAuthoredColor;
+		return multisampled ? GraphResource::ResolvedColor : GraphResource::SceneColor;
 	case GraphInputSemantic::AoPreTemporalSource:
 		return context.gtao_blur_output_valid != 0 ?
 			GraphResource::GtaoCurrent : GraphResource::GtaoRaw;
 	case GraphInputSemantic::AoFinalSource:
-		return context.gtao_blur_output_valid != 0 ||
-			context.gtao_temporal_output_valid != 0 ?
+		if (context.gtao_temporal_output_valid != 0)
+			return GraphResource::GtaoHistoryNext;
+		return context.gtao_blur_output_valid != 0 ?
 			GraphResource::GtaoCurrent : GraphResource::GtaoRaw;
 	case GraphInputSemantic::TemporalHistorySource:
 		return context.gtao_history_required != 0 ?

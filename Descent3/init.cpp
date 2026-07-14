@@ -417,11 +417,13 @@ void SaveGameSettings()
 	}
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_spread);
 	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
-	if (!FindArg("-nogtao") && !FindArg("-no-gtao"))
+	if (!FindArg("-gtao") && !FindArg("-gtao-debug") &&
+		!FindArg("-nogtao") && !FindArg("-no-gtao"))
 		Database->write("RS_gtao_enabled", Render_preferred_state.gtao_enabled);
 	Database->write("RS_gtao_resolution", Render_preferred_state.gtao_resolution);
 	Database->write("RS_gtao_overscan_percent", Render_preferred_state.gtao_overscan_percent);
-	Database->write("RS_gtao_debug_preview", Render_preferred_state.gtao_debug_preview);
+	if (!FindArg("-gtao-debug"))
+		Database->write("RS_gtao_debug_preview", Render_preferred_state.gtao_debug_preview);
 	Database->write("RS_gtao_temporal_debug_preview", Render_preferred_state.gtao_temporal_debug_preview);
 	if (!FindArg("-motion-vector-debug") && !FindArg("-motion-blur-new"))
 	{
@@ -953,6 +955,17 @@ void LoadGameSettings()
 	// expensive AO configuration prevents the video menu from being reached.
 	if (FindArg("-nogtao") || FindArg("-no-gtao"))
 		Render_preferred_state.gtao_enabled = false;
+	else if (FindArg("-gtao"))
+		Render_preferred_state.gtao_enabled = true;
+	if (FindArg("-gtao-debug"))
+	{
+		Render_preferred_state.gtao_enabled = true;
+		Render_preferred_state.gtao_debug_preview = true;
+	}
+	if (FindArg("-gtao-no-temporal"))
+		Render_preferred_state.gtao_temporal_blend = 0.0f;
+	if (FindArg("-gtao-no-blur"))
+		Render_preferred_state.gtao_blur_radius = 0;
 	Render_preferred_state.gtao_temporal_debug_preview = false;
 	tempint = Render_preferred_state.motion_vector_mode;
 	Database->read_int("RS_motion_vector_mode", &tempint);

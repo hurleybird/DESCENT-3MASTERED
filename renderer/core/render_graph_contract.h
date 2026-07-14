@@ -205,6 +205,7 @@ enum class GraphInputSemantic : uint32_t
 	ObjectIdSource,
 	ProtectionMaskSource,
 	AoClassSource,
+	AoSceneColorSource,
 	AoPreTemporalSource,
 	AoFinalSource,
 	TemporalHistorySource,

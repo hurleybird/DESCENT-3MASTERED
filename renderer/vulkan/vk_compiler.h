@@ -41,6 +41,7 @@ struct CompilerSubmission
 	uint32_t indirect_commands = 0;
 	uint32_t indirect_batches = 0;
 	uint32_t graph_passes = 0;
+	uint32_t gtao_active = 0;
 	uint32_t dynamic_rendering_instances = 0;
 	uint32_t descriptor_page_binds = 0;
 };

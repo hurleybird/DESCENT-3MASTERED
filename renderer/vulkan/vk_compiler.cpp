@@ -1584,6 +1584,13 @@ struct FrameCompiler::Impl
 		if (operation.type == PlanOperationType::InsertedGraphNode &&
 			operation.inserted_graph_node == InsertedGraphNodeId::AcquireSoftDepth)
 			return GraphResource::SoftDepthSnapshot;
+		// The temporal pass has one color attachment.  Its result is both the
+		// AO consumed later in this frame and the history consumed next frame;
+		// render it into the rotating history-next image rather than the
+		// non-temporal GtaoCurrent scratch image.
+		if (operation.graph_node == GraphNodeId::AoTemporal &&
+			last_plan.graph.gtao_temporal_active)
+			return GraphResource::GtaoHistoryNext;
 		GraphResourceMask outputs = 0;
 		if (operation.type == PlanOperationType::CompilerGraphPhase &&
 			operation.compiler_phase_index < kCompilerGraphPhaseContractCount)
@@ -1687,15 +1694,41 @@ struct FrameCompiler::Impl
 			const CapturedPostDynamicState &dynamic = signature->dynamic;
 			logical_screen_width = static_cast<float>(std::max(1u, p.width));
 			logical_screen_height = static_cast<float>(std::max(1u, p.height));
-			std::memcpy(uniforms.visible_origin_size,
-				dynamic.visible_origin_size, sizeof(uniforms.visible_origin_size));
-			std::memcpy(uniforms.source_visible_origin_size,
-				dynamic.visible_origin_size,
-				sizeof(uniforms.source_visible_origin_size));
+			uniforms.visible_origin_size[0] = 0.0f;
+			uniforms.visible_origin_size[1] = 0.0f;
+			uniforms.visible_origin_size[2] = logical_screen_width;
+			uniforms.visible_origin_size[3] = logical_screen_height;
 			const float velocity_width = std::max(1.0f,
 				dynamic.source_destination_extent[0]);
 			const float velocity_height = std::max(1.0f,
 				dynamic.source_destination_extent[1]);
+			const bool source_is_overscanned = sw > logical_screen_width ||
+				sh > logical_screen_height;
+			const bool destination_is_logical = dw == logical_screen_width &&
+				dh == logical_screen_height;
+			const float source_scale_x = sw / velocity_width;
+			const float source_scale_y = sh / velocity_height;
+			const bool use_source_visible = source_is_overscanned &&
+				(destination_is_logical ||
+				 operation.graph_node == GraphNodeId::AoSuppress);
+			if (use_source_visible)
+			{
+				uniforms.source_visible_origin_size[0] =
+					dynamic.visible_origin_size[0] * source_scale_x;
+				uniforms.source_visible_origin_size[1] =
+					dynamic.visible_origin_size[1] * source_scale_y;
+				uniforms.source_visible_origin_size[2] =
+					dynamic.visible_origin_size[2] * source_scale_x;
+				uniforms.source_visible_origin_size[3] =
+					dynamic.visible_origin_size[3] * source_scale_y;
+			}
+			else
+			{
+				uniforms.source_visible_origin_size[0] = 0.0f;
+				uniforms.source_visible_origin_size[1] = 0.0f;
+				uniforms.source_visible_origin_size[2] = sw;
+				uniforms.source_visible_origin_size[3] = sh;
+			}
 			uniforms.velocity_uv_origin_scale[0] =
 				dynamic.visible_origin_size[0] / velocity_width;
 			uniforms.velocity_uv_origin_scale[1] =
@@ -1704,15 +1737,43 @@ struct FrameCompiler::Impl
 				dynamic.visible_origin_size[2] / velocity_width;
 			uniforms.velocity_uv_origin_scale[3] =
 				dynamic.visible_origin_size[3] / velocity_height;
-			if (source.extent.width == ci.targets->SceneLayout().internal_width &&
-				source.extent.height == ci.targets->SceneLayout().internal_height &&
+			if (source_is_overscanned && destination_is_logical &&
 				dynamic.visible_origin_size[2] > 0.0f &&
 				dynamic.visible_origin_size[3] > 0.0f)
 			{
-				uniforms.uv_origin_scale[0] = dynamic.visible_origin_size[0] / sw;
-				uniforms.uv_origin_scale[1] = dynamic.visible_origin_size[1] / sh;
-				uniforms.uv_origin_scale[2] = dynamic.visible_origin_size[2] / sw;
-				uniforms.uv_origin_scale[3] = dynamic.visible_origin_size[3] / sh;
+				uniforms.uv_origin_scale[0] =
+					uniforms.source_visible_origin_size[0] / sw;
+				uniforms.uv_origin_scale[1] =
+					uniforms.source_visible_origin_size[1] / sh;
+				uniforms.uv_origin_scale[2] =
+					uniforms.source_visible_origin_size[2] / sw;
+				uniforms.uv_origin_scale[3] =
+					uniforms.source_visible_origin_size[3] / sh;
+			}
+			if (operation.graph_node == GraphNodeId::AoDeferredComposite &&
+				velocity_width > 0.0f && velocity_height > 0.0f)
+			{
+				uniforms.secondary_uv_origin_scale[0] =
+					dynamic.visible_origin_size[0] / velocity_width;
+				uniforms.secondary_uv_origin_scale[1] =
+					dynamic.visible_origin_size[1] / velocity_height;
+				uniforms.secondary_uv_origin_scale[2] =
+					dynamic.visible_origin_size[2] / velocity_width;
+				uniforms.secondary_uv_origin_scale[3] =
+					dynamic.visible_origin_size[3] / velocity_height;
+			}
+			if (operation.graph_node == GraphNodeId::AoSuppress)
+			{
+				const TargetImageRef captured = ci.targets->GraphImage(
+					GraphResource::CapturedWorldColor);
+				logical_screen_width = static_cast<float>(
+					std::max(1u, captured.extent.width));
+				logical_screen_height = static_cast<float>(
+					std::max(1u, captured.extent.height));
+				uniforms.source_visible_origin_size[0] = 0.0f;
+				uniforms.source_visible_origin_size[1] = 0.0f;
+				uniforms.source_visible_origin_size[2] = logical_screen_width;
+				uniforms.source_visible_origin_size[3] = logical_screen_height;
 			}
 			// CapturedPreferredState stores the user-facing gamma value. GL4's
 			// post shaders receive the display exponent, 1 / user_gamma.
@@ -1723,17 +1784,25 @@ struct FrameCompiler::Impl
 			uniforms.bloom_gamma_threshold_intensity_spread[3] = p.bloom_spread;
 			const float radius = std::max(0.1f, std::min(12.0f, p.gtao_radius));
 			const uint32_t gtao_scale = std::max(1u, ci.targets->GtaoScale());
-			const float ao_width = static_cast<float>((p.width + gtao_scale - 1u) /
-				gtao_scale);
-			const float ao_height = static_cast<float>((p.height + gtao_scale - 1u) /
-				gtao_scale);
+			const TargetImageRef ao_target = ci.targets->GraphImage(
+				GraphResource::GtaoDepthWeight);
+			const float ao_width = static_cast<float>(
+				std::max(1u, ao_target.extent.width));
+			const float ao_height = static_cast<float>(
+				std::max(1u, ao_target.extent.height));
 			uniforms.ao_screen_size_inv_size[0] = ao_width;
 			uniforms.ao_screen_size_inv_size[1] = ao_height;
 			uniforms.ao_screen_size_inv_size[2] = 1.0f / std::max(1.0f, ao_width);
 			uniforms.ao_screen_size_inv_size[3] = 1.0f / std::max(1.0f, ao_height);
 			uniforms.noise_origin_jitter[0] = dynamic.visible_origin_size[0] *
 				ao_width / std::max(1.0f, dynamic.source_destination_extent[0]);
-			uniforms.noise_origin_jitter[1] = dynamic.visible_origin_size[1] *
+			// GL4's fullscreen convention measures the AO noise origin from the
+			// lower edge.  Overscan can be asymmetric by one pixel, so converting
+			// the canonical top-origin visible rect is observable at odd extents.
+			const float legacy_bottom_origin = std::max(0.0f,
+				dynamic.source_destination_extent[1] -
+				dynamic.visible_origin_size[1] - dynamic.visible_origin_size[3]);
+			uniforms.noise_origin_jitter[1] = legacy_bottom_origin *
 				ao_height / std::max(1.0f, dynamic.source_destination_extent[1]);
 			const float m00 = std::fabs(uniforms.current_projection[0]) < 1.0e-6f ?
 				1.0f : uniforms.current_projection[0];
@@ -1756,9 +1825,13 @@ struct FrameCompiler::Impl
 			uniforms.near_far_radius_radius_pixels[2] = radius;
 			uniforms.near_far_radius_radius_pixels[3] =
 				radius * 0.5f * ao_height * m11;
+			const float visible_ao_width = static_cast<float>(
+				(p.width + gtao_scale - 1u) / gtao_scale);
+			const float visible_ao_height = static_cast<float>(
+				(p.height + gtao_scale - 1u) / gtao_scale);
 			uniforms.ao_max_radius_neg_inv_radius2_bias_intensity[0] = std::max(
-				16.0f, 128.0f * std::sqrt(std::max(1.0f, ao_width * ao_height) /
-					(1080.0f * 1920.0f)));
+				16.0f, 128.0f * std::sqrt(std::max(1.0f,
+					visible_ao_width * visible_ao_height) / (1080.0f * 1920.0f)));
 			uniforms.ao_max_radius_neg_inv_radius2_bias_intensity[1] =
 				-1.0f / (radius * radius);
 			uniforms.ao_max_radius_neg_inv_radius2_bias_intensity[2] =
@@ -1832,6 +1905,8 @@ struct FrameCompiler::Impl
 			{
 			case GraphNodeId::AoDepth:
 				features |= kPostUniformHasAoClass;
+				logical_screen_width = sw;
+				logical_screen_height = sh;
 				break;
 			case GraphNodeId::AoTemporal:
 				if (dynamic.gtao_history_valid)
@@ -1847,13 +1922,32 @@ struct FrameCompiler::Impl
 					features |= kPostUniformUseBloomMask;
 				break;
 			case GraphNodeId::AoApply:
-				features |= kPostUniformHasSuppressionMask;
+				if (!p.gtao_debug_preview && !p.gtao_temporal_debug_preview)
+					features |= kPostUniformHasSuppressionMask;
+				uniforms.ao_uv_origin_scale[0] =
+					dynamic.visible_origin_size[0] / velocity_width;
+				uniforms.ao_uv_origin_scale[1] =
+					dynamic.visible_origin_size[1] / velocity_height;
+				uniforms.ao_uv_origin_scale[2] =
+					dynamic.visible_origin_size[2] / velocity_width;
+				uniforms.ao_uv_origin_scale[3] =
+					dynamic.visible_origin_size[3] / velocity_height;
 				uniforms.integer_params[1] =
 					static_cast<int32_t>(p.gtao_debug_preview);
 				break;
 			case GraphNodeId::AoDeferredComposite:
 				features |= kPostUniformUseVisibleRect |
 					kPostUniformUseProtectionMask;
+				uniforms.integer_params[1] =
+					static_cast<int32_t>(p.gtao_debug_preview);
+				uniforms.scene_uv_origin_scale[0] =
+					dynamic.visible_origin_size[0] / velocity_width;
+				uniforms.scene_uv_origin_scale[1] =
+					dynamic.visible_origin_size[1] / velocity_height;
+				uniforms.scene_uv_origin_scale[2] =
+					dynamic.visible_origin_size[2] / velocity_width;
+				uniforms.scene_uv_origin_scale[3] =
+					dynamic.visible_origin_size[3] / velocity_height;
 				break;
 			case GraphNodeId::BloomThreshold:
 				features |= kPostUniformUseAlphaOcclusionMask |
@@ -1879,13 +1973,17 @@ struct FrameCompiler::Impl
 				uniforms.blur_delta_sharpness_reserved[1] =
 					uniforms.ao_screen_size_inv_size[3];
 			uniforms.blur_delta_sharpness_reserved[2] = sharpness;
-			if (dynamic.gtao_history_valid)
+			// GL4 advances a GTAO-local sequence whenever AO runs.  It is
+			// independent of whether temporal accumulation has valid history.
+			if (!dynamic.histories_frozen)
 			{
+				const float gtao_frame = static_cast<float>(
+					ci.targets->GtaoJitterFrame());
 				uniforms.noise_origin_jitter[2] = std::fmod(
-					(static_cast<float>(dynamic.frame_serial) + 1.0f) * 0.754877666f,
+					(gtao_frame + 1.0f) * 0.754877666f,
 					1.0f);
 				uniforms.noise_origin_jitter[3] = std::fmod(
-					(static_cast<float>(dynamic.frame_serial) + 1.0f) * 0.569840291f,
+					(gtao_frame + 1.0f) * 0.569840291f,
 					1.0f);
 			}
 		}
@@ -1981,7 +2079,8 @@ struct FrameCompiler::Impl
 				*post_present_index);
 			if (!input.Valid())
 				return false;
-			if (image_writes.empty())
+			if (image_writes.empty() || binding.binding ==
+				static_cast<uint32_t>(operation.source_selector))
 				first_source = input;
 			PostImageWrite write = {};
 			write.binding = binding.binding;
@@ -3069,6 +3168,13 @@ bool FrameCompiler::CompileAndSubmit(RenderCaptureSegment *capture,
 			++submission->indirect_commands;
 	submission->indirect_batches = indirect_batch_count;
 	submission->graph_passes = impl_->last_plan.graph_pass_count;
+	submission->gtao_active = 0;
+	for (const PlanOperation &operation : impl_->last_plan.operations)
+		if (operation.graph_node == GraphNodeId::AoRaw)
+		{
+			submission->gtao_active = 1;
+			break;
+		}
 	submission->dynamic_rendering_instances = rendering_instances;
 	submission->descriptor_page_binds = static_cast<uint32_t>(pages.size());
 	if (acquired_image)

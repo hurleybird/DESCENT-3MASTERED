@@ -42,6 +42,7 @@ extern float Render_FOV;
 extern float Render_afterburner_visual_factor;
 
 extern bool Game_paused;							//	determines if game is paused.
+void PublishRendererFrameDynamicState();
 extern double Min_allowed_frametime;				// minimum seconds per frame, used for frame limiting
 
 extern bool Rendering_main_view;					// determines if we're rendering the main view

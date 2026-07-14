@@ -23,8 +23,12 @@ void main()
             0.0, 1.0);
         ao = mix(ao, 1.0, suppression);
     }
-    ao = pow(ao,
-        post.ao_max_radius_neg_inv_radius2_bias_intensity.w);
+    // GL4 passes 1.0 for AO-only debug preview and the configured intensity
+    // for normal composition. Keep diagnostic values unwarped so paired
+    // captures expose the raw AO/depth signal.
+    float intensity = debug_channel != 0 ? 1.0 :
+        post.ao_max_radius_neg_inv_radius2_bias_intensity.w;
+    ao = pow(ao, intensity);
 
     if (debug_channel != 0)
     {
@@ -32,6 +36,6 @@ void main()
         return;
     }
     vec4 authored = texture(
-        sampler2D(authored_color_image, post_samplers[0]), in_uv);
+        sampler2D(authored_color_image, post_samplers[0]), PostPrimaryUv(in_uv));
     out_color = vec4(authored.rgb * ao, authored.a);
 }

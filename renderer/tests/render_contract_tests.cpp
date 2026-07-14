@@ -184,6 +184,29 @@ static void TestMotionResourceSelection()
 		"motion-vector debug preview requests motion resources");
 }
 
+static void TestLogicalTargetBounds()
+{
+	CapturedTargetLayout layout = {};
+	layout.target = RenderTargetClass::Scene;
+	layout.logical_width = 1280;
+	layout.logical_height = 720;
+	layout.internal_width = 2740;
+	layout.internal_height = 1542;
+	layout.ssaa_factor = 2;
+	LogicalRect bounds = {};
+	Check(BuildLogicalTargetBounds(layout, &bounds) && bounds.x == -45 &&
+		bounds.y == -26 && bounds.width == 1370 && bounds.height == 771,
+		"scene target bounds include centered odd GTAO overscan");
+
+	layout.target = RenderTargetClass::PostPresent;
+	layout.internal_width = layout.logical_width;
+	layout.internal_height = layout.logical_height;
+	layout.ssaa_factor = 1;
+	Check(BuildLogicalTargetBounds(layout, &bounds) && bounds.x == 0 &&
+		bounds.y == 0 && bounds.width == 1280 && bounds.height == 720,
+		"post-present target bounds remain logical and unshifted");
+}
+
 static const DeviceLimitRequirement *FindLimit(DeviceLimit limit)
 {
 	for (size_t i = 0; i < kRequiredDeviceLimitCount; ++i)
@@ -423,7 +446,7 @@ static void TestGraphSelections()
 	Check(SelectGraphInputSource(GraphInputSemantic::AoPreTemporalSource, context) ==
 		GraphResource::GtaoRaw, "temporal node cannot read its own output");
 	Check(SelectGraphInputSource(GraphInputSemantic::AoFinalSource, context) ==
-		GraphResource::GtaoCurrent, "temporal AO source");
+		GraphResource::GtaoHistoryNext, "same-frame temporal AO history output");
 
 	GraphSourceSelectionContext contexts[3] = {};
 	contexts[0].msaa_samples=1; contexts[0].ssaa_factor=1;
@@ -1949,7 +1972,7 @@ static void TestSharedCoordinateConversions()
 			{5,6}, visible, {10,12});
 		Check(Near(noise_uv.u, phase.u/4.0f) &&
 			Near(noise_uv.v, phase.v/4.0f),
-			"GTAO 4x4 repeat UV follows legacy phase");
+			"GTAO 4x4 sample UV follows legacy phase");
 	}
 
 	const float velocity_values[] = {-0.75f,-0.25f,0.0f,0.25f,0.75f};
@@ -3107,6 +3130,13 @@ static void TestDescriptorNoiseAndLifetimeGate()
 		kGtaoNoiseTextureContract.sampler == SamplerSemantic::GtaoNoise &&
 		kGtaoNoiseTextureContract.row_major_interleaved_rg == 1,
 		"GTAO noise upload metadata");
+	const SamplerContract &gtao_noise_sampler = kSamplerContract[
+		static_cast<size_t>(SamplerSemantic::GtaoNoise)];
+	Check(gtao_noise_sampler.address_u == SamplerAddressMode::ClampToEdge &&
+		gtao_noise_sampler.address_v == SamplerAddressMode::ClampToEdge &&
+		gtao_noise_sampler.magnification == SamplerFilterMode::Nearest &&
+		gtao_noise_sampler.minification == SamplerFilterMode::Nearest,
+		"GTAO noise sampler preserves GL4 draw-time clamp override");
 
 	for (size_t i = 0; i < static_cast<size_t>(DependencyEdge::Count); ++i)
 	{
@@ -3383,6 +3413,7 @@ static void TestWsiDecisionContract()
 int main()
 {
 	TestMotionResourceSelection();
+	TestLogicalTargetBounds();
 	TestFrozenTables();
 	TestGraphSelections();
 	TestExecutableGraphEvaluation();

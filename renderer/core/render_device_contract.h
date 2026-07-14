@@ -670,7 +670,9 @@ extern const PostSamplerSlotContract kPostSamplerSlots[];
 extern const size_t kPostSamplerSlotCount;
 
 // Exact GL4@d34494a 4x4 two-channel noise upload.  Each byte is the C++
-// uint8_t truncation of kMtNoise[n] * 255.0f from renderer/gl_gtao.cpp.
+// uint8_t truncation of kMtNoise[n] * 255.0f from renderer/gl_gtao.cpp.  The
+// sampler contract also preserves the clamp state imposed by GL4's binding
+// helper at draw time (which overrides the texture's creation-time repeat).
 struct GtaoNoiseTextureContract
 {
 	uint32_t width;

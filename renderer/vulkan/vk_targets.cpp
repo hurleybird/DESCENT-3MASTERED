@@ -52,7 +52,7 @@ VkImageUsageFlags DepthUsage()
 TargetManager::TargetManager()
 	: allocator_(nullptr), state_tracker_(nullptr),
 	  supported_sample_mask_(VK_SAMPLE_COUNT_1_BIT),
-	  next_generation_(0), initialized_(false)
+	  gtao_jitter_frame_(0), next_generation_(0), initialized_(false)
 {
 }
 
@@ -93,6 +93,7 @@ void TargetManager::Shutdown(bool device_lost) noexcept
 	allocator_ = nullptr;
 	state_tracker_ = nullptr;
 	initialized_ = false;
+	gtao_jitter_frame_ = 0;
 	next_generation_ = 0;
 }
 
@@ -245,6 +246,10 @@ bool TargetManager::BuildGeneration(const CapturedPreferredState &preferred,
 	const uint32_t attachment_mask = kTargetAttachmentAll;
 	const VkExtent2D internal = { internal_width, internal_height };
 	const VkExtent2D logical = { preferred.width, preferred.height };
+	const VkExtent2D captured = {
+		SafeCeilScale(preferred.width, overscan, 1),
+		SafeCeilScale(preferred.height, overscan, 1)
+	};
 
 	generation->generation = ++next_generation_;
 	generation->preferred = preferred;
@@ -337,10 +342,10 @@ bool TargetManager::BuildGeneration(const CapturedPreferredState &preferred,
 		VK_FORMAT_D32_SFLOAT, logical, DepthUsage(), VK_IMAGE_ASPECT_DEPTH_BIT,
 		"vk.logical.depth") ||
 		!AddGraphImage(generation, GraphResource::CapturedWorldColor, 0,
-		VK_FORMAT_R8G8B8A8_UNORM, logical, ColorUsage(),
+		VK_FORMAT_R8G8B8A8_UNORM, captured, ColorUsage(),
 		VK_IMAGE_ASPECT_COLOR_BIT, "vk.capture.color") ||
 		!AddGraphImage(generation, GraphResource::CapturedWorldDepth, 0,
-		VK_FORMAT_D32_SFLOAT, logical, DepthUsage(), VK_IMAGE_ASPECT_DEPTH_BIT,
+		VK_FORMAT_D32_SFLOAT, captured, DepthUsage(), VK_IMAGE_ASPECT_DEPTH_BIT,
 		"vk.capture.depth"))
 		return false;
 	if (applied_msaa > 1 &&
@@ -356,11 +361,11 @@ bool TargetManager::BuildGeneration(const CapturedPreferredState &preferred,
 			VK_IMAGE_ASPECT_COLOR_BIT, "vk.capture.2x"))
 		return false;
 
-	generation->gtao_scale = ResolveGtaoScale(preferred, preferred.width,
-		preferred.height, applied_msaa);
+	generation->gtao_scale = ResolveGtaoScale(preferred, captured.width,
+		captured.height, applied_msaa);
 	const VkExtent2D ao = {
-		(preferred.width + generation->gtao_scale - 1) / generation->gtao_scale,
-		(preferred.height + generation->gtao_scale - 1) / generation->gtao_scale
+		(captured.width + generation->gtao_scale - 1) / generation->gtao_scale,
+		(captured.height + generation->gtao_scale - 1) / generation->gtao_scale
 	};
 	if (preferred.gtao_enabled)
 	{
@@ -450,19 +455,48 @@ bool TargetManager::Configure(const CapturedPreferredState &preferred,
 {
 	if (!initialized_)
 		return false;
+
+	// Target changes are rare, synchronous operations (video-menu changes,
+	// drawable recreation, and startup).  Do not construct a second complete
+	// MSAA/SSAA graph alongside the first: at 4x SSAA plus 4x MSAA that
+	// transiently doubles a multi-gigabyte allocation.  Callers quiesce the
+	// target timeline before a replacement, so the active generation can be
+	// reclaimed first.  Preserve enough description to rebuild it if the new
+	// configuration is unsupported or allocation fails.
+	const bool had_active = active_.generation != 0;
+	const CapturedPreferredState rollback_preferred = active_.preferred;
+	const VkExtent2D rollback_extent = {
+		active_.scene.drawable_width, active_.scene.drawable_height
+	};
+	if (had_active)
+	{
+		RetireGeneration(&active_, retire_after_timeline);
+		allocator_->Reclaim(retire_after_timeline);
+	}
+
 	GenerationState replacement;
 	if (!BuildGeneration(preferred, drawable_extent, &replacement))
 	{
 		RetireGeneration(&replacement, 0);
 		allocator_->Reclaim(0);
+		if (had_active)
+		{
+			GenerationState rollback;
+			if (BuildGeneration(rollback_preferred, rollback_extent, &rollback))
+			{
+				active_ = std::move(rollback);
+				RegisterGenerationState(&active_);
+			}
+			else
+			{
+				RetireGeneration(&rollback, 0);
+				allocator_->Reclaim(0);
+			}
+		}
 		return false;
 	}
-	GenerationState old;
-	old = std::move(active_);
-	UnregisterGenerationState(&old);
 	active_ = std::move(replacement);
 	RegisterGenerationState(&active_);
-	RetireGeneration(&old, retire_after_timeline);
 	return true;
 }
 
@@ -593,6 +627,13 @@ TargetImageRef TargetManager::GraphImage(GraphResource resource,
 {
 	if (!Ready())
 		return {};
+	if (active_.gtao_history_phase)
+	{
+		if (resource == GraphResource::GtaoHistoryPrevious)
+			resource = GraphResource::GtaoHistoryNext;
+		else if (resource == GraphResource::GtaoHistoryNext)
+			resource = GraphResource::GtaoHistoryPrevious;
+	}
 	if (resource == GraphResource::PostPresent && level == 0)
 		return Attachment(RenderTargetClass::PostPresent, 0);
 	const AllocatedImage *image = FindGraph(resource, level);
@@ -667,6 +708,7 @@ void TargetManager::StampUse(uint64_t timeline_value)
 void TargetManager::InvalidateHistories()
 {
 	active_.gtao_history_valid = false;
+	active_.gtao_history_phase = false;
 	active_.motion_history_valid = false;
 	active_.cockpit_history_valid = false;
 }
@@ -680,6 +722,26 @@ void TargetManager::SetHistoryValidity(bool gtao, bool motion, bool cockpit)
 	active_.gtao_history_valid = gtao;
 	active_.motion_history_valid = motion;
 	active_.cockpit_history_valid = cockpit;
+}
+
+void TargetManager::AdvanceGtaoHistory() noexcept
+{
+	active_.gtao_history_phase = !active_.gtao_history_phase;
+}
+
+uint32_t TargetManager::GtaoJitterFrame() const noexcept
+{
+	return gtao_jitter_frame_;
+}
+
+void TargetManager::AdvanceGtaoJitter() noexcept
+{
+	++gtao_jitter_frame_;
+}
+
+void TargetManager::ResetGtaoJitter() noexcept
+{
+	gtao_jitter_frame_ = 0;
 }
 
 } // namespace vk

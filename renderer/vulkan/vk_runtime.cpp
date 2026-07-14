@@ -654,7 +654,11 @@ struct VulkanRuntime::Impl
 				WsiStatusName(status), status == WsiStatus::DeviceLost ||
 				status == WsiStatus::SurfaceLost);
 		const VkExtent2D extent = wsi.Extent();
-		if (!targets.Configure(preferred, extent, frames.LastAllocatedTimeline()))
+		const uint64_t prior_use = frames.LastAllocatedTimeline();
+		if (prior_use != 0 && !frames.WaitTimeline(prior_use, UINT64_MAX))
+			return Fail("targets",
+				"waiting to replace drawable-sized targets failed", true);
+		if (!targets.Configure(preferred, extent, prior_use))
 			return Fail("targets", "drawable-sized target replacement failed", true);
 		targets.InvalidateHistories();
 		drawable_width = extent.width;
@@ -684,10 +688,16 @@ struct VulkanRuntime::Impl
 		VkExtent2D extent = wsi.Extent();
 		if (extent.width == 0 || extent.height == 0)
 			extent = { width, height };
-		if ((extent.width != drawable_width || extent.height != drawable_height) &&
-			!targets.Configure(preferred, extent, frames.LastAllocatedTimeline()))
-			return Fail("surface-recovery",
-				"drawable target replacement failed", true);
+		if (extent.width != drawable_width || extent.height != drawable_height)
+		{
+			const uint64_t prior_use = frames.LastAllocatedTimeline();
+			if (prior_use != 0 && !frames.WaitTimeline(prior_use, UINT64_MAX))
+				return Fail("surface-recovery",
+					"waiting to replace drawable targets failed", true);
+			if (!targets.Configure(preferred, extent, prior_use))
+				return Fail("surface-recovery",
+					"drawable target replacement failed", true);
+		}
 		drawable_width = extent.width;
 		drawable_height = extent.height;
 		targets.InvalidateHistories();
@@ -1038,8 +1048,13 @@ bool VulkanRuntime::ApplyPreferredState(
 	const VkExtent2D extent = impl_->wsi.Extent();
 	const bool rebuild_targets = recreate_wsi || full_target_change ||
 		gtao_size_change;
+	const uint64_t prior_target_use = impl_->frames.LastAllocatedTimeline();
+	if (rebuild_targets && prior_target_use != 0 &&
+		!impl_->frames.WaitTimeline(prior_target_use, UINT64_MAX))
+		return impl_->Fail("preferences",
+			"waiting to replace the prior target generation failed", true);
 	if (rebuild_targets && !impl_->targets.Configure(preferred, extent,
-		impl_->frames.LastAllocatedTimeline()))
+		prior_target_use))
 	{
 		if (window_changed)
 			impl_->ConfigureApplicationWindow(old);
@@ -1051,7 +1066,8 @@ bool VulkanRuntime::ApplyPreferredState(
 			impl_->wsi.Recreate(rollback);
 		}
 		return impl_->Fail("preferences",
-			"target replacement failed; prior target generation retained");
+			"target replacement failed; prior target generation restored when possible",
+			!impl_->targets.Ready());
 	}
 
 	if (pipeline_rebuild)
@@ -1109,12 +1125,18 @@ bool VulkanRuntime::DescribeTarget(const TargetRequest &request,
 	const CapturedTargetLayout *layout = LayoutFor(impl_->targets, request.target);
 	if (!layout || layout->logical_width == 0 || layout->logical_height == 0)
 		return impl_->Fail("target", "requested target class is unavailable");
+	LogicalRect target_bounds = {};
+	if (!BuildLogicalTargetBounds(*layout, &target_bounds))
+		return impl_->Fail("target", "target has invalid logical bounds");
 	const int64_t right = int64_t(request.logical_clip.x) +
 		request.logical_clip.width;
 	const int64_t bottom = int64_t(request.logical_clip.y) +
 		request.logical_clip.height;
-	if (request.logical_clip.x < 0 || request.logical_clip.y < 0 ||
-		right > layout->logical_width || bottom > layout->logical_height)
+	const int64_t target_right = int64_t(target_bounds.x) + target_bounds.width;
+	const int64_t target_bottom = int64_t(target_bounds.y) + target_bounds.height;
+	if (request.logical_clip.x < target_bounds.x ||
+		request.logical_clip.y < target_bounds.y || right > target_right ||
+		bottom > target_bottom)
 		return impl_->Fail("target", "logical clip lies outside the target");
 
 	*description = TargetDescription();
@@ -1131,14 +1153,8 @@ bool VulkanRuntime::DescribeTarget(const TargetRequest &request,
 		0, color_epoch, depth_epoch);
 
 	const uint32_t factor = layout->ssaa_factor;
-	const int32_t logical_internal_width = static_cast<int32_t>(
-		layout->internal_width / std::max(1u, factor));
-	const int32_t logical_internal_height = static_cast<int32_t>(
-		layout->internal_height / std::max(1u, factor));
-	const int32_t overscan_x = request.target == RenderTargetClass::PostPresent ?
-		0 : (logical_internal_width - static_cast<int32_t>(layout->logical_width) + 1) / 2;
-	const int32_t overscan_y = request.target == RenderTargetClass::PostPresent ?
-		0 : (logical_internal_height - static_cast<int32_t>(layout->logical_height) + 1) / 2;
+	const int32_t overscan_x = -target_bounds.x;
+	const int32_t overscan_y = -target_bounds.y;
 	description->viewport.logical_rect = request.logical_clip;
 	description->viewport.physical_rect = {
 		(request.logical_clip.x + overscan_x) * static_cast<int32_t>(factor),
@@ -1556,7 +1572,22 @@ bool VulkanRuntime::SubmitPresentedFrame(uint32_t presented_frame_serial)
 		return impl_->Fail("present", "capture lifecycle publication failed", true);
 	if (submission.presentation.accepted_presentation)
 	{
-		impl_->targets.SetHistoryValidity(impl_->preferred.gtao_enabled != 0,
+		const CapturedPostDynamicState *dynamic =
+			capture.TargetSignatures().empty() ? nullptr :
+			&capture.TargetSignatures().back().dynamic;
+		if (submission.gtao_active)
+		{
+			if (dynamic && dynamic->histories_frozen)
+				impl_->targets.ResetGtaoJitter();
+			else
+				impl_->targets.AdvanceGtaoJitter();
+		}
+		const bool gtao_temporal = submission.gtao_active != 0 &&
+			(impl_->preferred.gtao_temporal_blend > 0.0f ||
+			 impl_->preferred.gtao_temporal_debug_preview != 0);
+		if (gtao_temporal)
+			impl_->targets.AdvanceGtaoHistory();
+		impl_->targets.SetHistoryValidity(gtao_temporal,
 			true, true);
 		++impl_->presented_submissions;
 	}

@@ -407,7 +407,7 @@ const PostPassDescriptorBindingContract kPostPassDescriptorBindings[] = {
 	POST_SELECTED(PrepareDepthLogical, Only, 2, SampledDepth2D, PostDepthSource)
 
 	POST_HEADER(AoDepth, Only)
-	POST_RESOURCE(AoDepth, Only, 2, SampledDepth2D, Required, PostLogicalDepth)
+	POST_SELECTED(AoDepth, Only, 2, SampledDepth2D, PostDepthSource)
 	POST_SELECTED(AoDepth, Only, 3, SampledFloat2D, AoClassSource)
 	POST_HEADER(AoRaw, Only)
 	POST_RESOURCE(AoRaw, Only, 2, SampledFloat2D, Required, GtaoDepthWeight)
@@ -426,7 +426,7 @@ const PostPassDescriptorBindingContract kPostPassDescriptorBindings[] = {
 	POST_SELECTED(AoSuppress, Only, 2, SampledFloat2D, ProtectionMaskSource)
 	POST_SELECTED(AoSuppress, Only, 3, SampledFloat2D, AuthoredBaseColor)
 	POST_HEADER(AoApply, Only)
-	POST_SELECTED(AoApply, Only, 2, SampledFloat2D, AuthoredBaseColor)
+	POST_SELECTED(AoApply, Only, 2, SampledFloat2D, AoSceneColorSource)
 	POST_SELECTED(AoApply, Only, 3, SampledFloat2D, AoFinalSource)
 	POST_RESOURCE(AoApply, Only, 4, SampledFloat2D, Required, GtaoSuppression)
 	POST_HEADER(AoDeferredComposite, Only)
@@ -657,7 +657,7 @@ const PostPassUniformUsageContract kPostPassUniformUsageContract[] = {
 	POST_USAGE(PrepareDepthLogical,
 		U(SourceExtent)|U(DestinationExtent)|U(PrimaryUv)|U(SampleCounts)|U(FrameBranch), 0),
 	POST_USAGE(AoDepth,
-		U(SourceExtent)|U(DestinationExtent)|U(ScreenSize)|U(AoScreenSize)|
+		U(SourceExtent)|U(DestinationExtent)|U(SecondaryUv)|U(ScreenSize)|U(AoScreenSize)|
 		U(AoClassWeights)|U(SampleCounts)|U(FeatureFlags)|U(FrameBranch), 0),
 	POST_USAGE(AoRaw,
 		U(SourceExtent)|U(DestinationExtent)|U(ScreenSize)|U(AoScreenSize)|
@@ -679,7 +679,8 @@ const PostPassUniformUsageContract kPostPassUniformUsageContract[] = {
 		U(SourceExtent)|U(DestinationExtent)|U(AoUv)|U(AoParameters)|
 		U(FeatureFlags)|U(IntegerParameters)|U(FrameBranch), 0),
 	POST_USAGE(AoDeferredComposite,
-		U(SourceExtent)|U(DestinationExtent)|U(VisibleOriginSize)|U(FeatureFlags)|U(FrameBranch),
+		U(SourceExtent)|U(DestinationExtent)|U(VisibleOriginSize)|U(SecondaryUv)|
+		U(FeatureFlags)|U(IntegerParameters)|U(FrameBranch),
 		U(SceneUv)),
 	POST_USAGE(BloomThreshold,
 		U(SourceExtent)|U(DestinationExtent)|U(BloomParameters)|U(FeatureFlags)|U(FrameBranch),
@@ -968,7 +969,9 @@ const SamplerContract kSamplerContract[] = {
 	{ SamplerSemantic::Font, SamplerAddressMode::ClampToEdge, SamplerAddressMode::ClampToEdge, SamplerFilterMode::Linear, SamplerFilterMode::Linear, SamplerMipMode::Disabled, 0 },
 	{ SamplerSemantic::PostNearest, SamplerAddressMode::ClampToEdge, SamplerAddressMode::ClampToEdge, SamplerFilterMode::Nearest, SamplerFilterMode::Nearest, SamplerMipMode::Disabled, 0 },
 	{ SamplerSemantic::PostLinear, SamplerAddressMode::ClampToEdge, SamplerAddressMode::ClampToEdge, SamplerFilterMode::Linear, SamplerFilterMode::Linear, SamplerMipMode::Disabled, 0 },
-	{ SamplerSemantic::GtaoNoise, SamplerAddressMode::Repeat, SamplerAddressMode::Repeat, SamplerFilterMode::Nearest, SamplerFilterMode::Nearest, SamplerMipMode::Disabled, 0 },
+	// GL_BindFramebufferTexture applies CLAMP_TO_EDGE when GL4 binds the noise
+	// texture for the AO pass, overriding the repeat state used at creation.
+	{ SamplerSemantic::GtaoNoise, SamplerAddressMode::ClampToEdge, SamplerAddressMode::ClampToEdge, SamplerFilterMode::Nearest, SamplerFilterMode::Nearest, SamplerMipMode::Disabled, 0 },
 	{ SamplerSemantic::HistoryLinear, SamplerAddressMode::ClampToEdge, SamplerAddressMode::ClampToEdge, SamplerFilterMode::Linear, SamplerFilterMode::Linear, SamplerMipMode::Disabled, 0 },
 	{ SamplerSemantic::BloomLinear, SamplerAddressMode::ClampToEdge, SamplerAddressMode::ClampToEdge, SamplerFilterMode::Linear, SamplerFilterMode::Linear, SamplerMipMode::Disabled, 0 },
 	{ SamplerSemantic::MaskNearest, SamplerAddressMode::ClampToEdge, SamplerAddressMode::ClampToEdge, SamplerFilterMode::Nearest, SamplerFilterMode::Nearest, SamplerMipMode::Disabled, 0 },
@@ -1139,10 +1142,18 @@ GraphResourceMask SelectedInputResourceDomain(GraphInputSemantic semantic)
 	case GraphInputSemantic::AoClassSource:
 		return GraphResourceBit(GraphResource::SceneAoClass) |
 			GraphResourceBit(GraphResource::ResolvedAoClass);
+	case GraphInputSemantic::AoSceneColorSource:
+		return GraphResourceBit(GraphResource::SceneColor) |
+			GraphResourceBit(GraphResource::ResolvedColor) |
+			GraphResourceBit(GraphResource::LogicalAuthoredColor) |
+			GraphResourceBit(GraphResource::CapturedWorldColor);
 	case GraphInputSemantic::AoPreTemporalSource:
-	case GraphInputSemantic::AoFinalSource:
 		return GraphResourceBit(GraphResource::GtaoRaw) |
 			GraphResourceBit(GraphResource::GtaoCurrent);
+	case GraphInputSemantic::AoFinalSource:
+		return GraphResourceBit(GraphResource::GtaoRaw) |
+			GraphResourceBit(GraphResource::GtaoCurrent) |
+			GraphResourceBit(GraphResource::GtaoHistoryNext);
 	case GraphInputSemantic::TemporalHistorySource:
 		return GraphResourceBit(GraphResource::GtaoHistoryPrevious);
 	case GraphInputSemantic::None:

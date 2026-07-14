@@ -1,6 +1,7 @@
 #include "render_contract.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace piccu
 {
@@ -149,6 +150,35 @@ uint32_t NormalizeOverscanPercent(const CapturedPreferredState &state)
 	if (!state.gtao_enabled)
 		return 100;
 	return std::max(100u, std::min(150u, state.gtao_overscan_percent));
+}
+
+bool BuildLogicalTargetBounds(const CapturedTargetLayout &layout,
+	LogicalRect *bounds)
+{
+	if (!bounds || layout.logical_width == 0 || layout.logical_height == 0 ||
+		layout.internal_width == 0 || layout.internal_height == 0 ||
+		layout.ssaa_factor == 0 ||
+		layout.internal_width % layout.ssaa_factor != 0 ||
+		layout.internal_height % layout.ssaa_factor != 0)
+		return false;
+
+	const uint32_t internal_width = layout.internal_width / layout.ssaa_factor;
+	const uint32_t internal_height = layout.internal_height / layout.ssaa_factor;
+	if (internal_width < layout.logical_width ||
+		internal_height < layout.logical_height ||
+		internal_width > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
+		internal_height > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()))
+		return false;
+
+	const uint32_t extra_width = internal_width - layout.logical_width;
+	const uint32_t extra_height = internal_height - layout.logical_height;
+	const uint32_t left = layout.target == RenderTargetClass::PostPresent ?
+		0u : (extra_width + 1u) / 2u;
+	const uint32_t top = layout.target == RenderTargetClass::PostPresent ?
+		0u : (extra_height + 1u) / 2u;
+	*bounds = { -static_cast<int32_t>(left), -static_cast<int32_t>(top),
+		static_cast<int32_t>(internal_width), static_cast<int32_t>(internal_height) };
+	return true;
 }
 
 bool WantsMotionResources(const CapturedPreferredState &state)

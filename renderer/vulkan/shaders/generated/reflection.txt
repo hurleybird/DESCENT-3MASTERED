@@ -1155,6 +1155,7 @@ gl_FragDepth: offset 0, type 1406, size 1, index 0, binding -1, stages 16
 C:/Repos/PiccuEngine/renderer/vulkan/shaders/gtao_apply.frag
 Uniform reflection:
 PostPassUniformBlock.feature_flags: offset 592, type 8dc8, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.uv_origin_scale: offset 256, type 8b52, size 1, index 0, binding -1, stages 16
 PostPassUniformBlock.ao_uv_origin_scale: offset 320, type 8b52, size 1, index 0, binding -1, stages 16
 ao_image: offset -1, type 8b5e, size 1, index -1, binding 3, stages 16
 post_samplers: offset -1, type 0, size 2, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
@@ -1201,6 +1202,8 @@ out_ao: offset 0, type 8b52, size 1, index 0, binding -1, stages 16
 C:/Repos/PiccuEngine/renderer/vulkan/shaders/gtao_deferred.frag
 Uniform reflection:
 PostPassUniformBlock.feature_flags: offset 592, type 8dc8, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.uv_origin_scale: offset 256, type 8b52, size 1, index 0, binding -1, stages 16
+PostPassUniformBlock.secondary_uv_origin_scale: offset 272, type 8b52, size 1, index 0, binding -1, stages 16
 PostPassUniformBlock.scene_uv_origin_scale: offset 304, type 8b52, size 1, index 0, binding -1, stages 16
 final_color_image: offset -1, type 8b5e, size 1, index -1, binding 2, stages 16
 post_samplers: offset -1, type 0, size 6, index -1, binding 1, stages 16, arrayStride 4, topLevelArrayStride 4
@@ -1208,6 +1211,7 @@ captured_scene_image: offset -1, type 8b5e, size 1, index -1, binding 3, stages 
 ao_scene_image: offset -1, type 8b5e, size 1, index -1, binding 4, stages 16
 PostPassUniformBlock.visible_origin_size: offset 224, type 8b52, size 1, index 0, binding -1, stages 16
 protection_image: offset -1, type 8b5e, size 1, index -1, binding 5, stages 16
+PostPassUniformBlock.integer_params: offset 608, type 8b55, size 1, index 0, binding -1, stages 16
 
 Uniform block reflection:
 PostPassUniformBlock: offset -1, type ffffffff, size 640, index 0, binding 0, stages 16, numMembers 31

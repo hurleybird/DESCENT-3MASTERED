@@ -1437,9 +1437,8 @@ bool RenderCaptureSegment::Validate(CaptureValidationResult *out_result) const
 				bool clip_fits = false;
 				if (layout.logical_width <= INT32_MAX && layout.logical_height <= INT32_MAX)
 				{
-					const LogicalRect target_rect = { 0, 0,
-						static_cast<int32_t>(layout.logical_width),
-						static_cast<int32_t>(layout.logical_height) };
+				LogicalRect target_rect = {};
+				if (BuildLogicalTargetBounds(layout, &target_rect))
 					clip_fits = RectFitsInside(state.logical_clip, target_rect);
 				}
 				if (version.target != state.active_target || layout.target != state.active_target ||

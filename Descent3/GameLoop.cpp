@@ -540,6 +540,19 @@ int Clear_screen = 0;
 //	determines if game is paused.
 bool Game_paused = false;
 
+// Keep renderer-owned temporal state synchronized even when a progress/loading
+// screen renders without passing through GameRenderFrame().  GL4 reads these
+// globals at draw time; explicit-state backends need the equivalent snapshot.
+void PublishRendererFrameDynamicState()
+{
+	renderer_frame_dynamic_state renderer_dynamic = {};
+	renderer_dynamic.frame_time = Frametime;
+	renderer_dynamic.afterburner_scalar = Render_afterburner_visual_factor;
+	renderer_dynamic.paused = Game_paused;
+	renderer_dynamic.histories_frozen = Game_paused;
+	rend_SetFrameDynamicState(&renderer_dynamic);
+}
+
 // Used for limiting the framerate
 double Min_allowed_frametime = 0;
 static int Frame_limit_fps = 0;
@@ -2768,15 +2781,7 @@ void GameRenderFrame(void)
 	if (Dedicated_server)
 		return;
 
-	// Snapshot the exact live values GL4 consumes directly from these globals.
-	// Vulkan receives the same values without making renderer code depend on
-	// game globals.  GL backends intentionally keep their existing direct path.
-	renderer_frame_dynamic_state renderer_dynamic = {};
-	renderer_dynamic.frame_time = Frametime;
-	renderer_dynamic.afterburner_scalar = Render_afterburner_visual_factor;
-	renderer_dynamic.paused = Game_paused;
-	renderer_dynamic.histories_frozen = Game_paused;
-	rend_SetFrameDynamicState(&renderer_dynamic);
+	PublishRendererFrameDynamicState();
 
 	PerfMarkersBeginFrame();
 
@@ -3129,6 +3134,7 @@ void PauseGame()
 {
 	mprintf((0, "Game paused.\n"));
 	Game_paused = true;
+	PublishRendererFrameDynamicState();
 
 	D3MusicPause();
 	Sound_system.PauseSounds();
@@ -3141,6 +3147,7 @@ void ResumeGame()
 {
 	StartTime();
 	Game_paused = false;
+	PublishRendererFrameDynamicState();
 	Sound_system.ResumeSounds();
 	D3MusicResume();
 	mprintf((0, "Game resumed.\n"));

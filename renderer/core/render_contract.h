@@ -1355,6 +1355,8 @@ extern const size_t kStartFrameResetContractCount;
 float GL4DepthFromEyeZ(float eye_z);
 uint32_t NormalizeRequestedMsaa(uint32_t msaa_samples, bool legacy_antialias);
 uint32_t NormalizeOverscanPercent(const CapturedPreferredState &state);
+bool BuildLogicalTargetBounds(const CapturedTargetLayout &layout,
+	LogicalRect *bounds);
 bool WantsMotionResources(const CapturedPreferredState &state);
 bool IsLegalMrtWriteMask(uint32_t mask);
 bool IsCaptureCommandTypeValid(CaptureCommandType type);

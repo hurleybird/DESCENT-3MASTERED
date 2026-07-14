@@ -15,13 +15,13 @@ RES_AOCLASS	Multisample	resolve_float_ms.frag	0:ubo(std140,640);1:sampler[7];2:f
 SSAA_4_TO_2	Only	ssaa_downsample.frag	0:ubo(std140,640);1:sampler[7];2:float2D(SceneColorAfterMsaa)	RGBA8 SsaaIntermediate2x; gamma-aware Wronski filter
 SSAA_2_TO_1	Only	ssaa_downsample.frag	0:ubo(std140,640);1:sampler[7];2:float2D(SsaaTwoToOneColor)	RGBA8 ResolvedColor; gamma-aware Wronski filter
 PREP_DEPTH_LOGICAL	Only	depth_map.frag	0:ubo(std140,640);1:sampler[7];2:depth2D(PostDepthSource)	D32 PostLogicalDepth; nearest spatial map
-AO_DEPTH	Only	gtao_depth.frag	0:ubo(std140,640);1:sampler[7];2:depth2D(PostLogicalDepth);3:float2D(AoClassSource)	RG16F GtaoDepthWeight
+AO_DEPTH	Only	gtao_depth.frag	0:ubo(std140,640);1:sampler[7];2:depth2D(PostDepthSource);3:float2D(AoClassSource)	RG16F GtaoDepthWeight
 AO_RAW	Only	gtao_raw.frag	0:ubo(std140,640);1:sampler[7];2:float2D(GtaoDepthWeight);3:float2D(GtaoNoise)	RGBA16F GtaoRaw
 AO_BLUR_X	Only	gtao_blur.frag	0:ubo(std140,640);1:sampler[7];2:float2D(GtaoRaw)	RGBA16F GtaoBlurTemporary
 AO_BLUR_Y	Only	gtao_blur.frag	0:ubo(std140,640);1:sampler[7];2:float2D(GtaoBlurTemporary)	RGBA16F GtaoBlurred
 AO_TEMPORAL	Only	gtao_temporal.frag	0:ubo(std140,640);1:sampler[7];2:float2D(AoPreTemporalSource);3:float2D?(TemporalHistorySource);4:float2D(VelocitySource);5:uint2D(ObjectIdSource);6:depth2D?(PostLogicalDepth)	RGBA16F GtaoHistoryNext
 AO_SUPPRESS	Only	gtao_suppress.frag	0:ubo(std140,640);1:sampler[7];2:float2D(ProtectionMaskSource);3:float2D(AuthoredBaseColor)	R8 GtaoSuppression
-AO_APPLY	Only	gtao_apply.frag	0:ubo(std140,640);1:sampler[7];2:float2D(AuthoredBaseColor);3:float2D(AoFinalSource);4:float2D(GtaoSuppression)	RGBA8 GtaoApplied
+AO_APPLY	Only	gtao_apply.frag	0:ubo(std140,640);1:sampler[7];2:float2D(AoSceneColorSource);3:float2D(AoFinalSource);4:float2D(GtaoSuppression)	RGBA8 GtaoApplied
 AO_DEFERRED_COMPOSITE	Only	gtao_deferred.frag	0:ubo(std140,640);1:sampler[7];2:float2D(AuthoredBaseColor);3:float2D(CapturedWorldColor);4:float2D(GtaoApplied);5:float2D(ProtectionMaskSource)	RGBA8 authored composite
 BLOOM_THRESHOLD	Only	bloom_threshold.frag	0:ubo(std140,640);1:sampler[7];2:float2D(FinalAuthoredColor);3:depth2D(PostLogicalDepth);4:float2D(ProtectionMaskSource);5:float2D?(CockpitAlpha)	RGBA8 BloomCurrentLevel
 BLOOM_DOWN_n	Only	bloom_down.frag	0:ubo(std140,640);1:sampler[7];2:float2D(BloomCurrentLevel)	RGBA8 BloomSmallerLevel

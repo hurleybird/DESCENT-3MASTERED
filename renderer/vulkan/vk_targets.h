@@ -65,6 +65,10 @@ public:
 	bool MotionHistoryValid() const noexcept;
 	bool CockpitHistoryValid() const noexcept;
 	void SetHistoryValidity(bool gtao, bool motion, bool cockpit);
+	void AdvanceGtaoHistory() noexcept;
+	uint32_t GtaoJitterFrame() const noexcept;
+	void AdvanceGtaoJitter() noexcept;
+	void ResetGtaoJitter() noexcept;
 
 	static VkFormat VulkanFormat(RenderFormat format);
 	static RenderFormat ContractFormat(uint32_t attachment_index);
@@ -91,6 +95,7 @@ private:
 		uint32_t gtao_scale = 1;
 		uint64_t estimated_bytes = 0;
 		bool gtao_history_valid = false;
+		bool gtao_history_phase = false;
 		bool motion_history_valid = false;
 		bool cockpit_history_valid = false;
 		bool state_registered = false;
@@ -120,6 +125,7 @@ private:
 	ResourceAllocator *allocator_;
 	ResourceStateTracker *state_tracker_;
 	uint32_t supported_sample_mask_;
+	uint32_t gtao_jitter_frame_;
 	GenerationState active_;
 	uint64_t next_generation_;
 	bool initialized_;

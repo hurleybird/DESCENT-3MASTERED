@@ -834,6 +834,9 @@ bool GetFrameParameters(int* x1, int* y1, int* x2, int* y2)
 void EndFrame()
 {
 	//@@Frame_inside = false;
+	// Sample temporal/post inputs at the same boundary where GL4 reads its
+	// live globals.  Some loading and progress frames bypass GameRenderFrame.
+	PublishRendererFrameDynamicState();
 	rend_EndFrame();
 
 	//pop off frame
