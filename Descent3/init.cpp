@@ -458,7 +458,9 @@ void SaveGameSettings()
 	Database->write("RS_windowwidth", Game_window_res_width);
 	Database->write("RS_windowheight", Game_window_res_height);
 	Database->write("RS_windowaspect", Game_window_aspect);
-	Database->write("RS_fullscreen", Game_fullscreen);
+	if (!FindArg("-windowed") && !FindArg("-windowpos") &&
+		!FindArg("-window-position"))
+		Database->write("RS_fullscreen", Game_fullscreen);
 	Database->write("RS_frame_limit_fps", Game_frame_limit_fps);
 	Database->write("RS_fovdesired", Render_FOV_desired);
 
@@ -1717,6 +1719,7 @@ ushort PXOPort = 0;
 //Initialiaze everything before data load
 void InitD3Systems1(bool editor)
 {
+	AutomatedCaptureLog("systems1 begin");
 #if defined (RELEASE) || defined (MACINTOSH)
 	SetDebugBreakHandlers(NULL, NULL);
 #else
@@ -1744,9 +1747,12 @@ void InitD3Systems1(bool editor)
 // perform user i/o system initialization
 	INIT_MESSAGE(("Initializing I/O system."));
 	InitIOSystems(editor);
+	AutomatedCaptureLog("systems1 io complete base=%s user=%s",
+		Base_directory, User_directory);
 
 //	load the string table
 	InitStringTable();
+	AutomatedCaptureLog("systems1 string table complete");
 
 	if(!IsLocalOk())
 	{
@@ -1781,8 +1787,10 @@ bool CheckCdForValidity(int cd);
 		}
 	}
 #endif
+	AutomatedCaptureLog("systems1 locality and data check complete");
 	INIT_MESSAGE(("Initializing GFX"));
 	InitGraphics(editor);
+	AutomatedCaptureLog("systems1 graphics complete");
 
 //	initialize data structures
 	InitObjectInfo();
@@ -1793,6 +1801,7 @@ bool CheckCdForValidity(int cd);
 	InitLightmapInfo();
 	InitSpecialFaces();
 	InitDynamicLighting();
+	AutomatedCaptureLog("systems1 core data complete");
 	
 // Initialize missions
 	InitMission();
@@ -1808,6 +1817,7 @@ bool CheckCdForValidity(int cd);
 
 // This function needs be called before ANY 3d stuff can get done. I mean it.
 	InitMathTables();
+	AutomatedCaptureLog("systems1 world systems complete");
 
 // This function has to be done before any sound stuff is called
 	InitSounds();
@@ -1818,6 +1828,7 @@ bool CheckCdForValidity(int cd);
 	InitModels();
 	InitDoors();
 	InitGamefiles();
+	AutomatedCaptureLog("systems1 assets complete");
 
 //	network initialization
 	if(!FindArg("-nonetwork"))
@@ -1854,15 +1865,18 @@ bool CheckCdForValidity(int cd);
 	}
 
 	gspy_Init();
+	AutomatedCaptureLog("systems1 network complete");
 
 // Sound initialization
 	int soundres = Sound_system.InitSoundLib(Descent, Sound_mixer, Sound_quality, false);
+	AutomatedCaptureLog("systems1 sound result=%d", soundres);
 
 	//	Initialize Cinematics system
 	InitCinematics();
 
 	// Initialize IntelliVIBE (if available)
 	VIBE_Init(Descent);
+	AutomatedCaptureLog("systems1 end");
 }
 
 //Initialize rest of stuff

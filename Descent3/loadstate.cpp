@@ -52,6 +52,7 @@
 #include "weather.h"
 #include "cockpit.h"
 #include "hud.h"
+#include "gameloop.h"
 
 void PageInAllData ();
 
@@ -90,6 +91,8 @@ void IncreaseRestoreCount(const char *file)
 		Times_game_restored = 0;
 	}
 	Times_game_restored++;
+	if (AutomatedCaptureSuppressesInput())
+		return;
 
 	cfp = cfopen(countpath,"wb");
 	if(cfp)

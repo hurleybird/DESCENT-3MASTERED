@@ -46,6 +46,7 @@
 #include "multi_dll_mgr.h"
 #include "localization.h"
 #include "mem.h"
+#include "gameloop.h"
 
 //	---------------------------------------------------------------------------
 //	Variables
@@ -85,6 +86,7 @@ short Proxy_port=80;
 void Descent3()
 {
 	int type;
+	AutomatedCaptureLog("descent entry");
 
 #ifdef _DEBUG
 	type = DEVELOPMENT_VERSION;
@@ -105,6 +107,7 @@ void Descent3()
 	{
 		//Init a bunch of stuff
 		InitD3Systems1(false);
+		AutomatedCaptureLog("descent systems1 complete");
 
 		int proxyarg = FindArg("-httpproxy");
 		if(proxyarg)
@@ -127,6 +130,7 @@ void Descent3()
 		if (!Dedicated_server)
 		{
 			SetScreenMode(SM_CINEMATIC);
+			AutomatedCaptureLog("descent cinematic screen ready");
 
 		//Show the intro movie
 			if (! FindArg("-nointro")) {
@@ -187,10 +191,12 @@ void Descent3()
 			SetScreenMode(SM_MENU);
 			//Show the intro screen
 			IntroScreen();
+			AutomatedCaptureLog("descent intro screen complete");
 		}
 
 		//Init a bunch more stuff
 		InitD3Systems2(false);
+		AutomatedCaptureLog("descent systems2 complete");
 
 		#ifdef GAMEGAUGE
 		if(0)
@@ -205,13 +211,18 @@ void Descent3()
 			SetFunctionMode(GAMEGAUGE_MODE);
 		}
 
+		AutomatedCaptureLog("descent main loop start");
 		MainLoop();
+		AutomatedCaptureLog("descent main loop complete");
 
 		//delete the lock file in the temp directory (as long as it belongs to us)
 		ddio_DeleteLockFile(Descent3_temp_directory);
 
 		//Save settings to registry
-		SaveGameSettings();
+		if (!AutomatedCaptureSuppressesInput())
+			SaveGameSettings();
+		else
+			AutomatedCaptureLog("capture run skipped persistent settings save");
 	}
 	catch(cfile_error *cfe) {
 		Error(TXT_D3ERROR1,(cfe->read_write==CFE_READING)?TXT_READING:TXT_WRITING,cfe->file->name,cfe->msg);

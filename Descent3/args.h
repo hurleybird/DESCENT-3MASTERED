@@ -19,7 +19,7 @@
 #ifndef ARGS_H
 #define ARGS_H
 
-#define MAX_ARGS			30
+#define MAX_ARGS			64
 #define MAX_CHARS_PER_ARG	100
 extern char GameArgs[MAX_ARGS][MAX_CHARS_PER_ARG];
 

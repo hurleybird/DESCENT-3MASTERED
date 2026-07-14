@@ -32,6 +32,35 @@
 #include "resource.h"
 #include "config.h"
 #include "ddio.h"
+#include "gameloop.h"
+
+static bool GetWindowPositionArgument(int *x, int *y)
+{
+	int argument = FindArg("-windowpos");
+	if (!argument)
+		argument = FindArg("-window-position");
+	if (!argument)
+		return false;
+
+	const char *x_value = GetArg(argument + 1);
+	const char *y_value = GetArg(argument + 2);
+	char *x_end = NULL;
+	char *y_end = NULL;
+	const long parsed_x = x_value ? strtol(x_value, &x_end, 10) : 0;
+	const long parsed_y = y_value ? strtol(y_value, &y_end, 10) : 0;
+	if (!x_value || !y_value || x_end == x_value || y_end == y_value ||
+		*x_end != '\0' || *y_end != '\0' ||
+		parsed_x < -1000000 || parsed_x > 1000000 ||
+		parsed_y < -1000000 || parsed_y > 1000000)
+	{
+		mprintf((0, "Ignoring invalid -windowpos X Y command-line argument.\n"));
+		return false;
+	}
+
+	*x = (int)parsed_x;
+	*y = (int)parsed_y;
+	return true;
+}
 
 const char *English_strings[] = {
 	"Descent 3 under Windows NT requires version 4.0 or greater of NT to run.",
@@ -628,9 +657,11 @@ int PASCAL HandledWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine,
 
 	strupr(szCmdLine);
 	GatherArgs (szCmdLine);
+	AutomatedCaptureLog("winmain arguments gathered");
 
 	//This must come AFTER the GatherArgs() call, because its constructer used FindArg()
 	oeD3Win32Database dbase;	
+	AutomatedCaptureLog("winmain database ready");
 
 	no_debug_dialog = FindArg("-nocrashbox");
 
@@ -652,10 +683,14 @@ int PASCAL HandledWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine,
 	else
 	{
 		int temp;
+		int window_x = 0;
+		int window_y = 0;
+		const bool has_window_position =
+			GetWindowPositionArgument(&window_x, &window_y);
 		Database->read_int("RS_fullscreen", &temp);
 		Game_fullscreen = !!temp;
 
-		if (FindArg("-windowed"))
+		if (FindArg("-windowed") || has_window_position)
 			Game_fullscreen = false;
 
 		unsigned int flags = OEAPP_FULLSCREEN;
@@ -666,7 +701,12 @@ int PASCAL HandledWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine,
 		}
 
 		d3 = new oeD3Win32App(flags, (HInstance)hInst);
+		if (has_window_position)
+			d3->set_position_override(window_x, window_y);
+		if (FindArg("-capture-frame") || FindArg("-screenshot-frame"))
+			d3->set_background_mode(true);
 	}
+	AutomatedCaptureLog("winmain application allocated");
 	atexit(D3End);
 
 	w32_mouseman_hack = false;
@@ -682,13 +722,18 @@ int PASCAL HandledWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine,
 	dbase.read_int("LanguageType", &language);
 	m_resource_language = language;
 	
-	if (!Win32SystemCheck(hInst))
+	const bool system_check_passed = Win32SystemCheck(hInst) != 0;
+	AutomatedCaptureLog("winmain system check=%d", system_check_passed ? 1 : 0);
+	if (!system_check_passed)
 		return 0;
 
 	PreInitD3Systems();
+	AutomatedCaptureLog("winmain preinit complete");
 
 	d3->init();
+	AutomatedCaptureLog("winmain application initialized");
 	d3->run();
+	AutomatedCaptureLog("winmain application run returned");
 
 	return 1;
 }

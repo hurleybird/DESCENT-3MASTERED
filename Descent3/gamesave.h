@@ -62,6 +62,9 @@ void SaveGameDialog();
 bool LoadGameDialog();							// returns true if ok, false if canceled.
 void QuickSaveGame();
 
+// Selects the save file consumed by LoadCurrentSaveGame(). This is shared by
+// the UI dialog and non-interactive startup paths.
+bool SetLoadGamePath(const char *pathname);
 bool LoadCurrentSaveGame();					// loads savegame as specified from LoadGameDialog (false fails)
 
 extern int Quicksave_game_slot;				// externed so gamesequencing can reset this value starting new game.
@@ -102,9 +105,6 @@ int LoadGameState(const char *pathname);
 #define gs_ReadShort(_f,_s) ((_s) = cf_ReadShort(_f))
 #define gs_ReadInt(_f,_i) ((_i) = cf_ReadInt(_f))
 #define gs_ReadFloat(_f, _fl) ((_fl) = cf_ReadFloat(_f))
-
-//	we need this directory to load the savegame from
-static char LGS_Path[PSPATHNAME_LEN];
 
 //	writes out translation tables.
 void SGSXlateTables(CFILE *fp);

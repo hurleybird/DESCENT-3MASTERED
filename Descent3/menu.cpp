@@ -19,6 +19,7 @@
 #include "menu.h"
 #include "mmItem.h"
 #include "game.h"
+#include "gameloop.h"
 #include "gamesequence.h"
 #include "Mission.h"
 #include "multi_ui.h"
@@ -308,6 +309,19 @@ int MainMenu()
 bool ProcessCommandLine()
 {
 	int exit_menu = 0;
+	const int loadgame_arg = FindArg("-loadgame");
+	const char *loadgame_path = loadgame_arg ? GetArg(loadgame_arg + 1) : nullptr;
+	AutomatedCaptureLog("loadgame argument=%d path=%s", loadgame_arg,
+		loadgame_path ? loadgame_path : "<none>");
+	if (loadgame_path && SetLoadGamePath(loadgame_path))
+	{
+		AutomatedCaptureLog("loadgame accepted");
+		SetGameMode(GM_NORMAL);
+		SetFunctionMode(RESTORE_GAME_MODE);
+		SetUICallback(DEFAULT_UICALLBACK);
+		return true;
+	}
+
 	// Auto connect to a network game if the parm is there.
 	if ((!Auto_connected) && (TCP_active) && (FindArg("-url")))
 	{

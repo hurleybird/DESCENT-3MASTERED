@@ -17,8 +17,10 @@
 */
 
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <chrono>
 #include <vector>
 #include "gameloop.h"
@@ -90,6 +92,7 @@
 #include "vibeinterface.h"
 #include "gamespy.h"
 #include "viseffect.h"
+#include "args.h"
 
 #ifdef EDITOR
 #include "editor\d3edit.h"
@@ -115,6 +118,182 @@ int Timedemo_frame = -1;
 int FrameCount = 0;
 
 static bool Screenshot_requested = false;
+extern bool Skip_render_game_frame;
+extern bool Menu_interface_mode;
+
+// Deterministic renderer-comparison capture. The frame index is relative to
+// the first fully rendered gameplay frame, not the save's persisted global
+// FrameCount. A fixed simulation delta keeps comparison runs on the same game
+// state even when their real frame times differ.
+struct automated_capture_state
+{
+	bool initialized;
+	bool enabled;
+	bool gameplay_frame_active;
+	bool capture_pending;
+	bool exit_pending;
+	int target_frame;
+	int gameplay_frame;
+	float fixed_delta;
+	char output_path[PSPATHNAME_LEN];
+};
+
+static automated_capture_state Automated_capture = {};
+
+void AutomatedCaptureLog(const char* format, ...)
+{
+	const char* path = getenv("PICCU_CAPTURE_LOG");
+	if (!path || !path[0] || !format)
+		return;
+
+	FILE* file = fopen(path, "ab");
+	if (!file)
+		return;
+
+	va_list arguments;
+	va_start(arguments, format);
+	vfprintf(file, format, arguments);
+	va_end(arguments);
+	fputc('\n', file);
+	fclose(file);
+}
+
+bool AutomatedCaptureSuppressesInput()
+{
+	return FindArg("-capture-frame") || FindArg("-screenshot-frame");
+}
+
+static int FindAutomatedCaptureArg(const char* primary, const char* alias)
+{
+	int argument = FindArg((char*)primary);
+	return argument ? argument : FindArg((char*)alias);
+}
+
+static void InitAutomatedCapture()
+{
+	if (Automated_capture.initialized)
+		return;
+	Automated_capture.initialized = true;
+	Automated_capture.fixed_delta = 1.0f / 60.0f;
+
+	const int frame_arg = FindAutomatedCaptureArg("-capture-frame",
+		"-screenshot-frame");
+	const char* frame_value = frame_arg ? GetArg(frame_arg + 1) : nullptr;
+	char* frame_end = nullptr;
+	const long target_frame = frame_value ? strtol(frame_value, &frame_end, 10) : -1;
+	if (!frame_value || frame_end == frame_value || *frame_end != '\0' ||
+		target_frame < 0 || target_frame > 1000000)
+	{
+		if (frame_arg)
+			mprintf((0, "Automated capture disabled: invalid gameplay frame.\n"));
+		return;
+	}
+
+	const int delta_arg = FindAutomatedCaptureArg("-capture-dt",
+		"-screenshot-dt");
+	const char* delta_value = delta_arg ? GetArg(delta_arg + 1) : nullptr;
+	if (delta_value)
+	{
+		char* delta_end = nullptr;
+		const double fixed_delta = strtod(delta_value, &delta_end);
+		if (delta_end != delta_value && *delta_end == '\0' &&
+			fixed_delta > 0.0 && fixed_delta <= 1.0)
+			Automated_capture.fixed_delta = (float)fixed_delta;
+	}
+
+	const int output_arg = FindAutomatedCaptureArg("-capture-output",
+		"-screenshot-output");
+	const char* output_value = output_arg ? GetArg(output_arg + 1) : nullptr;
+	if (output_value && output_value[0])
+	{
+		if (strlen(output_value) >= sizeof(Automated_capture.output_path))
+		{
+			mprintf((0, "Automated capture disabled: output path is too long.\n"));
+			return;
+		}
+		strcpy(Automated_capture.output_path, output_value);
+	}
+	else
+	{
+		char filename[64];
+		snprintf(filename, sizeof(filename), "CaptureFrame%.6ld.png",
+			target_frame);
+		ddio_MakePath(Automated_capture.output_path, User_directory,
+			filename, NULL);
+	}
+
+	Automated_capture.enabled = true;
+	Automated_capture.target_frame = (int)target_frame;
+	AutomatedCaptureLog("armed frame=%d output=%s dt=%.9f",
+		Automated_capture.target_frame, Automated_capture.output_path,
+		Automated_capture.fixed_delta);
+	mprintf((0, "Automated capture armed: gameplay frame %d -> %s (dt %.6f).\n",
+		Automated_capture.target_frame, Automated_capture.output_path,
+		Automated_capture.fixed_delta));
+}
+
+static void BeginAutomatedCaptureFrame()
+{
+	InitAutomatedCapture();
+	Automated_capture.gameplay_frame_active = false;
+	Automated_capture.capture_pending = false;
+
+	uint32_t gates = 0;
+	if (!Automated_capture.enabled) gates |= 1u << 0;
+	if (Automated_capture.exit_pending) gates |= 1u << 1;
+	if (Game_state != GAMESTATE_LVLPLAYING) gates |= 1u << 2;
+	if (Game_interface_mode != GAME_INTERFACE) gates |= 1u << 3;
+	if (Menu_interface_mode) gates |= 1u << 4;
+	if (Skip_render_game_frame) gates |= 1u << 5;
+	if (Dedicated_server) gates |= 1u << 6;
+
+	static uint32_t last_gates = UINT32_MAX;
+	if (gates != last_gates)
+	{
+		AutomatedCaptureLog("gates=0x%02x game_state=%d interface=%d menu=%d skip=%d",
+			gates, Game_state, Game_interface_mode,
+			Menu_interface_mode ? 1 : 0, Skip_render_game_frame ? 1 : 0);
+		last_gates = gates;
+	}
+	if (gates != 0)
+		return;
+
+	Automated_capture.gameplay_frame_active = true;
+	Automated_capture.capture_pending =
+		Automated_capture.gameplay_frame == Automated_capture.target_frame;
+	Frametime = Automated_capture.fixed_delta;
+}
+
+static void CaptureAutomatedFrameIfRequested()
+{
+	if (!Automated_capture.capture_pending)
+		return;
+
+	Automated_capture.capture_pending = false;
+	StopTime();
+	const int saved = rend_SaveScreenshotPNG(Automated_capture.output_path);
+	StartTime();
+	mprintf((0, "Automated capture %s: gameplay frame %d -> %s.\n",
+		saved ? "saved" : "failed", Automated_capture.gameplay_frame,
+		Automated_capture.output_path));
+	AutomatedCaptureLog("capture %s frame=%d output=%s",
+		saved ? "saved" : "failed", Automated_capture.gameplay_frame,
+		Automated_capture.output_path);
+	Automated_capture.exit_pending = true;
+}
+
+static void EndAutomatedCaptureFrame()
+{
+	if (Automated_capture.gameplay_frame_active &&
+		!Automated_capture.exit_pending)
+		++Automated_capture.gameplay_frame;
+	if (Automated_capture.exit_pending)
+	{
+		Automated_capture.exit_pending = false;
+		Automated_capture.enabled = false;
+		SetFunctionMode(QUIT_MODE);
+	}
+}
 
 bool HUD_disabled = 0;
 #ifdef _DEBUG
@@ -2823,12 +3002,12 @@ void StartTerrainSound()
 }
 
 //The main loop for D3.  It renders, gets input, etc. for one frame
-extern bool Skip_render_game_frame;
 void GameFrame(void)
 {
 #ifdef USE_RTP
 	INT64 curr_time;
 #endif
+	BeginAutomatedCaptureFrame();
 
 	bool is_game_idle = !Descent->active();
 
@@ -3080,6 +3259,7 @@ void GameFrame(void)
 				if (rend_BeginPostPresentFrame())
 				{
 					GameDrawPostPresentFrame(false);
+					CaptureAutomatedFrameIfRequested();
 					if (Screenshot_requested)
 					{
 						DoScreenshot();
@@ -3089,6 +3269,7 @@ void GameFrame(void)
 				}
 				else
 				{
+					CaptureAutomatedFrameIfRequested();
 					if (Screenshot_requested)
 					{
 						DoScreenshot();
@@ -3130,6 +3311,8 @@ void GameFrame(void)
 
 		//Compute how long frame took
 		CalcFrameTime(target_time);
+		if (Automated_capture.gameplay_frame_active)
+			Frametime = Automated_capture.fixed_delta;
 
 		//Update Gametime
 		Gametime += Frametime;
@@ -3208,6 +3391,8 @@ void GameFrame(void)
 
 	if (Tracking_FVI)
 		mprintf((0, "Ending frame!\n"));
+
+	EndAutomatedCaptureFrame();
 
 	if (!is_game_idle)
 		Descent->defer();

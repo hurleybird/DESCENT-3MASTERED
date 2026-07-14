@@ -159,7 +159,7 @@ void PersistCurrentPilotGameWindowSize(bool flush_now)
 	if (pilot_window_w != Game_window_w || pilot_window_h != Game_window_h)
 		Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
 
-	if (flush_now)
+	if (flush_now && !AutomatedCaptureSuppressesInput())
 		Current_pilot.flush(false);
 }
 

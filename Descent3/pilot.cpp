@@ -53,6 +53,7 @@
 #include "ship.h"
 #include "dedicated_server.h"
 #include "init.h"
+#include "gameloop.h"
 
 //some general defines
 #define	IDP_SAVE	10
@@ -175,7 +176,8 @@ void PilotInitData(pilot* plt);
 
 void PilotShutdown(void)
 {
-	Current_pilot.flush(false);
+	if (!AutomatedCaptureSuppressesInput())
+		Current_pilot.flush(false);
 	Current_pilot.clean(false);
 }
 
@@ -1258,7 +1260,8 @@ void IncrementPilotRestoredGamesForMission(pilot* Pilot, const char* mission_nam
 	data.num_restores++;
 	Pilot->edit_mission_data(index, &data);
 
-	PltWriteFile(Pilot, false);
+	if (!AutomatedCaptureSuppressesInput())
+		PltWriteFile(Pilot, false);
 }
 
 int GetPilotShipPermissions(pilot* Pilot, const char* mission_name)
@@ -1327,7 +1330,7 @@ void PltCreateDedicatedServerPilot(pilot* Pilot)
 //make sure Pilot->filename and Pilot->name are filled in correctly!!!!
 int PltWriteFile(pilot* Pilot, bool newpilot)
 {
-	if (Dedicated_server)
+	if (Dedicated_server || AutomatedCaptureSuppressesInput())
 		return PLTW_NO_ERROR;
 
 	Pilot->write();
