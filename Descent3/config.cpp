@@ -684,8 +684,12 @@ void config_gamma()
 #define IDV_CHANGEASPECT 11
 #define IDV_FILTERING 18
 #define IDV_DRAW_CALL_STATS 19
+#define IDV_GTAO_OVERSCAN 20
 #define UID_RESOLUTION 110
 #define UID_ASPECT 111
+
+static constexpr ushort GTAO_OVERSCAN_DISABLED_PERCENT = 100;
+static constexpr ushort GTAO_OVERSCAN_ENABLED_PERCENT = 107;
 
 static const char* ConfigFilteringCheckboxTitle(bool mipmapping)
 {
@@ -1280,6 +1284,7 @@ struct video_menu
 	bool* face_probe;
 	bool* soft_vis_effects;
 	bool* motion_vector_debug;
+	bool* gtao_overscan;
 
 	short* fov;
 	short* frame_limit;
@@ -1455,6 +1460,13 @@ struct video_menu
 			}
 			if (!ConfigGTAOTemporalWantsMotionVectors())
 				ConfigFinalizeMotionVectorUse();
+			sheet->SetGadgetVisible(IDV_GTAO_OVERSCAN, *gtao != 0);
+			changed = true;
+		}
+		if (gtao_overscan && gtao && *gtao != 0 && sheet->HasChanged(gtao_overscan))
+		{
+			Render_preferred_state.gtao_overscan_percent = *gtao_overscan ?
+				GTAO_OVERSCAN_ENABLED_PERCENT : GTAO_OVERSCAN_DISABLED_PERCENT;
 			changed = true;
 		}
 		if (motion_vector_debug && sheet->HasChanged(motion_vector_debug))
@@ -1534,7 +1546,10 @@ struct video_menu
 		*gtao = ConfigCanUseGTAO() ?
 			GTAOPresetToIndex(Render_preferred_state.gtao_enabled, Render_preferred_state.gtao_resolution) : 0;
 		if (sheet)
+		{
+			sheet->SetGadgetVisible(IDV_GTAO_OVERSCAN, *gtao != 0);
 			sheet->UpdateChanges();
+		}
 	}
 
 	// sets the menu up.
@@ -1552,6 +1567,7 @@ struct video_menu
 		face_probe = NULL;
 		soft_vis_effects = NULL;
 		motion_vector_debug = NULL;
+		gtao_overscan = NULL;
 		fov = NULL;
 		frame_limit = NULL;
 		buffer = NULL;
@@ -1629,19 +1645,24 @@ struct video_menu
 		sheet->AddRadioButton("8x");
 		*antialiasing = iTemp;
 
-		sheet->NewGroup("SSAA", 184, 94);
+		sheet->NewGroup("SSAA", 184, 86);
 		supersampling = sheet->AddFirstRadioButton(TXT_OFF);
 		sheet->AddRadioButton("2x");
 		sheet->AddRadioButton("4x");
 		*supersampling = SupersamplingFactorToIndex(Render_preferred_state.supersampling_factor);
 
-		sheet->NewGroup("GTAO", 184, 162);
+		sheet->NewGroup("GTAO", 184, 148);
 		gtao = sheet->AddFirstRadioButton(TXT_OFF);
 		sheet->AddRadioButton(TXT_LOW);
 		sheet->AddRadioButton(TXT_CFG_MEDIUM);
 		sheet->AddRadioButton(TXT_CFG_HIGH);
 		*gtao = ConfigCanUseGTAO() ?
 			GTAOPresetToIndex(Render_preferred_state.gtao_enabled, Render_preferred_state.gtao_resolution) : 0;
+		sheet->NewGroup(NULL, 184, 219);
+		gtao_overscan = sheet->AddCheckBox("Ovrscn",
+			Render_preferred_state.gtao_overscan_percent > GTAO_OVERSCAN_DISABLED_PERCENT,
+			IDV_GTAO_OVERSCAN);
+		sheet->SetGadgetVisible(IDV_GTAO_OVERSCAN, *gtao != 0);
 
 		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
@@ -1670,6 +1691,11 @@ struct video_menu
 				ApplyGTAOPresetFromIndex(*gtao);
 			else
 				ApplyGTAOPresetFromIndex(0);
+		}
+		if (gtao_overscan && gtao && *gtao != 0)
+		{
+			Render_preferred_state.gtao_overscan_percent = *gtao_overscan ?
+				GTAO_OVERSCAN_ENABLED_PERCENT : GTAO_OVERSCAN_DISABLED_PERCENT;
 		}
 		if (motion_vector_debug)
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;

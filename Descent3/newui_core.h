@@ -193,6 +193,7 @@ public:
 // only works if you specified an ID!  Also the sheet must have been realized by now.
 	UIGadget *GetGadget(short id);
 	bool SetGadgetTitle(short id, const char *title);
+	bool SetGadgetVisible(short id, bool visible);
 
 //	set focus on this gadget specified by id upon realization.
 	void SetInitialFocusedGadget(short id);
@@ -267,6 +268,7 @@ private:
 	{
 		sbyte type;									// enumerated ui gadget type
 		bool changed;								// parameters are different than defaults?
+		bool visible;								// attached to the parent window when realized?
 		short id;									// id value
 		char *title;								// title of gadget
 		union 
@@ -301,6 +303,7 @@ private:
 	char *m_title;
 
 	t_gadget_desc *AddGadget(short id, sbyte type, const char *title);
+	UIGadget *GadgetForDesc(t_gadget_desc *desc);
 
 public:
 	const char *GetTitle() { return m_title; };

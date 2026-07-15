@@ -1368,6 +1368,41 @@ void newuiSheet::SetInitialFocusedGadget(short id)
 	m_initial_focus_id = id;
 }
 
+UIGadget* newuiSheet::GadgetForDesc(newuiSheet::t_gadget_desc* desc)
+{
+	if (!desc)
+		return NULL;
+
+	switch (desc->type)
+	{
+	case GADGET_BUTTON:
+	case GADGET_LBUTTON:
+		return desc->obj.button;
+	case GADGET_CHECKBOX:
+	case GADGET_LCHECKBOX:
+		return desc->obj.chbox;
+	case GADGET_RADIO:
+	case GADGET_LRADIO:
+		return desc->obj.radio;
+	case GADGET_SLIDER:
+		return desc->obj.slider;
+	case GADGET_LISTBOX:
+		return desc->obj.lb;
+	case GADGET_COMBOBOX:
+		return desc->obj.cb;
+	case GADGET_EDITBOX:
+	case GADGET_EDITBOXPASS:
+	case GADGET_EDITBOXNUM:
+		return desc->obj.edit;
+	case GADGET_HOTSPOT:
+		return desc->obj.hot;
+	case GADGET_CHANGEABLE_TXT:
+		return desc->obj.text;
+	default:
+		return desc->obj.gadget;
+	}
+}
+
 
 // call this to initialize gadgets specified above in parent window
 void newuiSheet::Realize()
@@ -1607,10 +1642,14 @@ void newuiSheet::Realize()
 		}
 		desc->changed = false;
 
-		if (desc->obj.gadget)
+		UIGadget* realized_gadget = GadgetForDesc(desc);
+		if (realized_gadget && !desc->visible && realized_gadget->GetWindow())
+			m_parent->RemoveGadget(realized_gadget);
+
+		if (realized_gadget && desc->visible)
 		{
-			if (desc->obj.gadget->GetID() > -1 && desc->obj.gadget->GetID() == m_initial_focus_id)
-				focus_gadget = desc->obj.gadget;
+			if (realized_gadget->GetID() > -1 && realized_gadget->GetID() == m_initial_focus_id)
+				focus_gadget = realized_gadget;
 		}
 	}
 
@@ -2076,6 +2115,40 @@ bool newuiSheet::SetGadgetTitle(short id, const char* title)
 	return false;
 }
 
+bool newuiSheet::SetGadgetVisible(short id, bool visible)
+{
+	for (int i = 0; i < m_ngadgets; i++)
+	{
+		newuiSheet::t_gadget_desc* desc = &m_gadgetlist[i];
+		if (desc->id != id)
+			continue;
+
+		if (desc->visible == visible)
+			return true;
+
+		desc->visible = visible;
+		if (!m_realized)
+			return true;
+
+		UIGadget* gadget = GadgetForDesc(desc);
+		if (!gadget)
+			return true;
+
+		if (visible)
+		{
+			if (!gadget->GetWindow())
+				m_parent->AddGadget(gadget);
+		}
+		else if (gadget->GetWindow())
+		{
+			m_parent->RemoveGadget(gadget);
+		}
+		return true;
+	}
+
+	return false;
+}
+
 
 newuiSheet::t_gadget_desc* newuiSheet::AddGadget(short id, sbyte type, const char* title)
 {
@@ -2095,6 +2168,7 @@ newuiSheet::t_gadget_desc* newuiSheet::AddGadget(short id, sbyte type, const cha
 	m_gadgetlist[i].obj.gadget = NULL;
 	m_gadgetlist[i].parm.i = 0;
 	m_gadgetlist[i].changed = false;
+	m_gadgetlist[i].visible = true;
 	m_gadgetlist[i].internal = NULL;
 
 	m_ngadgets++;
