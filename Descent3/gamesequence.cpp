@@ -1361,6 +1361,7 @@ void RunGameMenu()
 
 		ResumeControls();
 		SetUICallback(NULL);
+		ui_SetFrameRateLimit(60);
 		Game_interface_mode = GAME_INTERFACE;
 		NewUIWindow_alpha = 192;
 		Clear_screen = 4;

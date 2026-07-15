@@ -172,7 +172,8 @@
 #include "Macros.h"
 #define UI_MOUSE_HOTX	2
 #define UI_MOUSE_HOTY	2
-#define UI_FRAMETIME		1./60
+static constexpr double UI_DEFAULT_FRAMETIME = 1.0 / 60.0;
+static double UI_min_frametime = UI_DEFAULT_FRAMETIME;
 //////////////////////////////////////////////////////////////////////////////
 //	VARIABLES
 typedef struct tUIWindowNode {
@@ -603,7 +604,7 @@ int ui_DoFrame(bool input)
 		res = ui_ProcessFocusedWindow();		//	process focused window
 		
 //		longlong cur_time = timer_GetMSTime();
-		while ((timer_GetTime()-UI_input.cur_time) < UI_FRAMETIME) {};
+		while ((timer_GetTime()-UI_input.cur_time) < UI_min_frametime) {};
 
 		float temp_time = timer_GetTime();
 		UIFrameTime = temp_time - UI_input.cur_time;
@@ -621,6 +622,11 @@ int ui_DoFrame(tUIInput *input, bool doinput)
 	res = ui_DoFrame(doinput);
 	*input = UI_input;
 	return res;
+}
+
+void ui_SetFrameRateLimit(int frames_per_second)
+{
+	UI_min_frametime = frames_per_second > 0 ? 1.0 / (double)frames_per_second : UI_DEFAULT_FRAMETIME;
 }
 //	hide and show cursor. effects are cumulative
 bool ui_ShowCursor()

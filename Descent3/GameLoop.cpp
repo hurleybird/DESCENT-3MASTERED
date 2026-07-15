@@ -3033,6 +3033,14 @@ void StartTerrainSound()
 //The main loop for D3.  It renders, gets input, etc. for one frame
 void GameFrame(void)
 {
+	if (Menu_interface_mode || Game_interface_mode == GAME_OPTIONS_INTERFACE)
+	{
+		int menu_frame_limit = GetFrameLimitFps();
+		if (menu_frame_limit < 60)
+			menu_frame_limit = 60;
+		ui_SetFrameRateLimit(menu_frame_limit);
+	}
+
 #ifdef USE_RTP
 	INT64 curr_time;
 #endif
@@ -3479,6 +3487,7 @@ void StartGameMenu()
 void EndGameMenu()
 {
 	ui_HideCursor();
+	ui_SetFrameRateLimit(60);
 
 	if (!(Game_mode & GM_MULTI))
 		ResumeGame();

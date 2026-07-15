@@ -159,6 +159,9 @@ int ui_DoFrame(bool input=true);
 //	does a ui frame and gets mouse and key information.
 int ui_DoFrame(tUIInput *input, bool doinput=true);
 
+// Sets the minimum interval between input-processing UI frames.
+void ui_SetFrameRateLimit(int frames_per_second);
+
 //	ability to load/use mouse cursors
 void ui_UseCursor(char *fname);
 

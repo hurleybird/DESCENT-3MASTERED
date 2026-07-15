@@ -1673,9 +1673,9 @@ static void HUDRenderFaceProbe()
 //	iterate through entire hud item list to draw.
 void RenderHUDItems(tStatMask stat_mask)
 {
-	static float framerate_timer = 0;
 	static double last_avg_fps = 0.0;
-	static float accumulated_frametime = 0.0f;
+	static double previous_framerate_time = 0.0;
+	static double accumulated_frametime = 0.0;
 	static int accumulated_frames = 0;
 	float font_aspect_x, font_aspect_y;
 
@@ -1706,21 +1706,22 @@ void RenderHUDItems(tStatMask stat_mask)
 
 	grtext_SetFontScale(hud_font_scale);
 
-	//	do framerate calculations
-	if (Frametime > 0.0f)
+	// Use wall time rather than the simulation Frametime. The simulation timer is
+	// paused while an in-game menu is open, but rendering continues.
+	const double current_framerate_time = timer_GetTime64();
+	if (previous_framerate_time > 0.0 && current_framerate_time > previous_framerate_time)
 	{
-		accumulated_frametime += Frametime;
+		accumulated_frametime += current_framerate_time - previous_framerate_time;
 		accumulated_frames++;
 	}
+	previous_framerate_time = current_framerate_time;
 
-	framerate_timer -= Frametime;
-	if (framerate_timer <= 0.0f)
+	if (accumulated_frametime >= FRAMERATE_TIME_DELAY)
 	{
 		if (accumulated_frames > 0 && accumulated_frametime > 0.0f)
 			last_avg_fps = (double)accumulated_frames / accumulated_frametime;
 
-		framerate_timer = FRAMERATE_TIME_DELAY;
-		accumulated_frametime = 0.0f;
+		accumulated_frametime = 0.0;
 		accumulated_frames = 0;
 	}
 
