@@ -418,26 +418,6 @@ struct renderer_line_batch_item
 	g3Point *p1;
 };
 
-struct renderer_particle_instance
-{
-	float screen_x;
-	float screen_y;
-	float eye_z;
-	float draw_z;
-	float half_width;
-	float half_height;
-	float sin_rot;
-	float cos_rot;
-	float u0;
-	float v0;
-	float u1;
-	float v1;
-	float r;
-	float g;
-	float b;
-	float a;
-};
-
 enum renderer_gpu_scene_mark
 {
 	RENDERER_GPU_SCENE_AFTER_MAIN_WORLD = 0,
@@ -492,11 +472,6 @@ void rend_DrawPolygon3D(int handle,g3Point **p,int nv,int map_type=MAP_TYPE_BITM
 
 // Draws several 3D polygons that share the current renderer state and texture.
 void rend_DrawPolygon3DBatch(int handle,const renderer_poly_batch_item *items,int count,int map_type=MAP_TYPE_BITMAP);
-
-bool rend_SupportsParticleInstanceBatch();
-bool rend_CanDrawParticleInstanceBatch();
-bool rend_DrawParticleInstanceBatch(int handle,const renderer_particle_instance *items,int count,
-	int map_type=MAP_TYPE_BITMAP);
 
 // Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 void rend_DrawPolygon2D(int handle,g3Point **p,int nv);

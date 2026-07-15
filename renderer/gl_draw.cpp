@@ -1328,74 +1328,6 @@ void GL4Renderer::DestroyFontBatchResources()
 	font_texture_array_layers = 0;
 }
 
-void GL4Renderer::InitParticleInstanceResources(const char* genericFragBody)
-{
-	char* particleVertexBody = GL4ReadShaderFile("particle_instance.vert", "opengl_SetDrawDefaults");
-	particleinstanceshaders[0].AttachSourcePreprocess(particleVertexBody, genericFragBody, true, false, false, false);
-	particleinstanceshaders[1].AttachSourcePreprocess(particleVertexBody, genericFragBody, true, false, false, true);
-	delete[] particleVertexBody;
-
-	for (int i = 0; i < 2; i++)
-	{
-		particleinstance_phong_enabled_uniforms[i] = particleinstanceshaders[i].FindUniform("phong_enabled");
-		particleinstance_dynamic_count_uniforms[i] = particleinstanceshaders[i].FindUniform("dynamic_light_count");
-		particleinstance_ao_suppression_uniforms[i] = particleinstanceshaders[i].FindUniform("ao_suppression");
-		particleinstance_bloom_suppression_uniforms[i] = particleinstanceshaders[i].FindUniform("bloom_suppression");
-		particleinstance_ao_class_uniforms[i] = particleinstanceshaders[i].FindUniform("ao_class_value");
-		particleinstance_ao_weight_uniforms[i] = particleinstanceshaders[i].FindUniform("ao_weight_value");
-		particleinstance_ao_capture_weight_mode_uniforms[i] = particleinstanceshaders[i].FindUniform("ao_capture_weight_mode");
-		particleinstance_post_mask_luminance_uniforms[i] = particleinstanceshaders[i].FindUniform("post_mask_use_luminance");
-		particleinstance_motion_vector_mode_uniforms[i] = particleinstanceshaders[i].FindUniform("motion_vector_mode");
-		particleinstance_motion_vector_object_id_uniforms[i] = particleinstanceshaders[i].FindUniform("motion_vector_object_id");
-		particleinstance_soft_particle_enabled_uniforms[i] = particleinstanceshaders[i].FindUniform("soft_particle_enabled");
-		particleinstance_soft_particle_screen_size_uniforms[i] = particleinstanceshaders[i].FindUniform("soft_particle_screen_size");
-		particleinstance_soft_particle_depth_range_uniforms[i] = particleinstanceshaders[i].FindUniform("soft_particle_depth_range");
-	}
-
-	glGenVertexArrays(1, &particleinstancevao);
-	glBindVertexArray(particleinstancevao);
-	glGenBuffers(1, &particleinstancebuffer);
-	glBindBuffer(GL_ARRAY_BUFFER, particleinstancebuffer);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(renderer_particle_instance) * 1024, nullptr, GL_STREAM_DRAW);
-
-	const GLsizei stride = sizeof(renderer_particle_instance);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, stride,
-		(void*)offsetof(renderer_particle_instance, screen_x));
-	glVertexAttribDivisor(0, 1);
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride,
-		(void*)offsetof(renderer_particle_instance, half_width));
-	glVertexAttribDivisor(1, 1);
-	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, stride,
-		(void*)offsetof(renderer_particle_instance, u0));
-	glVertexAttribDivisor(2, 1);
-	glEnableVertexAttribArray(3);
-	glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride,
-		(void*)offsetof(renderer_particle_instance, r));
-	glVertexAttribDivisor(3, 1);
-
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(drawvao);
-}
-
-void GL4Renderer::DestroyParticleInstanceResources()
-{
-	for (int i = 0; i < 2; i++)
-		particleinstanceshaders[i].Destroy();
-	if (particleinstancebuffer != 0)
-	{
-		glDeleteBuffers(1, &particleinstancebuffer);
-		particleinstancebuffer = 0;
-	}
-	if (particleinstancevao != 0)
-	{
-		glDeleteVertexArrays(1, &particleinstancevao);
-		particleinstancevao = 0;
-	}
-}
-
 void GL4Renderer::SetDrawDefaults()
 {
 	//Init shaders
@@ -1460,8 +1392,6 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_soft_particle_screen_size_uniforms[i] = drawshaders[i].FindUniform("soft_particle_screen_size");
 		drawshader_soft_particle_depth_range_uniforms[i] = drawshaders[i].FindUniform("soft_particle_depth_range");
 	}
-
-	InitParticleInstanceResources(genericFragBody);
 
 	lastdrawshader = -1;
 
@@ -2032,10 +1962,7 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 	if (triangle_vertices <= 0)
 		return;
 
-	std::vector<gl_vertex> local_vertices;
-	static std::vector<gl_vertex> cached_vertices;
-	std::vector<gl_vertex>& vertices = Render_cpu_batch_cache ? cached_vertices : local_vertices;
-	vertices.clear();
+	std::vector<gl_vertex> vertices;
 	if (vertices.capacity() < (size_t)triangle_vertices)
 		vertices.reserve(triangle_vertices);
 
@@ -2098,126 +2025,6 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 	OpenGL_verts_processed += original_vertices;
 
 	CHECK_ERROR(10);
-}
-
-bool GL4Renderer::SupportsParticleInstanceBatch() const
-{
-	return particleinstancevao != 0 && particleinstancebuffer != 0;
-}
-
-bool GL4Renderer::CanDrawParticleInstanceBatch() const
-{
-	return SupportsParticleInstanceBatch() &&
-		!CurrentDrawUsesPixelMotionTarget() &&
-		!CurrentDrawWritesMotionObjectId() &&
-		Overlay_type == OT_NONE;
-}
-
-void GL4Renderer::ApplyParticleInstanceUniforms(int shader_index)
-{
-	if (particleinstance_phong_enabled_uniforms[shader_index] != -1)
-		glUniform1i(particleinstance_phong_enabled_uniforms[shader_index], 0);
-	if (particleinstance_dynamic_count_uniforms[shader_index] != -1)
-		glUniform1i(particleinstance_dynamic_count_uniforms[shader_index], 0);
-	if (particleinstance_ao_suppression_uniforms[shader_index] != -1)
-		glUniform1f(particleinstance_ao_suppression_uniforms[shader_index], ao_suppression_draw_value);
-	if (particleinstance_bloom_suppression_uniforms[shader_index] != -1)
-		glUniform1f(particleinstance_bloom_suppression_uniforms[shader_index], bloom_suppression_draw_value);
-	if (particleinstance_ao_class_uniforms[shader_index] != -1)
-		glUniform1i(particleinstance_ao_class_uniforms[shader_index], ao_class_draw_value);
-	if (particleinstance_ao_weight_uniforms[shader_index] != -1)
-		glUniform1f(particleinstance_ao_weight_uniforms[shader_index], ao_weight_draw_value);
-	if (particleinstance_ao_capture_weight_mode_uniforms[shader_index] != -1)
-		glUniform1i(particleinstance_ao_capture_weight_mode_uniforms[shader_index], 0);
-	if (particleinstance_post_mask_luminance_uniforms[shader_index] != -1)
-	{
-		bool use_luminance =
-			OpenGL_state.cur_alpha_type == AT_SATURATE_TEXTURE ||
-			OpenGL_state.cur_alpha_type == AT_SATURATE_VERTEX ||
-			OpenGL_state.cur_alpha_type == AT_SATURATE_CONSTANT_VERTEX ||
-			OpenGL_state.cur_alpha_type == AT_SATURATE_TEXTURE_VERTEX ||
-			OpenGL_state.cur_alpha_type == AT_LIGHTMAP_BLEND_SATURATE;
-		glUniform1i(particleinstance_post_mask_luminance_uniforms[shader_index], use_luminance ? 1 : 0);
-	}
-	if (particleinstance_motion_vector_mode_uniforms[shader_index] != -1)
-		glUniform1i(particleinstance_motion_vector_mode_uniforms[shader_index], RENDERER_MOTION_VECTOR_OFF);
-	if (particleinstance_motion_vector_object_id_uniforms[shader_index] != -1)
-		glUniform1ui(particleinstance_motion_vector_object_id_uniforms[shader_index], 0u);
-	if (particleinstance_soft_particle_enabled_uniforms[shader_index] != -1)
-	{
-		GLuint soft_depth = soft_particle_draw_enabled ? PrepareSoftParticleDepthTexture() : 0;
-		glUniform1i(particleinstance_soft_particle_enabled_uniforms[shader_index],
-			soft_depth != 0 ? 1 : 0);
-		if (soft_depth != 0)
-		{
-			if (particleinstance_soft_particle_screen_size_uniforms[shader_index] != -1)
-				glUniform2f(particleinstance_soft_particle_screen_size_uniforms[shader_index],
-					(float)soft_particle_depth_framebuffer.Width(),
-					(float)soft_particle_depth_framebuffer.Height());
-			if (particleinstance_soft_particle_depth_range_uniforms[shader_index] != -1)
-				glUniform1f(particleinstance_soft_particle_depth_range_uniforms[shader_index],
-					soft_particle_depth_range);
-			GL_BindFramebufferTexture(soft_depth, 2, GL_NEAREST);
-			glActiveTexture(GL_TEXTURE0);
-		}
-	}
-}
-
-bool GL4Renderer::DrawParticleInstanceBatch(int handle, const renderer_particle_instance *items, int count,
-	int map_type)
-{
-	if (!items || count <= 0 || !SupportsParticleInstanceBatch())
-		return false;
-	if (!CanDrawParticleInstanceBatch())
-		return false;
-
-	const int shader_index = OpenGL_state.cur_fog_state ? 1 : 0;
-	particleinstanceshaders[shader_index].Use();
-	ApplyParticleInstanceUniforms(shader_index);
-
-	if (OpenGL_state.cur_texture_quality != 0)
-	{
-		MakeBitmapCurrent(handle, map_type, 0);
-		MakeWrapTypeCurrent(handle, map_type, 0);
-		MakeFilterTypeCurrent(handle, map_type, 0);
-	}
-
-	glBindVertexArray(particleinstancevao);
-	glBindBuffer(GL_ARRAY_BUFFER, particleinstancebuffer);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(renderer_particle_instance) * count, items, GL_STREAM_DRAW);
-
-	const bool drawing_to_scene = framebuffer_ok &&
-		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
-	const bool include_ao_class = !cockpit_scene_frame_active && OpenGL_state.cur_zbuffer_state != 0;
-	const bool override_draw_buffers = drawing_to_scene &&
-		(cockpit_scene_frame_active || PixelMotionVectorModeEnabled() || !include_ao_class);
-	if (override_draw_buffers)
-	{
-		if (cockpit_scene_frame_active)
-			GL4UseSceneColorDrawBuffer();
-		else
-			GL4UseSceneDrawBuffersForCurrentDraw(false, include_ao_class, false);
-	}
-
-	rend_RecordDrawCall(draw_call_category);
-	glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, count);
-
-	if (override_draw_buffers)
-	{
-		if (cockpit_scene_frame_active)
-			GL4UseSceneColorDrawBuffer();
-		else
-			UseSceneDrawBuffers();
-	}
-
-	glBindVertexArray(drawvao);
-	lastdrawshader = -1;
-	legacy_draw_uniforms_dirty = true;
-	OpenGL_polys_drawn += count;
-	OpenGL_verts_processed += count * 4;
-
-	CHECK_ERROR(10);
-	return true;
 }
 
 // Takes nv vertices and draws the 2D polygon defined by those vertices.
@@ -2838,10 +2645,7 @@ void GL4Renderer::DrawSpecialLineBatch(const renderer_line_batch_item *items, in
 
 	SelectDrawShader();
 
-	std::vector<gl_vertex> local_vertices;
-	static std::vector<gl_vertex> cached_vertices;
-	std::vector<gl_vertex>& vertices = Render_cpu_batch_cache ? cached_vertices : local_vertices;
-	vertices.clear();
+	std::vector<gl_vertex> vertices;
 	if (vertices.capacity() < (size_t)count * 2)
 		vertices.reserve((size_t)count * 2);
 

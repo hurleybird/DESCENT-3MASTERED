@@ -611,12 +611,6 @@ private:
 class PolymodelFogFaceBatcher
 {
 public:
-	void Reserve(size_t face_count)
-	{
-		if (face_count > m_batch_items.capacity())
-			m_batch_items.reserve(face_count);
-	}
-
 	PolymodelBatchedFace& Add()
 	{
 		m_faces.emplace_back();
@@ -628,9 +622,7 @@ public:
 		if (m_faces.empty())
 			return;
 
-		std::vector<renderer_poly_batch_item> local_items;
-		std::vector<renderer_poly_batch_item>& items = Render_cpu_batch_cache ? m_batch_items : local_items;
-		items.clear();
+		std::vector<renderer_poly_batch_item> items;
 		items.resize(m_faces.size());
 		for (size_t face_index = 0; face_index < m_faces.size(); face_index++)
 		{
@@ -647,7 +639,6 @@ public:
 
 private:
 	std::deque<PolymodelBatchedFace> m_faces;
-	std::vector<renderer_poly_batch_item> m_batch_items;
 };
 
 static PolymodelBaseFaceBatcher *Polymodel_active_opaque_batcher = nullptr;
@@ -725,14 +716,6 @@ static bool PolymodelFaceUsesAlpha(poly_model *pm, bsp_info *sm, int facenum)
 	}
 
 	return false;
-}
-
-static int PolymodelCountFaces(poly_model *pm)
-{
-	int faces = 0;
-	for (int i = 0; i < pm->n_models; i++)
-		faces += pm->submodel[i].num_faces;
-	return faces;
 }
 
 static bool PolymodelFaceUsesCockpitTransparentMaterial(poly_model *pm, bsp_info *sm, int facenum)
@@ -1920,7 +1903,6 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 	{
 		double fog_start_time = PolymodelPerfNow();
 		PolymodelFogFaceBatcher fog_face_batcher;
-		fog_face_batcher.Reserve(sm->num_faces);
 		const bool batch_fog = UseHardware && !StateLimited;
 
 		if (Polymodel_effect.fog_plane_check!=1)
@@ -2241,13 +2223,12 @@ int RenderPolygonModel(poly_model * pm, uint f_render_sub)
 	FacingPass=0;
 	PolymodelBaseFaceBatcher cockpit_opaque_batcher;
 	PolymodelBaseFaceBatcher cockpit_alpha_batcher;
-	const int model_face_count = Render_cpu_batch_cache ? PolymodelCountFaces(pm) : 0;
 	const bool use_cockpit_batches = Polymodel_cockpit_batching && UseHardware && !StateLimited &&
 		Polymodel_light_type != POLYMODEL_LIGHTING_LIGHTMAP && !Polymodel_use_effect;
 	if (use_cockpit_batches)
 	{
-		cockpit_opaque_batcher.Reserve(64, model_face_count);
-		cockpit_alpha_batcher.Reserve(16, model_face_count / 4);
+		cockpit_opaque_batcher.Reserve(64, 0);
+		cockpit_alpha_batcher.Reserve(16, 0);
 		Polymodel_active_opaque_batcher = &cockpit_opaque_batcher;
 		Polymodel_active_alpha_batcher = &cockpit_alpha_batcher;
 	}

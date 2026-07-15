@@ -184,22 +184,6 @@ public:
 			DrawPolygon3D(handle, items[i].pointlist, items[i].nv, map_type);
 	}
 
-	virtual bool SupportsParticleInstanceBatch() const
-	{
-		return false;
-	}
-
-	virtual bool CanDrawParticleInstanceBatch() const
-	{
-		return SupportsParticleInstanceBatch();
-	}
-
-	virtual bool DrawParticleInstanceBatch(int handle, const renderer_particle_instance *items, int count,
-		int map_type = MAP_TYPE_BITMAP)
-	{
-		return false;
-	}
-
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 	virtual void DrawPolygon2D(int handle, g3Point** p, int nv) = 0;
 

@@ -400,10 +400,6 @@ void SaveGameSettings()
 	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
 	Database->write("RS_face_probe", Render_face_probe);
 	Database->write("RS_soft_vis_effects", Render_soft_vis_effects);
-	Database->write("RS_cpu_batch_cache", Render_cpu_batch_cache);
-	Database->write("RS_disable_powerup_sparkles", Render_disable_powerup_sparkles);
-	Database->write("RS_simd_particle_builder", Render_simd_particle_builder);
-	Database->write("RS_gl4_particle_instancing", Render_gl4_particle_instancing);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	Database->write("RS_combined_motion_blur", Render_preferred_state.combined_motion_blur);
 	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_strength",
@@ -618,10 +614,6 @@ void LoadGameSettings()
 	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_debug_preview = false;
 	Render_soft_vis_effects = false;
-	Render_cpu_batch_cache = false;
-	Render_disable_powerup_sparkles = false;
-	Render_simd_particle_builder = false;
-	Render_gl4_particle_instancing = false;
 	ConfigResetPerPixelSpecularSettings();
 	Render_preferred_state.pixel_motion_blur_strength = 0.0f;
 	Render_preferred_state.combined_motion_blur = false;
@@ -902,10 +894,6 @@ void LoadGameSettings()
 	Database->read("RS_motion_vector_debug_preview", &Render_preferred_state.motion_vector_debug_preview);
 	Database->read("RS_face_probe", &Render_face_probe);
 	Database->read("RS_soft_vis_effects", &Render_soft_vis_effects);
-	Database->read("RS_cpu_batch_cache", &Render_cpu_batch_cache);
-	Database->read("RS_disable_powerup_sparkles", &Render_disable_powerup_sparkles);
-	Database->read("RS_simd_particle_builder", &Render_simd_particle_builder);
-	Database->read("RS_gl4_particle_instancing", &Render_gl4_particle_instancing);
 	READ_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	if (Render_preferred_state.pixel_motion_blur_strength < 0.0f)
 		Render_preferred_state.pixel_motion_blur_strength = 0.0f;
@@ -1174,16 +1162,10 @@ void LoadGameSettings()
 		Render_preferred_state.gtao_enabled = true;
 		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_FULL;
 		Render_soft_vis_effects = true;
-		Render_disable_powerup_sparkles = false;
-		// These are speculative performance paths, not image-quality features.
-		// Keep the canonical GL4 comparison configuration on the established paths.
-		Render_cpu_batch_cache = false;
-		Render_simd_particle_builder = false;
-		Render_gl4_particle_instancing = false;
 	}
 
 	AutomatedCaptureLog(
-		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d msaa=%u ssaa=%u filtering=%d mipping=%d per_pixel=%d bloom=%d gtao=%d gtao_resolution=%u motion_blur=%d combined_blur=%d soft_particles=%d cpu_batch_cache=%d simd_particles=%d gl4_particle_instancing=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
+		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d msaa=%u ssaa=%u filtering=%d mipping=%d per_pixel=%d bloom=%d gtao=%d gtao_resolution=%u motion_blur=%d combined_blur=%d soft_particles=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
 		Game_window_res_width, Game_window_res_height, Game_fullscreen ? 1 : 0,
 		DesiredOpenGLProfile, GetFrameLimitFps(),
 		(unsigned)Render_preferred_state.msaa_samples,
@@ -1197,9 +1179,6 @@ void LoadGameSettings()
 		(int)Use_motion_blur,
 		Render_preferred_state.combined_motion_blur ? 1 : 0,
 		Render_soft_vis_effects ? 1 : 0,
-		Render_cpu_batch_cache ? 1 : 0,
-		Render_simd_particle_builder ? 1 : 0,
-		Render_gl4_particle_instancing ? 1 : 0,
 		(int)Detail_settings.Dynamic_lighting,
 		Detail_settings.Specular_lighting ? 1 : 0,
 		Detail_settings.Mirrored_surfaces ? 1 : 0,
@@ -1209,11 +1188,7 @@ void LoadGameSettings()
 		Detail_settings.Powerup_halos ? 1 : 0,
 		Detail_settings.Scorches_enabled ? 1 : 0);
 
-	Render_powerup_sparkles = false;
-	if(Katmai && !FindArg("-nosparkles"))
-	{
-		Render_powerup_sparkles = true;
-	}
+	Render_powerup_sparkles = Katmai;
 
 #undef READ_FLOAT_SETTING
 
