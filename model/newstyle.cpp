@@ -55,6 +55,12 @@ static float face_depth[MAX_POLYGON_VECS];
 static ubyte triangulated_faces[MAX_FACES_PER_ROOM];
 
 static ubyte FacingPass=0;
+polymodel_render_pass Polymodel_render_pass = POLYMODEL_RENDER_ALL;
+
+static void RestorePolymodelDepthWriteMask()
+{
+	rend_SetZBufferWriteMask(Polymodel_render_pass == POLYMODEL_RENDER_TRANSPARENT ? 0 : 1);
+}
 static int Multicolor_texture=-1;
 static bool Polymodel_cockpit_batching = false;
 static bool Polymodel_cockpit_transparent_face_filter_enabled = false;
@@ -1620,7 +1626,7 @@ void DrawThrusterEffect (vector *pos,float r,float g,float b,vector *norm,float 
 		g3_DrawBitmap (&glow_pos[t],glow_size[t],(glow_size[t]*bm_h(bm_handle,0))/bm_w(bm_handle,0),bm_handle,color);
 	}
 	rend_SetZBias (0.0);
-	rend_SetZBufferWriteMask (1);
+	RestorePolymodelDepthWriteMask();
 }
 
 // Draws a glowing cone of light
@@ -1645,7 +1651,7 @@ void DrawGlowEffect (vector *pos,float r,float g,float b,vector *norm,float size
 	g3_DrawBitmap (pos,size,(size*bm_h(bm_handle,0))/bm_w(bm_handle,0),bm_handle,color);
 
 	rend_SetZBias (0.0);
-	rend_SetZBufferWriteMask (1);
+	RestorePolymodelDepthWriteMask();
 }
 
 void RenderSubmodelFacesSorted (poly_model *pm,bsp_info *sm)
@@ -1734,6 +1740,13 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 		vector tempv;
 		polyface *fp=&sm->faces[i];
 		texture *texp;
+		const bool alpha_face = PolymodelFaceUsesAlpha(pm, sm, i);
+		if ((Polymodel_render_pass == POLYMODEL_RENDER_OPAQUE && alpha_face) ||
+			(Polymodel_render_pass == POLYMODEL_RENDER_TRANSPARENT && !alpha_face))
+		{
+			PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
+			continue;
+		}
 
 		// Check to see if this face even faces us!
 		tempv = view_pos - sm->verts[fp->vertnums[0]];
@@ -1751,7 +1764,6 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 
 		if (!StateLimited && Polymodel_active_opaque_batcher && Polymodel_active_alpha_batcher)
 		{
-			const bool alpha_face = PolymodelFaceUsesAlpha(pm, sm, i);
 			PolymodelBaseFaceBatcher& batcher = alpha_face ? *Polymodel_active_alpha_batcher : *Polymodel_active_opaque_batcher;
 			if (alpha_face && Perf_markers_enabled)
 				Polymodel_perf_alpha_face_count++;
@@ -1765,6 +1777,14 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 			continue;
 		}
 		
+		if (Polymodel_render_pass != POLYMODEL_RENDER_ALL && alpha_face)
+		{
+			alpha_faces[num_alpha_faces++] = i;
+			if (Perf_markers_enabled)
+				Polymodel_perf_alpha_face_count++;
+			PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
+			continue;
+		}
 		if (fp->texnum!=-1)
 		{
 			texp=&GameTextures[pm->textures[fp->texnum]];
@@ -1853,7 +1873,8 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 		rend_SetZBias (0);
 
 	// Draw specular faces if needed
-	if (Polymodel_use_effect && Polymodel_effect.type & (PEF_SPECULAR_MODEL|PEF_SPECULAR_FACES))
+	if (Polymodel_render_pass != POLYMODEL_RENDER_OPAQUE && Polymodel_use_effect &&
+		Polymodel_effect.type & (PEF_SPECULAR_MODEL|PEF_SPECULAR_FACES))
 	{
 		double specular_start_time = PolymodelPerfNow();
 		rend_SetOverlayType (OT_NONE);
@@ -1881,12 +1902,13 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 				RenderSubmodelFaceSpecular (pm,sm,i);
 		}
 		
-		rend_SetZBufferWriteMask (1);
+		RestorePolymodelDepthWriteMask();
 		PolymodelPerfAdd(Polymodel_perf_specular_pass_time, specular_start_time);
 	}
 
 	// Draw fog if need be
-	if (Polymodel_use_effect && Polymodel_effect.type & PEF_FOGGED_MODEL)
+	if (Polymodel_render_pass != POLYMODEL_RENDER_OPAQUE && Polymodel_use_effect &&
+		Polymodel_effect.type & PEF_FOGGED_MODEL)
 	{
 		double fog_start_time = PolymodelPerfNow();
 		PolymodelFogFaceBatcher fog_face_batcher;
@@ -1922,7 +1944,7 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 		
 		fog_face_batcher.Flush();
 		rend_SetCoplanarPolygonOffset(0);
-		rend_SetZBufferWriteMask (1);
+		RestorePolymodelDepthWriteMask();
 		PolymodelPerfAdd(Polymodel_perf_fog_pass_time, fog_start_time);
 	}
 
@@ -2155,7 +2177,7 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 	
 			rend_SetZBufferWriteMask (0);	
 			g3_DrawBitmap (&pos,sm->rad,(sm->rad*bm_h(bm_handle,0))/bm_w(bm_handle,0),bm_handle);
-			rend_SetZBufferWriteMask (1);	
+			RestorePolymodelDepthWriteMask();
 			if (Perf_markers_enabled)
 				Polymodel_perf_facing_effect_count++;
 			PolymodelPerfAdd(Polymodel_perf_facing_effect_time, facing_effect_start_time);
@@ -2238,7 +2260,7 @@ int RenderPolygonModel(poly_model * pm, uint f_render_sub)
 	PolymodelPerfAdd(Polymodel_perf_root_pass_time, root_pass_start_time);
 
 	// Now render any facing submodels
-	if (pm->flags & PMF_FACING)
+	if (Polymodel_render_pass != POLYMODEL_RENDER_OPAQUE && (pm->flags & PMF_FACING))
 	{
 		double facing_pass_start_time = PolymodelPerfNow();
 		// Don't render if we have it set for no glows

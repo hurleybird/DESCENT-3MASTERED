@@ -82,6 +82,7 @@ ubyte* RenderObjectGouraudValue = NULL;
 lightmap_object* RenderObjectLightmapObject = NULL;
 vector RenderObject_LightDirection;
 static bool RenderObject_disable_motion_capture = false;
+static bool RenderObject_powerup_opaque_pass = false;
 
 bool GetLinearPosition(vector* points, float* times, int num_points, float t, vector* pos);
 
@@ -1059,7 +1060,7 @@ bool GetLinearPosition(vector* points, float* times, int num_points, float t, ve
 
 // -----------------------------------------------------------------------------
 //	Render an object.  Calls one of several routines based on type
-void RenderObject(object* obj)
+static bool RenderObjectInternal(object* obj)
 {
 	float normalized_time[MAX_SUBOBJECTS];
 	bool render_it = false;
@@ -1067,11 +1068,11 @@ void RenderObject(object* obj)
 	{
 		mprintf((1, "ERROR!!!! Bogus obj %d in room %d is rendering!\n", OBJNUM(obj), obj->roomnum));
 		Int3();
-		return;
+		return false;
 	}
 
 	if (obj->type == OBJ_DUMMY)
-		return;
+		return false;
 
 	RenderObjectPerfCallScope perf_scope;
 
@@ -1083,13 +1084,13 @@ void RenderObject(object* obj)
 		{
 			if (perf_scope.IsActive())
 				Render_object_perf_attach_reject_count++;
-			return;
+			return false;
 		}
 		if (parent_obj->render_type == RT_NONE && parent_obj->type != OBJ_POWERUP && (parent_obj->type == OBJ_PLAYER || parent_obj->movement_type != MT_NONE))
 		{
 			if (perf_scope.IsActive())
 				Render_object_perf_attach_reject_count++;
-			return;
+			return false;
 		}
 	}
 
@@ -1106,14 +1107,14 @@ void RenderObject(object* obj)
 	{
 		if (perf_scope.IsActive())
 			Render_object_perf_setup_reject_count++;
-		return;
+		return false;
 	}
 
 	if (!(obj->flags & OF_SAFE_TO_RENDER))
 	{
 		if (perf_scope.IsActive())
 			Render_object_perf_safe_reject_count++;
-		return;
+		return false;
 	}
 
 	if (perf_scope.IsActive())
@@ -1440,7 +1441,7 @@ void RenderObject(object* obj)
 		double extra_effects_start_time = (perf_scope.IsActive() && has_extra_effects) ? PerfMarkersNow() : 0.0;
 
 		// Render that powerup glow
-		if (obj->type == OBJ_POWERUP)
+		if (obj->type == OBJ_POWERUP && !RenderObject_powerup_opaque_pass)
 		{
 			DrawPowerupGlowDisk(obj);
 			DrawPowerupSparkles(obj);
@@ -1559,6 +1560,12 @@ void RenderObject(object* obj)
 		}
 	}
 #endif
+	return true;
+}
+
+void RenderObject(object* obj)
+{
+	RenderObjectInternal(obj);
 }
 
 // Sets the polygon render object type to static (one lightval for whole object)
@@ -1604,6 +1611,9 @@ bool is_multi_demo = false;
 // functions
 void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 {
+	const polymodel_render_pass saved_render_pass = Polymodel_render_pass;
+	if (RenderObject_powerup_opaque_pass)
+		Polymodel_render_pass = POLYMODEL_RENDER_OPAQUE;
 	int model_num;
 	int use_effect = 0;
 	vector obj_pos = obj->pos;
@@ -1943,6 +1953,79 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 		rend_EndMotionObject();
 		PolymodelMotionEndObject();
 	}
+	Polymodel_render_pass = saved_render_pass;
+}
+
+bool RenderPowerupCanUseOpaquePass(const object* obj)
+{
+	if (!obj || obj->type != OBJ_POWERUP || obj->render_type != RT_POLYOBJ)
+		return false;
+	if (obj->rtype.pobj_info.model_num < 0 || obj->rtype.pobj_info.model_num >= MAX_POLY_MODELS)
+		return false;
+	if (obj->effect_info && (obj->effect_info->type_flags &
+		(EF_FADING_OUT | EF_FADING_IN | EF_CLOAKED | EF_DEFORM)))
+		return false;
+	if ((obj->flags & OF_USES_LIFELEFT) && obj->lifeleft < 5.0f)
+		return false;
+	if (Viewer_object && Viewer_object->effect_info &&
+		(Viewer_object->effect_info->type_flags & EF_DEFORM))
+		return false;
+
+	const poly_model& model = Poly_models[obj->rtype.pobj_info.model_num];
+	if (!model.used || !model.new_style)
+		return false;
+	for (int submodel = 0; submodel < model.n_models; submodel++)
+	{
+		if (model.submodel[submodel].flags & SOF_JITTER)
+			return false;
+	}
+	return true;
+}
+
+bool RenderPowerupOpaque(object* obj)
+{
+	ASSERT(RenderPowerupCanUseOpaquePass(obj));
+	const bool saved_opaque_pass = RenderObject_powerup_opaque_pass;
+	RenderObject_powerup_opaque_pass = true;
+	const bool rendered = RenderObjectInternal(obj);
+	RenderObject_powerup_opaque_pass = saved_opaque_pass;
+	return rendered;
+}
+
+void RenderPowerupTransparents(object* obj)
+{
+	ASSERT(obj && obj->type == OBJ_POWERUP && obj->render_type == RT_POLYOBJ);
+
+	const bool was_safe_to_render = (obj->flags & OF_SAFE_TO_RENDER) != 0;
+	if (OBJECT_OUTSIDE(obj))
+		SetupTerrainObject(obj);
+	else
+		SetupMineObject(obj);
+	if (!was_safe_to_render)
+		obj->flags &= ~OF_SAFE_TO_RENDER;
+
+	float normalized_time[MAX_SUBOBJECTS];
+	float* normalized_time_ptr = NULL;
+	if (obj->rtype.pobj_info.anim_frame ||
+		(Poly_models[obj->rtype.pobj_info.model_num].frame_max !=
+		 Poly_models[obj->rtype.pobj_info.model_num].frame_min))
+	{
+		SetNormalizedTimeObj(obj, normalized_time);
+		normalized_time_ptr = normalized_time;
+	}
+
+	const polymodel_render_pass saved_render_pass = Polymodel_render_pass;
+	const bool saved_disable_motion_capture = RenderObject_disable_motion_capture;
+	Polymodel_render_pass = POLYMODEL_RENDER_TRANSPARENT;
+	RenderObject_disable_motion_capture = true;
+	rend_SetZBufferWriteMask(0);
+	RenderObject_DrawPolymodel(obj, normalized_time_ptr);
+	rend_SetZBufferWriteMask(1);
+	RenderObject_disable_motion_capture = saved_disable_motion_capture;
+	Polymodel_render_pass = saved_render_pass;
+
+	DrawPowerupGlowDisk(obj);
+	DrawPowerupSparkles(obj);
 }
 
 // Sets the direction of the lightsource to be used when calculating vertex lighting

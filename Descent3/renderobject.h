@@ -30,6 +30,12 @@ void DrawRoomVisPnts(object *obj);
 //	Render an object.  Calls one of several routines based on type
 void RenderObject(object *obj);
 
+// Powerups contain both depth-writing model faces and transparent glows.  These
+// helpers let the post-renderer place those parts in their respective passes.
+bool RenderPowerupCanUseOpaquePass(const object *obj);
+bool RenderPowerupOpaque(object *obj);
+void RenderPowerupTransparents(object *obj);
+
 void RenderObjectPerfReset();
 void RenderObjectPerfFlush();
 

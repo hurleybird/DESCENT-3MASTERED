@@ -55,6 +55,15 @@ extern g3Point Robot_points[];
 //Flag to draw an outline around the faces
 extern bool Polymodel_outline_mode;
 
+enum polymodel_render_pass
+{
+	POLYMODEL_RENDER_ALL,
+	POLYMODEL_RENDER_OPAQUE,
+	POLYMODEL_RENDER_TRANSPARENT
+};
+
+extern polymodel_render_pass Polymodel_render_pass;
+
 inline float POLY_WIDTH(int model_num)
 {
 	return Poly_models[model_num].maxs.x - Poly_models[model_num].mins.x;
