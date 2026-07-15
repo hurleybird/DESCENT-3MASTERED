@@ -280,6 +280,8 @@ enum GL4GpuSplitPoint
 	GL4_GPU_SPLIT_AFTER_ROOM_CHANGE,
 	GL4_GPU_SPLIT_AFTER_MATCENS,
 	GL4_GPU_SPLIT_AFTER_RENDER_EVENTS,
+	GL4_GPU_SPLIT_CAPTURE_AFTER_COLOR,
+	GL4_GPU_SPLIT_CAPTURE_AFTER_DEPTH,
 	GL4_GPU_SPLIT_AFTER_CAPTURE_BLOOM,
 	GL4_GPU_SPLIT_AFTER_MAIN_VIEW,
 	GL4_GPU_SPLIT_AFTER_SMALL_VIEWS,
@@ -288,6 +290,8 @@ enum GL4GpuSplitPoint
 	GL4_GPU_SPLIT_AFTER_DEBUG,
 	GL4_GPU_SPLIT_AFTER_UI,
 	GL4_GPU_SPLIT_BEFORE_POST,
+	GL4_GPU_SPLIT_PREP_AFTER_COLOR,
+	GL4_GPU_SPLIT_PREP_AFTER_DEPTH,
 	GL4_GPU_SPLIT_AFTER_PREP,
 	GL4_GPU_SPLIT_GTAO_AFTER_SCENE_COLOR_COPY,
 	GL4_GPU_SPLIT_GTAO_AFTER_SCENE_DEPTH_COPY,
@@ -301,7 +305,17 @@ enum GL4GpuSplitPoint
 	GL4_GPU_SPLIT_GTAO_AFTER_DEFERRED_COMPOSITE,
 	GL4_GPU_SPLIT_GTAO_AFTER_COMPOSITE_DEPTH_COPY,
 	GL4_GPU_SPLIT_AFTER_GTAO,
+	GL4_GPU_SPLIT_BLOOM_AFTER_DEFERRED_SOURCE,
+	GL4_GPU_SPLIT_BLOOM_AFTER_POST_PRESENT_COPY,
+	GL4_GPU_SPLIT_BLOOM_AFTER_MOTION_BLUR,
 	GL4_GPU_SPLIT_AFTER_BLOOM,
+	GL4_GPU_SPLIT_COCKPIT_AFTER_DRAW,
+	GL4_GPU_SPLIT_COCKPIT_AFTER_ALPHA_CLEAR,
+	GL4_GPU_SPLIT_COCKPIT_AFTER_RESOLVE,
+	GL4_GPU_SPLIT_COCKPIT_AFTER_BLOOM_APPLY,
+	GL4_GPU_SPLIT_COCKPIT_AFTER_BLEND,
+	GL4_GPU_SPLIT_COCKPIT_AFTER_BLOOM_COMPOSITE,
+	GL4_GPU_SPLIT_AFTER_BACKBUFFER_BLIT,
 	GL4_GPU_SPLIT_BEFORE_SWAP,
 	GL4_GPU_SPLIT_COUNT
 };
@@ -435,6 +449,36 @@ static void GL4PerfGpuSplitPoll()
 			GL4PerfGpuSplitRecord("GTAO.CompositeDepthCopy", state,
 				t[GL4_GPU_SPLIT_GTAO_AFTER_DEFERRED_COMPOSITE],
 				t[GL4_GPU_SPLIT_GTAO_AFTER_COMPOSITE_DEPTH_COPY]);
+		}
+
+		const struct
+		{
+			const char* label;
+			GL4GpuSplitPoint begin;
+			GL4GpuSplitPoint end;
+		} post_ranges[] =
+		{
+			{ "Capture.Color", GL4_GPU_SPLIT_AFTER_RENDER_EVENTS, GL4_GPU_SPLIT_CAPTURE_AFTER_COLOR },
+			{ "Capture.Depth", GL4_GPU_SPLIT_CAPTURE_AFTER_COLOR, GL4_GPU_SPLIT_CAPTURE_AFTER_DEPTH },
+			{ "Capture.Tail", GL4_GPU_SPLIT_CAPTURE_AFTER_DEPTH, GL4_GPU_SPLIT_AFTER_CAPTURE_BLOOM },
+			{ "Prep.Color", GL4_GPU_SPLIT_BEFORE_POST, GL4_GPU_SPLIT_PREP_AFTER_COLOR },
+			{ "Prep.Depth", GL4_GPU_SPLIT_PREP_AFTER_COLOR, GL4_GPU_SPLIT_PREP_AFTER_DEPTH },
+			{ "Prep.Tail", GL4_GPU_SPLIT_PREP_AFTER_DEPTH, GL4_GPU_SPLIT_AFTER_PREP },
+			{ "Bloom.DeferredSource", GL4_GPU_SPLIT_AFTER_GTAO, GL4_GPU_SPLIT_BLOOM_AFTER_DEFERRED_SOURCE },
+			{ "PostPresent.Copy", GL4_GPU_SPLIT_BLOOM_AFTER_DEFERRED_SOURCE, GL4_GPU_SPLIT_BLOOM_AFTER_POST_PRESENT_COPY },
+			{ "MotionBlur", GL4_GPU_SPLIT_BLOOM_AFTER_POST_PRESENT_COPY, GL4_GPU_SPLIT_BLOOM_AFTER_MOTION_BLUR },
+			{ "Cockpit.Draw", GL4_GPU_SPLIT_AFTER_BLOOM, GL4_GPU_SPLIT_COCKPIT_AFTER_DRAW },
+			{ "Cockpit.AlphaClear", GL4_GPU_SPLIT_COCKPIT_AFTER_DRAW, GL4_GPU_SPLIT_COCKPIT_AFTER_ALPHA_CLEAR },
+			{ "Cockpit.Resolve", GL4_GPU_SPLIT_COCKPIT_AFTER_ALPHA_CLEAR, GL4_GPU_SPLIT_COCKPIT_AFTER_RESOLVE },
+			{ "Cockpit.BloomApply", GL4_GPU_SPLIT_COCKPIT_AFTER_RESOLVE, GL4_GPU_SPLIT_COCKPIT_AFTER_BLOOM_APPLY },
+			{ "Cockpit.Blend", GL4_GPU_SPLIT_COCKPIT_AFTER_BLOOM_APPLY, GL4_GPU_SPLIT_COCKPIT_AFTER_BLEND },
+			{ "Cockpit.BloomComposite", GL4_GPU_SPLIT_COCKPIT_AFTER_BLEND, GL4_GPU_SPLIT_COCKPIT_AFTER_BLOOM_COMPOSITE },
+			{ "Backbuffer.Blit", GL4_GPU_SPLIT_COCKPIT_AFTER_BLOOM_COMPOSITE, GL4_GPU_SPLIT_AFTER_BACKBUFFER_BLIT },
+		};
+		for (const auto& range : post_ranges)
+		{
+			if (state.has_point[range.begin] && state.has_point[range.end])
+				GL4PerfGpuSplitRecord(range.label, state, t[range.begin], t[range.end]);
 		}
 
 		if (state.has_point[GL4_GPU_SPLIT_START] &&
@@ -1481,6 +1525,7 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 		GL4PerfGpuDrain("GPU.PresentResolve.MSAA");
 		present_framebuffer = &resolved_framebuffer;
 	}
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_PREP_AFTER_COLOR);
 
 	if (late_post_enabled)
 	{
@@ -1499,6 +1544,7 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 			GL4PerfGpuDrain("GPU.PresentDepth");
 		}
 	}
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_PREP_AFTER_DEPTH);
 
 	GLuint protection_mask_texture = post_protection_mask_dirty ?
 		post_protection_mask.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
@@ -1675,6 +1721,7 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 		{
 			bloom.DestroyFramebuffers();
 		}
+		GL4PerfGpuSplitMark(GL4_GPU_SPLIT_BLOOM_AFTER_DEFERRED_SOURCE);
 	}
 	else
 	{
@@ -1707,9 +1754,11 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 		if (blitshader_uv_scale != -1)
 			glUniform2f(blitshader_uv_scale, 1.0f, 1.0f);
 		GL4PerfGpuDrain("GPU.PostPresentBlitLinear");
+		GL4PerfGpuSplitMark(GL4_GPU_SPLIT_BLOOM_AFTER_POST_PRESENT_COPY);
 
 		ApplyPixelMotionBlur(supersampling_factor);
 		DrawMotionVectorDebugPreview(supersampling_factor);
+		GL4PerfGpuSplitMark(GL4_GPU_SPLIT_BLOOM_AFTER_MOTION_BLUR);
 	}
 	else if (bloom_framebuffer)
 	{
@@ -1756,8 +1805,14 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 	}
 	if (!defer_bloom_composite)
 	{
+		GL4PerfGpuSplitMark(GL4_GPU_SPLIT_BLOOM_AFTER_DEFERRED_SOURCE);
+		GL4PerfGpuSplitMark(GL4_GPU_SPLIT_BLOOM_AFTER_POST_PRESENT_COPY);
+	}
+	if (!defer_bloom_composite)
+	{
 		ApplyPixelMotionBlur(supersampling_factor);
 		DrawMotionVectorDebugPreview(supersampling_factor);
+		GL4PerfGpuSplitMark(GL4_GPU_SPLIT_BLOOM_AFTER_MOTION_BLUR);
 	}
 	ShaderProgram::ClearBinding();
 
@@ -1905,8 +1960,7 @@ bool GL4Renderer::ResolveCockpitLayerToPostComposite()
 	if (supersampling_factor >= 4)
 	{
 		downscale_framebuffer.Update(framebuffer_logical_width * 2, framebuffer_logical_height * 2, 0);
-		resolved_framebuffer.Update(framebuffer_logical_width, framebuffer_logical_height, 0);
-		if (downscale_framebuffer.Handle() == 0 || resolved_framebuffer.Handle() == 0)
+		if (downscale_framebuffer.Handle() == 0)
 			return false;
 
 		downsampleshader.Use();
@@ -1918,30 +1972,30 @@ bool GL4Renderer::ResolveCockpitLayerToPostComposite()
 		GL4PerfGpuDrain("GPU.CockpitDownsample.4xTo2x");
 
 		downsampleshader.Use();
-		downscale_framebuffer.DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
-			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma,
+		downscale_framebuffer.DownsampleTo(post_composite_framebuffer.Handle(), 0, 0,
+			post_composite_framebuffer.Width(), post_composite_framebuffer.Height(), downsampleshader_gamma,
 			deferred_display_gamma, downsampleshader_dest_origin, downsampleshader_source_visible_origin,
 			downsampleshader_source_visible_size, visible_origin_x * 2, visible_origin_y * 2,
-			visible_width * 2, visible_height * 2);
+			visible_width * 2, visible_height * 2, visible_origin_x, visible_origin_y);
 		GL4PerfGpuDrain("GPU.CockpitDownsample.2xTo1x");
 	}
 	else if (supersampling_factor >= 2)
 	{
-		resolved_framebuffer.Update(framebuffer_logical_width, framebuffer_logical_height, 0);
-		if (resolved_framebuffer.Handle() == 0)
-			return false;
-
 		downsampleshader.Use();
-		framebuffers[framebuffer_current_draw].DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
-			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma,
+		framebuffers[framebuffer_current_draw].DownsampleTo(post_composite_framebuffer.Handle(), 0, 0,
+			post_composite_framebuffer.Width(), post_composite_framebuffer.Height(), downsampleshader_gamma,
 			deferred_display_gamma, downsampleshader_dest_origin, downsampleshader_source_visible_origin,
 			downsampleshader_source_visible_size, visible_origin_x * 2, visible_origin_y * 2,
-			visible_width * 2, visible_height * 2);
+			visible_width * 2, visible_height * 2, visible_origin_x, visible_origin_y);
 		GL4PerfGpuDrain("GPU.CockpitDownsample.2xTo1x");
 	}
+	if (supersampling_factor >= 2)
+	{
+		GL4PerfGpuDrain("GPU.CockpitResolve");
+		return true;
+	}
 
-	Framebuffer* source_framebuffer = supersampling_factor >= 2 ?
-		&resolved_framebuffer : &framebuffers[framebuffer_current_draw];
+	Framebuffer* source_framebuffer = &framebuffers[framebuffer_current_draw];
 	const float uv_origin_x = source_framebuffer->Width() > 0 ?
 		(float)visible_origin_x / (float)source_framebuffer->Width() : 0.0f;
 	const float uv_origin_y = source_framebuffer->Height() > 0 ?
@@ -2200,6 +2254,7 @@ void GL4Renderer::EndPostPresentFrame()
 				framebuffer_blit_w, framebuffer_blit_h, false);
 		}
 		GL4PerfGpuDrain("GPU.BackbufferBlit");
+		GL4PerfGpuSplitMark(GL4_GPU_SPLIT_AFTER_BACKBUFFER_BLIT);
 		ShaderProgram::ClearBinding();
 	}
 
@@ -2297,15 +2352,21 @@ void GL4Renderer::EndCockpitFrame()
 		return;
 
 	FlushFontBatch();
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_DRAW);
 	ClearPostPresentAlpha();
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_ALPHA_CLEAR);
 	const bool cockpit_layer_resolved = cockpit_scene_frame_active && ResolveCockpitLayerToPostComposite();
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_RESOLVE);
 	GLuint cockpit_alpha_mask_texture = cockpit_layer_resolved ?
 		post_composite_framebuffer.ColorTextureForRead() : 0;
 	ApplyDeferredBloom(cockpit_alpha_mask_texture);
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_BLOOM_APPLY);
 	if (cockpit_layer_resolved)
 		BlendPostCompositeOverPostPresent();
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_BLEND);
 	cockpit_scene_frame_active = false;
 	CompositeDeferredBloomOverPostPresent();
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_BLOOM_COMPOSITE);
 	UseDrawVAO();
 }
 
@@ -2412,12 +2473,14 @@ void GL4Renderer::CaptureBloomSource()
 				}
 				ao_scene_valid = true;
 			}
+			GL4PerfGpuSplitMark(GL4_GPU_SPLIT_CAPTURE_AFTER_COLOR);
 			{
 				PERF_MARKER_SCOPE("Post.CaptureDepth");
 				framebuffers[framebuffer_current_draw].BlitDepthTo(bloom_source_framebuffer.Handle(), 0, 0,
 					bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height());
 			}
 			GL4PerfGpuDrain("GPU.CaptureDepth");
+			GL4PerfGpuSplitMark(GL4_GPU_SPLIT_CAPTURE_AFTER_DEPTH);
 			glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 			bloom_source_valid = true;

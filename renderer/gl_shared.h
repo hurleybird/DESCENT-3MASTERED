@@ -157,7 +157,8 @@ public:
 	void DownsampleTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h,
 		GLint gamma_uniform, float gamma, GLint dest_origin_uniform,
 		GLint source_visible_origin_uniform = -1, GLint source_visible_size_uniform = -1,
-		int source_visible_x = 0, int source_visible_y = 0, int source_visible_w = 0, int source_visible_h = 0);
+		int source_visible_x = 0, int source_visible_y = 0, int source_visible_w = 0, int source_visible_h = 0,
+		int output_origin_x = 0, int output_origin_y = 0);
 
 	//When called without MSAA, just binds m_name to the read slot.
 	//When called with MSAA, will resolve to m_subname and bind that.
@@ -238,11 +239,14 @@ struct MotionVectorResources
 	uint32_t width = 0;
 	uint32_t height = 0;
 	uint32_t samples = 0;
+	bool velocity_resolve_valid = false;
+	bool object_id_resolve_valid = false;
 
 	void Update(uint32_t width, uint32_t height, uint32_t msaa_samples);
 	void Destroy();
 	void AttachToFramebuffer(GLuint framebuffer);
 	void ClearAttached(GLuint framebuffer);
+	void MarkDirty();
 	GLuint TextureForRead(GLuint source_framebuffer);
 	GLuint ObjectIdTextureForRead(GLuint source_framebuffer);
 };

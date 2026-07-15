@@ -711,7 +711,8 @@ void Framebuffer::BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned
 void Framebuffer::DownsampleTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h,
 	GLint gamma_uniform, float gamma, GLint dest_origin_uniform,
 	GLint source_visible_origin_uniform, GLint source_visible_size_uniform,
-	int source_visible_x, int source_visible_y, int source_visible_w, int source_visible_h)
+	int source_visible_x, int source_visible_y, int source_visible_w, int source_visible_h,
+	int output_origin_x, int output_origin_y)
 {
 	PERF_MARKER_SCOPE("Post.DownsampleTo");
 	SubFramebufferBlit(GL_COLOR_BUFFER_BIT);
@@ -737,7 +738,7 @@ void Framebuffer::DownsampleTo(GLuint target, unsigned int x, unsigned int y, un
 	if (gamma_uniform != -1)
 		glUniform1f(gamma_uniform, gamma);
 	if (dest_origin_uniform != -1)
-		glUniform2i(dest_origin_uniform, x, y);
+		glUniform2i(dest_origin_uniform, (int)x - output_origin_x, (int)y - output_origin_y);
 	if (source_visible_origin_uniform != -1)
 		glUniform2i(source_visible_origin_uniform, source_visible_x, source_visible_y);
 	if (source_visible_size_uniform != -1)
@@ -889,6 +890,8 @@ void MotionVectorResources::Destroy()
 	object_id_resolved_texture = 0;
 	object_id_resolve_framebuffer = 0;
 	width = height = samples = 0;
+	velocity_resolve_valid = false;
+	object_id_resolve_valid = false;
 }
 
 void MotionVectorResources::AttachToFramebuffer(GLuint framebuffer)
@@ -937,6 +940,13 @@ void MotionVectorResources::ClearAttached(GLuint framebuffer)
 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 	glDrawBuffer(old_draw_buffer);
+	MarkDirty();
+}
+
+void MotionVectorResources::MarkDirty()
+{
+	velocity_resolve_valid = false;
+	object_id_resolve_valid = false;
 }
 
 GLuint MotionVectorResources::TextureForRead(GLuint source_framebuffer)
@@ -946,6 +956,8 @@ GLuint MotionVectorResources::TextureForRead(GLuint source_framebuffer)
 
 	if (samples < 2)
 		return velocity_texture;
+	if (velocity_resolve_valid)
+		return resolved_texture;
 
 	GLint old_read = 0, old_draw = 0;
 	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
@@ -959,6 +971,7 @@ GLuint MotionVectorResources::TextureForRead(GLuint source_framebuffer)
 	glReadBuffer(GL_COLOR_ATTACHMENT0);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	velocity_resolve_valid = true;
 	return resolved_texture;
 }
 
@@ -969,6 +982,8 @@ GLuint MotionVectorResources::ObjectIdTextureForRead(GLuint source_framebuffer)
 
 	if (samples < 2)
 		return object_id_texture;
+	if (object_id_resolve_valid)
+		return object_id_resolved_texture;
 
 	GLint old_read = 0, old_draw = 0;
 	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
@@ -982,6 +997,7 @@ GLuint MotionVectorResources::ObjectIdTextureForRead(GLuint source_framebuffer)
 	glReadBuffer(GL_COLOR_ATTACHMENT0);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	object_id_resolve_valid = true;
 	return object_id_resolved_texture;
 }
 

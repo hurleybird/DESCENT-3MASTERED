@@ -1886,6 +1886,7 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 	if (include_motion_vectors || include_motion_object_ids)
 	{
 		motion_vectors_dirty = true;
+		motion_vectors.MarkDirty();
 	}
 	if (override_draw_buffers)
 	{
@@ -2013,6 +2014,7 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 	if (include_motion_vectors || include_motion_object_ids)
 	{
 		motion_vectors_dirty = true;
+		motion_vectors.MarkDirty();
 	}
 	if (override_draw_buffers)
 	{
@@ -2140,6 +2142,7 @@ void GL4Renderer::FillMotionVectorRegion(int object_handle)
 	glClearBufferuiv(GL_COLOR, 0, fill_id);
 
 	motion_vectors_dirty = true;
+	motion_vectors.MarkDirty();
 
 	if (scissor_was_enabled)
 	{
