@@ -1739,16 +1739,45 @@ void DrawColoredRing(vector* pos, float r, float g, float b, float inner_alpha, 
 	}
 
 	// and draw...
-	g3Point* pntList[4];
+	ubyte clip_codes = 0;
+	for (i = 0; i < numSegments; ++i)
+		clip_codes |= innerPoints[i].p3_codes | outerPoints[i].p3_codes;
+
+	// Keep the legacy per-polygon clip path for rings touching a view plane.
+	if (clip_codes != 0)
+	{
+		g3Point* point_list[4];
+		for (i = 0; i < numSegments; ++i)
+		{
+			int next = (i + 1) % numSegments;
+			point_list[0] = &outerPoints[i];
+			point_list[1] = &outerPoints[next];
+			point_list[2] = &innerPoints[next];
+			point_list[3] = &innerPoints[i];
+			g3_DrawPoly(4, point_list, 0);
+		}
+		return;
+	}
+
+	for (i = 0; i < numSegments; ++i)
+	{
+		g3_ProjectPoint(&innerPoints[i]);
+		g3_ProjectPoint(&outerPoints[i]);
+	}
+
+	g3Point* point_lists[32][4];
+	renderer_poly_batch_item batch_items[32];
 	for (i = 0; i < numSegments; ++i)
 	{
 		int next = (i + 1) % numSegments;
-		pntList[0] = &outerPoints[i];
-		pntList[1] = &outerPoints[next];
-		pntList[2] = &innerPoints[next];
-		pntList[3] = &innerPoints[i];
-		g3_DrawPoly(4, pntList, 0);
+		point_lists[i][0] = &outerPoints[i];
+		point_lists[i][1] = &outerPoints[next];
+		point_lists[i][2] = &innerPoints[next];
+		point_lists[i][3] = &innerPoints[i];
+		batch_items[i].pointlist = point_lists[i];
+		batch_items[i].nv = 4;
 	}
+	rend_DrawPolygon3DBatch(0, batch_items, numSegments, MAP_TYPE_BITMAP);
 }
 
 // Draws a sphere with the appropriate texture.  If texture=-1, then uses rgb as colors
