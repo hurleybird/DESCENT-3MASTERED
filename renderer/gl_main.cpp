@@ -289,6 +289,17 @@ enum GL4GpuSplitPoint
 	GL4_GPU_SPLIT_AFTER_UI,
 	GL4_GPU_SPLIT_BEFORE_POST,
 	GL4_GPU_SPLIT_AFTER_PREP,
+	GL4_GPU_SPLIT_GTAO_AFTER_SCENE_COLOR_COPY,
+	GL4_GPU_SPLIT_GTAO_AFTER_SCENE_DEPTH_COPY,
+	GL4_GPU_SPLIT_GTAO_AFTER_DEPTH_REDUCE,
+	GL4_GPU_SPLIT_GTAO_AFTER_GENERATE,
+	GL4_GPU_SPLIT_GTAO_AFTER_BLUR_X,
+	GL4_GPU_SPLIT_GTAO_AFTER_BLUR_Y,
+	GL4_GPU_SPLIT_GTAO_AFTER_TEMPORAL,
+	GL4_GPU_SPLIT_GTAO_AFTER_SUPPRESSION,
+	GL4_GPU_SPLIT_GTAO_AFTER_COMPOSITE,
+	GL4_GPU_SPLIT_GTAO_AFTER_DEFERRED_COMPOSITE,
+	GL4_GPU_SPLIT_GTAO_AFTER_COMPOSITE_DEPTH_COPY,
 	GL4_GPU_SPLIT_AFTER_GTAO,
 	GL4_GPU_SPLIT_AFTER_BLOOM,
 	GL4_GPU_SPLIT_BEFORE_SWAP,
@@ -353,6 +364,77 @@ static void GL4PerfGpuSplitPoll()
 			if (!state.has_point[point])
 				continue;
 			glGetQueryObjectui64v(GL4_gpu_split_queries[i][point], GL_QUERY_RESULT, &t[point]);
+		}
+
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_PREP] &&
+			state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_SCENE_COLOR_COPY])
+		{
+			GL4PerfGpuSplitRecord("GTAO.SceneColorCopy", state,
+				t[GL4_GPU_SPLIT_AFTER_PREP], t[GL4_GPU_SPLIT_GTAO_AFTER_SCENE_COLOR_COPY]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_SCENE_COLOR_COPY] &&
+			state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_SCENE_DEPTH_COPY])
+		{
+			GL4PerfGpuSplitRecord("GTAO.SceneDepthCopy", state,
+				t[GL4_GPU_SPLIT_GTAO_AFTER_SCENE_COLOR_COPY],
+				t[GL4_GPU_SPLIT_GTAO_AFTER_SCENE_DEPTH_COPY]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_SCENE_DEPTH_COPY] &&
+			state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_DEPTH_REDUCE])
+		{
+			GL4PerfGpuSplitRecord("GTAO.DepthReduce", state,
+				t[GL4_GPU_SPLIT_GTAO_AFTER_SCENE_DEPTH_COPY],
+				t[GL4_GPU_SPLIT_GTAO_AFTER_DEPTH_REDUCE]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_DEPTH_REDUCE] &&
+			state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_GENERATE])
+		{
+			GL4PerfGpuSplitRecord("GTAO.Generate", state,
+				t[GL4_GPU_SPLIT_GTAO_AFTER_DEPTH_REDUCE], t[GL4_GPU_SPLIT_GTAO_AFTER_GENERATE]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_GENERATE] &&
+			state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_BLUR_X])
+		{
+			GL4PerfGpuSplitRecord("GTAO.BlurX", state,
+				t[GL4_GPU_SPLIT_GTAO_AFTER_GENERATE], t[GL4_GPU_SPLIT_GTAO_AFTER_BLUR_X]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_BLUR_X] &&
+			state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_BLUR_Y])
+		{
+			GL4PerfGpuSplitRecord("GTAO.BlurY", state,
+				t[GL4_GPU_SPLIT_GTAO_AFTER_BLUR_X], t[GL4_GPU_SPLIT_GTAO_AFTER_BLUR_Y]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_BLUR_Y] &&
+			state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_TEMPORAL])
+		{
+			GL4PerfGpuSplitRecord("GTAO.Temporal", state,
+				t[GL4_GPU_SPLIT_GTAO_AFTER_BLUR_Y], t[GL4_GPU_SPLIT_GTAO_AFTER_TEMPORAL]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_TEMPORAL] &&
+			state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_SUPPRESSION])
+		{
+			GL4PerfGpuSplitRecord("GTAO.Suppression", state,
+				t[GL4_GPU_SPLIT_GTAO_AFTER_TEMPORAL], t[GL4_GPU_SPLIT_GTAO_AFTER_SUPPRESSION]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_SUPPRESSION] &&
+			state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_COMPOSITE])
+		{
+			GL4PerfGpuSplitRecord("GTAO.Composite", state,
+				t[GL4_GPU_SPLIT_GTAO_AFTER_SUPPRESSION], t[GL4_GPU_SPLIT_GTAO_AFTER_COMPOSITE]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_COMPOSITE] &&
+			state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_DEFERRED_COMPOSITE])
+		{
+			GL4PerfGpuSplitRecord("GTAO.DeferredComposite", state,
+				t[GL4_GPU_SPLIT_GTAO_AFTER_COMPOSITE],
+				t[GL4_GPU_SPLIT_GTAO_AFTER_DEFERRED_COMPOSITE]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_DEFERRED_COMPOSITE] &&
+			state.has_point[GL4_GPU_SPLIT_GTAO_AFTER_COMPOSITE_DEPTH_COPY])
+		{
+			GL4PerfGpuSplitRecord("GTAO.CompositeDepthCopy", state,
+				t[GL4_GPU_SPLIT_GTAO_AFTER_DEFERRED_COMPOSITE],
+				t[GL4_GPU_SPLIT_GTAO_AFTER_COMPOSITE_DEPTH_COPY]);
 		}
 
 		if (state.has_point[GL4_GPU_SPLIT_START] &&
@@ -603,6 +685,27 @@ static void GL4PerfGpuSplitShutdown()
 	GL4_gpu_split_queries_initialized = false;
 	GL4_gpu_split_write_index = 0;
 	GL4_gpu_split_active_index = -1;
+}
+
+void GL4PerfGpuGTAOMark(gl4_gpu_gtao_mark mark)
+{
+	static const GL4GpuSplitPoint points[] =
+	{
+		GL4_GPU_SPLIT_GTAO_AFTER_SCENE_COLOR_COPY,
+		GL4_GPU_SPLIT_GTAO_AFTER_SCENE_DEPTH_COPY,
+		GL4_GPU_SPLIT_GTAO_AFTER_DEPTH_REDUCE,
+		GL4_GPU_SPLIT_GTAO_AFTER_GENERATE,
+		GL4_GPU_SPLIT_GTAO_AFTER_BLUR_X,
+		GL4_GPU_SPLIT_GTAO_AFTER_BLUR_Y,
+		GL4_GPU_SPLIT_GTAO_AFTER_TEMPORAL,
+		GL4_GPU_SPLIT_GTAO_AFTER_SUPPRESSION,
+		GL4_GPU_SPLIT_GTAO_AFTER_COMPOSITE,
+		GL4_GPU_SPLIT_GTAO_AFTER_DEFERRED_COMPOSITE,
+		GL4_GPU_SPLIT_GTAO_AFTER_COMPOSITE_DEPTH_COPY,
+	};
+	const int index = (int)mark;
+	if (index >= 0 && index < (int)(sizeof(points) / sizeof(points[0])))
+		GL4PerfGpuSplitMark(points[index]);
 }
 
 static void GL4PerfFramebufferState(const char* phase, const Framebuffer& framebuffer,
@@ -1469,16 +1572,8 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 
 		if (deferred_ao)
 		{
-			ao_scene_framebuffer.Update(present_framebuffer->Width(), present_framebuffer->Height(), 0);
-			bloom_source_framebuffer.BlitToRaw(ao_scene_framebuffer.Handle(), 0, 0,
-				ao_scene_framebuffer.Width(), ao_scene_framebuffer.Height(), GL_NEAREST);
-			GL4PerfGpuDrain("GPU.GTAO.SceneColorCopy");
-
-			bloom_source_framebuffer.BlitDepthTo(ao_scene_framebuffer.Handle(), 0, 0,
-				ao_scene_framebuffer.Width(), ao_scene_framebuffer.Height());
-			GL4PerfGpuDrain("GPU.GTAO.SceneDepthCopy");
-
-			gtao.Apply(&ao_scene_framebuffer, &ao_scene_framebuffer, OpenGL_preferred_state,
+			GTAOResult gtao_result;
+			gtao.Apply(&bloom_source_framebuffer, nullptr, OpenGL_preferred_state,
 				OpenGL_state, gtao_projection, near_z, far_z, ao_suppression_mask_texture,
 				gtao_ao_weight_texture, gtao_ao_weight_is_direct, 0, 0, 0, 0,
 				gtao_noise_origin_x, gtao_noise_origin_y,
@@ -1486,12 +1581,21 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 				(int)motion_vectors.width, (int)motion_vectors.height, supersampling_factor,
 				gtao_motion_projection, gtao_motion_inverse_modelview,
 				gtao_motion_previous_view_projection, gtao_has_static_reconstruction,
-				gtao_has_dynamic_velocity, gtao_reset_temporal_history);
+				gtao_has_dynamic_velocity, gtao_reset_temporal_history, false, &gtao_result);
 			GL4PerfGpuDrain("GPU.GTAO.Apply");
+			GL4PerfGpuGTAOMark(GL4_GPU_GTAO_AFTER_COMPOSITE);
 
 			ao_composite_framebuffer.Update(present_framebuffer->Width(), present_framebuffer->Height(), 0);
 			ao_compositeshader.Use();
+			float gtao_intensity = OpenGL_preferred_state.gtao_intensity;
+			if (gtao_intensity < 0.0f) gtao_intensity = 0.0f;
+			if (gtao_intensity > 4.0f) gtao_intensity = 4.0f;
+			glUniform1f(ao_composite_intensity, gtao_result.debug_display ? 1.0f : gtao_intensity);
+			glUniform1i(ao_composite_has_suppression_mask,
+				gtao_result.suppression_texture != 0 ? 1 : 0);
 			glUniform1i(ao_composite_use_protection_mask, ao_suppression_mask_texture != 0 ? 1 : 0);
+			glUniform1i(ao_composite_debug_display, gtao_result.debug_display ? 1 : 0);
+			glUniform1i(ao_composite_debug_channel, gtao_result.debug_channel);
 			if (ao_composite_visible_origin != -1)
 				glUniform2f(ao_composite_visible_origin, (float)visible_origin_x, (float)visible_origin_y);
 			if (ao_composite_visible_size != -1)
@@ -1501,18 +1605,22 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 			rend_ClearBoundTextures();
 			GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
 			GL_BindFramebufferTexture(bloom_source_framebuffer.ColorTextureForRead(), 1, GL_NEAREST);
-			GL_BindFramebufferTexture(ao_scene_framebuffer.ColorTextureForRead(), 2, GL_NEAREST);
+			GL_BindFramebufferTexture(gtao_result.ao_texture, 2, GL_LINEAR);
+			if (gtao_result.suppression_texture != 0)
+				GL_BindFramebufferTexture(gtao_result.suppression_texture, 3, GL_LINEAR);
 			if (ao_suppression_mask_texture != 0)
-				GL_BindFramebufferTexture(ao_suppression_mask_texture, 3, GL_NEAREST);
+				GL_BindFramebufferTexture(ao_suppression_mask_texture, 4, GL_NEAREST);
 			{
 				PERF_MARKER_SCOPE("GTAO.DeferredComposite");
 				GL_DrawFramebufferQuad(ao_composite_framebuffer.Handle(), 0, 0,
 					ao_composite_framebuffer.Width(), ao_composite_framebuffer.Height());
 			}
 			GL4PerfGpuDrain("GPU.GTAO.DeferredComposite");
+			GL4PerfGpuGTAOMark(GL4_GPU_GTAO_AFTER_DEFERRED_COMPOSITE);
 			bloom_source_framebuffer.BlitDepthTo(ao_composite_framebuffer.Handle(), 0, 0,
 				ao_composite_framebuffer.Width(), ao_composite_framebuffer.Height());
 			GL4PerfGpuDrain("GPU.GTAO.CompositeDepthCopy");
+			GL4PerfGpuGTAOMark(GL4_GPU_GTAO_AFTER_COMPOSITE_DEPTH_COPY);
 			present_framebuffer = &ao_composite_framebuffer;
 		}
 		else
@@ -1527,6 +1635,7 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 				gtao_motion_previous_view_projection, gtao_has_static_reconstruction,
 				gtao_has_dynamic_velocity, gtao_reset_temporal_history);
 			GL4PerfGpuDrain("GPU.GTAO.Apply");
+			GL4PerfGpuGTAOMark(GL4_GPU_GTAO_AFTER_COMPOSITE);
 		}
 	}
 
@@ -2228,7 +2337,6 @@ void GL4Renderer::CaptureBloomSource()
 		bloom_source_resolved_framebuffer.Destroy();
 		bloom_source_downscale_framebuffer.Destroy();
 		deferred_bloom_source_framebuffer.Destroy();
-		ao_scene_framebuffer.Destroy();
 		ao_composite_framebuffer.Destroy();
 	}
 
@@ -3367,7 +3475,6 @@ void GL4Renderer::UpdateFramebuffer(void)
 		bloom_source_resolved_framebuffer.Destroy();
 		bloom_source_downscale_framebuffer.Destroy();
 		deferred_bloom_source_framebuffer.Destroy();
-		ao_scene_framebuffer.Destroy();
 		ao_composite_framebuffer.Destroy();
 		post_present_framebuffer.Destroy();
 		post_composite_framebuffer.Destroy();
@@ -3489,7 +3596,6 @@ void GL4Renderer::CloseFramebuffer(void)
 	bloom_source_resolved_framebuffer.Destroy();
 	bloom_source_downscale_framebuffer.Destroy();
 	deferred_bloom_source_framebuffer.Destroy();
-	ao_scene_framebuffer.Destroy();
 	ao_composite_framebuffer.Destroy();
 	post_present_framebuffer.Destroy();
 	post_composite_framebuffer.Destroy();

@@ -817,9 +817,14 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	ao_compositeshader.Use();
 	ao_composite_final_source = ao_compositeshader.FindUniform("final_source");
 	ao_composite_scene_source = ao_compositeshader.FindUniform("scene_source");
-	ao_composite_ao_scene_source = ao_compositeshader.FindUniform("ao_scene_source");
+	ao_composite_ao_source = ao_compositeshader.FindUniform("ao_source");
+	ao_composite_suppression_mask = ao_compositeshader.FindUniform("suppression_mask");
 	ao_composite_protection_mask = ao_compositeshader.FindUniform("protection_mask");
+	ao_composite_intensity = ao_compositeshader.FindUniform("intensity");
+	ao_composite_has_suppression_mask = ao_compositeshader.FindUniform("has_suppression_mask");
 	ao_composite_use_protection_mask = ao_compositeshader.FindUniform("use_protection_mask");
+	ao_composite_debug_display = ao_compositeshader.FindUniform("debug_display");
+	ao_composite_debug_channel = ao_compositeshader.FindUniform("debug_channel");
 	ao_composite_visible_origin = ao_compositeshader.FindUniform("visible_origin");
 	ao_composite_visible_size = ao_compositeshader.FindUniform("visible_size");
 	ao_composite_use_visible_rect = ao_compositeshader.FindUniform("use_visible_rect");
@@ -827,12 +832,17 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 		glUniform1i(ao_composite_final_source, 0);
 	if (ao_composite_scene_source != -1)
 		glUniform1i(ao_composite_scene_source, 1);
-	if (ao_composite_ao_scene_source != -1)
-		glUniform1i(ao_composite_ao_scene_source, 2);
+	if (ao_composite_ao_source != -1)
+		glUniform1i(ao_composite_ao_source, 2);
+	if (ao_composite_suppression_mask != -1)
+		glUniform1i(ao_composite_suppression_mask, 3);
 	if (ao_composite_protection_mask != -1)
-		glUniform1i(ao_composite_protection_mask, 3);
-	if (ao_composite_final_source == -1 || ao_composite_scene_source == -1 || ao_composite_ao_scene_source == -1 ||
-		ao_composite_protection_mask == -1 || ao_composite_use_protection_mask == -1 ||
+		glUniform1i(ao_composite_protection_mask, 4);
+	if (ao_composite_final_source == -1 || ao_composite_scene_source == -1 || ao_composite_ao_source == -1 ||
+		ao_composite_suppression_mask == -1 || ao_composite_protection_mask == -1 ||
+		ao_composite_intensity == -1 || ao_composite_has_suppression_mask == -1 ||
+		ao_composite_use_protection_mask == -1 || ao_composite_debug_display == -1 ||
+		ao_composite_debug_channel == -1 ||
 		ao_composite_visible_origin == -1 || ao_composite_visible_size == -1 || ao_composite_use_visible_rect == -1)
 		Error("GLRenderer::Init: Failed to find AO deferred composite uniforms!");
 	ShaderProgram::ClearBinding();

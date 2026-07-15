@@ -316,8 +316,16 @@ struct BloomResources
 		float alpha_occlusion_mask_uv_scale_y = 1.0f);
 };
 
-//Ground-Truth Ambient Occlusion. Renders depth-driven AO, then modulates the
-//scene color in place.
+struct GTAOResult
+{
+	GLuint ao_texture = 0;
+	GLuint suppression_texture = 0;
+	bool debug_display = false;
+	int debug_channel = 0;
+};
+
+//Ground-Truth Ambient Occlusion. Renders depth-driven AO, then either modulates
+//the scene color in place or exposes the visibility term for deferred composition.
 //Reconstructs view-space normals from the depth buffer (we have no normals G-buffer).
 struct GTAOResources
 {
@@ -353,6 +361,7 @@ struct GTAOResources
 	GLint depth_samples = -1;
 	GLint depth_input_screen_size = -1;
 	GLint depth_ao_screen_size = -1;
+	GLint depth_near_far = -1;
 	GLint depth_terrain_occlusion = -1;
 	GLint depth_polyobject_occlusion = -1;
 	GLint depth_mine_rock_occlusion = -1;
@@ -448,7 +457,8 @@ struct GTAOResources
 		const float* current_inverse_modelview = nullptr,
 		const float* previous_view_projection = nullptr,
 		bool has_static_reconstruction = false, bool has_dynamic_velocity = false,
-		bool reset_temporal_history = false);
+		bool reset_temporal_history = false, bool composite_to_target = true,
+		GTAOResult* result = nullptr);
 };
 
 inline int RendererSupersamplingFactor(const renderer_preferred_state& state)

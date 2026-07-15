@@ -179,6 +179,7 @@ void GTAOResources::InitShaders()
 	depth_samples = depth_shader.FindUniform("depth_samples");
 	depth_input_screen_size = depth_shader.FindUniform("input_screen_size");
 	depth_ao_screen_size = depth_shader.FindUniform("ao_screen_size");
+	depth_near_far = depth_shader.FindUniform("near_far");
 	depth_terrain_occlusion = depth_shader.FindUniform("terrain_ao_occlusion");
 	depth_polyobject_occlusion = depth_shader.FindUniform("polyobject_ao_occlusion");
 	depth_mine_rock_occlusion = depth_shader.FindUniform("mine_rock_ao_occlusion");
@@ -362,8 +363,10 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	const float* current_projection, const float* current_inverse_modelview,
 	const float* previous_view_projection,
 	bool has_static_reconstruction, bool has_dynamic_velocity,
-	bool reset_temporal_history)
+	bool reset_temporal_history, bool composite_to_target, GTAOResult* result)
 {
+	if (result)
+		*result = {};
 	if (!source || !pref_state.gtao_enabled)
 	{
 		if (HasFramebuffers())
@@ -525,6 +528,8 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 			glUniform2f(depth_input_screen_size, (float)source_width, (float)source_height);
 		if (depth_ao_screen_size != -1)
 			glUniform2f(depth_ao_screen_size, (float)ao_width, (float)ao_height);
+		if (depth_near_far != -1)
+			glUniform2f(depth_near_far, nearz, farz);
 		if (depth_terrain_occlusion != -1)
 			glUniform1f(depth_terrain_occlusion, Clamp01(pref_state.gtao_terrain_occlusion));
 		if (depth_polyobject_occlusion != -1)
@@ -539,6 +544,7 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		if (ao_weight_texture != 0)
 			GL_BindFramebufferTexture(ao_weight_texture, 2, GL_NEAREST);
 		AODrawFullscreen(ao_depth_framebuffer.Handle(), ao_width, ao_height);
+		GL4PerfGpuGTAOMark(GL4_GPU_GTAO_AFTER_DEPTH_REDUCE);
 	}
 
 	//-------------------------------------------------------------------------
@@ -599,6 +605,7 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		GL_BindFramebufferTexture(ao_depth_framebuffer.ColorTextureForRead(), 0, GL_NEAREST);
 		GL_BindFramebufferTexture(noise_texture, 1, GL_NEAREST);
 		AODrawFullscreen(ao_framebuffer.Handle(), ao_width, ao_height);
+		GL4PerfGpuGTAOMark(GL4_GPU_GTAO_AFTER_GENERATE);
 	}
 
 	//-------------------------------------------------------------------------
@@ -626,6 +633,7 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 			rend_ClearBoundTextures();
 			GL_BindFramebufferTexture(ao_framebuffer.ColorTextureForRead(), 0, GL_NEAREST);
 			AODrawFullscreen(ao_blur_framebuffer.Handle(), ao_width, ao_height);
+			GL4PerfGpuGTAOMark(GL4_GPU_GTAO_AFTER_BLUR_X);
 		}
 
 		{
@@ -637,6 +645,7 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 			rend_ClearBoundTextures();
 			GL_BindFramebufferTexture(ao_blur_framebuffer.ColorTextureForRead(), 0, GL_NEAREST);
 			AODrawFullscreen(ao_framebuffer.Handle(), ao_width, ao_height);
+			GL4PerfGpuGTAOMark(GL4_GPU_GTAO_AFTER_BLUR_Y);
 		}
 
 		blurred = &ao_framebuffer;
@@ -734,6 +743,7 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 			GL_BindFramebufferTexture(depth_texture, 3, GL_NEAREST);
 
 		AODrawFullscreen(temporal_target->Handle(), ao_width, ao_height);
+		GL4PerfGpuGTAOMark(GL4_GPU_GTAO_AFTER_TEMPORAL);
 		apply_source = temporal_target;
 		ao_history_index = history_write;
 		ao_history_valid = true;
@@ -782,7 +792,18 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		if (scene_color_texture != 0)
 			GL_BindFramebufferTexture(scene_color_texture, 1, GL_LINEAR);
 		AODrawFullscreen(suppression_framebuffer.Handle(), ao_width, ao_height);
+		GL4PerfGpuGTAOMark(GL4_GPU_GTAO_AFTER_SUPPRESSION);
 		final_suppression_mask = suppression_framebuffer.ColorTextureForRead();
+	}
+	const bool debug_display_ao_only =
+		(pref_state.gtao_debug_preview || pref_state.gtao_temporal_debug_preview) &&
+		Game_mode != GM_NONE;
+	if (result)
+	{
+		result->ao_texture = apply_source->ColorTextureForRead();
+		result->suppression_texture = debug_display_ao_only ? 0 : final_suppression_mask;
+		result->debug_display = debug_display_ao_only;
+		result->debug_channel = pref_state.gtao_temporal_debug_preview ? 2 : 0;
 	}
 
 	//-------------------------------------------------------------------------
@@ -791,11 +812,9 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	// Draw a fullscreen quad to the target framebuffer with blend mode
 	// (DST_COLOR, ZERO) so the destination is multiplied by our AO factor.
 	//-------------------------------------------------------------------------
+	if (composite_to_target)
 	{
 		PERF_MARKER_SCOPE("GTAO.Composite");
-		const bool debug_display_ao_only =
-			(pref_state.gtao_debug_preview || pref_state.gtao_temporal_debug_preview) &&
-			Game_mode != GM_NONE;
 		apply_shader.Use();
 		glUniform1f(apply_intensity, debug_display_ao_only ? 1.0f : intensity);
 		if (apply_has_mask != -1)
@@ -836,11 +855,13 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 			GL_BindFramebufferTexture(final_suppression_mask, 1, GL_LINEAR);
 
 		AODrawFullscreen(target->Handle(), target_width, target_height);
+		GL4PerfGpuGTAOMark(GL4_GPU_GTAO_AFTER_COMPOSITE);
 	}
 
 	//Pass 5 changed the target color attachment; any cached single-sample
 	//resolve from earlier in this frame no longer matches.
-	target->MarkColorDirty();
+	if (composite_to_target)
+		target->MarkColorDirty();
 
 	//Restore prior GL state.
 	glBlendFuncSeparate(blend_src_rgb, blend_dst_rgb, blend_src_alpha, blend_dst_alpha);

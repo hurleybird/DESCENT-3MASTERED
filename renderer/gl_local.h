@@ -44,6 +44,23 @@
 #include "gl_shared.h"
 #include "IRenderer.h"
 
+enum gl4_gpu_gtao_mark
+{
+	GL4_GPU_GTAO_AFTER_SCENE_COLOR_COPY = 0,
+	GL4_GPU_GTAO_AFTER_SCENE_DEPTH_COPY,
+	GL4_GPU_GTAO_AFTER_DEPTH_REDUCE,
+	GL4_GPU_GTAO_AFTER_GENERATE,
+	GL4_GPU_GTAO_AFTER_BLUR_X,
+	GL4_GPU_GTAO_AFTER_BLUR_Y,
+	GL4_GPU_GTAO_AFTER_TEMPORAL,
+	GL4_GPU_GTAO_AFTER_SUPPRESSION,
+	GL4_GPU_GTAO_AFTER_COMPOSITE,
+	GL4_GPU_GTAO_AFTER_DEFERRED_COMPOSITE,
+	GL4_GPU_GTAO_AFTER_COMPOSITE_DEPTH_COPY,
+};
+
+void GL4PerfGpuGTAOMark(gl4_gpu_gtao_mark mark);
+
 struct color_array
 {
 	ubyte r, g, b, a;
@@ -95,7 +112,6 @@ class GL4Renderer : public IRenderer
 	Framebuffer bloom_source_framebuffer;
 	Framebuffer bloom_source_resolved_framebuffer;
 	Framebuffer bloom_source_downscale_framebuffer;
-	Framebuffer ao_scene_framebuffer;
 	Framebuffer ao_composite_framebuffer;
 	Framebuffer post_present_framebuffer;
 	Framebuffer post_composite_framebuffer;
@@ -208,8 +224,13 @@ class GL4Renderer : public IRenderer
 	GLint motionblur_has_dynamic_velocity = -1;
 	GLint ao_composite_final_source = -1;
 	GLint ao_composite_scene_source = -1;
-	GLint ao_composite_ao_scene_source = -1;
+	GLint ao_composite_ao_source = -1;
+	GLint ao_composite_suppression_mask = -1;
 	GLint ao_composite_protection_mask = -1;
+	GLint ao_composite_intensity = -1;
+	GLint ao_composite_has_suppression_mask = -1;
+	GLint ao_composite_debug_display = -1;
+	GLint ao_composite_debug_channel = -1;
 	GLint ao_composite_use_protection_mask = -1;
 	GLint ao_composite_visible_origin = -1;
 	GLint ao_composite_visible_size = -1;
