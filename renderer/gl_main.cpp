@@ -2109,7 +2109,7 @@ void GL4Renderer::CompositeDeferredBloomOverPostPresent()
 			bloom.compositeshader.Use();
 			glUniform1f(bloom.composite_gamma, deferred_display_gamma);
 			glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
-			glUniform1i(bloom.composite_use_alpha_mask, 0);
+			glUniform1i(bloom.composite_use_alpha_mask, 1);
 			glUniform1i(bloom.composite_use_protection_mask,
 				deferred_bloom_protection_mask_texture != 0 ? 1 : 0);
 			if (bloom.composite_uv_origin != -1)

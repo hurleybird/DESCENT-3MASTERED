@@ -877,6 +877,10 @@ void LoadGameSettings()
 		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
 	tempint = Render_preferred_state.gtao_overscan_percent;
 	Database->read_int("RS_gtao_overscan_percent", &tempint);
+	const int gtao_overscan_arg = FindArg("-gtao-overscan");
+	const char* gtao_overscan_value = gtao_overscan_arg ? GetArg(gtao_overscan_arg + 1) : nullptr;
+	if (gtao_overscan_value)
+		tempint = atoi(gtao_overscan_value);
 	if (tempint < 100) tempint = 100;
 	if (tempint > 150) tempint = 150;
 	Render_preferred_state.gtao_overscan_percent = (ushort)tempint;
@@ -1165,7 +1169,7 @@ void LoadGameSettings()
 	}
 
 	AutomatedCaptureLog(
-		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d msaa=%u ssaa=%u filtering=%d mipping=%d per_pixel=%d bloom=%d gtao=%d gtao_resolution=%u motion_blur=%d combined_blur=%d soft_particles=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
+		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d msaa=%u ssaa=%u filtering=%d mipping=%d per_pixel=%d bloom=%d gtao=%d gtao_resolution=%u gtao_overscan=%u motion_blur=%d combined_blur=%d soft_particles=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
 		Game_window_res_width, Game_window_res_height, Game_fullscreen ? 1 : 0,
 		DesiredOpenGLProfile, GetFrameLimitFps(),
 		(unsigned)Render_preferred_state.msaa_samples,
@@ -1176,6 +1180,7 @@ void LoadGameSettings()
 		Render_preferred_state.bloom_enabled ? 1 : 0,
 		Render_preferred_state.gtao_enabled ? 1 : 0,
 		(unsigned)Render_preferred_state.gtao_resolution,
+		(unsigned)Render_preferred_state.gtao_overscan_percent,
 		(int)Use_motion_blur,
 		Render_preferred_state.combined_motion_blur ? 1 : 0,
 		Render_soft_vis_effects ? 1 : 0,
