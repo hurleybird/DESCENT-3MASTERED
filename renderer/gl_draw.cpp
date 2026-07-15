@@ -38,8 +38,10 @@ constexpr unsigned int GL4_MOTION_OBJECT_LEGACY_BLUR_MASK = 0x80000000u;
 
 static int GL4DrawBufferVertexCapacity()
 {
-	const size_t capacity = DRAW_BUFFER_TARGET_BYTES / sizeof(gl_vertex);
-	return std::max(MIN_VERTS_PER_BUFFER, (int)capacity);
+	size_t capacity = std::max((size_t)MIN_VERTS_PER_BUFFER,
+		DRAW_BUFFER_TARGET_BYTES / sizeof(gl_vertex));
+	capacity -= capacity % GL4_DRAW_BUFFER_SYNC_POINT_COUNT;
+	return (int)capacity;
 }
 
 static size_t GL4DrawBufferByteSize()
@@ -687,6 +689,15 @@ static void GL4SetDrawVertexAttributes()
 
 bool GL4Renderer::InitPersistentDrawBuffer(size_t size)
 {
+	size_t vertex_capacity = size / sizeof(gl_vertex);
+	vertex_capacity -= vertex_capacity % GL4_DRAW_BUFFER_SYNC_POINT_COUNT;
+	if (vertex_capacity < GL4_DRAW_BUFFER_SYNC_POINT_COUNT)
+		return false;
+	size = vertex_capacity * sizeof(gl_vertex);
+
+	ResetPersistentDrawBufferSyncs();
+	drawbuffer_vertex_capacity = 0;
+
 	//Due to names becoming immutable when using buffer storage,
 	//need to recycle buffers by explicitly deleting the old one. OpenGL maintains its lifetime until it is done
 	if (drawbuffer != 0)
@@ -703,6 +714,9 @@ bool GL4Renderer::InitPersistentDrawBuffer(size_t size)
 	glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
 
 	glBufferStorage(GL_ARRAY_BUFFER, size, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+	drawbuffer_vertex_capacity = (GLuint)vertex_capacity;
+	drawbuffer_vertices_per_sync_point = drawbuffer_vertex_capacity /
+		GL4_DRAW_BUFFER_SYNC_POINT_COUNT;
 	GLenum err = glGetError();
 	if (err == GL_NO_ERROR)
 	{
@@ -728,17 +742,35 @@ bool GL4Renderer::InitPersistentDrawBuffer(size_t size)
 
 	drawbuffer = 0;
 	drawbuffermap = nullptr;
+	drawbuffer_vertex_capacity = 0;
 	OpenGL_buffer_storage_enabled = false;
 
 	glGenBuffers(1, &drawbuffer);
 	glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
 	glBufferData(GL_ARRAY_BUFFER, size, nullptr, GL_STREAM_DRAW);
+	drawbuffer_vertex_capacity = (GLuint)vertex_capacity;
 	GL4SetDrawVertexAttributes();
 	return false;
 }
 
+void GL4Renderer::ResetPersistentDrawBufferSyncs()
+{
+	for (GLuint i = 0; i < GL4_DRAW_BUFFER_SYNC_POINT_COUNT; i++)
+	{
+		if (drawbuffer_sync_points[i] != nullptr && glDeleteSync != nullptr)
+			glDeleteSync(drawbuffer_sync_points[i]);
+		drawbuffer_sync_points[i] = nullptr;
+	}
+	drawbuffer_vertices_per_sync_point = 0;
+	drawbuffer_used_sync_point = 0;
+	drawbuffer_available_sync_point = GL4_DRAW_BUFFER_SYNC_POINT_COUNT;
+	nextcommittedvertex = 0;
+}
+
 void GL4Renderer::DestroyPersistentDrawBuffer()
 {
+	ResetPersistentDrawBufferSyncs();
+	drawbuffer_vertex_capacity = 0;
 	if (drawbuffer)
 	{
 		glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
@@ -750,6 +782,60 @@ void GL4Renderer::DestroyPersistentDrawBuffer()
 	}
 }
 
+void GL4Renderer::WaitForPersistentDrawBufferSync(GLsync& sync)
+{
+	if (sync == nullptr)
+	{
+		// This is only reachable if fence creation failed or the checkpoint bookkeeping is broken.
+		// Preserve correctness rather than allowing the CPU to overwrite vertices still in use.
+		glFinish();
+		return;
+	}
+
+	const GLenum wait_result = glClientWaitSync(sync, GL_SYNC_FLUSH_COMMANDS_BIT,
+		GL_TIMEOUT_IGNORED);
+	if (wait_result == GL_WAIT_FAILED)
+		glFinish();
+	if (glDeleteSync != nullptr)
+		glDeleteSync(sync);
+	sync = nullptr;
+}
+
+void GL4Renderer::AddPersistentDrawBufferSyncsForOffset(GLuint offset)
+{
+	if (drawbuffer_vertices_per_sync_point == 0)
+		return;
+
+	const GLuint end_sync_point = std::min(offset / drawbuffer_vertices_per_sync_point,
+		GL4_DRAW_BUFFER_SYNC_POINT_COUNT);
+	while (drawbuffer_used_sync_point < end_sync_point)
+	{
+		GLsync& sync = drawbuffer_sync_points[drawbuffer_used_sync_point];
+		if (sync != nullptr)
+			WaitForPersistentDrawBufferSync(sync);
+		sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+		drawbuffer_used_sync_point++;
+	}
+}
+
+void GL4Renderer::EnsurePersistentDrawBufferSyncsWaitedForOffset(GLuint offset)
+{
+	if (drawbuffer_vertices_per_sync_point == 0)
+		return;
+
+	const GLuint64 rounded_offset = (GLuint64)offset +
+		drawbuffer_vertices_per_sync_point - 1;
+	const GLuint end_sync_point = std::min(
+		(GLuint)(rounded_offset / drawbuffer_vertices_per_sync_point),
+		GL4_DRAW_BUFFER_SYNC_POINT_COUNT);
+	while (drawbuffer_available_sync_point < end_sync_point)
+	{
+		WaitForPersistentDrawBufferSync(
+			drawbuffer_sync_points[drawbuffer_available_sync_point]);
+		drawbuffer_available_sync_point++;
+	}
+}
+
 int GL4Renderer::CopyVertices(int numvertices)
 {
 	return CopyVertices(GL_vertices, numvertices);
@@ -757,19 +843,41 @@ int GL4Renderer::CopyVertices(int numvertices)
 
 int GL4Renderer::CopyVertices(const gl_vertex* vertices, int numvertices)
 {
-	const GLuint vertex_capacity = (GLuint)GL4DrawBufferVertexCapacity();
+	const GLuint vertex_capacity = drawbuffer_vertex_capacity != 0 ?
+		drawbuffer_vertex_capacity : (GLuint)GL4DrawBufferVertexCapacity();
 	const GLuint requested_vertices = numvertices > 0 ? (GLuint)numvertices : 0;
 	if (OpenGL_buffer_storage_enabled)
 	{
-		if (drawbuffermap == nullptr || nextcommittedvertex + requested_vertices > vertex_capacity)
+		if (drawbuffermap == nullptr || drawbuffer_vertices_per_sync_point == 0 ||
+			requested_vertices > vertex_capacity)
 		{
-			size_t buffersize = GL4DrawBufferByteSize();
-			if (requested_vertices > vertex_capacity)
-				buffersize = (size_t)numvertices * sizeof(gl_vertex);
+			GLuint required_capacity = std::max(requested_vertices,
+				(GLuint)GL4DrawBufferVertexCapacity());
+			const GLuint remainder = required_capacity % GL4_DRAW_BUFFER_SYNC_POINT_COUNT;
+			if (remainder != 0)
+				required_capacity += GL4_DRAW_BUFFER_SYNC_POINT_COUNT - remainder;
+			const size_t buffersize = (size_t)required_capacity * sizeof(gl_vertex);
+			if (drawbuffer != 0)
+				glFinish();
 			if (!InitPersistentDrawBuffer(buffersize))
 				return CopyVertices(vertices, numvertices);
-			nextcommittedvertex = 0;
+			return CopyVertices(vertices, numvertices);
 		}
+
+		AddPersistentDrawBufferSyncsForOffset(nextcommittedvertex);
+		if ((GLuint64)nextcommittedvertex + requested_vertices > vertex_capacity)
+		{
+			// Retire any checkpoints from the preceding lap before reusing their slots,
+			// fence all work submitted for this lap, then wait only for the range being reused.
+			EnsurePersistentDrawBufferSyncsWaitedForOffset(vertex_capacity);
+			AddPersistentDrawBufferSyncsForOffset(vertex_capacity);
+			nextcommittedvertex = 0;
+			WaitForPersistentDrawBufferSync(drawbuffer_sync_points[0]);
+			drawbuffer_available_sync_point = 1;
+			drawbuffer_used_sync_point = 0;
+		}
+		EnsurePersistentDrawBufferSyncsWaitedForOffset(
+			nextcommittedvertex + requested_vertices);
 
 		glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
 		int startoffset = nextcommittedvertex;
@@ -789,6 +897,7 @@ int GL4Renderer::CopyVertices(const gl_vertex* vertices, int numvertices)
 			if (requested_vertices > vertex_capacity)
 				buffersize = (size_t)numvertices * sizeof(gl_vertex);
 			glBufferData(GL_ARRAY_BUFFER, buffersize, nullptr, GL_STREAM_DRAW);
+			drawbuffer_vertex_capacity = (GLuint)(buffersize / sizeof(gl_vertex));
 			nextcommittedvertex = 0;
 		}
 
@@ -1365,6 +1474,9 @@ void GL4Renderer::SetDrawDefaults()
 
 	//Init draw buffers
 	size_t buffersize = GL4DrawBufferByteSize();
+	OpenGL_buffer_storage_enabled = OpenGL_buffer_storage_enabled &&
+		glBufferStorage != nullptr && glFenceSync != nullptr &&
+		glClientWaitSync != nullptr && glDeleteSync != nullptr;
 	if (OpenGL_buffer_storage_enabled)
 	{
 		InitPersistentDrawBuffer(buffersize);
@@ -1374,6 +1486,7 @@ void GL4Renderer::SetDrawDefaults()
 		glGenBuffers(1, &drawbuffer);
 		glBindBuffer(GL_ARRAY_BUFFER, drawbuffer);
 		glBufferData(GL_ARRAY_BUFFER, buffersize, nullptr, GL_STREAM_DRAW);
+		drawbuffer_vertex_capacity = (GLuint)(buffersize / sizeof(gl_vertex));
 
 		GL4SetDrawVertexAttributes();
 	}

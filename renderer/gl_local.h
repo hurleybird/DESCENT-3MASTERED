@@ -77,6 +77,8 @@ struct gl_vertex
 	vec4_array field_specular_color[MAX_SPECULARS];
 };
 
+static constexpr GLuint GL4_DRAW_BUFFER_SYNC_POINT_COUNT = 16;
+
 constexpr int NUM_GL4_FBOS = 1;
 class GL4Renderer : public IRenderer
 {
@@ -330,6 +332,11 @@ class GL4Renderer : public IRenderer
 	GLuint particleinstancevao = 0;
 	GLuint particleinstancebuffer = 0;
 	void* drawbuffermap = 0;
+	GLuint drawbuffer_vertex_capacity = 0;
+	GLsync drawbuffer_sync_points[GL4_DRAW_BUFFER_SYNC_POINT_COUNT] = {};
+	GLuint drawbuffer_vertices_per_sync_point = 0;
+	GLuint drawbuffer_used_sync_point = 0;
+	GLuint drawbuffer_available_sync_point = GL4_DRAW_BUFFER_SYNC_POINT_COUNT;
 	bool motion_object_active = false;
 	bool motion_vectors_dirty = false;
 	bool motion_vectors_cleared_this_frame = false;
@@ -417,6 +424,10 @@ private:
 	void UseDrawVAO();
 	bool InitPersistentDrawBuffer(size_t size);
 	void DestroyPersistentDrawBuffer();
+	void ResetPersistentDrawBufferSyncs();
+	void AddPersistentDrawBufferSyncsForOffset(GLuint offset);
+	void WaitForPersistentDrawBufferSync(GLsync& sync);
+	void EnsurePersistentDrawBufferSyncsWaitedForOffset(GLuint offset);
 	int CopyVertices(int numvertices);
 	int CopyVertices(const gl_vertex* vertices, int numvertices);
 	void SetDrawDefaults();
