@@ -158,6 +158,35 @@ void AutomatedCaptureLog(const char* format, ...)
 	fclose(file);
 }
 
+static bool AutomatedFramePerfEnabled()
+{
+	const char* path = getenv("PICCU_FRAME_PERF_LOG");
+	return path && path[0];
+}
+
+static void AutomatedFramePerfLog(int gameplay_frame, double simulation_ms,
+	double render_ms, double present_ms, double tail_ms, double total_ms,
+	const tRendererStats& renderer_stats)
+{
+	const char* path = getenv("PICCU_FRAME_PERF_LOG");
+	if (!path || !path[0])
+		return;
+	static bool wrote_header = false;
+	FILE* file = fopen(path, "ab");
+	if (!file)
+		return;
+	if (!wrote_header)
+	{
+		fputs("gameplay_frame\tsimulation_ms\trender_ms\tpresent_ms\ttail_ms\ttotal_ms\tpolygons\tvertices\ttexture_uploads\n", file);
+		wrote_header = true;
+	}
+	fprintf(file, "%d\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\t%d\t%d\n",
+		gameplay_frame, simulation_ms, render_ms, present_ms, tail_ms,
+		total_ms, renderer_stats.poly_count, renderer_stats.vert_count,
+		renderer_stats.texture_uploads);
+	fclose(file);
+}
+
 bool AutomatedCaptureSuppressesInput()
 {
 	return FindArg("-capture-frame") || FindArg("-screenshot-frame");
@@ -3008,6 +3037,14 @@ void GameFrame(void)
 	INT64 curr_time;
 #endif
 	BeginAutomatedCaptureFrame();
+	const bool automated_perf_active = Automated_capture.gameplay_frame_active &&
+		AutomatedFramePerfEnabled();
+	const double automated_perf_frame_begin = automated_perf_active ? timer_GetTime64() : 0.0;
+	double automated_perf_render_begin = automated_perf_frame_begin;
+	double automated_perf_render_end = automated_perf_frame_begin;
+	double automated_perf_present_begin = automated_perf_frame_begin;
+	double automated_perf_present_end = automated_perf_frame_begin;
+	double automated_perf_pre_cap_end = automated_perf_frame_begin;
 
 	bool is_game_idle = !Descent->active();
 
@@ -3227,6 +3264,8 @@ void GameFrame(void)
 #endif
 
 	RTP_tSTARTTIME(renderframe_time, curr_time);
+	if (automated_perf_active)
+		automated_perf_render_begin = timer_GetTime64();
 	if (!Skip_render_game_frame)
 		//Render the frame
 		GameRenderFrame();
@@ -3238,6 +3277,8 @@ void GameFrame(void)
 			GameDrawPostPresentFrame(true);
 		}
 	}
+	if (automated_perf_active)
+		automated_perf_render_end = timer_GetTime64();
 
 	RTP_tENDTIME(renderframe_time, curr_time);
 
@@ -3254,6 +3295,8 @@ void GameFrame(void)
 		{
 			if (Game_interface_mode == GAME_INTERFACE && !Menu_interface_mode)
 			{
+				if (automated_perf_active)
+					automated_perf_present_begin = timer_GetTime64();
 				PERF_MARKER_SCOPE("Renderer.Flip");
 				PerfMarkersRecordFramePacingState("BeforeFlip");
 				if (rend_BeginPostPresentFrame())
@@ -3277,10 +3320,14 @@ void GameFrame(void)
 					}
 					rend_Flip();
 				}
+				if (automated_perf_active)
+					automated_perf_present_end = timer_GetTime64();
 			}
 		}
 		PerfMarkersRecordFramePacingState("BeforeFramecap");
 		PerfMarkersEndFrame();
+		if (automated_perf_active)
+			automated_perf_pre_cap_end = timer_GetTime64();
 
 		//float start_delay = timer_GetTime();
 		//Slow down the game if the user asked us to
@@ -3391,6 +3438,19 @@ void GameFrame(void)
 
 	if (Tracking_FVI)
 		mprintf((0, "Ending frame!\n"));
+
+	if (automated_perf_active)
+	{
+		tRendererStats renderer_stats = {};
+		rend_GetStatistics(&renderer_stats);
+		AutomatedFramePerfLog(Automated_capture.gameplay_frame,
+			(automated_perf_render_begin - automated_perf_frame_begin) * 1000.0,
+			(automated_perf_render_end - automated_perf_render_begin) * 1000.0,
+			(automated_perf_present_end - automated_perf_present_begin) * 1000.0,
+			(automated_perf_pre_cap_end - automated_perf_present_end) * 1000.0,
+			(automated_perf_pre_cap_end - automated_perf_frame_begin) * 1000.0,
+			renderer_stats);
+	}
 
 	EndAutomatedCaptureFrame();
 

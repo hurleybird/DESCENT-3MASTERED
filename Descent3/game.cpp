@@ -928,6 +928,8 @@ bool ShouldCaptureMouse()
 {
 	if (Dedicated_server)
 		return false;
+	if (AutomatedCaptureSuppressesInput())
+		return false; // Background renderer captures must never clip or grab the workstation cursor.
 
 	if (!Descent->active())
 		return false; //Never grab when the app isn't active

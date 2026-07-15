@@ -17,6 +17,7 @@
 */
 
 #include "gamesave.h"
+#include "args.h"
 #include "descent.h"
 #include "newui.h"
 #include "CFILE.H"
@@ -43,9 +44,11 @@
 #include "osiris_dll.h"
 #include "levelgoal.h"
 #include "aistruct.h"
+#include "psrand.h"
 
 // Save selected by LoadGameDialog() or the -loadgame startup option.
 static char LGS_Path[PSPATHNAME_LEN];
+#include <stdlib.h>
 #include <string.h>
 #include "matcen.h"
 #include "hud.h"
@@ -563,6 +566,19 @@ bool LoadCurrentSaveGame()
 		Int3();
 		DoMessageBox(TXT_ERROR, TXT_LOADGAMEFAILED, MSGBOX_OK);
 		return false;
+	}
+	const int capture_seed_arg = FindArg("-capture-seed");
+	const char* capture_seed_value = capture_seed_arg ?
+		GetArg(capture_seed_arg + 1) : nullptr;
+	if (capture_seed_value)
+	{
+		char* end = nullptr;
+		const unsigned long seed = strtoul(capture_seed_value, &end, 10);
+		if (end != capture_seed_value && *end == '\0')
+		{
+			ps_srand((unsigned int)seed);
+			AutomatedCaptureLog("capture rng seed=%u", (unsigned int)seed);
+		}
 	}
 	AddHUDMessage(TXT_GAMERESTORED);
 	return true;

@@ -364,6 +364,8 @@ void oeWin32Application::set_position_override(int x, int y)
 void oeWin32Application::set_background_mode(bool enabled)
 {
 	m_BackgroundMode = enabled;
+	if (enabled)
+		m_AppActive = true;
 }
 
 
@@ -400,7 +402,7 @@ int oeWin32Application::defer_block()
 
 		if (this->active()) {
 		#ifndef _DEBUG
-			if (GetForegroundWindow() != (HWND)this->m_hWnd && !(m_Flags & OEAPP_CONSOLE)) {
+			if (!m_BackgroundMode && GetForegroundWindow() != (HWND)this->m_hWnd && !(m_Flags & OEAPP_CONSOLE)) {
 				mprintf((0, "forcing this window into the foreground.\n"));
 				SetForegroundWindow((HWND)this->m_hWnd);
 			}
@@ -588,6 +590,15 @@ int oeWin32Application::WndProc( HWnd hwnd, unsigned msg, unsigned wParam, long 
 	switch (msg)
 	{
 	case WM_ACTIVATEAPP:
+		if (m_BackgroundMode)
+		{
+			// Automated captures must keep advancing without activating, focusing,
+			// or suspending input devices owned by the user's foreground task.
+			m_AppActive = true;
+			ddio_KeyFlush();
+			ddio_MouseQueueFlush();
+			break;
+		}
 		m_AppActive = wParam ? true : false;
 		if (m_AppActive)
 		{

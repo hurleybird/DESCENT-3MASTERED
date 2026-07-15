@@ -1147,6 +1147,7 @@ const int StackColumns = 8;		// Number of columns in stack dump.
 
 //[ISB] incoming hack
 extern char* User_directory;
+extern int no_debug_dialog;
 
 int __cdecl RecordExceptionInfo(PEXCEPTION_POINTERS data, const char *Message)
 {
@@ -1209,7 +1210,7 @@ int __cdecl RecordExceptionInfo(PEXCEPTION_POINTERS data, const char *Message)
 			wsprintf(bottommsg, "Failed to create a crash dump file, before User_directory initialization!");
 	}
 
-	if (!Debug_break)
+	if (!Debug_break && !no_debug_dialog)
 		Debug_ErrorBox(OSMBOX_OK, "Error", topmsg, bottommsg);
 
 	BeenHere = false;

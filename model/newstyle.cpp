@@ -45,6 +45,7 @@
 #include <functional>
 #include <stdint.h>
 #include <algorithm>
+#include <deque>
 #include <unordered_map>
 #include <vector>
 
@@ -459,7 +460,7 @@ struct PolymodelBaseFaceBatchKeyEqual
 struct PolymodelBaseFaceBatch
 {
 	PolymodelBaseFaceBatchKey key;
-	std::vector<PolymodelBatchedFace> faces;
+	std::deque<PolymodelBatchedFace> faces;
 };
 
 class PolymodelBaseFaceBatcher
@@ -467,8 +468,6 @@ class PolymodelBaseFaceBatcher
 public:
 	void Reserve(size_t batch_count, size_t face_count)
 	{
-		if (!Render_cpu_batch_cache)
-			return;
 		if (batch_count > m_batches.capacity())
 			m_batches.reserve(batch_count);
 		if (batch_count > m_batch_lookup.bucket_count())
@@ -519,7 +518,6 @@ public:
 		m_batches.emplace_back();
 		PolymodelBaseFaceBatch& batch = m_batches.back();
 		batch.key = key;
-		batch.faces.reserve(4);
 		batch.faces.emplace_back();
 		m_batch_lookup.emplace(batch.key, batch_index);
 		m_last_batch_index = batch_index;
@@ -607,17 +605,14 @@ class PolymodelFogFaceBatcher
 public:
 	void Reserve(size_t face_count)
 	{
-		if (!Render_cpu_batch_cache)
-			return;
-		if (face_count > m_faces.capacity())
-			m_faces.reserve(face_count);
 		if (face_count > m_batch_items.capacity())
 			m_batch_items.reserve(face_count);
 	}
 
-	void Add(const PolymodelBatchedFace& face)
+	PolymodelBatchedFace& Add()
 	{
-		m_faces.push_back(face);
+		m_faces.emplace_back();
+		return m_faces.back();
 	}
 
 	void Flush()
@@ -643,7 +638,7 @@ public:
 	}
 
 private:
-	std::vector<PolymodelBatchedFace> m_faces;
+	std::deque<PolymodelBatchedFace> m_faces;
 	std::vector<renderer_poly_batch_item> m_batch_items;
 };
 
@@ -1485,9 +1480,8 @@ static bool TryBatchSubmodelFaceFogged(poly_model *pm, bsp_info *sm, int facenum
 		p->p3_flags |= PF_RGBA;
 	}
 
-	PolymodelBatchedFace batched_face;
+	PolymodelBatchedFace& batched_face = batcher.Add();
 	CopyPolymodelBatchPoints(batched_face, pointlist, fp->nverts);
-	batcher.Add(batched_face);
 	if (Perf_markers_enabled)
 		Polymodel_perf_fog_face_count++;
 	return true;

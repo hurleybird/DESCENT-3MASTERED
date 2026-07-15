@@ -344,6 +344,14 @@ void PreInitD3Systems()
 }
 
 
+static int FindRenderResolutionArgument()
+{
+	int argument = FindArg("-render-resolution");
+	if (!argument)
+		argument = FindArg("-renderresolution");
+	return argument;
+}
+
 /*
 	Save game variables to the registry
 */
@@ -745,6 +753,26 @@ void LoadGameSettings()
 	Database->read_int("RS_windowwidth", &Game_window_res_width);
 	Database->read_int("RS_windowheight", &Game_window_res_height);
 	Database->read_int("RS_windowaspect", &Game_window_aspect);
+	const int render_resolution_arg = FindRenderResolutionArgument();
+	const char* render_width_value = render_resolution_arg ?
+		GetArg(render_resolution_arg + 1) : nullptr;
+	const char* render_height_value = render_resolution_arg ?
+		GetArg(render_resolution_arg + 2) : nullptr;
+	if (render_width_value && render_height_value)
+	{
+		char* width_end = nullptr;
+		char* height_end = nullptr;
+		const long width = strtol(render_width_value, &width_end, 10);
+		const long height = strtol(render_height_value, &height_end, 10);
+		if (width_end != render_width_value && *width_end == '\0' &&
+			height_end != render_height_value && *height_end == '\0' &&
+			width >= 320 && width <= 8192 && height >= 240 && height <= 8192)
+		{
+			Game_window_res_width = static_cast<int>(width);
+			Game_window_res_height = static_cast<int>(height);
+			ForceFullGameWindowOnNextGameMode();
+		}
+	}
 	ConfigValidateGameWindowSize();
 	Game_frame_limit_fps = ConfigNormalizeFrameLimitFps(ConfigGetDesktopRefreshRate());
 	Database->read_int("RS_frame_limit_fps", &Game_frame_limit_fps);
@@ -758,6 +786,24 @@ void LoadGameSettings()
 	Database->read_int("RS_bilear",&Render_preferred_state.filtering);
 	Render_preferred_state.filtering = Render_preferred_state.filtering ? 1 : 0;
 	Database->read_int("RS_mipping",&Render_preferred_state.mipping);
+	const int texture_filter_arg = FindArg("-texturefilter");
+	const char* texture_filter_value = texture_filter_arg ?
+		GetArg(texture_filter_arg + 1) : nullptr;
+	if (texture_filter_value && strcmpi(texture_filter_value, "point") == 0)
+	{
+		Render_preferred_state.filtering = 0;
+		Render_preferred_state.mipping = 0;
+	}
+	else if (texture_filter_value && strcmpi(texture_filter_value, "bilinear") == 0)
+	{
+		Render_preferred_state.filtering = 1;
+		Render_preferred_state.mipping = 0;
+	}
+	else if (texture_filter_value && strcmpi(texture_filter_value, "trilinear") == 0)
+	{
+		Render_preferred_state.filtering = 1;
+		Render_preferred_state.mipping = 1;
+	}
 	Database->read_int("RS_color_model",&Render_state.cur_color_model);
 	Database->read_int("RS_light",&Render_state.cur_light_state);
 	Database->read_int("RS_texture_quality",&Render_state.cur_texture_quality);
@@ -773,12 +819,38 @@ void LoadGameSettings()
 		Render_preferred_state.msaa_samples = 2;
 	else
 		Render_preferred_state.msaa_samples = 0;
+	const int msaa_arg = FindArg("-msaa");
+	const char* msaa_value = msaa_arg ? GetArg(msaa_arg + 1) : nullptr;
+	if (msaa_value)
+	{
+		const int requested_samples = atoi(msaa_value);
+		if (requested_samples >= 8)
+			Render_preferred_state.msaa_samples = 8;
+		else if (requested_samples >= 4)
+			Render_preferred_state.msaa_samples = 4;
+		else if (requested_samples >= 2)
+			Render_preferred_state.msaa_samples = 2;
+		else
+			Render_preferred_state.msaa_samples = 0;
+	}
 	Render_preferred_state.antialised = Render_preferred_state.msaa_samples > 0;
 	tempint = Render_preferred_state.supersampling_factor;
 	Database->read_int("RS_supersampling", &tempint);
+	const int ssaa_arg = FindArg("-ssaa");
+	const char* ssaa_value = ssaa_arg ? GetArg(ssaa_arg + 1) : nullptr;
+	if (ssaa_value)
+		tempint = atoi(ssaa_value);
 	Render_preferred_state.supersampling_factor = (ubyte)ConfigNormalizeSupersamplingFactor(tempint);
 	Database->read("RS_per_pixel_lighting", &Render_preferred_state.per_pixel_lighting);
+	if (FindArg("-noperpixellighting") || FindArg("-no-per-pixel-lighting"))
+		Render_preferred_state.per_pixel_lighting = false;
+	else if (FindArg("-perpixellighting") || FindArg("-per-pixel-lighting"))
+		Render_preferred_state.per_pixel_lighting = true;
 	Database->read("RS_bloom_enabled", &Render_preferred_state.bloom_enabled);
+	if (FindArg("-nobloom") || FindArg("-no-bloom"))
+		Render_preferred_state.bloom_enabled = false;
+	else if (FindArg("-bloom"))
+		Render_preferred_state.bloom_enabled = true;
 	templen = TEMPBUFFERSIZE;
 	if (Database->read("RS_bloom_threshold", tempbuffer, &templen))
 	{
@@ -817,6 +889,10 @@ void LoadGameSettings()
 	if (tempint > 150) tempint = 150;
 	Render_preferred_state.gtao_overscan_percent = (ushort)tempint;
 	Database->read("RS_gtao_debug_preview", &Render_preferred_state.gtao_debug_preview);
+	if (FindArg("-nogtao") || FindArg("-no-gtao"))
+		Render_preferred_state.gtao_enabled = false;
+	else if (FindArg("-gtao"))
+		Render_preferred_state.gtao_enabled = true;
 	Render_preferred_state.gtao_temporal_debug_preview = false;
 	tempint = Render_preferred_state.motion_vector_mode;
 	Database->read_int("RS_motion_vector_mode", &tempint);
@@ -1060,6 +1136,8 @@ void LoadGameSettings()
 	level = DETAIL_LEVEL_VERY_HIGH;
 
 	Database->read_int("PredefDetailSetting",&level);
+	if (FindArg("-render-advanced"))
+		level = DETAIL_LEVEL_VERY_HIGH;
 	ConfigSetDetailLevel(level);
 
 	// Motion blur
@@ -1081,7 +1159,55 @@ void LoadGameSettings()
 	}
 	if (no_motion_blur)
 		motion_blur_mode = MOTION_BLUR_UI_OFF;
+	else if (FindArg("-motion-blur-new"))
+		motion_blur_mode = MOTION_BLUR_UI_NEW;
+	else if (FindArg("-motion-blur-combo") || FindArg("-render-advanced"))
+		motion_blur_mode = MOTION_BLUR_UI_COMBO;
 	ConfigApplyMotionBlurPreset(motion_blur_mode);
+
+	if (FindArg("-render-advanced"))
+	{
+		Render_preferred_state.filtering = 1;
+		Render_preferred_state.mipping = 1;
+		Render_preferred_state.per_pixel_lighting = true;
+		Render_preferred_state.bloom_enabled = true;
+		Render_preferred_state.gtao_enabled = true;
+		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_FULL;
+		Render_soft_vis_effects = true;
+		Render_disable_powerup_sparkles = false;
+		// These are speculative performance paths, not image-quality features.
+		// Keep the canonical GL4 comparison configuration on the established paths.
+		Render_cpu_batch_cache = false;
+		Render_simd_particle_builder = false;
+		Render_gl4_particle_instancing = false;
+	}
+
+	AutomatedCaptureLog(
+		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d msaa=%u ssaa=%u filtering=%d mipping=%d per_pixel=%d bloom=%d gtao=%d gtao_resolution=%u motion_blur=%d combined_blur=%d soft_particles=%d cpu_batch_cache=%d simd_particles=%d gl4_particle_instancing=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
+		Game_window_res_width, Game_window_res_height, Game_fullscreen ? 1 : 0,
+		DesiredOpenGLProfile, GetFrameLimitFps(),
+		(unsigned)Render_preferred_state.msaa_samples,
+		(unsigned)Render_preferred_state.supersampling_factor,
+		(int)Render_preferred_state.filtering,
+		(int)Render_preferred_state.mipping,
+		Render_preferred_state.per_pixel_lighting ? 1 : 0,
+		Render_preferred_state.bloom_enabled ? 1 : 0,
+		Render_preferred_state.gtao_enabled ? 1 : 0,
+		(unsigned)Render_preferred_state.gtao_resolution,
+		(int)Use_motion_blur,
+		Render_preferred_state.combined_motion_blur ? 1 : 0,
+		Render_soft_vis_effects ? 1 : 0,
+		Render_cpu_batch_cache ? 1 : 0,
+		Render_simd_particle_builder ? 1 : 0,
+		Render_gl4_particle_instancing ? 1 : 0,
+		(int)Detail_settings.Dynamic_lighting,
+		Detail_settings.Specular_lighting ? 1 : 0,
+		Detail_settings.Mirrored_surfaces ? 1 : 0,
+		Detail_settings.Fog_enabled ? 1 : 0,
+		Detail_settings.Coronas_enabled ? 1 : 0,
+		Detail_settings.Procedurals_enabled ? 1 : 0,
+		Detail_settings.Powerup_halos ? 1 : 0,
+		Detail_settings.Scorches_enabled ? 1 : 0);
 
 	Render_powerup_sparkles = false;
 	if(Katmai && !FindArg("-nosparkles"))
