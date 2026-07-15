@@ -59,7 +59,9 @@ polymodel_render_pass Polymodel_render_pass = POLYMODEL_RENDER_ALL;
 
 static void RestorePolymodelDepthWriteMask()
 {
-	rend_SetZBufferWriteMask(Polymodel_render_pass == POLYMODEL_RENDER_TRANSPARENT ? 0 : 1);
+	const bool transparent_pass = Polymodel_render_pass == POLYMODEL_RENDER_TRANSPARENT ||
+		Polymodel_render_pass == POLYMODEL_RENDER_TRANSLUCENT_ALL;
+	rend_SetZBufferWriteMask(transparent_pass ? 0 : 1);
 }
 static int Multicolor_texture=-1;
 static bool Polymodel_cockpit_batching = false;
@@ -702,6 +704,12 @@ static texture *GetPolymodelFaceTexture(poly_model *pm, bsp_info *sm, polyface *
 
 static bool PolymodelFaceUsesAlpha(poly_model *pm, bsp_info *sm, int facenum)
 {
+	// Fades and cloaks apply alpha to the entire model.  Treating their
+	// otherwise-opaque materials as depth-writing geometry is incorrect and
+	// makes a general opaque/transparent split impossible.
+	if (Polymodel_use_effect && (Polymodel_effect.type & PEF_ALPHA))
+		return true;
+
 	polyface *fp = &sm->faces[facenum];
 	texture *texp = GetPolymodelFaceTexture(pm, sm, fp);
 	if (texp && ((texp->flags & (TF_ALPHA | TF_SATURATE)) || texp->alpha < 0.99f))

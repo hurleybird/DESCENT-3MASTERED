@@ -131,11 +131,13 @@ void Descent3()
 		//Show intro & loading screens if not dedicated server
 		if (!Dedicated_server)
 		{
+			const bool automated_capture = FindArg("-capture-frame") ||
+				FindArg("-screenshot-frame");
 			SetScreenMode(SM_CINEMATIC);
 			AutomatedCaptureLog("descent cinematic screen ready");
 
 		//Show the intro movie
-			if (! FindArg("-nointro")) {
+			if (!automated_capture && !FindArg("-nointro")) {
 				char intropath[_MAX_PATH*2];
 				bool remote_path =  (CD_inserted==1) ? true : false;
 
@@ -192,7 +194,8 @@ void Descent3()
 
 			SetScreenMode(SM_MENU);
 			//Show the intro screen
-			IntroScreen();
+			if (!automated_capture)
+				IntroScreen();
 			AutomatedCaptureLog("descent intro screen complete");
 		}
 

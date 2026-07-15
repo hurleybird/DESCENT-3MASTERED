@@ -656,6 +656,10 @@ void rend_SetZBias (float z_bias);
 
 // Enables/disables writes the depth buffer
 void rend_SetZBufferWriteMask (int state);
+// Prevents legacy draw helpers from re-enabling depth writes while a
+// transparent render queue is active.  Locks may be nested.
+void rend_BeginDepthWriteLock();
+void rend_EndDepthWriteLock();
 
 // Sets where the software renderer should write to
 void rend_SetSoftwareParameters(float aspect,int width,int height,int pitch,ubyte *framebuffer);

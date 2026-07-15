@@ -30,11 +30,12 @@ void DrawRoomVisPnts(object *obj);
 //	Render an object.  Calls one of several routines based on type
 void RenderObject(object *obj);
 
-// Powerups contain both depth-writing model faces and transparent glows.  These
-// helpers let the post-renderer place those parts in their respective passes.
-bool RenderPowerupCanUseOpaquePass(const object *obj);
-bool RenderPowerupOpaque(object *obj);
-void RenderPowerupTransparents(object *obj);
+// Post-rendered polygon objects are prepared as opaque geometry followed by
+// transparent materials/effects.  The saved random state makes stochastic
+// deformation identical in both traversals.
+bool RenderObjectCanUseSeparatedPasses(object *obj);
+bool RenderObjectOpaque(object *obj, unsigned int *random_state);
+void RenderObjectTransparents(object *obj, unsigned int random_state);
 
 void RenderObjectPerfReset();
 void RenderObjectPerfFlush();

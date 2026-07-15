@@ -804,13 +804,56 @@ void rend_SetZBias(float z_bias)
 	renderer_inst->SetZBias(z_bias);
 }
 
+static int Renderer_depth_write_lock_count = 0;
+static int Renderer_depth_write_state_before_lock = 1;
+static int Renderer_depth_write_requested_state = 1;
+
 // Enables/disables writes the depth buffer
 void rend_SetZBufferWriteMask(int state)
 {
 	if (!Renderer_initted)
 		return;
 
+	state = state ? 1 : 0;
+	if (Renderer_depth_write_lock_count > 0)
+	{
+		// A transparent queue owns the depth-write state.  Old draw helpers
+		// commonly restore it to one after their draw; do not let that punch a
+		// hole in the queue invariant.
+		renderer_inst->SetZBufferWriteMask(0);
+		return;
+	}
+
+	Renderer_depth_write_requested_state = state;
 	renderer_inst->SetZBufferWriteMask(state);
+}
+
+void rend_BeginDepthWriteLock()
+{
+	if (!Renderer_initted)
+		return;
+
+	if (Renderer_depth_write_lock_count++ == 0)
+	{
+		Renderer_depth_write_state_before_lock = Renderer_depth_write_requested_state;
+		renderer_inst->SetZBufferWriteMask(0);
+	}
+}
+
+void rend_EndDepthWriteLock()
+{
+	if (!Renderer_initted)
+		return;
+
+	ASSERT(Renderer_depth_write_lock_count > 0);
+	if (Renderer_depth_write_lock_count <= 0)
+		return;
+
+	if (--Renderer_depth_write_lock_count == 0)
+	{
+		Renderer_depth_write_requested_state = Renderer_depth_write_state_before_lock;
+		renderer_inst->SetZBufferWriteMask(Renderer_depth_write_requested_state);
+	}
 }
 
 // Sets where the software renderer should write to

@@ -59,7 +59,10 @@ enum polymodel_render_pass
 {
 	POLYMODEL_RENDER_ALL,
 	POLYMODEL_RENDER_OPAQUE,
-	POLYMODEL_RENDER_TRANSPARENT
+	POLYMODEL_RENDER_TRANSPARENT,
+	// Used for geometry motion-blur copies: draw every material with depth
+	// writes disabled by the transparent queue.
+	POLYMODEL_RENDER_TRANSLUCENT_ALL
 };
 
 extern polymodel_render_pass Polymodel_render_pass;

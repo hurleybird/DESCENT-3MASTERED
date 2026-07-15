@@ -246,10 +246,10 @@ void oeWin32Application::init()
 	}
 	if (m_Flags & OEAPP_FULLSCREEN)
 		ShowWindow((HWND)m_hWnd,
-			m_BackgroundMode ? SW_SHOWNOACTIVATE : SW_SHOWMAXIMIZED);
+			m_BackgroundMode ? SW_HIDE : SW_SHOWMAXIMIZED);
 	else
 		ShowWindow((HWND)m_hWnd,
-			m_BackgroundMode ? SW_SHOWNOACTIVATE : SW_SHOWNORMAL);
+			m_BackgroundMode ? SW_HIDE : SW_SHOWNORMAL);
 	UpdateWindow((HWND)m_hWnd);
 }
 
@@ -257,7 +257,7 @@ void oeWin32Application::change_window()
 {
 	const UINT position_flags = SWP_NOZORDER | SWP_FRAMECHANGED |
 		(m_BackgroundMode ? SWP_NOACTIVATE : 0);
-	const int show_command = m_BackgroundMode ? SW_SHOWNOACTIVATE : SW_NORMAL;
+	const int show_command = m_BackgroundMode ? SW_HIDE : SW_NORMAL;
 
 	if (m_Flags & OEAPP_FULLSCREEN)
 	{

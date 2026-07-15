@@ -22,6 +22,9 @@
 
 void ps_srand(unsigned int seed);
 int ps_rand(void);
+// Returns the internal LCG state.  Renderer passes use this to replay visual
+// deformation without consuming a second, different random sequence.
+unsigned int ps_rand_get_state(void);
 
 //[ISB] I wanted to use a std::linear_congruential_engine here but it doesn't allow a shift to be specialized.
 //Class form of ps_rand to allow isolating various random sources to avoid changing the seed every frame.. 

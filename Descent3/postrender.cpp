@@ -420,14 +420,15 @@ void PostRender(int roomnum)
 	int object_outside_type_count[MAX_OBJECT_TYPES] = {};
 	int object_mine_type_count[MAX_OBJECT_TYPES] = {};
 	PostRenderObjectOcclusionStats object_occlusion = {};
-	bool separated_powerup[MAX_POSTRENDERS] = {};
-	bool separated_powerup_rendered[MAX_POSTRENDERS] = {};
-	// Soft particles sample a resolved scene-depth texture.  Draw the opaque
-	// portion of eligible powerups before transparency so that the depth texture
-	// is resolved once, rather than once for every object/particle alternation.
+	bool separated_object[MAX_POSTRENDERS] = {};
+	bool separated_object_rendered[MAX_POSTRENDERS] = {};
+	unsigned int separated_object_random_state[MAX_POSTRENDERS] = {};
+	// Soft particles sample a resolved scene-depth texture.  Finalize all
+	// polygon-object depth before transparency so the snapshot is resolved once,
+	// rather than once for every object/particle alternation.
 	if (Render_soft_vis_effects)
 	{
-		PERF_MARKER_SCOPE("PostRender.PowerupOpaquePass");
+		PERF_MARKER_SCOPE("PostRender.ObjectOpaquePass");
 		ForceFlushVisEffectBatches();
 		FlushWeaponStreamerBatches();
 		for (i = 0; i < Num_postrenders; i++)
@@ -435,10 +436,10 @@ void PostRender(int roomnum)
 			if (Postrender_list[i].type != PRT_OBJECT)
 				continue;
 			object* objp = &Objects[Postrender_list[i].objnum];
-			if (!RenderPowerupCanUseOpaquePass(objp))
+			if (!RenderObjectCanUseSeparatedPasses(objp))
 				continue;
 
-			separated_powerup[i] = true;
+			separated_object[i] = true;
 			const bool object_outside = OBJECT_OUTSIDE(objp);
 			if (PostRenderCullObjectByOcclusion(objp, object_outside, object_occlusion))
 				continue;
@@ -456,21 +457,25 @@ void PostRender(int roomnum)
 			double object_start_time = Perf_markers_enabled ? PerfMarkersNow() : 0.0;
 			if (first_object_time == 0.0)
 				first_object_time = object_start_time;
-			separated_powerup_rendered[i] = RenderPowerupOpaque(objp);
-			if (Perf_markers_enabled && separated_powerup_rendered[i])
+			separated_object_rendered[i] = RenderObjectOpaque(
+				objp, &separated_object_random_state[i]);
+			if (Perf_markers_enabled && separated_object_rendered[i])
 			{
 				const double duration = PerfMarkersNow() - object_start_time;
 				object_time += duration;
-				object_type_time[OBJ_POWERUP] += duration;
+				if (objp->type >= 0 && objp->type < MAX_OBJECT_TYPES)
+					object_type_time[objp->type] += duration;
 				if (object_outside)
 				{
 					object_outside_time += duration;
-					object_outside_type_time[OBJ_POWERUP] += duration;
+					if (objp->type >= 0 && objp->type < MAX_OBJECT_TYPES)
+						object_outside_type_time[objp->type] += duration;
 				}
 				else
 				{
 					object_mine_time += duration;
-					object_mine_type_time[OBJ_POWERUP] += duration;
+					if (objp->type >= 0 && objp->type < MAX_OBJECT_TYPES)
+						object_mine_type_time[objp->type] += duration;
 				}
 			}
 		}
@@ -498,11 +503,11 @@ void PostRender(int roomnum)
 			else if (Postrender_list[i].type == PRT_OBJECT)
 			{
 				object* objp = &Objects[Postrender_list[i].objnum];
-				const bool powerup_was_separated = separated_powerup[i];
+				const bool object_was_separated = separated_object[i];
 				bool object_outside = OBJECT_OUTSIDE(objp);
-				if (powerup_was_separated && !separated_powerup_rendered[i])
+				if (object_was_separated && !separated_object_rendered[i])
 					continue;
-				if (!powerup_was_separated && PostRenderCullObjectByOcclusion(objp, object_outside, object_occlusion))
+				if (!object_was_separated && PostRenderCullObjectByOcclusion(objp, object_outside, object_occlusion))
 					continue;
 				{
 					PERF_MARKER_SCOPE("PostRender.FlushVisEffects.BeforeObject");
@@ -531,10 +536,17 @@ void PostRender(int roomnum)
 					if (Perf_markers_enabled)
 						room_setup_time += PerfMarkersNow() - setup_start_time;
 				}
-				if (powerup_was_separated)
-					RenderPowerupTransparents(objp);
+				if (object_was_separated)
+					RenderObjectTransparents(objp, separated_object_random_state[i]);
 				else
+				{
+					// Non-polygon post-render objects are transparent render items.  The
+					// lock prevents old helpers (shards, splinters, smolder, weapon
+					// extras) from accidentally restoring depth writes mid-queue.
+					rend_BeginDepthWriteLock();
 					RenderObject(objp);
+					rend_EndDepthWriteLock();
+				}
 				if (Perf_markers_enabled)
 				{
 					double duration = PerfMarkersNow() - object_start_time;

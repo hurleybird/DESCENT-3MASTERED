@@ -82,7 +82,17 @@ ubyte* RenderObjectGouraudValue = NULL;
 lightmap_object* RenderObjectLightmapObject = NULL;
 vector RenderObject_LightDirection;
 static bool RenderObject_disable_motion_capture = false;
-static bool RenderObject_powerup_opaque_pass = false;
+static bool RenderObject_transparent_extra_disable_motion_capture = false;
+
+enum render_object_pass
+{
+	RENDER_OBJECT_ALL,
+	RENDER_OBJECT_OPAQUE,
+	RENDER_OBJECT_TRANSPARENT
+};
+
+static render_object_pass RenderObject_pass = RENDER_OBJECT_ALL;
+static unsigned int RenderObject_transparent_extra_random_state = 0;
 
 bool GetLinearPosition(vector* points, float* times, int num_points, float t, vector* pos);
 
@@ -359,9 +369,9 @@ void RenderObjectPerfFlush()
 class RenderObjectPerfCallScope
 {
 public:
-	RenderObjectPerfCallScope()
+	RenderObjectPerfCallScope(bool enable = true)
 	{
-		active = Perf_markers_enabled;
+		active = enable && Perf_markers_enabled;
 		start_time = active ? PerfMarkersNow() : 0.0;
 		if (active)
 		{
@@ -1074,7 +1084,8 @@ static bool RenderObjectInternal(object* obj)
 	if (obj->type == OBJ_DUMMY)
 		return false;
 
-	RenderObjectPerfCallScope perf_scope;
+	const bool transparent_replay = RenderObject_pass == RENDER_OBJECT_TRANSPARENT;
+	RenderObjectPerfCallScope perf_scope(!transparent_replay);
 
 	if (obj->flags & OF_ATTACHED)
 	{
@@ -1133,18 +1144,22 @@ static bool RenderObjectInternal(object* obj)
 		}
 	}
 
-	// Mark this a rendered this frame
-	obj->flags |= OF_RENDERED;
-	// If we're not rendering from a mirror, mark this object as rendered
-	if (Render_mirror_for_room == false)
-		obj->flags &= ~OF_SAFE_TO_RENDER;
-	obj->renderframe = FrameCount % 65536;
-
-	if (obj->control_type == CT_AI &&
-		(GetFunctionMode() == GAME_MODE || GetFunctionMode() == EDITOR_GAME_MODE))
+	if (!transparent_replay)
 	{
-		AI_RenderedList[AI_NumRendered] = OBJNUM(obj);
-		AI_NumRendered += 1;
+		// Mark this as rendered this frame.  The transparent replay is the
+		// second half of the same render item and must not repeat gameplay/demo
+		// side effects.
+		obj->flags |= OF_RENDERED;
+		if (Render_mirror_for_room == false)
+			obj->flags &= ~OF_SAFE_TO_RENDER;
+		obj->renderframe = FrameCount % 65536;
+
+		if (obj->control_type == CT_AI &&
+			(GetFunctionMode() == GAME_MODE || GetFunctionMode() == EDITOR_GAME_MODE))
+		{
+			AI_RenderedList[AI_NumRendered] = OBJNUM(obj);
+			AI_NumRendered += 1;
+		}
 	}
 #ifdef EDITOR
 	ddgr_color oldcolor;
@@ -1230,9 +1245,13 @@ static bool RenderObjectInternal(object* obj)
 		const bool combined_legacy_motion_blur =
 			Render_preferred_state.combined_motion_blur &&
 			Render_preferred_state.combined_motion_blur_legacy_strength > 0.0f;
-		if ((Use_motion_blur || combined_legacy_motion_blur) &&
+		if (RenderObject_pass != RENDER_OBJECT_OPAQUE &&
+			(Use_motion_blur || combined_legacy_motion_blur) &&
 			RenderObject_IsLegacyMotionBlurEligible(obj))
 		{
+			const polymodel_render_pass saved_motion_blur_pass = Polymodel_render_pass;
+			if (RenderObject_pass == RENDER_OBJECT_TRANSPARENT)
+				Polymodel_render_pass = POLYMODEL_RENDER_TRANSLUCENT_ALL;
 			double motion_blur_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
 			if (combined_legacy_motion_blur)
 			{
@@ -1426,6 +1445,7 @@ static bool RenderObjectInternal(object* obj)
 			}
 			if (perf_scope.IsActive())
 				RenderObjectPerfAdd(Render_object_perf_motion_blur_time, motion_blur_start_time);
+			Polymodel_render_pass = saved_motion_blur_pass;
 		}
 		////////////////////////////////////////////
 
@@ -1436,18 +1456,32 @@ static bool RenderObjectInternal(object* obj)
 		}
 #endif
 
+		// The transparent geometry replay starts from the same random state as
+		// the opaque traversal so deform/jitter inputs match.  Resume the global
+		// stream from the opaque traversal's ending state before emitting one-time
+		// glows, sparkles, lightning, and other attached effects.  This preserves
+		// the legacy single-pass random consumption seen by later simulation.
+		if (transparent_replay)
+		{
+			ps_srand(RenderObject_transparent_extra_random_state);
+			RenderObject_disable_motion_capture =
+				RenderObject_transparent_extra_disable_motion_capture;
+		}
+
 		const bool has_extra_effects = obj->type == OBJ_POWERUP || obj->type == OBJ_PLAYER ||
 			obj->type == OBJ_ROBOT || (obj->type == OBJ_BUILDING && obj->ai_info);
 		double extra_effects_start_time = (perf_scope.IsActive() && has_extra_effects) ? PerfMarkersNow() : 0.0;
 
-		// Render that powerup glow
-		if (obj->type == OBJ_POWERUP && !RenderObject_powerup_opaque_pass)
+		// Object-attached glows, lightning, HUD labels, and similar overlays are
+		// transparent work.  They are emitted only by the transparent half of a
+		// separated item (or by an ordinary one-pass object).
+		if (obj->type == OBJ_POWERUP && RenderObject_pass != RENDER_OBJECT_OPAQUE)
 		{
 			DrawPowerupGlowDisk(obj);
 			DrawPowerupSparkles(obj);
 		}
 
-		if (obj->type == OBJ_PLAYER)
+		if (obj->type == OBJ_PLAYER && RenderObject_pass != RENDER_OBJECT_OPAQUE)
 		{
 			DrawPlayerDamageDisk(obj);
 			DrawPlayerRotatingBall(obj);
@@ -1455,7 +1489,8 @@ static bool RenderObjectInternal(object* obj)
 			DrawPlayerTypingIndicator(obj);
 			DrawPlayerInvulSphere(obj);
 		}
-		if (obj->type == OBJ_PLAYER || obj->type == OBJ_ROBOT || (obj->type == OBJ_BUILDING && obj->ai_info))
+		if (RenderObject_pass != RENDER_OBJECT_OPAQUE &&
+			(obj->type == OBJ_PLAYER || obj->type == OBJ_ROBOT || (obj->type == OBJ_BUILDING && obj->ai_info)))
 		{
 			DrawSparkyDamageLightning(obj);
 			DrawVirusLightning(obj);
@@ -1522,7 +1557,7 @@ static bool RenderObjectInternal(object* obj)
 	}
 
 #ifdef NEWDEMO
-	if (obj->render_type != RT_NONE)
+	if (!transparent_replay && obj->render_type != RT_NONE)
 		if (Newdemo_state == ND_STATE_RECORDING)
 		{
 			if (!WasRecorded[obj - Objects])
@@ -1612,8 +1647,6 @@ bool is_multi_demo = false;
 void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 {
 	const polymodel_render_pass saved_render_pass = Polymodel_render_pass;
-	if (RenderObject_powerup_opaque_pass)
-		Polymodel_render_pass = POLYMODEL_RENDER_OPAQUE;
 	int model_num;
 	int use_effect = 0;
 	vector obj_pos = obj->pos;
@@ -1956,76 +1989,85 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 	Polymodel_render_pass = saved_render_pass;
 }
 
-bool RenderPowerupCanUseOpaquePass(const object* obj)
+bool RenderObjectCanUseSeparatedPasses(object* obj)
 {
-	if (!obj || obj->type != OBJ_POWERUP || obj->render_type != RT_POLYOBJ)
-		return false;
-	if (obj->rtype.pobj_info.model_num < 0 || obj->rtype.pobj_info.model_num >= MAX_POLY_MODELS)
-		return false;
-	if (obj->effect_info && (obj->effect_info->type_flags &
-		(EF_FADING_OUT | EF_FADING_IN | EF_CLOAKED | EF_DEFORM)))
-		return false;
-	if ((obj->flags & OF_USES_LIFELEFT) && obj->lifeleft < 5.0f)
-		return false;
-	if (Viewer_object && Viewer_object->effect_info &&
-		(Viewer_object->effect_info->type_flags & EF_DEFORM))
+	if (!obj)
 		return false;
 
-	const poly_model& model = Poly_models[obj->rtype.pobj_info.model_num];
-	if (!model.used || !model.new_style)
-		return false;
-	for (int submodel = 0; submodel < model.n_models; submodel++)
+	int model_num = -1;
+	if (obj->render_type == RT_POLYOBJ)
 	{
-		if (model.submodel[submodel].flags & SOF_JITTER)
-			return false;
+		model_num = obj->rtype.pobj_info.model_num;
 	}
-	return true;
+	else if (obj->render_type == RT_WEAPON)
+	{
+		if (WeaponIsCloseScreenEffectObject(obj))
+			return false;
+		if (obj->id < 0 || obj->id >= MAX_WEAPONS)
+			return false;
+		const int transparent_image_flags = WF_IMAGE_BITMAP | WF_IMAGE_VCLIP | WF_ELECTRICAL;
+		if (Weapons[obj->id].flags & transparent_image_flags)
+			return false;
+		model_num = obj->rtype.pobj_info.model_num;
+	}
+	else
+	{
+		return false;
+	}
+
+	if (model_num < 0 || model_num >= MAX_POLY_MODELS)
+		return false;
+	const poly_model& model = Poly_models[model_num];
+	return model.used && model.new_style;
 }
 
-bool RenderPowerupOpaque(object* obj)
+bool RenderObjectOpaque(object* obj, unsigned int* random_state)
 {
-	ASSERT(RenderPowerupCanUseOpaquePass(obj));
-	const bool saved_opaque_pass = RenderObject_powerup_opaque_pass;
-	RenderObject_powerup_opaque_pass = true;
+	ASSERT(RenderObjectCanUseSeparatedPasses(obj));
+	ASSERT(random_state);
+
+	*random_state = ps_rand_get_state();
+	const render_object_pass saved_object_pass = RenderObject_pass;
+	const polymodel_render_pass saved_polymodel_pass = Polymodel_render_pass;
+	RenderObject_pass = RENDER_OBJECT_OPAQUE;
+	Polymodel_render_pass = POLYMODEL_RENDER_OPAQUE;
 	const bool rendered = RenderObjectInternal(obj);
-	RenderObject_powerup_opaque_pass = saved_opaque_pass;
+	Polymodel_render_pass = saved_polymodel_pass;
+	RenderObject_pass = saved_object_pass;
 	return rendered;
 }
 
-void RenderPowerupTransparents(object* obj)
+void RenderObjectTransparents(object* obj, unsigned int random_state)
 {
-	ASSERT(obj && obj->type == OBJ_POWERUP && obj->render_type == RT_POLYOBJ);
+	ASSERT(RenderObjectCanUseSeparatedPasses(obj));
 
 	const bool was_safe_to_render = (obj->flags & OF_SAFE_TO_RENDER) != 0;
-	if (OBJECT_OUTSIDE(obj))
-		SetupTerrainObject(obj);
-	else
-		SetupMineObject(obj);
-	if (!was_safe_to_render)
-		obj->flags &= ~OF_SAFE_TO_RENDER;
-
-	float normalized_time[MAX_SUBOBJECTS];
-	float* normalized_time_ptr = NULL;
-	if (obj->rtype.pobj_info.anim_frame ||
-		(Poly_models[obj->rtype.pobj_info.model_num].frame_max !=
-		 Poly_models[obj->rtype.pobj_info.model_num].frame_min))
-	{
-		SetNormalizedTimeObj(obj, normalized_time);
-		normalized_time_ptr = normalized_time;
-	}
-
-	const polymodel_render_pass saved_render_pass = Polymodel_render_pass;
+	const render_object_pass saved_object_pass = RenderObject_pass;
+	const polymodel_render_pass saved_polymodel_pass = Polymodel_render_pass;
 	const bool saved_disable_motion_capture = RenderObject_disable_motion_capture;
+
+	// Replay the opaque pass's visual random stream so cloak/deform/jitter
+	// geometry and viewer-deform offsets are identical in both material passes.
+	RenderObject_transparent_extra_random_state = ps_rand_get_state();
+	RenderObject_transparent_extra_disable_motion_capture = saved_disable_motion_capture;
+	ps_srand(random_state);
+	RenderObject_pass = RENDER_OBJECT_TRANSPARENT;
 	Polymodel_render_pass = POLYMODEL_RENDER_TRANSPARENT;
 	RenderObject_disable_motion_capture = true;
-	rend_SetZBufferWriteMask(0);
-	RenderObject_DrawPolymodel(obj, normalized_time_ptr);
-	rend_SetZBufferWriteMask(1);
-	RenderObject_disable_motion_capture = saved_disable_motion_capture;
-	Polymodel_render_pass = saved_render_pass;
+	// The opaque half already passed visibility/occlusion and clears
+	// OF_SAFE_TO_RENDER as part of the ordinary one-pass bookkeeping.  The
+	// transparent half is the remainder of that accepted render item, not a new
+	// visibility candidate.
+	obj->flags |= OF_SAFE_TO_RENDER;
+	rend_BeginDepthWriteLock();
+	RenderObjectInternal(obj);
+	rend_EndDepthWriteLock();
 
-	DrawPowerupGlowDisk(obj);
-	DrawPowerupSparkles(obj);
+	RenderObject_disable_motion_capture = saved_disable_motion_capture;
+	Polymodel_render_pass = saved_polymodel_pass;
+	RenderObject_pass = saved_object_pass;
+	if (!was_safe_to_render)
+		obj->flags &= ~OF_SAFE_TO_RENDER;
 }
 
 // Sets the direction of the lightsource to be used when calculating vertex lighting

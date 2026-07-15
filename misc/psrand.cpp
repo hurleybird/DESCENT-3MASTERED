@@ -31,3 +31,8 @@ int ps_rand(void)
 {
 	return(((ps_holdrand = ps_holdrand * 214013L + 2531011L) >> 16) & 0x7fff);
 }
+
+unsigned int ps_rand_get_state(void)
+{
+	return (unsigned int)ps_holdrand;
+}

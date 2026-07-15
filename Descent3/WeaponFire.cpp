@@ -2341,8 +2341,32 @@ void DrawWeaponObject(object* obj)
 
 	const bool close_screen_effect = WeaponIsCloseScreenEffectObject(obj);
 
-	if (close_screen_effect && VisEffectQueueCloseScreenWeaponObject(obj))
+	if (Polymodel_render_pass != POLYMODEL_RENDER_OPAQUE &&
+		close_screen_effect && VisEffectQueueCloseScreenWeaponObject(obj))
 		return;
+
+	// The opaque queue emits only the model portion.  Streamers, rings,
+	// electrical arcs, and bitmap/vclip weapons are transparent work and remain
+	// in distance order.
+	if (Polymodel_render_pass == POLYMODEL_RENDER_OPAQUE)
+	{
+		const int transparent_image_flags = WF_IMAGE_BITMAP | WF_IMAGE_VCLIP | WF_ELECTRICAL;
+		if ((Weapons[obj->id].flags & (WF_INVISIBLE | transparent_image_flags)) == 0)
+		{
+			polymodel_effect pe = { 0 };
+			int use_effect = 0;
+			if (obj->type == OBJ_WEAPON && !Detail_settings.Weapon_coronas_enabled)
+			{
+				pe.type |= PEF_NO_GLOWS;
+				use_effect = 1;
+			}
+			if (use_effect)
+				SetPolymodelEffect(&pe);
+			DrawPolygonModel(&obj->pos, &obj->orient, obj->rtype.pobj_info.model_num,
+				NULL, 0, 1.0, 1.0, 1.0, 0xFFFFFFFF, use_effect);
+		}
+		return;
+	}
 
 	// Don't draw if spray
 	if (!(Weapons[obj->id].flags & WF_INVISIBLE))
