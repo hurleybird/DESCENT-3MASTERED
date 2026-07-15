@@ -718,6 +718,15 @@ static bool PolymodelFaceUsesAlpha(poly_model *pm, bsp_info *sm, int facenum)
 	return false;
 }
 
+static bool PolymodelRenderPassIncludesFace(bool alpha_face)
+{
+	if (Polymodel_render_pass == POLYMODEL_RENDER_OPAQUE)
+		return !alpha_face;
+	if (Polymodel_render_pass == POLYMODEL_RENDER_TRANSPARENT)
+		return alpha_face;
+	return true;
+}
+
 static bool PolymodelFaceUsesCockpitTransparentMaterial(poly_model *pm, bsp_info *sm, int facenum)
 {
 	polyface *fp = &sm->faces[facenum];
@@ -1689,6 +1698,8 @@ void RenderSubmodelFacesSorted (poly_model *pm,bsp_info *sm)
 	for (i=rcount-1;i>=0;i--)
 	{
 		int facenum=model_render_order[i];
+		if (!PolymodelRenderPassIncludesFace(PolymodelFaceUsesAlpha(pm, sm, facenum)))
+			continue;
 
 		if (PolymodelShouldSkipTransparentCockpitFace(pm, sm, facenum))
 			continue;
@@ -1732,8 +1743,7 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 		polyface *fp=&sm->faces[i];
 		texture *texp;
 		const bool alpha_face = PolymodelFaceUsesAlpha(pm, sm, i);
-		if ((Polymodel_render_pass == POLYMODEL_RENDER_OPAQUE && alpha_face) ||
-			(Polymodel_render_pass == POLYMODEL_RENDER_TRANSPARENT && !alpha_face))
+		if (!PolymodelRenderPassIncludesFace(alpha_face))
 		{
 			PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
 			continue;

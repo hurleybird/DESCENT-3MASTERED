@@ -1150,6 +1150,15 @@ void DrawVisLightningBolt(vis_effect* vis)
 	rend_SetTextureType(TT_FLAT);
 	rend_SetAlphaType(AT_SATURATE_VERTEX);
 	rend_SetLighting(LS_NONE);
+	// Lightning is a surface line effect, never a soft billboard.
+	rend_SetSoftParticleState(0);
+	// Attached bolts start exactly on model vertices.  The unified opaque
+	// prepass makes their parent's depth complete before this transparent draw,
+	// so use a small surface-overlay bias to avoid self-z-fighting while keeping
+	// the ordinary depth test against walls and other objects.
+	const bool attached_surface_overlay = (vis->flags & VF_ATTACHED) != 0;
+	if (attached_surface_overlay)
+		rend_SetZBias(-0.1f);
 	rend_SetZBufferWriteMask(0);
 	rend_SetAOSuppression(1.0f);
 
@@ -1185,6 +1194,8 @@ void DrawVisLightningBolt(vis_effect* vis)
 
 	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
+	if (attached_surface_overlay)
+		rend_SetZBias(0.0f);
 }
 
 // Draws a lighting bolt sine wave from one area to another

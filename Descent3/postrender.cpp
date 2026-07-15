@@ -423,10 +423,12 @@ void PostRender(int roomnum)
 	bool separated_object[MAX_POSTRENDERS] = {};
 	bool separated_object_rendered[MAX_POSTRENDERS] = {};
 	unsigned int separated_object_random_state[MAX_POSTRENDERS] = {};
-	// Soft particles sample a resolved scene-depth texture.  Finalize all
-	// polygon-object depth before transparency so the snapshot is resolved once,
-	// rather than once for every object/particle alternation.
-	if (Render_soft_vis_effects)
+	// GL4 depth consumers (GTAO, motion vectors, and soft particles) all require
+	// the same stable set of opaque polygon depth.  Keep the split independent of
+	// the soft-particle toggle so changing one effect cannot remove object depth
+	// from another.  Compatibility GL keeps its legacy one-pass ordering.
+	const bool separate_polygon_objects = rend_CanUseNewrender();
+	if (separate_polygon_objects)
 	{
 		PERF_MARKER_SCOPE("PostRender.ObjectOpaquePass");
 		ForceFlushVisEffectBatches();
@@ -540,12 +542,17 @@ void PostRender(int roomnum)
 					RenderObjectTransparents(objp, separated_object_random_state[i]);
 				else
 				{
-					// Non-polygon post-render objects are transparent render items.  The
-					// lock prevents old helpers (shards, splinters, smolder, weapon
-					// extras) from accidentally restoring depth writes mid-queue.
-					rend_BeginDepthWriteLock();
+					// In GL4, non-polygon post-render objects are transparent items.  The
+					// lock prevents old helpers (shards, splinters, smolder, bitmap
+					// weapons) from accidentally restoring depth writes mid-queue.  A
+					// fallback polygon model must retain legacy depth writes.
+					const bool lock_transparent_depth = separate_polygon_objects &&
+						objp->render_type != RT_POLYOBJ;
+					if (lock_transparent_depth)
+						rend_BeginDepthWriteLock();
 					RenderObject(objp);
-					rend_EndDepthWriteLock();
+					if (lock_transparent_depth)
+						rend_EndDepthWriteLock();
 				}
 				if (Perf_markers_enabled)
 				{
