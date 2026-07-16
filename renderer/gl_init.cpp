@@ -469,7 +469,18 @@ int GL4Renderer::Setup(HDC glhdc)
 
 void GL4Renderer::ApplySwapInterval()
 {
-	const int interval = 0;
+	int interval = 0;
+	const int swap_interval_arg = FindArg("-swapinterval");
+	const char* swap_interval_value = swap_interval_arg ? GetArg(swap_interval_arg + 1) : nullptr;
+	if (swap_interval_value)
+	{
+		char* end = nullptr;
+		const long requested = strtol(swap_interval_value, &end, 10);
+		if (end != swap_interval_value && *end == '\0' && requested >= -1 && requested <= 1)
+			interval = static_cast<int>(requested);
+		else
+			mprintf((0, "Ignoring invalid -swapinterval value; expected -1, 0, or 1.\n"));
+	}
 
 #if defined(SDL3)
 	if (!SDL_GL_SetSwapInterval(interval))

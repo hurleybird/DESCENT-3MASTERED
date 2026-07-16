@@ -21,6 +21,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <algorithm>
 #include <chrono>
 #include <vector>
 #include "gameloop.h"
@@ -189,18 +190,22 @@ static void InitRendererFramePacing()
 	}
 
 	const char* telemetry_env = getenv("PICCU_FRAME_PACING_TELEMETRY");
-	const bool telemetry_enabled = AutomatedFramePerfEnabled() ||
+	const bool telemetry_requested = AutomatedFramePerfEnabled() ||
 		(telemetry_env && telemetry_env[0] && strcmp(telemetry_env, "0") != 0);
-	rend_ConfigureFramePacing(queue_depth, telemetry_enabled);
-	AutomatedCaptureLog("frame pacing queue=%d telemetry=%d", queue_depth,
-		telemetry_enabled ? 1 : 0);
-	mprintf((0, "Frame pacing: queue depth %d, telemetry %s.\n", queue_depth,
-		telemetry_enabled ? "enabled" : "disabled"));
+	// GPU elapsed-time queries feed the overload controller. They are asynchronous
+	// and do not enable file logging unless telemetry was explicitly requested.
+	rend_ConfigureFramePacing(queue_depth, true);
+	AutomatedCaptureLog("frame pacing queue=%d gpu_timing=1 telemetry=%d", queue_depth,
+		telemetry_requested ? 1 : 0);
+	mprintf((0, "Frame pacing: queue depth %d, GPU timing enabled, telemetry %s.\n",
+		queue_depth, telemetry_requested ? "enabled" : "disabled"));
 }
 
 static void AutomatedFramePerfLog(int gameplay_frame, double frame_start_interval_ms,
 	double pacing_wait_ms, double simulation_ms, double render_ms, double present_ms,
 	double tail_ms, double cap_wait_ms, double total_ms, float frame_time_ms,
+	double work_ms, double robust_work_ms, double effective_interval_ms,
+	bool adaptive_pacing,
 	const renderer_frame_pacing_info& pacing_info, const tRendererStats& renderer_stats)
 {
 	const char* path = getenv("PICCU_FRAME_PERF_LOG");
@@ -212,12 +217,13 @@ static void AutomatedFramePerfLog(int gameplay_frame, double frame_start_interva
 		return;
 	if (!wrote_header)
 	{
-		fputs("gameplay_frame\tframe_start_interval_ms\tpacing_wait_ms\tsimulation_ms\trender_ms\tpresent_ms\ttail_ms\tcap_wait_ms\ttotal_ms\tframetime_ms\tpresent_interval_ms\tswap_call_ms\tqueue_depth\tqueued_frames\tgpu_frame_ms\tgpu_frame_serial\tpolygons\tvertices\ttexture_uploads\n", file);
+		fputs("gameplay_frame\tframe_start_interval_ms\tpacing_wait_ms\tsimulation_ms\trender_ms\tpresent_ms\ttail_ms\tcap_wait_ms\ttotal_ms\tframetime_ms\twork_ms\trobust_work_ms\teffective_interval_ms\tadaptive_pacing\tpresent_interval_ms\tswap_call_ms\tqueue_depth\tqueued_frames\tgpu_frame_ms\tgpu_frame_serial\tpolygons\tvertices\ttexture_uploads\n", file);
 		wrote_header = true;
 	}
-	fprintf(file, "%d\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\t%d\t%.3f\t%llu\t%d\t%d\t%d\n",
+	fprintf(file, "%d\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\t%.3f\t%.3f\t%d\t%d\t%.3f\t%llu\t%d\t%d\t%d\n",
 		gameplay_frame, frame_start_interval_ms, pacing_wait_ms, simulation_ms,
 		render_ms, present_ms, tail_ms, cap_wait_ms, total_ms, frame_time_ms,
+		work_ms, robust_work_ms, effective_interval_ms, adaptive_pacing ? 1 : 0,
 		pacing_info.latest_present_interval_ms, pacing_info.latest_swap_call_ms,
 		pacing_info.configured_queue_depth, pacing_info.queued_frames,
 		pacing_info.latest_gpu_frame_ms,
@@ -389,10 +395,148 @@ double Min_allowed_frametime = 0;
 static int Frame_limit_fps = 0;
 static bool Frame_limit_command_line_override = false;
 
+// A stable cadence is more important than submitting frames immediately when
+// the renderer is persistently slower than the requested cap. Keep a short
+// robust history so one hitch cannot lower the cadence, add headroom only after
+// genuine overload, and relinquish that headroom gradually as load falls.
+struct adaptive_frame_cadence_state
+{
+	static const int SAMPLE_COUNT = 45;
+	double cpu_samples[SAMPLE_COUNT];
+	double gpu_samples[SAMPLE_COUNT];
+	int cpu_count;
+	int gpu_count;
+	int cpu_write;
+	int gpu_write;
+	int overload_frames;
+	int reassessment_frames;
+	uint64_t gpu_serial;
+	double effective_interval;
+	double latest_work;
+	bool active;
+};
+
+static adaptive_frame_cadence_state Adaptive_frame_cadence = {};
+
+static void ResetAdaptiveFrameCadence()
+{
+	Adaptive_frame_cadence = {};
+}
+
+static void AddCadenceSample(double* samples, int& count, int& write, double value)
+{
+	if (value <= 0.00005 || value >= 1.0)
+		return;
+	samples[write] = value;
+	write = (write + 1) % adaptive_frame_cadence_state::SAMPLE_COUNT;
+	if (count < adaptive_frame_cadence_state::SAMPLE_COUNT)
+		++count;
+}
+
+static double CadencePercentile(const double* samples, int count)
+{
+	if (count <= 0)
+		return 0.0;
+	double sorted[adaptive_frame_cadence_state::SAMPLE_COUNT];
+	memcpy(sorted, samples, (size_t)count * sizeof(sorted[0]));
+	std::sort(sorted, sorted + count);
+	// The 85th percentile follows sustained load but discards several isolated
+	// hitches even with a full window.
+	const int index = (count - 1) * 85 / 100;
+	return sorted[index];
+}
+
+static double QuantizeCadenceInterval(double interval)
+{
+	const double quantum = 0.00025;
+	const uint64_t quanta = (uint64_t)(interval / quantum + 0.999999);
+	return (double)quanta * quantum;
+}
+
+static double UpdateAdaptiveFrameCadence(double user_interval, double cpu_work,
+	const renderer_frame_pacing_info& pacing_info, bool eligible)
+{
+	static const bool disabled = FindArg("-noadaptivepacing") != 0;
+	if (disabled || !eligible || user_interval <= 0.0)
+	{
+		ResetAdaptiveFrameCadence();
+		return user_interval;
+	}
+
+	AddCadenceSample(Adaptive_frame_cadence.cpu_samples,
+		Adaptive_frame_cadence.cpu_count, Adaptive_frame_cadence.cpu_write, cpu_work);
+	if (pacing_info.latest_gpu_frame_serial != 0 &&
+		pacing_info.latest_gpu_frame_serial != Adaptive_frame_cadence.gpu_serial)
+	{
+		Adaptive_frame_cadence.gpu_serial = pacing_info.latest_gpu_frame_serial;
+		AddCadenceSample(Adaptive_frame_cadence.gpu_samples,
+			Adaptive_frame_cadence.gpu_count, Adaptive_frame_cadence.gpu_write,
+			pacing_info.latest_gpu_frame_ms / 1000.0);
+	}
+
+	const double cpu_demand = CadencePercentile(Adaptive_frame_cadence.cpu_samples,
+		Adaptive_frame_cadence.cpu_count);
+	const double gpu_demand = Adaptive_frame_cadence.gpu_count >= 12 ?
+		CadencePercentile(Adaptive_frame_cadence.gpu_samples,
+			Adaptive_frame_cadence.gpu_count) : 0.0;
+	const double work_demand = (std::max)(cpu_demand, gpu_demand);
+	Adaptive_frame_cadence.latest_work = work_demand;
+
+	if (Adaptive_frame_cadence.cpu_count < 24)
+		return user_interval;
+
+	// Do not penalize a workload that really reaches its requested cap. Headroom
+	// is introduced only once robust demand has crossed the available budget.
+	const bool overloaded = work_demand > user_interval * 1.01;
+	if (!Adaptive_frame_cadence.active)
+	{
+		Adaptive_frame_cadence.overload_frames = overloaded ?
+			Adaptive_frame_cadence.overload_frames + 1 : 0;
+		if (Adaptive_frame_cadence.overload_frames < 6)
+			return user_interval;
+
+		Adaptive_frame_cadence.active = true;
+		Adaptive_frame_cadence.effective_interval = QuantizeCadenceInterval(
+			(std::max)(user_interval, work_demand * 1.12 + 0.00025));
+		mprintf((0, "Adaptive frame cadence engaged: %.2f ms work, %.2f ms interval.\n",
+			work_demand * 1000.0, Adaptive_frame_cadence.effective_interval * 1000.0));
+		return Adaptive_frame_cadence.effective_interval;
+	}
+
+	const double desired_interval = work_demand > user_interval * 0.94 ?
+		QuantizeCadenceInterval((std::max)(user_interval,
+			work_demand * 1.12 + 0.00025)) : user_interval;
+	if (desired_interval > Adaptive_frame_cadence.effective_interval + 0.0005)
+	{
+		// New overload gets headroom immediately.
+		Adaptive_frame_cadence.effective_interval = desired_interval;
+		Adaptive_frame_cadence.reassessment_frames = 0;
+	}
+	else if (++Adaptive_frame_cadence.reassessment_frames >=
+		adaptive_frame_cadence_state::SAMPLE_COUNT)
+	{
+		Adaptive_frame_cadence.reassessment_frames = 0;
+		// Hold a fixed cadence between assessments. Recovery is deliberately one
+		// small step at a time so a boundary cannot produce gas/brake oscillation.
+		if (desired_interval < Adaptive_frame_cadence.effective_interval - 0.0005)
+			Adaptive_frame_cadence.effective_interval = (std::max)(desired_interval,
+				Adaptive_frame_cadence.effective_interval - 0.00025);
+	}
+
+	if (Adaptive_frame_cadence.effective_interval <= user_interval * 1.002)
+	{
+		mprintf((0, "Adaptive frame cadence released.\n"));
+		ResetAdaptiveFrameCadence();
+		return user_interval;
+	}
+	return Adaptive_frame_cadence.effective_interval;
+}
+
 void SetFrameLimitFps(int fps)
 {
 	Frame_limit_fps = fps > 0 ? fps : 0;
 	Min_allowed_frametime = Frame_limit_fps > 0 ? 1.0 / (double)Frame_limit_fps : 0.0;
+	ResetAdaptiveFrameCadence();
 }
 
 int GetFrameLimitFps()
@@ -3097,14 +3241,19 @@ void GameFrame(void)
 		(automated_perf_frame_begin - automated_perf_previous_frame_begin) * 1000.0 : 0.0;
 	if (automated_perf_active)
 		automated_perf_previous_frame_begin = automated_perf_frame_begin;
-	const double automated_perf_pacing_wait_ms = rend_WaitForFramePacing();
-	const double automated_perf_simulation_begin = automated_perf_active ? timer_GetTime64() : 0.0;
+	double automated_perf_pacing_wait_ms = 0.0;
+	const double automated_perf_simulation_begin = automated_perf_frame_begin;
 	double automated_perf_render_begin = automated_perf_simulation_begin;
 	double automated_perf_render_end = automated_perf_simulation_begin;
 	double automated_perf_present_begin = automated_perf_simulation_begin;
 	double automated_perf_present_end = automated_perf_simulation_begin;
 	double automated_perf_pre_cap_end = automated_perf_simulation_begin;
+	double automated_perf_cap_begin = automated_perf_simulation_begin;
 	double automated_perf_cap_end = automated_perf_simulation_begin;
+	double frame_pacing_work_ms = 0.0;
+	double frame_pacing_effective_interval_ms = Min_allowed_frametime * 1000.0;
+	bool frame_pacing_adaptive = false;
+	renderer_frame_pacing_info frame_pacing_info = {};
 
 	bool is_game_idle = !Descent->active();
 
@@ -3386,13 +3535,29 @@ void GameFrame(void)
 		}
 		PerfMarkersRecordFramePacingState("BeforeFramecap");
 		PerfMarkersEndFrame();
+		const double frame_work_end = timer_GetTime64();
+		frame_pacing_work_ms = (std::max)(0.0, frame_work_end - last_timer) * 1000.0;
 		if (automated_perf_active)
-			automated_perf_pre_cap_end = timer_GetTime64();
+			automated_perf_pre_cap_end = frame_work_end;
+		automated_perf_pacing_wait_ms = rend_WaitForFramePacing();
+		rend_GetFramePacingInfo(&frame_pacing_info);
+		if (automated_perf_active)
+			automated_perf_cap_begin = timer_GetTime64();
 
 		//float start_delay = timer_GetTime();
 		//Slow down the game if the user asked us to
 		double current_timer = timer_GetTime64();
-		double target_time = last_timer + Min_allowed_frametime;
+		const bool adaptive_eligible = !Dedicated_server &&
+			!Skip_render_game_frame && !Game_paused && !Menu_interface_mode &&
+			Game_state == GAMESTATE_LVLPLAYING &&
+			Game_interface_mode == GAME_INTERFACE &&
+			(!Automated_capture.gameplay_frame_active || Automated_capture.realtime);
+		const double effective_interval = UpdateAdaptiveFrameCadence(
+			Min_allowed_frametime, frame_pacing_work_ms / 1000.0,
+			frame_pacing_info, adaptive_eligible);
+		frame_pacing_effective_interval_ms = effective_interval * 1000.0;
+		frame_pacing_adaptive = Adaptive_frame_cadence.active;
+		double target_time = last_timer + effective_interval;
 		if (current_timer > target_time)
 		{
 			target_time = current_timer;
@@ -3438,6 +3603,10 @@ void GameFrame(void)
 	}
 	else
 	{
+		// Paused frames can still present UI or forced captures. Keep those
+		// submissions bounded even though they do not advance game time.
+		rend_WaitForFramePacing();
+		ResetAdaptiveFrameCadence();
 		PerfMarkersEndFrame();
 	}
 
@@ -3504,9 +3673,7 @@ void GameFrame(void)
 	if (automated_perf_active)
 	{
 		tRendererStats renderer_stats = {};
-		renderer_frame_pacing_info pacing_info = {};
 		rend_GetStatistics(&renderer_stats);
-		rend_GetFramePacingInfo(&pacing_info);
 		AutomatedFramePerfLog(Automated_capture.gameplay_frame,
 			automated_perf_frame_start_interval_ms,
 			automated_perf_pacing_wait_ms,
@@ -3514,9 +3681,12 @@ void GameFrame(void)
 			(automated_perf_render_end - automated_perf_render_begin) * 1000.0,
 			(automated_perf_present_end - automated_perf_present_begin) * 1000.0,
 			(automated_perf_pre_cap_end - automated_perf_present_end) * 1000.0,
-			(automated_perf_cap_end - automated_perf_pre_cap_end) * 1000.0,
+			(automated_perf_cap_end - automated_perf_cap_begin) * 1000.0,
 			(automated_perf_cap_end - automated_perf_frame_begin) * 1000.0,
-			Frametime * 1000.0f, pacing_info, renderer_stats);
+			Frametime * 1000.0f, frame_pacing_work_ms,
+			Adaptive_frame_cadence.latest_work * 1000.0,
+			frame_pacing_effective_interval_ms, frame_pacing_adaptive,
+			frame_pacing_info, renderer_stats);
 	}
 
 	EndAutomatedCaptureFrame();
