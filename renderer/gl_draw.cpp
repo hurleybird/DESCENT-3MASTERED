@@ -1406,6 +1406,17 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_retained_fog_distance_uniforms[i] = drawshaders[i].FindUniform("retained_fog_distance");
 		drawshader_retained_fog_eye_distance_uniforms[i] = drawshaders[i].FindUniform("retained_fog_eye_distance");
 		drawshader_retained_fog_depth_uniforms[i] = drawshaders[i].FindUniform("retained_fog_depth");
+		drawshader_retained_specular_view_position_uniforms[i] = drawshaders[i].FindUniform("retained_specular_view_position");
+		drawshader_retained_specular_light_position_uniforms[i] = drawshaders[i].FindUniform("retained_specular_light_position");
+		drawshader_retained_specular_scalar_uniforms[i] = drawshaders[i].FindUniform("retained_specular_scalar");
+		drawshader_retained_specular_smooth_uniforms[i] = drawshaders[i].FindUniform("retained_specular_smooth");
+		drawshader_retained_deform_enabled_uniforms[i] = drawshaders[i].FindUniform("retained_deform_enabled");
+		drawshader_retained_deform_seed_uniforms[i] = drawshaders[i].FindUniform("retained_deform_seed");
+		drawshader_retained_deform_range_uniforms[i] = drawshaders[i].FindUniform("retained_deform_range");
+		drawshader_retained_custom_clip_enabled_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_enabled");
+		drawshader_retained_custom_clip_point_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_point");
+		drawshader_retained_custom_clip_plane_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_plane");
+		drawshader_retained_custom_clip_scale_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_scale");
 	}
 
 	lastdrawshader = -1;
@@ -2089,6 +2100,28 @@ bool GL4Renderer::BeginRetainedPolymodelDraw(const renderer_retained_polymodel_d
 	glUniform1f(drawshader_retained_fog_distance_uniforms[shader_index], draw->fog_distance);
 	glUniform1f(drawshader_retained_fog_eye_distance_uniforms[shader_index], draw->fog_eye_distance);
 	glUniform1f(drawshader_retained_fog_depth_uniforms[shader_index], draw->fog_depth);
+	glUniform3fv(drawshader_retained_specular_view_position_uniforms[shader_index], 1,
+		draw->specular_view_position);
+	glUniform3fv(drawshader_retained_specular_light_position_uniforms[shader_index], 1,
+		draw->specular_light_position);
+	glUniform1f(drawshader_retained_specular_scalar_uniforms[shader_index], draw->specular_scalar);
+	glUniform1i(drawshader_retained_specular_smooth_uniforms[shader_index], draw->specular_smooth ? 1 : 0);
+	glUniform1i(drawshader_retained_deform_enabled_uniforms[shader_index], draw->deform_enabled ? 1 : 0);
+	glUniform1ui(drawshader_retained_deform_seed_uniforms[shader_index], draw->deform_seed);
+	glUniform1f(drawshader_retained_deform_range_uniforms[shader_index], draw->deform_range);
+	glUniform1i(drawshader_retained_custom_clip_enabled_uniforms[shader_index],
+		draw->custom_clip_enabled ? 1 : 0);
+	glUniform3fv(drawshader_retained_custom_clip_point_uniforms[shader_index], 1,
+		draw->custom_clip_point);
+	glUniform3fv(drawshader_retained_custom_clip_plane_uniforms[shader_index], 1,
+		draw->custom_clip_plane);
+	glUniform3fv(drawshader_retained_custom_clip_scale_uniforms[shader_index], 1,
+		draw->custom_clip_scale);
+	if (draw->custom_clip_enabled)
+	{
+		glEnable(GL_CLIP_DISTANCE0);
+		retained_custom_clip_active = true;
+	}
 
 	retained_include_motion_vectors = CurrentDrawUsesPixelMotionTarget();
 	retained_include_motion_object_ids = CurrentDrawWritesMotionObjectId();
@@ -2132,6 +2165,11 @@ void GL4Renderer::EndRetainedPolymodelDraw()
 
 	if (lastdrawshader >= 0 && drawshader_retained_mode_uniforms[lastdrawshader] != -1)
 		glUniform1i(drawshader_retained_mode_uniforms[lastdrawshader], 0);
+	if (retained_custom_clip_active)
+	{
+		glDisable(GL_CLIP_DISTANCE0);
+		retained_custom_clip_active = false;
+	}
 	if (retained_include_motion_vectors || retained_include_motion_object_ids)
 	{
 		motion_vectors_dirty = true;

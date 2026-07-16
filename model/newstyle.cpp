@@ -402,6 +402,7 @@ struct PolymodelBaseFaceBatchKey
 	vector base_color;
 	float u_offset;
 	float v_offset;
+	int dynamic_lightmap_lmi;
 
 	bool Equals(const PolymodelBaseFaceBatchKey& other) const
 	{
@@ -416,6 +417,7 @@ struct PolymodelBaseFaceBatchKey
 			flat_color == other.flat_color &&
 			base_color == other.base_color &&
 			u_offset == other.u_offset && v_offset == other.v_offset &&
+			dynamic_lightmap_lmi == other.dynamic_lightmap_lmi &&
 			(lighting != LS_PHONG || light_direction == other.light_direction);
 	}
 };
@@ -456,6 +458,7 @@ struct PolymodelBaseFaceBatchKeyHasher
 		seed = PolymodelBaseFaceBatchHashFloat(seed, key.base_color.z);
 		seed = PolymodelBaseFaceBatchHashFloat(seed, key.u_offset);
 		seed = PolymodelBaseFaceBatchHashFloat(seed, key.v_offset);
+		seed = PolymodelBaseFaceBatchHashInt(seed, key.dynamic_lightmap_lmi);
 		if (key.lighting == LS_PHONG)
 		{
 			seed = PolymodelBaseFaceBatchHashFloat(seed, key.light_direction.x);
@@ -579,9 +582,25 @@ public:
 			{
 				if (batch.key.texture_type_value != TT_FLAT)
 					rend_BindBitmap(batch.key.bitmap_handle);
+				if (batch.key.overlay_type != OT_NONE)
+					rend_BindLightmap(batch.key.overlay_map);
+				renderer_per_pixel_light per_pixel_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
+				int per_pixel_light_count = 0;
+				if (batch.key.dynamic_lightmap_lmi >= 0)
+				{
+					per_pixel_light_count = GetPerPixelLightmapLights(
+						(ushort)batch.key.dynamic_lightmap_lmi, per_pixel_lights,
+						RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+					if (per_pixel_light_count > 0)
+						rend_SetPerPixelDynamicLighting(
+							&LightmapInfo[batch.key.dynamic_lightmap_lmi].normal,
+							per_pixel_light_count, per_pixel_lights);
+				}
 				RetainedPolymodelDrawFaces(batch.retained_pm, batch.retained_sm,
 					batch.retained_faces.data(), (int)batch.retained_faces.size(),
 					batch.key.u_offset, batch.key.v_offset, &batch.key.base_color);
+				if (per_pixel_light_count > 0)
+					rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 			}
 			if (!batch.faces.empty())
 				rend_DrawPolygon3DBatch(batch.key.bitmap_handle, m_batch_items.data(), (int)m_batch_items.size(), MAP_TYPE_BITMAP);
@@ -881,6 +900,7 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	key.alpha_type = ATF_CONSTANT + ATF_VERTEX;
 	key.alpha_value = 255;
 	key.flat_color = GetPolymodelCustomFlatColor(fp->color);
+	key.dynamic_lightmap_lmi = -1;
 	const bool use_effect_color = Polymodel_use_effect && (Polymodel_effect.type & PEF_COLOR);
 	key.base_color.x = Polylighting_static_red * (use_effect_color ? Polymodel_effect.r : 1.0f);
 	key.base_color.y = Polylighting_static_green * (use_effect_color ? Polymodel_effect.g : 1.0f);
@@ -901,10 +921,7 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 			int per_pixel_light_count = GetPerPixelLightmapLights((ushort)lightmap_lmi_handle, per_pixel_lights,
 				RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
 			if (per_pixel_light_count > 0)
-			{
-				PolymodelPerfAdd(Polymodel_perf_face_base_key_time, key_setup_start_time);
-				return false;
-			}
+				key.dynamic_lightmap_lmi = lightmap_lmi_handle;
 		}
 	}
 
@@ -1997,6 +2014,10 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 	
 		rend_SetFlatColor (GR_RGB((int)(Polymodel_effect.spec_r*255.0),(int)(Polymodel_effect.spec_g*255.0),(int)(Polymodel_effect.spec_b*255.0)));
 
+		std::vector<int> retained_flat_faces;
+		std::vector<int> retained_smooth_faces;
+		retained_flat_faces.reserve(sm->num_faces);
+		retained_smooth_faces.reserve(sm->num_faces);
 		for (i=0;i<sm->num_faces;i++)
 		{
 			polyface *fp=&sm->faces[i];
@@ -2008,8 +2029,43 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 			if ((fp->normal * subvec)> 0)
 				continue;*/
 
-			if ((Polymodel_effect.type & PEF_SPECULAR_MODEL) || (fp->texnum!=-1 && GameTextures[pm->textures[fp->texnum]].flags & TF_SPECULAR))
+			if (!((Polymodel_effect.type & PEF_SPECULAR_MODEL) ||
+				(fp->texnum!=-1 && GameTextures[pm->textures[fp->texnum]].flags & TF_SPECULAR)))
+			{
+				continue;
+			}
+
+			if (RetainedPolymodelCanDrawBaseFace(pm, sm, i))
+			{
+				bool smooth = false;
+				if (sm->vertnorms != nullptr)
+				{
+					if ((Polymodel_effect.type & PEF_SPECULAR_FACES) && fp->texnum >= 0 &&
+						(GameTextures[fp->texnum].flags & TF_SMOOTH_SPECULAR))
+						smooth = true;
+					else if ((Polymodel_effect.type & PEF_SPECULAR_MODEL) && UsePerPixelPolymodelLighting())
+						smooth = true;
+				}
+				(smooth ? retained_smooth_faces : retained_flat_faces).push_back(i);
+				if (Perf_markers_enabled)
+					Polymodel_perf_specular_face_count++;
+			}
+			else
+			{
 				RenderSubmodelFaceSpecular (pm,sm,i);
+			}
+		}
+		if (!retained_flat_faces.empty())
+		{
+			RetainedPolymodelDrawSpecularFaces(pm, sm, retained_flat_faces.data(),
+				(int)retained_flat_faces.size(), &Specular_view_pos, &Polymodel_specular_pos,
+				Polymodel_effect.spec_scalar, false);
+		}
+		if (!retained_smooth_faces.empty())
+		{
+			RetainedPolymodelDrawSpecularFaces(pm, sm, retained_smooth_faces.data(),
+				(int)retained_smooth_faces.size(), &Specular_view_pos, &Polymodel_specular_pos,
+				Polymodel_effect.spec_scalar, true);
 		}
 		
 		RestorePolymodelDepthWriteMask();
@@ -2310,7 +2366,9 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 		if (Perf_markers_enabled)
 			Polymodel_perf_submodel_draw_count++;
 		double rotate_start_time = PolymodelPerfNow();
-		if (!RetainedPolymodelCanSkipPointRotation(pm, sm))
+		const bool skip_point_rotation = RetainedPolymodelCanSkipPointRotation(pm, sm);
+		RetainedPolymodelPrepareSubmodel(pm, sm, skip_point_rotation);
+		if (!skip_point_rotation)
 			RotateModelPoints (pm,sm);
 		PolymodelPerfAdd(Polymodel_perf_submodel_rotate_time, rotate_start_time);
 			

@@ -487,6 +487,17 @@ struct renderer_retained_polymodel_draw
 	float fog_distance;
 	float fog_eye_distance;
 	float fog_depth;
+	float specular_view_position[3];
+	float specular_light_position[3];
+	float specular_scalar;
+	bool specular_smooth;
+	bool deform_enabled;
+	uint32_t deform_seed;
+	float deform_range;
+	bool custom_clip_enabled;
+	float custom_clip_point[3];
+	float custom_clip_plane[3];
+	float custom_clip_scale[3];
 	int polygon_count;
 	int vertex_count;
 	bool has_previous;
@@ -895,6 +906,9 @@ struct RendVertex
 	float u1, v1;
 	float u2, v2;
 	float uslide, vslide; //only slide uv1 for the moment
+	// Retained polymodel data.  Standard/newrender layouts leave these unused.
+	vector face_normal;
+	int source_vertex;
 };
 
 class IVertexBuffer

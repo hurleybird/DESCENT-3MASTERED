@@ -33,6 +33,7 @@
 #include "config.h"
 #include "findintersection.h"
 #include "psrand.h"
+#include "../model/retained_polymodel.h"
 
 // How far the headlight casts light
 #define HEADLIGHT_DISTANCE	150.0f
@@ -430,6 +431,7 @@ void ClearObjectLightmaps(object* obj)
 
 	if (obj->lm_object.used == 1)
 	{
+		RetainedPolymodelInvalidateLightmapObject(&obj->lm_object);
 		obj->lm_object.used = 0;
 		poly_model* pm = &Poly_models[obj->rtype.pobj_info.model_num];
 		ASSERT(pm->n_models < MAX_SUBOBJECTS);
@@ -497,6 +499,7 @@ void SetupObjectLightmapMemory(object* obj)
 	lightmap_object_face* lof;
 
 	ASSERT(obj->lm_object.used == 0);
+	RetainedPolymodelInvalidateLightmapObject(&obj->lm_object);
 	obj->lm_object.used = 1;
 
 	poly_model* pm = &Poly_models[obj->rtype.pobj_info.model_num];

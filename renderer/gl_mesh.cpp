@@ -65,6 +65,13 @@ void VertexBuffer::Initialize(uint32_t numvertices, uint32_t datasize, void* dat
 		glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, u2));
 		glEnableVertexAttribArray(4);
 		glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, normal));
+		// The retained branch does not consume the generic stream's motion inputs.
+		// Reuse location 5 for the per-corner face normal and the final guaranteed
+		// GL4 attribute for the original model vertex index.
+		glEnableVertexAttribArray(5);
+		glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, face_normal));
+		glEnableVertexAttribArray(15);
+		glVertexAttribIPointer(15, 1, GL_INT, sizeof(RendVertex), (void*)offsetof(RendVertex, source_vertex));
 	}
 	else
 	{

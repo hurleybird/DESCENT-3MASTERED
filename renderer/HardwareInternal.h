@@ -47,6 +47,7 @@ extern float Far_clip_z;
 extern ubyte Clip_custom;
 extern float Clip_plane_distance;
 extern vector Clip_plane;
+extern vector Clip_plane_point;
 
 extern float gTransformProjection[16];
 extern float gTransformModelView[16];

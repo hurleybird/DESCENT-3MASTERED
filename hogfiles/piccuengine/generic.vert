@@ -14,6 +14,7 @@ layout(location = 3) in vec3 uv2;
 layout(location = 4) in vec4 normal;
 layout(location = 5) in vec4 motion_world_position;
 layout(location = 6) in vec4 motion_previous_world_position;
+layout(location = 15) in int retained_source_vertex;
 #if defined(USE_SPECULAR)
 layout(location = 7) in vec4 field_specular_center0;
 layout(location = 8) in vec4 field_specular_center1;
@@ -42,6 +43,17 @@ uniform vec3 retained_fog_plane;
 uniform float retained_fog_distance;
 uniform float retained_fog_eye_distance;
 uniform float retained_fog_depth;
+uniform vec3 retained_specular_view_position;
+uniform vec3 retained_specular_light_position;
+uniform float retained_specular_scalar;
+uniform int retained_specular_smooth;
+uniform int retained_deform_enabled;
+uniform uint retained_deform_seed;
+uniform float retained_deform_range;
+uniform int retained_custom_clip_enabled;
+uniform vec3 retained_custom_clip_point;
+uniform vec3 retained_custom_clip_plane;
+uniform vec3 retained_custom_clip_scale;
 
 out vec4 outcolor;
 out vec4 outnormal;
@@ -61,17 +73,49 @@ out vec3 outuv2;
 out vec3 outpt;
 #endif
 
+uint AdvanceVisualRandom(uint state, uint delta)
+{
+	// Jump ahead in the engine's 32-bit LCG in O(log vertex index).  Unsigned
+	// overflow is the required modulo-2^32 arithmetic.
+	uint accumulated_multiplier = 1u;
+	uint accumulated_increment = 0u;
+	uint current_multiplier = 214013u;
+	uint current_increment = 2531011u;
+	while (delta != 0u)
+	{
+		if ((delta & 1u) != 0u)
+		{
+			accumulated_multiplier *= current_multiplier;
+			accumulated_increment = accumulated_increment * current_multiplier + current_increment;
+		}
+		current_increment = (current_multiplier + 1u) * current_increment;
+		current_multiplier *= current_multiplier;
+		delta >>= 1u;
+	}
+	return accumulated_multiplier * state + accumulated_increment;
+}
+
+float RetainedDeformationScale()
+{
+	if (retained_deform_enabled == 0)
+		return 1.0;
+	uint state = AdvanceVisualRandom(retained_deform_seed, uint(retained_source_vertex) + 1u);
+	int random_value = int((state >> 16u) & 0x7fffu);
+	float signed_value = float((random_value % 1000) - 500) / 500.0;
+	return 1.0 + retained_deform_range * signed_value;
+}
+
 void main()
 {
 	if (retained_mode != 0)
 	{
-		vec4 local_position = vec4(position, 1.0);
+		vec4 local_position = vec4(position * RetainedDeformationScale(), 1.0);
 		vec3 view_position = vec3(0.0);
 		#if defined(USE_FOG)
 			vec3 retained_gl_view_position = (retained_modelview * local_position).xyz;
 			view_position = vec3(retained_gl_view_position.xy, -retained_gl_view_position.z);
 		#else
-			if (retained_effect_mode != 0)
+			if (retained_effect_mode != 0 || retained_custom_clip_enabled != 0)
 			{
 				vec3 retained_gl_view_position = (retained_modelview * local_position).xyz;
 				view_position = vec3(retained_gl_view_position.xy, -retained_gl_view_position.z);
@@ -82,6 +126,20 @@ void main()
 		// calculations in the coordinate system expected by the legacy fog
 		// equations.
 		gl_Position = retained_transform * local_position;
+		if (retained_custom_clip_enabled != 0)
+		{
+			vec3 clip_scale = retained_custom_clip_scale;
+			clip_scale.x = abs(clip_scale.x) < 0.000001 ? (clip_scale.x < 0.0 ? -0.000001 : 0.000001) : clip_scale.x;
+			clip_scale.y = abs(clip_scale.y) < 0.000001 ? (clip_scale.y < 0.0 ? -0.000001 : 0.000001) : clip_scale.y;
+			clip_scale.z = abs(clip_scale.z) < 0.000001 ? (clip_scale.z < 0.0 ? -0.000001 : 0.000001) : clip_scale.z;
+			vec3 clip_delta = (view_position - retained_custom_clip_point) / clip_scale;
+			// The CPU clipper retains points down to -0.005 from the plane.
+			gl_ClipDistance[0] = dot(clip_delta, retained_custom_clip_plane) + 0.005;
+		}
+		else
+		{
+			gl_ClipDistance[0] = 1.0;
+		}
 		vec3 vertex_color = retained_base_color;
 		if (retained_lighting_mode == 1)
 		{
@@ -90,6 +148,18 @@ void main()
 			vertex_color *= light;
 		}
 		float vertex_alpha = retained_vertex_alpha != 0 ? color.a : 1.0;
+		if (retained_effect_mode == 3)
+		{
+			vec3 specular_normal = retained_specular_smooth != 0 ? normal.xyz : motion_world_position.xyz;
+			vec3 to_view = normalize(retained_specular_view_position - local_position.xyz);
+			vec3 incident = normalize(local_position.xyz - retained_specular_light_position);
+			incident -= 2.0 * dot(incident, specular_normal) * specular_normal;
+			float specular_dot = clamp(dot(to_view, incident), 0.0, 1.0);
+			// Match the legacy 4096-entry x^4 table, including its integer lookup.
+			float table_input = floor(specular_dot * 4095.0) / 4095.0;
+			float table_square = table_input * table_input;
+			vertex_alpha = table_square * table_square * retained_specular_scalar;
+		}
 		if (retained_effect_mode == 1 || retained_effect_mode == 2)
 		{
 			float magnitude = view_position.z;
