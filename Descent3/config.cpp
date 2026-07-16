@@ -145,7 +145,7 @@ static bool ConfigCanUsePerPixelLighting()
 	return OpenGLProfile == GLPROFILE_CORE;
 }
 
-static bool ConfigCanUseGTAO()
+static bool ConfigCanUseAO()
 {
 	return OpenGLProfile == GLPROFILE_CORE;
 }
@@ -231,12 +231,12 @@ void ConfigResetPerPixelSpecularSettings()
 	Render_per_pixel_field_missing_only_static_specular = true;
 }
 
-static int ConfigNormalizeGTAOResolution(int resolution)
+static int ConfigNormalizeAOResolution(int resolution)
 {
-	if (resolution < GTAO_RESOLUTION_AUTO)
-		return GTAO_RESOLUTION_AUTO;
-	if (resolution > GTAO_RESOLUTION_QUARTER)
-		return GTAO_RESOLUTION_QUARTER;
+	if (resolution < AO_RESOLUTION_AUTO)
+		return AO_RESOLUTION_AUTO;
+	if (resolution > AO_RESOLUTION_QUARTER)
+		return AO_RESOLUTION_QUARTER;
 	return resolution;
 }
 
@@ -684,12 +684,12 @@ void config_gamma()
 #define IDV_CHANGEASPECT 11
 #define IDV_FILTERING 18
 #define IDV_DRAW_CALL_STATS 19
-#define IDV_GTAO_OVERSCAN 20
+#define IDV_AO_OVERSCAN 20
 #define UID_RESOLUTION 110
 #define UID_ASPECT 111
 
-static constexpr ushort GTAO_OVERSCAN_DISABLED_PERCENT = 100;
-static constexpr ushort GTAO_OVERSCAN_ENABLED_PERCENT = 107;
+static constexpr ushort AO_OVERSCAN_DISABLED_PERCENT = 100;
+static constexpr ushort AO_OVERSCAN_ENABLED_PERCENT = 107;
 
 static const char* ConfigFilteringCheckboxTitle(bool mipmapping)
 {
@@ -993,45 +993,45 @@ void ConfigValidateGameWindowSize()
 		&Game_window_res_width, &Game_window_res_height, &Game_window_aspect);
 }
 
-static int GTAOPresetToIndex(bool enabled, int resolution)
+static int AOPresetToIndex(bool enabled, int resolution)
 {
 	if (!enabled)
 		return 0;
 
-	switch (ConfigNormalizeGTAOResolution(resolution))
+	switch (ConfigNormalizeAOResolution(resolution))
 	{
-	case GTAO_RESOLUTION_QUARTER:
+	case AO_RESOLUTION_QUARTER:
 		return 1;
-	case GTAO_RESOLUTION_FULL:
+	case AO_RESOLUTION_FULL:
 		return 3;
-	case GTAO_RESOLUTION_HALF:
-	case GTAO_RESOLUTION_AUTO:
+	case AO_RESOLUTION_HALF:
+	case AO_RESOLUTION_AUTO:
 	default:
 		return 2;
 	}
 }
 
-static void ApplyGTAOPresetFromIndex(int index)
+static void ApplyAOPresetFromIndex(int index)
 {
 	switch (index)
 	{
 	case 1:
-		Render_preferred_state.gtao_enabled = true;
-		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_QUARTER;
+		Render_preferred_state.ao_enabled = true;
+		Render_preferred_state.ao_resolution = AO_RESOLUTION_QUARTER;
 		break;
 	case 2:
-		Render_preferred_state.gtao_enabled = true;
-		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
+		Render_preferred_state.ao_enabled = true;
+		Render_preferred_state.ao_resolution = AO_RESOLUTION_HALF;
 		break;
 	case 3:
-		Render_preferred_state.gtao_enabled = true;
-		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_FULL;
+		Render_preferred_state.ao_enabled = true;
+		Render_preferred_state.ao_resolution = AO_RESOLUTION_FULL;
 		break;
 	case 0:
 	default:
-		Render_preferred_state.gtao_enabled = false;
-		if (Render_preferred_state.gtao_resolution == GTAO_RESOLUTION_AUTO)
-			Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
+		Render_preferred_state.ao_enabled = false;
+		if (Render_preferred_state.ao_resolution == AO_RESOLUTION_AUTO)
+			Render_preferred_state.ao_resolution = AO_RESOLUTION_HALF;
 		break;
 	}
 }
@@ -1134,16 +1134,16 @@ static int ConfigNormalizePixelMotionBlurSamples(int samples)
 	return samples;
 }
 
-static bool ConfigGTAOTemporalWantsMotionVectors()
+static bool ConfigAOTemporalWantsMotionVectors()
 {
-	return ConfigCanUseGTAO() && Render_preferred_state.gtao_enabled &&
-		(Render_preferred_state.gtao_temporal_blend > 0.0f ||
-			Render_preferred_state.gtao_temporal_debug_preview);
+	return ConfigCanUseAO() && Render_preferred_state.ao_enabled &&
+		(Render_preferred_state.ao_temporal_blend > 0.0f ||
+			Render_preferred_state.ao_temporal_debug_preview);
 }
 
-static void ConfigEnsureGTAOTemporalVectorMode()
+static void ConfigEnsureAOTemporalVectorMode()
 {
-	if (ConfigGTAOTemporalWantsMotionVectors())
+	if (ConfigAOTemporalWantsMotionVectors())
 		Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_PIXEL;
 }
 
@@ -1229,7 +1229,7 @@ static void ConfigEnsureCombinedMotionBlurVectorMode()
 
 static bool ConfigMotionVectorsHaveActiveConsumer()
 {
-	return ConfigGTAOTemporalWantsMotionVectors() ||
+	return ConfigAOTemporalWantsMotionVectors() ||
 		(Render_preferred_state.combined_motion_blur &&
 			(Render_preferred_state.pixel_motion_blur_strength > 0.0f ||
 				Render_preferred_state.pixel_motion_blur_legacy_object_strength > 0.0f));
@@ -1265,7 +1265,7 @@ void ConfigApplyMotionBlurPreset(int index)
 	}
 
 	ConfigEnsureCombinedMotionBlurVectorMode();
-	ConfigEnsureGTAOTemporalVectorMode();
+	ConfigEnsureAOTemporalVectorMode();
 	ConfigFinalizeMotionVectorUse();
 }
 
@@ -1284,7 +1284,7 @@ struct video_menu
 	bool* face_probe;
 	bool* soft_vis_effects;
 	bool* motion_vector_debug;
-	bool* gtao_overscan;
+	bool* ao_overscan;
 
 	short* fov;
 	short* frame_limit;
@@ -1293,7 +1293,7 @@ struct video_menu
 	bool* fullscreen;
 	int* antialiasing;
 	int* supersampling;
-	int* gtao;
+	int* ao;
 	int* backend;
 
 	int window_width, window_height;
@@ -1442,31 +1442,31 @@ struct video_menu
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
 			changed = true;
 		}
-		if (gtao && sheet->HasChanged(gtao))
+		if (ao && sheet->HasChanged(ao))
 		{
-			if (ConfigCanUseGTAO())
+			if (ConfigCanUseAO())
 			{
-				ApplyGTAOPresetFromIndex(*gtao);
-				ConfigEnsureGTAOTemporalVectorMode();
+				ApplyAOPresetFromIndex(*ao);
+				ConfigEnsureAOTemporalVectorMode();
 			}
 			else
 			{
-				ApplyGTAOPresetFromIndex(0);
-				if (*gtao != 0)
+				ApplyAOPresetFromIndex(0);
+				if (*ao != 0)
 				{
-					*gtao = 0;
+					*ao = 0;
 					sheet->UpdateChanges();
 				}
 			}
-			if (!ConfigGTAOTemporalWantsMotionVectors())
+			if (!ConfigAOTemporalWantsMotionVectors())
 				ConfigFinalizeMotionVectorUse();
-			sheet->SetGadgetVisible(IDV_GTAO_OVERSCAN, *gtao != 0);
+			sheet->SetGadgetVisible(IDV_AO_OVERSCAN, *ao != 0);
 			changed = true;
 		}
-		if (gtao_overscan && gtao && *gtao != 0 && sheet->HasChanged(gtao_overscan))
+		if (ao_overscan && ao && *ao != 0 && sheet->HasChanged(ao_overscan))
 		{
-			Render_preferred_state.gtao_overscan_percent = *gtao_overscan ?
-				GTAO_OVERSCAN_ENABLED_PERCENT : GTAO_OVERSCAN_DISABLED_PERCENT;
+			Render_preferred_state.ao_overscan_percent = *ao_overscan ?
+				AO_OVERSCAN_ENABLED_PERCENT : AO_OVERSCAN_DISABLED_PERCENT;
 			changed = true;
 		}
 		if (motion_vector_debug && sheet->HasChanged(motion_vector_debug))
@@ -1538,16 +1538,16 @@ struct video_menu
 			sheet->UpdateChanges();
 	}
 
-	void update_gtao_preset_control()
+	void update_ao_preset_control()
 	{
-		if (!gtao)
+		if (!ao)
 			return;
 
-		*gtao = ConfigCanUseGTAO() ?
-			GTAOPresetToIndex(Render_preferred_state.gtao_enabled, Render_preferred_state.gtao_resolution) : 0;
+		*ao = ConfigCanUseAO() ?
+			AOPresetToIndex(Render_preferred_state.ao_enabled, Render_preferred_state.ao_resolution) : 0;
 		if (sheet)
 		{
-			sheet->SetGadgetVisible(IDV_GTAO_OVERSCAN, *gtao != 0);
+			sheet->SetGadgetVisible(IDV_AO_OVERSCAN, *ao != 0);
 			sheet->UpdateChanges();
 		}
 	}
@@ -1567,7 +1567,7 @@ struct video_menu
 		face_probe = NULL;
 		soft_vis_effects = NULL;
 		motion_vector_debug = NULL;
-		gtao_overscan = NULL;
+		ao_overscan = NULL;
 		fov = NULL;
 		frame_limit = NULL;
 		buffer = NULL;
@@ -1575,7 +1575,7 @@ struct video_menu
 		fullscreen = NULL;
 		antialiasing = NULL;
 		supersampling = NULL;
-		gtao = NULL;
+		ao = NULL;
 		backend = NULL;
 		window_width = window_height = 0;
 		window_aspect = CONFIG_ASPECT_16_9;
@@ -1651,18 +1651,18 @@ struct video_menu
 		sheet->AddRadioButton("4x");
 		*supersampling = SupersamplingFactorToIndex(Render_preferred_state.supersampling_factor);
 
-		sheet->NewGroup("GTAO", 184, 148);
-		gtao = sheet->AddFirstRadioButton(TXT_OFF);
+		sheet->NewGroup("AO", 184, 148);
+		ao = sheet->AddFirstRadioButton(TXT_OFF);
 		sheet->AddRadioButton(TXT_LOW);
 		sheet->AddRadioButton(TXT_CFG_MEDIUM);
 		sheet->AddRadioButton(TXT_CFG_HIGH);
-		*gtao = ConfigCanUseGTAO() ?
-			GTAOPresetToIndex(Render_preferred_state.gtao_enabled, Render_preferred_state.gtao_resolution) : 0;
+		*ao = ConfigCanUseAO() ?
+			AOPresetToIndex(Render_preferred_state.ao_enabled, Render_preferred_state.ao_resolution) : 0;
 		sheet->NewGroup(NULL, 184, 219);
-		gtao_overscan = sheet->AddCheckBox("Ovrscn",
-			Render_preferred_state.gtao_overscan_percent > GTAO_OVERSCAN_DISABLED_PERCENT,
-			IDV_GTAO_OVERSCAN);
-		sheet->SetGadgetVisible(IDV_GTAO_OVERSCAN, *gtao != 0);
+		ao_overscan = sheet->AddCheckBox("Ovrscn",
+			Render_preferred_state.ao_overscan_percent > AO_OVERSCAN_DISABLED_PERCENT,
+			IDV_AO_OVERSCAN);
+		sheet->SetGadgetVisible(IDV_AO_OVERSCAN, *ao != 0);
 
 		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
@@ -1685,22 +1685,22 @@ struct video_menu
 			Render_preferred_state.per_pixel_lighting = ConfigCanUsePerPixelLighting() && *per_pixel_lighting;
 		if (bloom_enabled)
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
-		if (gtao)
+		if (ao)
 		{
-			if (ConfigCanUseGTAO())
-				ApplyGTAOPresetFromIndex(*gtao);
+			if (ConfigCanUseAO())
+				ApplyAOPresetFromIndex(*ao);
 			else
-				ApplyGTAOPresetFromIndex(0);
+				ApplyAOPresetFromIndex(0);
 		}
-		if (gtao_overscan && gtao && *gtao != 0)
+		if (ao_overscan && ao && *ao != 0)
 		{
-			Render_preferred_state.gtao_overscan_percent = *gtao_overscan ?
-				GTAO_OVERSCAN_ENABLED_PERCENT : GTAO_OVERSCAN_DISABLED_PERCENT;
+			Render_preferred_state.ao_overscan_percent = *ao_overscan ?
+				AO_OVERSCAN_ENABLED_PERCENT : AO_OVERSCAN_DISABLED_PERCENT;
 		}
 		if (motion_vector_debug)
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
 		ConfigEnsureCombinedMotionBlurVectorMode();
-		ConfigEnsureGTAOTemporalVectorMode();
+		ConfigEnsureAOTemporalVectorMode();
 		ConfigFinalizeMotionVectorUse();
 		if (perf_markers)
 			PerfMarkersSetEnabled(*perf_markers);
@@ -1754,7 +1754,7 @@ struct video_menu
 				Render_preferred_state.per_pixel_lighting = false;
 			if (DesiredOpenGLProfile != GLPROFILE_CORE)
 			{
-				ApplyGTAOPresetFromIndex(0);
+				ApplyAOPresetFromIndex(0);
 				ConfigFinalizeMotionVectorUse();
 			}
 		}

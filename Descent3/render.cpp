@@ -3648,7 +3648,7 @@ void UpdateFogFace(room* rp, face* fp)
 
 static void QueueDeferredFogAOFaces(room* rp)
 {
-	if (!Render_preferred_state.gtao_enabled)
+	if (!Render_preferred_state.ao_enabled)
 		return;
 
 	int roomnum = rp - Rooms;

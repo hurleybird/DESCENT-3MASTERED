@@ -391,11 +391,11 @@ void SaveGameSettings()
 	Database->write("RS_bloom_intensity", tempbuffer, strlen(tempbuffer) + 1);
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_spread);
 	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
-	Database->write("RS_gtao_enabled", Render_preferred_state.gtao_enabled);
-	Database->write("RS_gtao_resolution", Render_preferred_state.gtao_resolution);
-	Database->write("RS_gtao_overscan_percent", Render_preferred_state.gtao_overscan_percent);
-	Database->write("RS_gtao_debug_preview", Render_preferred_state.gtao_debug_preview);
-	Database->write("RS_gtao_temporal_debug_preview", Render_preferred_state.gtao_temporal_debug_preview);
+	Database->write("RS_ao_enabled", Render_preferred_state.ao_enabled);
+	Database->write("RS_ao_resolution", Render_preferred_state.ao_resolution);
+	Database->write("RS_ao_overscan_percent", Render_preferred_state.ao_overscan_percent);
+	Database->write("RS_ao_debug_preview", Render_preferred_state.ao_debug_preview);
+	Database->write("RS_ao_temporal_debug_preview", Render_preferred_state.ao_temporal_debug_preview);
 	Database->write("RS_motion_vector_mode", Render_preferred_state.motion_vector_mode);
 	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
 	Database->write("RS_face_probe", Render_face_probe);
@@ -594,23 +594,23 @@ void LoadGameSettings()
 	Render_preferred_state.bloom_threshold = 0.75f;
 	Render_preferred_state.bloom_intensity = 0.75f;
 	Render_preferred_state.bloom_spread = 0.75f;
-	Render_preferred_state.gtao_enabled = false;
-	Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
-	Render_preferred_state.gtao_sample_count = 32;
-	Render_preferred_state.gtao_blur_radius = 6;
-	Render_preferred_state.gtao_radius = 4.0f;
-	Render_preferred_state.gtao_intensity = 2.5f;
-	Render_preferred_state.gtao_bias = 0.25f;
-	Render_preferred_state.gtao_overscan_percent = 107;
-	Render_preferred_state.gtao_debug_preview = false;
-	Render_preferred_state.gtao_temporal_blend = 0.9f;
-	Render_preferred_state.gtao_temporal_depth_reject = 0.03f;
-	Render_preferred_state.gtao_temporal_velocity_reject = 128.0f;
-	Render_preferred_state.gtao_temporal_debug_preview = false;
-	Render_preferred_state.gtao_terrain_occlusion = 0.5f;
-	Render_preferred_state.gtao_polyobject_occlusion = 0.5f;
-	Render_preferred_state.gtao_mine_rock_occlusion = 0.5f;
-	Render_preferred_state.gtao_mine_occlusion = 1.0f;
+	Render_preferred_state.ao_enabled = false;
+	Render_preferred_state.ao_resolution = AO_RESOLUTION_HALF;
+	Render_preferred_state.ao_sample_count = 32;
+	Render_preferred_state.ao_blur_radius = 6;
+	Render_preferred_state.ao_radius = 4.0f;
+	Render_preferred_state.ao_intensity = 2.5f;
+	Render_preferred_state.ao_bias = 0.25f;
+	Render_preferred_state.ao_overscan_percent = 107;
+	Render_preferred_state.ao_debug_preview = false;
+	Render_preferred_state.ao_temporal_blend = 0.9f;
+	Render_preferred_state.ao_temporal_depth_reject = 0.03f;
+	Render_preferred_state.ao_temporal_velocity_reject = 128.0f;
+	Render_preferred_state.ao_temporal_debug_preview = false;
+	Render_preferred_state.ao_terrain_occlusion = 0.5f;
+	Render_preferred_state.ao_polyobject_occlusion = 0.5f;
+	Render_preferred_state.ao_mine_rock_occlusion = 0.5f;
+	Render_preferred_state.ao_mine_occlusion = 1.0f;
 	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_debug_preview = false;
 	Render_soft_vis_effects = false;
@@ -867,29 +867,29 @@ void LoadGameSettings()
 	if (bloom_intensity_value && bloom_intensity_value[0])
 		Render_preferred_state.bloom_intensity = ConfigNormalizeBloomIntensity((float)strtod(bloom_intensity_value, &stoptemp));
 
-	Database->read("RS_gtao_enabled", &Render_preferred_state.gtao_enabled);
-	tempint = Render_preferred_state.gtao_resolution;
-	Database->read_int("RS_gtao_resolution", &tempint);
-	if (tempint < GTAO_RESOLUTION_AUTO) tempint = GTAO_RESOLUTION_AUTO;
-	if (tempint > GTAO_RESOLUTION_QUARTER) tempint = GTAO_RESOLUTION_QUARTER;
-	Render_preferred_state.gtao_resolution = (ubyte)tempint;
-	if (Render_preferred_state.gtao_resolution == GTAO_RESOLUTION_AUTO)
-		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
-	tempint = Render_preferred_state.gtao_overscan_percent;
-	Database->read_int("RS_gtao_overscan_percent", &tempint);
-	const int gtao_overscan_arg = FindArg("-gtao-overscan");
-	const char* gtao_overscan_value = gtao_overscan_arg ? GetArg(gtao_overscan_arg + 1) : nullptr;
-	if (gtao_overscan_value)
-		tempint = atoi(gtao_overscan_value);
+	Database->read("RS_ao_enabled", &Render_preferred_state.ao_enabled);
+	tempint = Render_preferred_state.ao_resolution;
+	Database->read_int("RS_ao_resolution", &tempint);
+	if (tempint < AO_RESOLUTION_AUTO) tempint = AO_RESOLUTION_AUTO;
+	if (tempint > AO_RESOLUTION_QUARTER) tempint = AO_RESOLUTION_QUARTER;
+	Render_preferred_state.ao_resolution = (ubyte)tempint;
+	if (Render_preferred_state.ao_resolution == AO_RESOLUTION_AUTO)
+		Render_preferred_state.ao_resolution = AO_RESOLUTION_HALF;
+	tempint = Render_preferred_state.ao_overscan_percent;
+	Database->read_int("RS_ao_overscan_percent", &tempint);
+	const int ao_overscan_arg = FindArg("-ao-overscan");
+	const char* ao_overscan_value = ao_overscan_arg ? GetArg(ao_overscan_arg + 1) : nullptr;
+	if (ao_overscan_value)
+		tempint = atoi(ao_overscan_value);
 	if (tempint < 100) tempint = 100;
 	if (tempint > 150) tempint = 150;
-	Render_preferred_state.gtao_overscan_percent = (ushort)tempint;
-	Database->read("RS_gtao_debug_preview", &Render_preferred_state.gtao_debug_preview);
-	if (FindArg("-nogtao") || FindArg("-no-gtao"))
-		Render_preferred_state.gtao_enabled = false;
-	else if (FindArg("-gtao"))
-		Render_preferred_state.gtao_enabled = true;
-	Render_preferred_state.gtao_temporal_debug_preview = false;
+	Render_preferred_state.ao_overscan_percent = (ushort)tempint;
+	Database->read("RS_ao_debug_preview", &Render_preferred_state.ao_debug_preview);
+	if (FindArg("-noao") || FindArg("-no-ao"))
+		Render_preferred_state.ao_enabled = false;
+	else if (FindArg("-ao"))
+		Render_preferred_state.ao_enabled = true;
+	Render_preferred_state.ao_temporal_debug_preview = false;
 	tempint = Render_preferred_state.motion_vector_mode;
 	Database->read_int("RS_motion_vector_mode", &tempint);
 	if (tempint != RENDERER_MOTION_VECTOR_OFF && tempint != RENDERER_MOTION_VECTOR_PIXEL)
@@ -1032,7 +1032,7 @@ void LoadGameSettings()
 	if (DesiredOpenGLProfile != GLPROFILE_CORE)
 	{
 		Render_preferred_state.per_pixel_lighting = false;
-		Render_preferred_state.gtao_enabled = false;
+		Render_preferred_state.ao_enabled = false;
 	}
 
 //@@	// Base missile camera if in wrong window
@@ -1163,13 +1163,13 @@ void LoadGameSettings()
 		Render_preferred_state.mipping = 1;
 		Render_preferred_state.per_pixel_lighting = true;
 		Render_preferred_state.bloom_enabled = true;
-		Render_preferred_state.gtao_enabled = true;
-		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_FULL;
+		Render_preferred_state.ao_enabled = true;
+		Render_preferred_state.ao_resolution = AO_RESOLUTION_FULL;
 		Render_soft_vis_effects = true;
 	}
 
 	AutomatedCaptureLog(
-		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d msaa=%u ssaa=%u filtering=%d mipping=%d per_pixel=%d bloom=%d gtao=%d gtao_resolution=%u gtao_overscan=%u motion_blur=%d combined_blur=%d soft_particles=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
+		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d msaa=%u ssaa=%u filtering=%d mipping=%d per_pixel=%d bloom=%d ao=%d ao_resolution=%u ao_overscan=%u motion_blur=%d combined_blur=%d soft_particles=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
 		Game_window_res_width, Game_window_res_height, Game_fullscreen ? 1 : 0,
 		DesiredOpenGLProfile, GetFrameLimitFps(),
 		(unsigned)Render_preferred_state.msaa_samples,
@@ -1178,9 +1178,9 @@ void LoadGameSettings()
 		(int)Render_preferred_state.mipping,
 		Render_preferred_state.per_pixel_lighting ? 1 : 0,
 		Render_preferred_state.bloom_enabled ? 1 : 0,
-		Render_preferred_state.gtao_enabled ? 1 : 0,
-		(unsigned)Render_preferred_state.gtao_resolution,
-		(unsigned)Render_preferred_state.gtao_overscan_percent,
+		Render_preferred_state.ao_enabled ? 1 : 0,
+		(unsigned)Render_preferred_state.ao_resolution,
+		(unsigned)Render_preferred_state.ao_overscan_percent,
 		(int)Use_motion_blur,
 		Render_preferred_state.combined_motion_blur ? 1 : 0,
 		Render_soft_vis_effects ? 1 : 0,

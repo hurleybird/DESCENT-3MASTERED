@@ -223,15 +223,15 @@ void GL4Renderer::RestoreLegacy()
 
 bool GL4Renderer::PixelMotionVectorConsumerActive() const
 {
-	const bool gtao_temporal_vectors =
-		OpenGL_preferred_state.gtao_enabled &&
-		(OpenGL_preferred_state.gtao_temporal_blend > 0.0f ||
-			OpenGL_preferred_state.gtao_temporal_debug_preview);
+	const bool ao_temporal_vectors =
+		OpenGL_preferred_state.ao_enabled &&
+		(OpenGL_preferred_state.ao_temporal_blend > 0.0f ||
+			OpenGL_preferred_state.ao_temporal_debug_preview);
 	const bool new_motion_blur_vectors =
 		OpenGL_preferred_state.combined_motion_blur &&
 		(OpenGL_preferred_state.pixel_motion_blur_strength > 0.0f ||
 			OpenGL_preferred_state.pixel_motion_blur_legacy_object_strength > 0.0f);
-	return gtao_temporal_vectors || new_motion_blur_vectors;
+	return ao_temporal_vectors || new_motion_blur_vectors;
 }
 
 bool GL4Renderer::MotionVectorTargetEnabled() const

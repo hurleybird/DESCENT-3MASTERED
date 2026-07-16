@@ -2062,7 +2062,7 @@ void RenderObjectTransparents(object* obj, unsigned int random_state)
 	// Legacy translucent polymodel faces wrote depth, which is observable on
 	// self-overlapping geometry such as the shield sphere. Keep those late depth
 	// writes for raster ordering, while leaving the opaque depth snapshot used by
-	// GTAO, motion blur, and soft particles immutable. This does not add a depth
+	// AO, motion blur, and soft particles immutable. This does not add a depth
 	// copy or resolve.
 	rend_BeginLateDepthWrite();
 	RenderObjectInternal(obj);

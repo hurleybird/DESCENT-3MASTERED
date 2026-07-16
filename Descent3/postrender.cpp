@@ -209,7 +209,7 @@ void PostRender(int roomnum)
 	bool separated_object[MAX_POSTRENDERS] = {};
 	bool separated_object_rendered[MAX_POSTRENDERS] = {};
 	unsigned int separated_object_random_state[MAX_POSTRENDERS] = {};
-	// GL4 depth consumers (GTAO, motion vectors, and soft particles) all require
+	// GL4 depth consumers (AO, motion vectors, and soft particles) all require
 	// the same stable set of opaque polygon depth.  Keep the split independent of
 	// the soft-particle toggle so changing one effect cannot remove object depth
 	// from another.  Compatibility GL keeps its legacy one-pass ordering.

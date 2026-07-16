@@ -264,15 +264,15 @@ struct DLLrendering_state
 
 };
 
-//GTAO internal render resolution. Auto keeps AO near display-space or lower
+//AO internal render resolution. Auto keeps AO near display-space or lower
 //when SSAA/high resolutions would otherwise make the pass scale with the
 //supersampled framebuffer.
-enum gtao_resolution
+enum ao_resolution
 {
-	GTAO_RESOLUTION_AUTO = 0,
-	GTAO_RESOLUTION_FULL = 1,
-	GTAO_RESOLUTION_HALF = 2,
-	GTAO_RESOLUTION_QUARTER = 3,
+	AO_RESOLUTION_AUTO = 0,
+	AO_RESOLUTION_FULL = 1,
+	AO_RESOLUTION_HALF = 2,
+	AO_RESOLUTION_QUARTER = 3,
 };
 
 enum renderer_motion_vector_mode
@@ -302,23 +302,23 @@ struct renderer_preferred_state
 	float bloom_intensity;
 	float bloom_spread;
 
-	bool gtao_enabled;       //Master GTAO on/off
-	ubyte gtao_resolution;   //gtao_resolution enum
-	ushort gtao_sample_count;
-	ubyte gtao_blur_radius;
-	float gtao_radius;
-	float gtao_intensity;
-	float gtao_bias;
-	ushort gtao_overscan_percent;
-	bool gtao_debug_preview;
-	float gtao_temporal_blend;
-	float gtao_temporal_depth_reject;
-	float gtao_temporal_velocity_reject;
-	bool gtao_temporal_debug_preview;
-	float gtao_terrain_occlusion;
-	float gtao_polyobject_occlusion;
-	float gtao_mine_rock_occlusion;
-	float gtao_mine_occlusion;
+	bool ao_enabled;       //Master AO on/off
+	ubyte ao_resolution;   //ao_resolution enum
+	ushort ao_sample_count;
+	ubyte ao_blur_radius;
+	float ao_radius;
+	float ao_intensity;
+	float ao_bias;
+	ushort ao_overscan_percent;
+	bool ao_debug_preview;
+	float ao_temporal_blend;
+	float ao_temporal_depth_reject;
+	float ao_temporal_velocity_reject;
+	bool ao_temporal_debug_preview;
+	float ao_terrain_occlusion;
+	float ao_polyobject_occlusion;
+	float ao_mine_rock_occlusion;
+	float ao_mine_occlusion;
 	ubyte motion_vector_mode;
 	bool motion_vector_debug_preview;
 	float pixel_motion_blur_strength;

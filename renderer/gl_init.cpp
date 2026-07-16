@@ -859,7 +859,7 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	ShaderProgram::ClearBinding();
 
 	bloom.InitShaders();
-	gtao.InitShaders();
+	ao.InitShaders();
 
 	//Simple shader for testing, before everything is made to use shaders.
 	extern const char* testVertexSrc;
@@ -891,7 +891,7 @@ void GL4Renderer::Close()
 	motionblurshader.Destroy();
 	ao_compositeshader.Destroy();
 	bloom.DestroyShaders();
-	gtao.Destroy();
+	ao.Destroy();
 
 	FreeImages();
 	DestroyFontBatchResources();

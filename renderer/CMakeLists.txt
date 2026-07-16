@@ -4,7 +4,7 @@ SET (RENDERER_SOURCES
 		renderer/globalvars.cpp
 		renderer/gl_draw.cpp
 		renderer/gl_framebuffer.cpp
-		renderer/gl_gtao.cpp
+		renderer/gl_ao.cpp
 		renderer/gl_image.cpp
 		renderer/gl_init.cpp
 		renderer/gl_local.h

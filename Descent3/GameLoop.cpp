@@ -2573,10 +2573,10 @@ static void GetMainViewOverscanFrame(int* x1, int* y1, int* x2, int* y2, int* an
 	if (Cinematic_inuse)
 		return;
 
-	if (!Render_preferred_state.gtao_enabled)
+	if (!Render_preferred_state.ao_enabled)
 		return;
 
-	int overscan_percent = Render_preferred_state.gtao_overscan_percent;
+	int overscan_percent = Render_preferred_state.ao_overscan_percent;
 	if (overscan_percent < 100)
 		overscan_percent = 100;
 	if (overscan_percent > 150)

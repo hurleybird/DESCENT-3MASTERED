@@ -44,22 +44,22 @@
 #include "gl_shared.h"
 #include "IRenderer.h"
 
-enum gl4_gpu_gtao_mark
+enum gl4_gpu_ao_mark
 {
-	GL4_GPU_GTAO_AFTER_SCENE_COLOR_COPY = 0,
-	GL4_GPU_GTAO_AFTER_SCENE_DEPTH_COPY,
-	GL4_GPU_GTAO_AFTER_DEPTH_REDUCE,
-	GL4_GPU_GTAO_AFTER_GENERATE,
-	GL4_GPU_GTAO_AFTER_BLUR_X,
-	GL4_GPU_GTAO_AFTER_BLUR_Y,
-	GL4_GPU_GTAO_AFTER_TEMPORAL,
-	GL4_GPU_GTAO_AFTER_SUPPRESSION,
-	GL4_GPU_GTAO_AFTER_COMPOSITE,
-	GL4_GPU_GTAO_AFTER_DEFERRED_COMPOSITE,
-	GL4_GPU_GTAO_AFTER_COMPOSITE_DEPTH_COPY,
+	GL4_GPU_AO_AFTER_SCENE_COLOR_COPY = 0,
+	GL4_GPU_AO_AFTER_SCENE_DEPTH_COPY,
+	GL4_GPU_AO_AFTER_DEPTH_REDUCE,
+	GL4_GPU_AO_AFTER_GENERATE,
+	GL4_GPU_AO_AFTER_BLUR_X,
+	GL4_GPU_AO_AFTER_BLUR_Y,
+	GL4_GPU_AO_AFTER_TEMPORAL,
+	GL4_GPU_AO_AFTER_SUPPRESSION,
+	GL4_GPU_AO_AFTER_COMPOSITE,
+	GL4_GPU_AO_AFTER_DEFERRED_COMPOSITE,
+	GL4_GPU_AO_AFTER_COMPOSITE_DEPTH_COPY,
 };
 
-void GL4PerfGpuGTAOMark(gl4_gpu_gtao_mark mark);
+void GL4PerfGpuAOMark(gl4_gpu_ao_mark mark);
 
 struct color_array
 {
@@ -159,8 +159,8 @@ class GL4Renderer : public IRenderer
 	ShaderProgram motionblurshader;
 	ShaderProgram ao_compositeshader;
 	BloomResources bloom;
-	GTAOResources gtao;
-	//Cached projection matrix and near/far for GTAO. Updated on every
+	AOResources ao;
+	//Cached projection matrix and near/far for AO. Updated on every
 	//UpdateCommon(depth=0) call so the AO pass uses the main world projection.
 	float last_projection[16] = {};
 	float captured_scene_projection[16] = {};
@@ -452,7 +452,7 @@ class GL4Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 32, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.9f, 0.03f, 128.0f, false, 0.5f, 0.5f, 0.5f, 1.0f, RENDERER_MOTION_VECTOR_OFF, false, 0.0f, false, 1.0f, 1.0f / 20.0f, 0.20f, 2.0f, 24, 1.5f, 1.0f, 0.0f, 0.0f, 0.0f, 9, 0.08f, 2.0f };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, AO_RESOLUTION_HALF, 32, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.9f, 0.03f, 128.0f, false, 0.5f, 0.5f, 0.5f, 1.0f, RENDERER_MOTION_VECTOR_OFF, false, 0.0f, false, 1.0f, 1.0f / 20.0f, 0.20f, 2.0f, 24, 1.5f, 1.0f, 0.0f, 0.0f, 0.0f, 9, 0.08f, 2.0f };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;

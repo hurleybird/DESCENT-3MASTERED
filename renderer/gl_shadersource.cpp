@@ -626,7 +626,7 @@ const char* testFragmentSrc =
 "";
 
 //-----------------------------------------------------------------------------
-// GTAO (Ground-Truth Ambient Occlusion) shaders.
+// Ambient occlusion shaders.
 //
 // The algorithm walks paired rays in screen space from each pixel and uses
 // the strongest observed horizon along each direction as the occlusion term.
@@ -642,7 +642,7 @@ const char* testFragmentSrc =
 //   Reconstructed normal points TOWARD the camera (negative z).
 //-----------------------------------------------------------------------------
 
-const char* gtaoDepthFragmentSrc =
+const char* aoDepthFragmentSrc =
 "#version 450 core\n"
 "\n"
 "in vec2 outuv;\n"
@@ -731,7 +731,7 @@ const char* gtaoDepthFragmentSrc =
 "void main()\n"
 "{\n"
 "    //Cost of this pass scaled with source_W * source_H regardless of\n"
-"    //gtao_resolution, which is why the F2 slider used to barely move perf.\n"
+"    //ao_resolution, which is why the F2 slider used to barely move perf.\n"
 "    //A fixed 2x2 min covers typical 2x-4x downsample ratios; the AO horizon\n"
 "    //march is a low-frequency screen-space approximation and does not need\n"
 "    //a conservative min over the entire source footprint.\n"
@@ -751,7 +751,7 @@ const char* gtaoDepthFragmentSrc =
 "}\n"
 "";
 
-const char* gtaoAOFragmentSrc =
+const char* aoAOFragmentSrc =
 "#version 450 core\n"
 "\n"
 "in vec2 outuv;\n"
@@ -819,7 +819,7 @@ const char* gtaoAOFragmentSrc =
 "    return clamp(texture(depth_tex, depth_uv).g, 0.0, 1.0);\n"
 "}\n"
 "\n"
-"float compute_gtao_horizon(vec3 P, vec3 N, vec2 dir, float step_pixels, float jitter, float side)\n"
+"float compute_ao_horizon(vec3 P, vec3 N, vec2 dir, float step_pixels, float jitter, float side)\n"
 "{\n"
 "    float ray_pixels = jitter * step_pixels + 1.0;\n"
 "    float horizon = 0.0;\n"
@@ -872,17 +872,17 @@ const char* gtaoAOFragmentSrc =
 "    rand = fract(rand + noise_jitter);\n"
 "\n"
 "    float ao = 0.0;\n"
-"    int gtao_directions = max((directions + 1) / 2, 1);\n"
-"    float alpha = PI / float(gtao_directions);\n"
-"    for (int d = 0; d < gtao_directions; ++d)\n"
+"    int ao_directions = max((directions + 1) / 2, 1);\n"
+"    float alpha = PI / float(ao_directions);\n"
+"    for (int d = 0; d < ao_directions; ++d)\n"
 "    {\n"
 "        float angle = alpha * (float(d) + rand.x);\n"
 "        vec2 dir = vec2(cos(angle), sin(angle));\n"
 "        float jitter = fract(rand.y + float(d) * 0.61803398875);\n"
-"        ao += compute_gtao_horizon(P, N, dir, step_pixels, jitter, 1.0);\n"
-"        ao += compute_gtao_horizon(P, N, dir, step_pixels, jitter, -1.0);\n"
+"        ao += compute_ao_horizon(P, N, dir, step_pixels, jitter, 1.0);\n"
+"        ao += compute_ao_horizon(P, N, dir, step_pixels, jitter, -1.0);\n"
 "    }\n"
-"    ao = ao / max(float(gtao_directions) * 2.0, 1.0);\n"
+"    ao = ao / max(float(ao_directions) * 2.0, 1.0);\n"
 "    ao = ao / max(1.0 - angle_bias, 0.01);\n"
 "\n"
 "    ao = clamp(1.0 - ao, 0.0, 1.0);\n"
@@ -891,7 +891,7 @@ const char* gtaoAOFragmentSrc =
 "}\n"
 "";
 
-const char* gtaoBlurFragmentSrc =
+const char* aoBlurFragmentSrc =
 "#version 450 core\n"
 "\n"
 "in vec2 outuv;\n"
@@ -935,7 +935,7 @@ const char* gtaoBlurFragmentSrc =
 "}\n"
 "";
 
-const char* gtaoTemporalFragmentSrc =
+const char* aoTemporalFragmentSrc =
 "#version 450 core\n"
 "\n"
 "in vec2 outuv;\n"
@@ -1030,7 +1030,7 @@ const char* gtaoTemporalFragmentSrc =
 "}\n"
 "";
 
-const char* gtaoSuppressionFragmentSrc =
+const char* aoSuppressionFragmentSrc =
 "#version 450 core\n"
 "\n"
 "in vec2 outuv;\n"
@@ -1190,7 +1190,7 @@ const char* gtaoSuppressionFragmentSrc =
 
 //Apply pass: multiplies destination color by the AO factor.
 //Uses (GL_DST_COLOR, GL_ZERO) blend, so the output color is the AO multiplier.
-const char* gtaoApplyFragmentSrc =
+const char* aoApplyFragmentSrc =
 "#version 450 core\n"
 "\n"
 "in vec2 outuv;\n"

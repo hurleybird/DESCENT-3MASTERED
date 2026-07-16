@@ -320,7 +320,7 @@ struct BloomResources
 		float alpha_occlusion_mask_uv_scale_y = 1.0f);
 };
 
-struct GTAOResult
+struct AOResult
 {
 	GLuint ao_texture = 0;
 	GLuint suppression_texture = 0;
@@ -328,10 +328,10 @@ struct GTAOResult
 	int debug_channel = 0;
 };
 
-//Ground-Truth Ambient Occlusion. Renders depth-driven AO, then either modulates
+//Ambient occlusion. Renders depth-driven AO, then either modulates
 //the scene color in place or exposes the visibility term for deferred composition.
 //Reconstructs view-space normals from the depth buffer (we have no normals G-buffer).
-struct GTAOResources
+struct AOResources
 {
 	//Raw source depth resolved/downsampled to the AO working resolution.
 	ColorFramebuffer ao_depth_framebuffer;
@@ -340,7 +340,7 @@ struct GTAOResources
 	//Scratch used as ping-pong for the separable bilateral blur.
 	ColorFramebuffer ao_blur_framebuffer;
 	ColorFramebuffer suppression_framebuffer;
-	//Ping-pong history for temporal GTAO (RGBA16F: x=AO, y=depth, z=history weight).
+	//Ping-pong history for temporal AO (RGBA16F: x=AO, y=depth, z=history weight).
 	ColorFramebuffer ao_history_framebuffers[2];
 	int ao_history_index = 0;
 	bool ao_history_valid = false;
@@ -380,7 +380,7 @@ struct GTAOResources
 	GLint ao_neg_inv_radius2 = -1;  //-1/(r*r)
 	GLint ao_angle_bias = -1;
 	GLint ao_inv_screen_size = -1;  //1/width, 1/height
-	GLint ao_ao_inv_screen_size = -1;
+	GLint ao_working_inv_screen_size = -1;
 	GLint ao_screen_size = -1;      //width, height
 	GLint ao_noise_origin = -1;
 	GLint ao_noise_jitter = -1;
@@ -462,7 +462,7 @@ struct GTAOResources
 		const float* previous_view_projection = nullptr,
 		bool has_static_reconstruction = false, bool has_dynamic_velocity = false,
 		bool reset_temporal_history = false, bool composite_to_target = true,
-		GTAOResult* result = nullptr);
+		AOResult* result = nullptr);
 };
 
 inline int RendererSupersamplingFactor(const renderer_preferred_state& state)
