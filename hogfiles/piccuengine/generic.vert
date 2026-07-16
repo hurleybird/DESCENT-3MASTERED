@@ -61,6 +61,11 @@ uniform vec3 retained_custom_clip_plane;
 uniform vec3 retained_custom_clip_scale;
 
 out vec4 outcolor;
+// Legacy g3 draws submit already-projected vertices, so vertex alpha is
+// interpolated affinely in screen space. Retained effect draws use a normal
+// perspective projection and need a separate noperspective payload to retain
+// that contract without changing ordinary retained lighting interpolation.
+noperspective out float out_retained_effect_alpha;
 out vec4 outnormal;
 out vec4 out_motion_world_position;
 out vec4 out_motion_previous_world_position;
@@ -202,6 +207,7 @@ void main()
 		}
 		outcolor = vec4(vertex_color,
 			vertex_alpha * retained_alpha_scale * retained_effect_alpha_scale);
+		out_retained_effect_alpha = outcolor.a;
 		vec4 retained_world_position = retained_current_world * local_position;
 		// The legacy generic stream overloads this attribute: Phong draws carry a
 		// normal, while dynamically-lightmapped draws carry perspective-correct
@@ -245,6 +251,7 @@ void main()
 
 	gl_Position = commons.projection * commons.modelview * vec4(position, 1.0);
 	outcolor = color;
+	out_retained_effect_alpha = color.a;
 	#if defined(USE_SPECULAR)
 		outnormal = normal;
 	#else

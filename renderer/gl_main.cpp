@@ -3321,7 +3321,7 @@ void GL4Renderer::SetCoplanarPolygonOffset(float factor)
 	else
 	{
 		glEnable(GL_POLYGON_OFFSET_FILL);
-		glPolygonOffset(-1.0f, -1.0f);
+		glPolygonOffset(-factor, -1.0f);
 	}
 }
 

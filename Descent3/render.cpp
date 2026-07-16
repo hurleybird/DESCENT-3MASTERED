@@ -211,12 +211,14 @@ float Room_fog_distance = 0;
 float Room_fog_eye_distance = 0;
 vector Room_fog_plane, Room_fog_portal_vert;
 short Fog_faces[MAX_FACES_PER_ROOM];
+bool Fog_face_retained[MAX_FACES_PER_ROOM];
 int Num_fog_faces_to_render = 0;
 
 struct deferred_fog_face
 {
 	int roomnum;
 	short facenum;
+	bool retained;
 };
 
 static std::vector<deferred_fog_face> Deferred_fog_ao_faces;
@@ -3639,11 +3641,13 @@ bool Fog_disabled = 0;
 #endif
 
 // Adds a specular face to draw after the mine has been drawn
-void UpdateFogFace(room* rp, face* fp)
+void UpdateFogFace(room* rp, face* fp, bool retained)
 {
 	if (Fog_disabled || !Detail_settings.Fog_enabled)
 		return;
-	Fog_faces[Num_fog_faces_to_render++] = fp - rp->faces;
+	Fog_faces[Num_fog_faces_to_render] = fp - rp->faces;
+	Fog_face_retained[Num_fog_faces_to_render] = retained;
+	Num_fog_faces_to_render++;
 }
 
 static void QueueDeferredFogAOFaces(room* rp)
@@ -3653,7 +3657,7 @@ static void QueueDeferredFogAOFaces(room* rp)
 
 	int roomnum = rp - Rooms;
 	for (int i = 0; i < Num_fog_faces_to_render; i++)
-		Deferred_fog_ao_faces.push_back({ roomnum, Fog_faces[i] });
+		Deferred_fog_ao_faces.push_back({ roomnum, Fog_faces[i], Fog_face_retained[i] });
 }
 
 struct RoomFogBatchedFace
@@ -3677,22 +3681,31 @@ static void FlushRoomFogFaceBatch(room* rp, std::vector<RoomFogBatchedFace>& fac
 
 	if (!retained_faces.empty())
 	{
+		// These faces use the identical retained mesh in both passes. A units-only
+		// bias avoids slope discontinuities along their shared edges.
+		rend_SetCoplanarPolygonOffset(0.0001f);
 		RetainedRoomDrawFogFaces(rp, retained_faces.data(), (int)retained_faces.size(),
 			&Room_fog_plane, Room_fog_distance, Room_fog_eye_distance, rp->fog_depth,
 			Room_fog_plane_check != 1);
 		retained_faces.clear();
 	}
 
-	std::vector<renderer_poly_batch_item> items(faces.size());
-	for (size_t face_index = 0; face_index < faces.size(); face_index++)
+	if (!faces.empty())
 	{
-		faces[face_index].RefreshPointList();
-		items[face_index].pointlist = faces[face_index].pointlist;
-		items[face_index].nv = faces[face_index].nv;
-	}
+		// These faces use the same projected legacy stream in both passes. Keep
+		// the bias units-only here as well so adjacent slopes cannot form seams.
+		rend_SetCoplanarPolygonOffset(0.0001f);
+		std::vector<renderer_poly_batch_item> items(faces.size());
+		for (size_t face_index = 0; face_index < faces.size(); face_index++)
+		{
+			faces[face_index].RefreshPointList();
+			items[face_index].pointlist = faces[face_index].pointlist;
+			items[face_index].nv = faces[face_index].nv;
+		}
 
-	rend_DrawPolygon3DBatch(0, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
-	faces.clear();
+		rend_DrawPolygon3DBatch(0, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
+		faces.clear();
+	}
 }
 
 // Render a fog layer on top of a face
@@ -3710,7 +3723,6 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 	rend_SetAlphaType(AT_VERTEX);
 	rend_SetAlphaValue(255);
 	rend_SetZBufferWriteMask(0);
-	rend_SetCoplanarPolygonOffset(1);
 
 	rend_SetFlatColor(GR_RGB((int)(rp->fog_r * 255.0), (int)(rp->fog_g * 255.0), (int)(rp->fog_b * 255.0)));
 	if (suppress_ao)
@@ -3758,7 +3770,7 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 
 			p->p3_flags |= PF_RGBA;
 		}
-		if (batch_fog && !(fp->flags & FF_TRIANGULATED) &&
+		if (batch_fog && Fog_face_retained[i] && !(fp->flags & FF_TRIANGULATED) &&
 			RetainedRoomCanDrawBaseFace(rp, Fog_faces[i]))
 		{
 			retained_faces.push_back(Fog_faces[i]);
@@ -3775,6 +3787,7 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 		}
 
 		FlushRoomFogFaceBatch(rp, batched_faces, retained_faces);
+		rend_SetCoplanarPolygonOffset(0.0001f);
 		if (fp->flags & FF_TRIANGULATED)
 			g3_SetTriangulationTest(1);
 		g3_DrawPoly(fp->num_verts, pointlist, 0);
@@ -3798,8 +3811,12 @@ static void RenderDeferredFogAOSuppression()
 
 	int old_num_fog_faces = Num_fog_faces_to_render;
 	short old_fog_faces[MAX_FACES_PER_ROOM];
+	bool old_fog_face_retained[MAX_FACES_PER_ROOM];
 	for (int i = 0; i < old_num_fog_faces && i < MAX_FACES_PER_ROOM; i++)
+	{
 		old_fog_faces[i] = Fog_faces[i];
+		old_fog_face_retained[i] = Fog_face_retained[i];
+	}
 
 	int current_roomnum = -1;
 	Num_fog_faces_to_render = 0;
@@ -3831,7 +3848,9 @@ static void RenderDeferredFogAOSuppression()
 			flush_room();
 			current_roomnum = item.roomnum;
 		}
-		Fog_faces[Num_fog_faces_to_render++] = item.facenum;
+		Fog_faces[Num_fog_faces_to_render] = item.facenum;
+		Fog_face_retained[Num_fog_faces_to_render] = item.retained;
+		Num_fog_faces_to_render++;
 	}
 
 	flush_room();
@@ -3839,7 +3858,10 @@ static void RenderDeferredFogAOSuppression()
 
 	Num_fog_faces_to_render = old_num_fog_faces;
 	for (int i = 0; i < old_num_fog_faces && i < MAX_FACES_PER_ROOM; i++)
+	{
 		Fog_faces[i] = old_fog_faces[i];
+		Fog_face_retained[i] = old_fog_face_retained[i];
+	}
 }
 
 // MATT!  Change this function to sort by state once you change the scorch system!
@@ -4039,7 +4061,8 @@ static void CopyRoomBatchPoints(RoomBatchedFace& batched_face, g3Point** pointli
 	}
 }
 
-static void AddBatchedRoomFaceSideEffects(room* rp, face* fp, int facenum, bool spec_face)
+static void AddBatchedRoomFaceSideEffects(room* rp, face* fp, int facenum,
+	bool spec_face, bool retained)
 {
 	if (!Render_mirror_for_room && Rendering_main_view && fp->portal_num == -1 &&
 		((fp->flags & FF_CORONA) || FastCoronas) && (fp->flags & FF_LIGHTMAP) && UseHardware &&
@@ -4063,7 +4086,7 @@ static void AddBatchedRoomFaceSideEffects(room* rp, face* fp, int facenum, bool 
 	}
 
 	if (!Render_mirror_for_room && !In_editor_mode && (rp->flags & RF_FOG))
-		UpdateFogFace(rp, fp);
+		UpdateFogFace(rp, fp, retained);
 
 	fp->renderframe = FrameCount % 256;
 }
@@ -4248,14 +4271,14 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	if (RetainedRoomCanDrawBaseFace(rp, facenum))
 	{
 		batcher.AddRetained(key, rp, facenum);
-		AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face);
+		AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face, true);
 		return true;
 	}
 
 	RoomBatchedFace batched_face;
 	CopyRoomBatchPoints(batched_face, pointlist, fp->num_verts);
 	batcher.Add(key, batched_face);
-	AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face);
+	AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face, false);
 	return true;
 }
 
@@ -4278,6 +4301,7 @@ void RenderFace(room* rp, int facenum)
 	bool spec_face = 0;
 	bool specular_material_face = false;
 	bool retained_base_face = false;
+	bool retained_base_face_drawn = false;
 	SpecularBlock specblock = {};
 	face_cc.cc_and = 0xff;
 	face_cc.cc_or = 0;
@@ -4541,7 +4565,10 @@ void RenderFace(room* rp, int facenum)
 			LightmapInfo[fp->lmi_handle].lm_handle : -1;
 		if (RetainedRoomDrawFaces(rp, &facenum, 1, uchange, vchange,
 			Room_light_val, retained_lightmap))
+		{
 			drawn = 1;
+			retained_base_face_drawn = true;
+		}
 		else
 			drawn = g3_DrawPoly(fp->num_verts, pointlist, bm_handle, MAP_TYPE_BITMAP, &face_cc);
 	}
@@ -4596,7 +4623,7 @@ void RenderFace(room* rp, int facenum)
 draw_fog:
 	if (!Render_mirror_for_room && !In_editor_mode && drawn && (rp->flags & RF_FOG))
 	{
-		UpdateFogFace(rp, fp);
+		UpdateFogFace(rp, fp, retained_base_face_drawn);
 	}
 
 	if (do_triangle_test)

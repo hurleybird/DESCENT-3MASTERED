@@ -19,6 +19,7 @@ uniform sampler2D specularmasktexture;
 #endif
 
 uniform int phong_enabled;
+uniform int retained_effect_mode;
 uniform vec3 phong_light_direction;
 uniform int dynamic_light_count;
 uniform vec3 dynamic_face_normal;
@@ -59,6 +60,7 @@ uniform vec2 soft_particle_screen_size;
 uniform float soft_particle_depth_range;
 
 in vec4 outcolor;
+noperspective in float out_retained_effect_alpha;
 in vec4 outnormal;
 in vec4 out_motion_world_position;
 in vec4 out_motion_previous_world_position;
@@ -313,6 +315,8 @@ void main()
 		}
 	}
 	vec4 vertex_color = ApplyPhongLighting(outcolor);
+	if (retained_effect_mode != 0)
+		vertex_color.a = out_retained_effect_alpha;
 	if (ao_capture_weight_mode != 0)
 	{
 		float ao_weight = clamp(ao_weight_value * (1.0 - ao_suppression), 0.0, 1.0);
