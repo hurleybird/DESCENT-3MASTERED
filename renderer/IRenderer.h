@@ -183,6 +183,8 @@ public:
 		for (int i = 0; i < count; i++)
 			DrawPolygon3D(handle, items[i].pointlist, items[i].nv, map_type);
 	}
+	virtual bool BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw) { return false; }
+	virtual void EndRetainedPolymodelDraw() {}
 
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 	virtual void DrawPolygon2D(int handle, g3Point** p, int nv) = 0;

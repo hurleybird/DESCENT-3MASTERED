@@ -303,8 +303,27 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_soft_particle_enabled_uniforms[8] = {};
 	GLint drawshader_soft_particle_screen_size_uniforms[8] = {};
 	GLint drawshader_soft_particle_depth_range_uniforms[8] = {};
+	GLint drawshader_retained_mode_uniforms[8] = {};
+	GLint drawshader_retained_transform_uniforms[8] = {};
+	GLint drawshader_retained_modelview_uniforms[8] = {};
+	GLint drawshader_retained_current_world_uniforms[8] = {};
+	GLint drawshader_retained_previous_world_uniforms[8] = {};
+	GLint drawshader_retained_uv_offset_uniforms[8] = {};
+	GLint drawshader_retained_base_color_uniforms[8] = {};
+	GLint drawshader_retained_lighting_mode_uniforms[8] = {};
+	GLint drawshader_retained_vertex_alpha_uniforms[8] = {};
+	GLint drawshader_retained_alpha_scale_uniforms[8] = {};
+	GLint drawshader_retained_effect_mode_uniforms[8] = {};
+	GLint drawshader_retained_fog_plane_uniforms[8] = {};
+	GLint drawshader_retained_fog_distance_uniforms[8] = {};
+	GLint drawshader_retained_fog_eye_distance_uniforms[8] = {};
+	GLint drawshader_retained_fog_depth_uniforms[8] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
+	bool retained_draw_active = false;
+	bool retained_override_draw_buffers = false;
+	bool retained_include_motion_vectors = false;
+	bool retained_include_motion_object_ids = false;
 	float ao_suppression_draw_value = 0.0f;
 	float bloom_suppression_draw_value = 0.0f;
 	int ao_class_draw_value = 0;
@@ -670,6 +689,8 @@ public:
 	void DrawPolygon3D(int handle, g3Point** p, int nv, int map_type = MAP_TYPE_BITMAP) override;
 	void DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, int count,
 		int map_type = MAP_TYPE_BITMAP) override;
+	bool BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw) override;
+	void EndRetainedPolymodelDraw() override;
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 	void DrawPolygon2D(int handle, g3Point** p, int nv) override;
 

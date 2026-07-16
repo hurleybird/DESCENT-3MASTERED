@@ -226,13 +226,16 @@ void oeWin32Application::init()
 		winstyle = WS_POPUP | WS_SYSMENU;
 	}
 	if (m_BackgroundMode)
-		style |= WS_EX_NOACTIVATE;
+		style |= WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
+
+	const int create_x = m_BackgroundMode ? -32000 : m_X;
+	const int create_y = m_BackgroundMode ? -32000 : m_Y;
 
 	m_hWnd = (HWnd)CreateWindowEx(style,
-						(LPCSTR)m_WndName, 
+						(LPCSTR)m_WndName,
 						(LPCSTR)m_WndName,
 						winstyle,
-						m_X, m_Y,
+						create_x, create_y,
 						m_W, m_H,
 						NULL, 
 						NULL, 
@@ -263,7 +266,7 @@ void oeWin32Application::change_window()
 	{
 		SetWindowLongPtr((HWND)m_hWnd, GWL_STYLE, 0);
 		SetWindowLongPtr((HWND)m_hWnd, GWL_EXSTYLE,
-			WS_EX_TOPMOST | (m_BackgroundMode ? WS_EX_NOACTIVATE : 0));
+			m_BackgroundMode ? (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) : WS_EX_TOPMOST);
 
 		RECT r{};
 		GetWindowRect((HWND)m_hWnd, &r);
@@ -276,7 +279,9 @@ void oeWin32Application::change_window()
 		int hehwidth = GetSystemMetrics(SM_CXSCREEN);
 		int hehheight = GetSystemMetrics(SM_CYSCREEN);
 
-		SetWindowPos((HWND)m_hWnd, HWND_TOP, 0, 0, hehwidth, hehheight,
+		SetWindowPos((HWND)m_hWnd, HWND_TOP,
+			m_BackgroundMode ? -32000 : 0, m_BackgroundMode ? -32000 : 0,
+			hehwidth, hehheight,
 			position_flags);
 		ShowWindow((HWND)m_hWnd, show_command);
 	}
@@ -284,7 +289,7 @@ void oeWin32Application::change_window()
 	{
 		SetWindowLongPtr((HWND)m_hWnd, GWL_STYLE, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_BORDER | WS_MINIMIZEBOX);
 		SetWindowLongPtr((HWND)m_hWnd, GWL_EXSTYLE,
-			m_BackgroundMode ? WS_EX_NOACTIVATE : 0);
+			m_BackgroundMode ? (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) : 0);
 
 		ShowWindow((HWND)m_hWnd, show_command);
 		SetWindowPos((HWND)m_hWnd, HWND_TOP, m_X, m_Y, m_W, m_H,
@@ -365,7 +370,12 @@ void oeWin32Application::set_background_mode(bool enabled)
 {
 	m_BackgroundMode = enabled;
 	if (enabled)
+	{
 		m_AppActive = true;
+		m_PositionOverride = true;
+		m_OverrideX = -32000;
+		m_OverrideY = -32000;
+	}
 }
 
 

@@ -133,6 +133,16 @@ void Error(char *fmt,...)
 
 	sprintf(Exit_title_str,"%s Error",App_title);
 	mprintf ((0,"%s\n",Exit_message));
+	const char *capture_log_path = getenv("PICCU_CAPTURE_LOG");
+	if (capture_log_path && capture_log_path[0])
+	{
+		FILE *capture_log = fopen(capture_log_path, "ab");
+		if (capture_log)
+		{
+			fprintf(capture_log, "%s\n", Exit_message);
+			fclose(capture_log);
+		}
+	}
 
 	if (!Error_initialized) 
 		error_Spew();

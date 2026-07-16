@@ -35,6 +35,7 @@
 #include <string.h>
 #include "robotfire.h"
 #include "mem.h"
+#include "retained_polymodel.h"
 
 int Num_poly_models=0;
 poly_model Poly_models[MAX_POLY_MODELS];
@@ -185,6 +186,59 @@ static bool PolymodelMotionTransformPoint(const PolymodelMotionSnapshot &snapsho
 	matrix object_matrix = snapshot.orient;
 	vm_TransposeMatrix(&object_matrix);
 	*world_pos = (pnt * object_matrix) + snapshot.pos;
+	return true;
+}
+
+static void PolymodelMotionBuildMatrix(const PolymodelMotionSnapshot &snapshot, poly_model *pm,
+	int submodel_num, float matrix_out[16])
+{
+	const vector basis[4] = { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } };
+	vector transformed[4];
+	for (int i = 0; i < 4; i++)
+		PolymodelMotionTransformPoint(snapshot, pm, submodel_num, &basis[i], &transformed[i]);
+
+	memset(matrix_out, 0, sizeof(float) * 16);
+	for (int axis = 0; axis < 3; axis++)
+	{
+		vector delta = transformed[axis + 1] - transformed[0];
+		matrix_out[axis * 4 + 0] = delta.x;
+		matrix_out[axis * 4 + 1] = delta.y;
+		matrix_out[axis * 4 + 2] = delta.z;
+	}
+	matrix_out[12] = transformed[0].x;
+	matrix_out[13] = transformed[0].y;
+	matrix_out[14] = transformed[0].z;
+	matrix_out[15] = 1.0f;
+}
+
+bool PolymodelMotionGetSubmodelMatrices(poly_model *pm, int submodel_num,
+	float current_world[16], float previous_world[16], bool *has_previous)
+{
+	if (has_previous)
+		*has_previous = false;
+	if (!Polymodel_motion_active_history || !pm || !current_world || !previous_world)
+		return false;
+
+	const PolymodelMotionSnapshot &current = Polymodel_motion_active_history->current;
+	vector origin = { 0, 0, 0 };
+	vector unused;
+	if (!PolymodelMotionTransformPoint(current, pm, submodel_num, &origin, &unused))
+		return false;
+	PolymodelMotionBuildMatrix(current, pm, submodel_num, current_world);
+
+	if (Polymodel_motion_active &&
+		PolymodelMotionTransformPoint(Polymodel_motion_active_history->previous, pm,
+			submodel_num, &origin, &unused))
+	{
+		PolymodelMotionBuildMatrix(Polymodel_motion_active_history->previous, pm,
+			submodel_num, previous_world);
+		if (has_previous)
+			*has_previous = true;
+	}
+	else
+	{
+		memcpy(previous_world, current_world, sizeof(float) * 16);
+	}
 	return true;
 }
 
@@ -384,6 +438,7 @@ int AllocPolyModel ()
 void FreePolymodelData (int i)
 {
 	int t;
+	RetainedPolymodelInvalidateModel(i);
 	
 	for (t=0;t<Poly_models[i].n_models;t++)
 	{

@@ -1391,6 +1391,21 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_soft_particle_enabled_uniforms[i] = drawshaders[i].FindUniform("soft_particle_enabled");
 		drawshader_soft_particle_screen_size_uniforms[i] = drawshaders[i].FindUniform("soft_particle_screen_size");
 		drawshader_soft_particle_depth_range_uniforms[i] = drawshaders[i].FindUniform("soft_particle_depth_range");
+		drawshader_retained_mode_uniforms[i] = drawshaders[i].FindUniform("retained_mode");
+		drawshader_retained_transform_uniforms[i] = drawshaders[i].FindUniform("retained_transform");
+		drawshader_retained_modelview_uniforms[i] = drawshaders[i].FindUniform("retained_modelview");
+		drawshader_retained_current_world_uniforms[i] = drawshaders[i].FindUniform("retained_current_world");
+		drawshader_retained_previous_world_uniforms[i] = drawshaders[i].FindUniform("retained_previous_world");
+		drawshader_retained_uv_offset_uniforms[i] = drawshaders[i].FindUniform("retained_uv_offset");
+		drawshader_retained_base_color_uniforms[i] = drawshaders[i].FindUniform("retained_base_color");
+		drawshader_retained_lighting_mode_uniforms[i] = drawshaders[i].FindUniform("retained_lighting_mode");
+		drawshader_retained_vertex_alpha_uniforms[i] = drawshaders[i].FindUniform("retained_vertex_alpha");
+		drawshader_retained_alpha_scale_uniforms[i] = drawshaders[i].FindUniform("retained_alpha_scale");
+		drawshader_retained_effect_mode_uniforms[i] = drawshaders[i].FindUniform("retained_effect_mode");
+		drawshader_retained_fog_plane_uniforms[i] = drawshaders[i].FindUniform("retained_fog_plane");
+		drawshader_retained_fog_distance_uniforms[i] = drawshaders[i].FindUniform("retained_fog_distance");
+		drawshader_retained_fog_eye_distance_uniforms[i] = drawshaders[i].FindUniform("retained_fog_eye_distance");
+		drawshader_retained_fog_depth_uniforms[i] = drawshaders[i].FindUniform("retained_fog_depth");
 	}
 
 	lastdrawshader = -1;
@@ -2027,6 +2042,114 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 	OpenGL_verts_processed += original_vertices;
 
 	CHECK_ERROR(10);
+}
+
+bool GL4Renderer::BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw)
+{
+	if (!draw || retained_draw_active)
+		return false;
+
+	SelectDrawShader();
+	const int shader_index = lastdrawshader;
+	if (shader_index < 0 || drawshader_retained_mode_uniforms[shader_index] == -1)
+		return false;
+
+	float base_color[3] = { draw->base_color[0], draw->base_color[1], draw->base_color[2] };
+	if (OpenGL_state.cur_light_state == LS_FLAT_GOURAUD || OpenGL_state.cur_texture_type == TT_FLAT)
+	{
+		base_color[0] = GR_COLOR_RED(OpenGL_state.cur_color) / 255.0f;
+		base_color[1] = GR_COLOR_GREEN(OpenGL_state.cur_color) / 255.0f;
+		base_color[2] = GR_COLOR_BLUE(OpenGL_state.cur_color) / 255.0f;
+	}
+	else if (OpenGL_state.cur_light_state == LS_NONE)
+	{
+		base_color[0] = base_color[1] = base_color[2] = 1.0f;
+	}
+
+	int lighting_mode = 0;
+	if (OpenGL_state.cur_light_state == LS_GOURAUD)
+		lighting_mode = 1;
+	else if (OpenGL_state.cur_light_state == LS_PHONG)
+		lighting_mode = 2;
+
+	glUniform1i(drawshader_retained_mode_uniforms[shader_index], 1);
+	glUniformMatrix4fv(drawshader_retained_transform_uniforms[shader_index], 1, GL_FALSE, draw->transform);
+	glUniformMatrix4fv(drawshader_retained_modelview_uniforms[shader_index], 1, GL_FALSE, draw->modelview);
+	glUniformMatrix4fv(drawshader_retained_current_world_uniforms[shader_index], 1, GL_FALSE, draw->current_world);
+	glUniformMatrix4fv(drawshader_retained_previous_world_uniforms[shader_index], 1, GL_FALSE, draw->previous_world);
+	glUniform2f(drawshader_retained_uv_offset_uniforms[shader_index], draw->u_offset, draw->v_offset);
+	glUniform3fv(drawshader_retained_base_color_uniforms[shader_index], 1, base_color);
+	glUniform1i(drawshader_retained_lighting_mode_uniforms[shader_index], lighting_mode);
+	glUniform1i(drawshader_retained_vertex_alpha_uniforms[shader_index],
+		(OpenGL_state.cur_alpha_type & ATF_VERTEX) != 0 ? 1 : 0);
+	glUniform1f(drawshader_retained_alpha_scale_uniforms[shader_index],
+		Alpha_multiplier * OpenGL_Alpha_factor / 255.0f);
+	glUniform1i(drawshader_retained_effect_mode_uniforms[shader_index], draw->effect_mode);
+	glUniform3fv(drawshader_retained_fog_plane_uniforms[shader_index], 1, draw->fog_plane);
+	glUniform1f(drawshader_retained_fog_distance_uniforms[shader_index], draw->fog_distance);
+	glUniform1f(drawshader_retained_fog_eye_distance_uniforms[shader_index], draw->fog_eye_distance);
+	glUniform1f(drawshader_retained_fog_depth_uniforms[shader_index], draw->fog_depth);
+
+	retained_include_motion_vectors = CurrentDrawUsesPixelMotionTarget();
+	retained_include_motion_object_ids = CurrentDrawWritesMotionObjectId();
+	if (drawshader_motion_vector_payload_type_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_motion_vector_payload_type_uniforms[shader_index], 0);
+	if (drawshader_motion_vector_previous_view_projection_uniforms[shader_index] != -1 && cockpit_motion_object_active)
+		glUniformMatrix4fv(drawshader_motion_vector_previous_view_projection_uniforms[shader_index], 1,
+			GL_FALSE, cockpit_previous_view_projection);
+	const bool has_previous_view = cockpit_motion_object_active ?
+		have_cockpit_previous_view_projection : have_previous_view_projection;
+	if (drawshader_motion_vector_has_previous_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_motion_vector_has_previous_uniforms[shader_index],
+			draw->has_previous && has_previous_view ? 1 : 0);
+
+	const bool drawing_to_scene = framebuffer_ok &&
+		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
+	const bool force_motion_vector_draw_buffer = CurrentDrawIsLateCockpitPixelMotionVectorDraw();
+	const bool include_ao_class = !cockpit_scene_frame_active && OpenGL_state.cur_zbuffer_state != 0;
+	retained_override_draw_buffers = drawing_to_scene &&
+		(cockpit_scene_frame_active || force_motion_vector_draw_buffer ||
+		 PixelMotionVectorModeEnabled() || !include_ao_class);
+	if (retained_override_draw_buffers)
+	{
+		if (cockpit_scene_frame_active)
+			GL4UseSceneColorDrawBuffer();
+		else
+			GL4UseSceneDrawBuffersForCurrentDraw(retained_include_motion_vectors, include_ao_class,
+				retained_include_motion_object_ids);
+	}
+	OpenGL_polys_drawn += draw->polygon_count;
+	OpenGL_verts_processed += draw->vertex_count;
+
+	retained_draw_active = true;
+	return true;
+}
+
+void GL4Renderer::EndRetainedPolymodelDraw()
+{
+	if (!retained_draw_active)
+		return;
+
+	if (lastdrawshader >= 0 && drawshader_retained_mode_uniforms[lastdrawshader] != -1)
+		glUniform1i(drawshader_retained_mode_uniforms[lastdrawshader], 0);
+	if (retained_include_motion_vectors || retained_include_motion_object_ids)
+	{
+		motion_vectors_dirty = true;
+		motion_vectors.MarkDirty();
+	}
+	if (retained_override_draw_buffers)
+	{
+		if (cockpit_scene_frame_active)
+			GL4UseSceneColorDrawBuffer();
+		else
+			UseSceneDrawBuffers();
+	}
+
+	retained_draw_active = false;
+	retained_override_draw_buffers = false;
+	retained_include_motion_vectors = false;
+	retained_include_motion_object_ids = false;
+	legacy_draw_uniforms_dirty = true;
 }
 
 // Takes nv vertices and draws the 2D polygon defined by those vertices.

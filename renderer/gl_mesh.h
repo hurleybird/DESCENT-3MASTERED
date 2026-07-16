@@ -33,6 +33,12 @@ struct MeshBatch
 	int indexoffset, indexcount;
 };
 
+enum class VertexBufferLayout
+{
+	Standard,
+	RetainedPolymodel,
+};
+
 //Future note: These will need to become interfaces if Vulkan support is added. 
 //The same MeshBuilder should be usable across any API. 
 class VertexBuffer : public IVertexBuffer
@@ -42,9 +48,11 @@ class VertexBuffer : public IVertexBuffer
 	uint32_t m_vertexcount;
 	uint32_t m_appendcounter;
 	bool m_dynamic_hint;
+	VertexBufferLayout m_layout;
 public:
 	VertexBuffer();
-	VertexBuffer(bool allow_dynamic, bool dynamic_hint);
+	VertexBuffer(bool allow_dynamic, bool dynamic_hint,
+		VertexBufferLayout layout = VertexBufferLayout::Standard);
 
 	void Initialize(uint32_t numvertices, uint32_t datasize, void* data) override;
 	//Performs a dynamic update of part of the vertex buffer.
@@ -66,6 +74,8 @@ public:
 	void Draw(PrimitiveType mode, ElementRange range) const override;
 	//Draws a range of vertices from the buffer, from the range of the currently bound index buffer
 	void DrawIndexed(PrimitiveType mode, ElementRange range) const override;
+	void DrawIndexedRanges(PrimitiveType mode, const ElementRange* ranges, uint32_t count,
+		renderer_draw_call_category category = RENDERER_DRAW_CALL_MESH) const;
 
 	void Destroy() override;
 	void Invalidate();

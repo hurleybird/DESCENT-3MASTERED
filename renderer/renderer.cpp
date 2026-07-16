@@ -300,6 +300,17 @@ void rend_DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, 
 	renderer_inst->DrawPolygon3DBatch(handle, items, count, map_type);
 }
 
+bool rend_BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw)
+{
+	return Renderer_initted && draw && renderer_inst->BeginRetainedPolymodelDraw(draw);
+}
+
+void rend_EndRetainedPolymodelDraw()
+{
+	if (Renderer_initted)
+		renderer_inst->EndRetainedPolymodelDraw();
+}
+
 void rend_DrawPolygon2D(int handle, g3Point** p, int nv)
 {
 	if (!Renderer_initted)

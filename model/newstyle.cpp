@@ -36,6 +36,7 @@
 #include "findintersection.h"
 #include "gameloop.h"
 #include "config.h"
+#include "retained_polymodel.h"
 
 
 #include <stdio.h>
@@ -398,6 +399,9 @@ struct PolymodelBaseFaceBatchKey
 	ubyte alpha_value;
 	ddgr_color flat_color;
 	vector light_direction;
+	vector base_color;
+	float u_offset;
+	float v_offset;
 
 	bool Equals(const PolymodelBaseFaceBatchKey& other) const
 	{
@@ -410,6 +414,8 @@ struct PolymodelBaseFaceBatchKey
 			alpha_type == other.alpha_type &&
 			alpha_value == other.alpha_value &&
 			flat_color == other.flat_color &&
+			base_color == other.base_color &&
+			u_offset == other.u_offset && v_offset == other.v_offset &&
 			(lighting != LS_PHONG || light_direction == other.light_direction);
 	}
 };
@@ -445,6 +451,11 @@ struct PolymodelBaseFaceBatchKeyHasher
 		seed = PolymodelBaseFaceBatchHashInt(seed, key.alpha_type);
 		seed = PolymodelBaseFaceBatchHashInt(seed, key.alpha_value);
 		seed = PolymodelBaseFaceBatchHashCombine(seed, std::hash<unsigned int>()((unsigned int)key.flat_color));
+		seed = PolymodelBaseFaceBatchHashFloat(seed, key.base_color.x);
+		seed = PolymodelBaseFaceBatchHashFloat(seed, key.base_color.y);
+		seed = PolymodelBaseFaceBatchHashFloat(seed, key.base_color.z);
+		seed = PolymodelBaseFaceBatchHashFloat(seed, key.u_offset);
+		seed = PolymodelBaseFaceBatchHashFloat(seed, key.v_offset);
 		if (key.lighting == LS_PHONG)
 		{
 			seed = PolymodelBaseFaceBatchHashFloat(seed, key.light_direction.x);
@@ -469,6 +480,9 @@ struct PolymodelBaseFaceBatch
 {
 	PolymodelBaseFaceBatchKey key;
 	std::deque<PolymodelBatchedFace> faces;
+	poly_model *retained_pm = nullptr;
+	bsp_info *retained_sm = nullptr;
+	std::vector<int> retained_faces;
 };
 
 class PolymodelBaseFaceBatcher
@@ -484,58 +498,33 @@ public:
 			m_batch_items.reserve(face_count);
 	}
 
-	PolymodelBatchedFace& Add(const PolymodelBaseFaceBatchKey& key)
+	PolymodelBatchedFace& Add(const PolymodelBaseFaceBatchKey& key, bool preserve_order = false)
 	{
 		if (Perf_markers_enabled)
 			Polymodel_perf_base_batch_add_count++;
-
-		if (m_last_batch_index != (size_t)-1 && m_last_batch_index < m_batches.size())
-		{
-			if (Perf_markers_enabled)
-				Polymodel_perf_base_batch_key_compare_count++;
-			if (m_batches[m_last_batch_index].key.Equals(key))
-			{
-				PolymodelBaseFaceBatch& batch = m_batches[m_last_batch_index];
-				batch.faces.emplace_back();
-				if (Perf_markers_enabled)
-					Polymodel_perf_base_batch_last_hit_count++;
-				PolymodelPerfUpdateMax(Polymodel_perf_base_batch_max_faces_per_batch, batch.faces.size());
-				return batch.faces.back();
-			}
-		}
-
-		if (m_batches.empty())
-		{
-			m_batches.reserve(16);
-			m_batch_lookup.reserve(16);
-		}
-
-		BatchLookup::iterator iter = m_batch_lookup.find(key);
-		if (iter != m_batch_lookup.end())
-		{
-			PolymodelBaseFaceBatch& batch = m_batches[iter->second];
-			batch.faces.emplace_back();
-			m_last_batch_index = iter->second;
-			if (Perf_markers_enabled)
-				Polymodel_perf_base_batch_lookup_hit_count++;
-			PolymodelPerfUpdateMax(Polymodel_perf_base_batch_max_faces_per_batch, batch.faces.size());
-			return batch.faces.back();
-		}
-
-		const size_t batch_index = m_batches.size();
-		m_batches.emplace_back();
-		PolymodelBaseFaceBatch& batch = m_batches.back();
-		batch.key = key;
+		FlushForOrderedKeyChange(key, preserve_order);
+		PolymodelBaseFaceBatch& batch = FindOrCreateBatch(key);
 		batch.faces.emplace_back();
-		m_batch_lookup.emplace(batch.key, batch_index);
-		m_last_batch_index = batch_index;
-		if (Perf_markers_enabled)
-		{
-			Polymodel_perf_base_batch_miss_count++;
-			Polymodel_perf_base_batch_created_count++;
-		}
 		PolymodelPerfUpdateMax(Polymodel_perf_base_batch_max_faces_per_batch, batch.faces.size());
 		return batch.faces.back();
+	}
+
+	void AddRetained(const PolymodelBaseFaceBatchKey& key, poly_model *pm, bsp_info *sm, int facenum,
+		bool preserve_order = false)
+	{
+		if (Perf_markers_enabled)
+			Polymodel_perf_base_batch_add_count++;
+		FlushForOrderedKeyChange(key, preserve_order);
+		PolymodelBaseFaceBatch& batch = FindOrCreateBatch(key);
+		if (!batch.retained_pm)
+		{
+			batch.retained_pm = pm;
+			batch.retained_sm = sm;
+		}
+		ASSERT(batch.retained_pm == pm && batch.retained_sm == sm);
+		batch.retained_faces.push_back(facenum);
+		PolymodelPerfUpdateMax(Polymodel_perf_base_batch_max_faces_per_batch,
+			batch.faces.size() + batch.retained_faces.size());
 	}
 
 	void Flush()
@@ -553,7 +542,7 @@ public:
 		for (size_t i = 0; i < m_batches.size(); i++)
 		{
 			PolymodelBaseFaceBatch& batch = m_batches[i];
-			if (batch.faces.empty())
+			if (batch.faces.empty() && batch.retained_faces.empty())
 				continue;
 
 			double state_setup_start_time = PolymodelPerfNow();
@@ -572,18 +561,30 @@ public:
 			PolymodelPerfAdd(Polymodel_perf_face_base_time, state_setup_start_time);
 
 			double batch_prepare_start_time = PolymodelPerfNow();
-			m_batch_items.resize(batch.faces.size());
-			for (size_t face_index = 0; face_index < batch.faces.size(); face_index++)
+			if (!batch.faces.empty())
 			{
-				batch.faces[face_index].RefreshPointList();
-				m_batch_items[face_index].pointlist = batch.faces[face_index].pointlist;
-				m_batch_items[face_index].nv = batch.faces[face_index].nv;
+				m_batch_items.resize(batch.faces.size());
+				for (size_t face_index = 0; face_index < batch.faces.size(); face_index++)
+				{
+					batch.faces[face_index].RefreshPointList();
+					m_batch_items[face_index].pointlist = batch.faces[face_index].pointlist;
+					m_batch_items[face_index].nv = batch.faces[face_index].nv;
+				}
 			}
 			PolymodelPerfAdd(Polymodel_perf_face_base_batch_prepare_time, batch_prepare_start_time);
 			PolymodelPerfAdd(Polymodel_perf_face_base_time, batch_prepare_start_time);
 
 			double draw_start_time = PolymodelPerfNow();
-			rend_DrawPolygon3DBatch(batch.key.bitmap_handle, m_batch_items.data(), (int)m_batch_items.size(), MAP_TYPE_BITMAP);
+			if (!batch.retained_faces.empty())
+			{
+				if (batch.key.texture_type_value != TT_FLAT)
+					rend_BindBitmap(batch.key.bitmap_handle);
+				RetainedPolymodelDrawFaces(batch.retained_pm, batch.retained_sm,
+					batch.retained_faces.data(), (int)batch.retained_faces.size(),
+					batch.key.u_offset, batch.key.v_offset, &batch.key.base_color);
+			}
+			if (!batch.faces.empty())
+				rend_DrawPolygon3DBatch(batch.key.bitmap_handle, m_batch_items.data(), (int)m_batch_items.size(), MAP_TYPE_BITMAP);
 			if (Perf_markers_enabled)
 				Polymodel_perf_draw_poly_count++;
 			PolymodelPerfAdd(Polymodel_perf_face_base_draw_time, draw_start_time);
@@ -602,6 +603,56 @@ private:
 	typedef std::unordered_map<PolymodelBaseFaceBatchKey, size_t,
 		PolymodelBaseFaceBatchKeyHasher, PolymodelBaseFaceBatchKeyEqual> BatchLookup;
 
+	void FlushForOrderedKeyChange(const PolymodelBaseFaceBatchKey& key, bool preserve_order)
+	{
+		if (!preserve_order || m_last_batch_index == (size_t)-1 ||
+			m_last_batch_index >= m_batches.size())
+		{
+			return;
+		}
+		if (!m_batches[m_last_batch_index].key.Equals(key))
+			Flush();
+	}
+
+	PolymodelBaseFaceBatch& FindOrCreateBatch(const PolymodelBaseFaceBatchKey& key)
+	{
+		if (m_last_batch_index != (size_t)-1 && m_last_batch_index < m_batches.size())
+		{
+			if (Perf_markers_enabled)
+				Polymodel_perf_base_batch_key_compare_count++;
+			if (m_batches[m_last_batch_index].key.Equals(key))
+			{
+				if (Perf_markers_enabled)
+					Polymodel_perf_base_batch_last_hit_count++;
+				return m_batches[m_last_batch_index];
+			}
+		}
+		if (m_batches.empty())
+		{
+			m_batches.reserve(16);
+			m_batch_lookup.reserve(16);
+		}
+		BatchLookup::iterator iter = m_batch_lookup.find(key);
+		if (iter != m_batch_lookup.end())
+		{
+			m_last_batch_index = iter->second;
+			if (Perf_markers_enabled)
+				Polymodel_perf_base_batch_lookup_hit_count++;
+			return m_batches[iter->second];
+		}
+		const size_t batch_index = m_batches.size();
+		m_batches.emplace_back();
+		m_batches.back().key = key;
+		m_batch_lookup.emplace(m_batches.back().key, batch_index);
+		m_last_batch_index = batch_index;
+		if (Perf_markers_enabled)
+		{
+			Polymodel_perf_base_batch_miss_count++;
+			Polymodel_perf_base_batch_created_count++;
+		}
+		return m_batches.back();
+	}
+
 	std::vector<PolymodelBaseFaceBatch> m_batches;
 	std::vector<renderer_poly_batch_item> m_batch_items;
 	BatchLookup m_batch_lookup;
@@ -617,28 +668,56 @@ public:
 		return m_faces.back();
 	}
 
+	void AddRetained(poly_model *pm, bsp_info *sm, int facenum)
+	{
+		if (!m_retained_pm)
+		{
+			m_retained_pm = pm;
+			m_retained_sm = sm;
+		}
+		ASSERT(m_retained_pm == pm && m_retained_sm == sm);
+		m_retained_faces.push_back(facenum);
+	}
+
 	void Flush()
 	{
-		if (m_faces.empty())
+		if (m_faces.empty() && m_retained_faces.empty())
 			return;
 
-		std::vector<renderer_poly_batch_item> items;
-		items.resize(m_faces.size());
-		for (size_t face_index = 0; face_index < m_faces.size(); face_index++)
+		if (!m_retained_faces.empty())
 		{
-			m_faces[face_index].RefreshPointList();
-			items[face_index].pointlist = m_faces[face_index].pointlist;
-			items[face_index].nv = m_faces[face_index].nv;
+			RetainedPolymodelDrawFogFaces(m_retained_pm, m_retained_sm,
+				m_retained_faces.data(), (int)m_retained_faces.size(), &Fog_plane,
+				Fog_distance, Fog_eye_distance, Polymodel_effect.fog_depth,
+				Polymodel_effect.fog_plane_check != 1);
+			m_retained_faces.clear();
+			m_retained_pm = nullptr;
+			m_retained_sm = nullptr;
 		}
 
-		rend_DrawPolygon3DBatch(0, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
+		if (!m_faces.empty())
+		{
+			std::vector<renderer_poly_batch_item> items;
+			items.resize(m_faces.size());
+			for (size_t face_index = 0; face_index < m_faces.size(); face_index++)
+			{
+				m_faces[face_index].RefreshPointList();
+				items[face_index].pointlist = m_faces[face_index].pointlist;
+				items[face_index].nv = m_faces[face_index].nv;
+			}
+
+			rend_DrawPolygon3DBatch(0, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
+			m_faces.clear();
+		}
 		if (Perf_markers_enabled)
 			Polymodel_perf_draw_poly_count++;
-		m_faces.clear();
 	}
 
 private:
 	std::deque<PolymodelBatchedFace> m_faces;
+	poly_model *m_retained_pm = nullptr;
+	bsp_info *m_retained_sm = nullptr;
+	std::vector<int> m_retained_faces;
 };
 
 static PolymodelBaseFaceBatcher *Polymodel_active_opaque_batcher = nullptr;
@@ -778,9 +857,6 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 		return false;
 	const bool lightmap_lit = Polymodel_light_type == POLYMODEL_LIGHTING_LIGHTMAP;
 
-	if (Polymodel_use_effect && (Polymodel_effect.type & PEF_ALPHA))
-		return false;
-
 	texture *texp = GetPolymodelFaceTexture(pm, sm, fp);
 
 	if (texp && (Polymodel_effect.type & PEF_BUMPMAPPED) && texp->bumpmap != -1 &&
@@ -805,6 +881,10 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	key.alpha_type = ATF_CONSTANT + ATF_VERTEX;
 	key.alpha_value = 255;
 	key.flat_color = GetPolymodelCustomFlatColor(fp->color);
+	const bool use_effect_color = Polymodel_use_effect && (Polymodel_effect.type & PEF_COLOR);
+	key.base_color.x = Polylighting_static_red * (use_effect_color ? Polymodel_effect.r : 1.0f);
+	key.base_color.y = Polylighting_static_green * (use_effect_color ? Polymodel_effect.g : 1.0f);
+	key.base_color.z = Polylighting_static_blue * (use_effect_color ? Polymodel_effect.b : 1.0f);
 	if (Polymodel_light_direction)
 		key.light_direction = *Polymodel_light_direction;
 
@@ -862,6 +942,12 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 			key.flat_color = GetPolymodelCustomFlatColor(Polymodel_effect.custom_color);
 		}
 	}
+	if (Polymodel_use_effect && (Polymodel_effect.type & PEF_ALPHA))
+	{
+		key.alpha_value = (ubyte)(key.alpha_value * Polymodel_effect.alpha);
+		if (!texp || !(texp->flags & TF_SATURATE))
+			key.alpha_type = ATF_CONSTANT + ATF_VERTEX;
+	}
 
 	float uchange = 0, vchange = 0;
 	if (texp && texp->slide_u != 0)
@@ -879,7 +965,20 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 		norm_time /= texp->slide_v;
 		vchange = norm_time;
 	}
+	key.u_offset = uchange;
+	key.v_offset = vchange;
 	PolymodelPerfAdd(Polymodel_perf_face_base_key_time, key_setup_start_time);
+
+	if (RetainedPolymodelCanDrawBaseFace(pm, sm, facenum))
+	{
+		double batch_add_start_time = PolymodelPerfNow();
+		batcher.AddRetained(key, pm, sm, facenum, allow_alpha);
+		PolymodelPerfAdd(Polymodel_perf_face_base_batch_add_time, batch_add_start_time);
+		if (Perf_markers_enabled)
+			Polymodel_perf_base_face_count++;
+		PolymodelPerfAdd(Polymodel_perf_face_base_time, face_start_time);
+		return true;
+	}
 
 	g3Point *source_pointlist[100];
 
@@ -953,7 +1052,7 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	}
 
 	double batch_add_start_time = PolymodelPerfNow();
-	PolymodelBatchedFace& batched_face = batcher.Add(key);
+	PolymodelBatchedFace& batched_face = batcher.Add(key, allow_alpha);
 	PolymodelPerfAdd(Polymodel_perf_face_base_batch_add_time, batch_add_start_time);
 
 	double copy_start_time = PolymodelPerfNow();
@@ -1780,6 +1879,11 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 		
 		if (Polymodel_render_pass != POLYMODEL_RENDER_ALL && alpha_face)
 		{
+			if (!StateLimited && TryBatchSubmodelBaseFace(pm, sm, i, base_face_batcher, true))
+			{
+				PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
+				continue;
+			}
 			alpha_faces[num_alpha_faces++] = i;
 			if (Perf_markers_enabled)
 				Polymodel_perf_alpha_face_count++;
@@ -1792,6 +1896,11 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 
 			if (texp->flags & TF_ALPHA || texp->flags & TF_SATURATE)
 			{
+				if (!StateLimited && TryBatchSubmodelBaseFace(pm, sm, i, base_face_batcher, true))
+				{
+					PolymodelPerfAdd(Polymodel_perf_faces_unsorted_scan_time, scan_start_time);
+					continue;
+				}
 				alpha_faces[num_alpha_faces++] = i;
 				if (Perf_markers_enabled)
 					Polymodel_perf_alpha_face_count++;
@@ -1934,6 +2043,14 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 
 			if (!g3_CheckNormalFacing(&sm->verts[fp->vertnums[0]],&fp->normal))	
 				continue;
+
+			if (batch_fog && RetainedPolymodelCanDrawBaseFace(pm, sm, i))
+			{
+				fog_face_batcher.AddRetained(pm, sm, i);
+				if (Perf_markers_enabled)
+					Polymodel_perf_fog_face_count++;
+				continue;
+			}
 
 			if (batch_fog && TryBatchSubmodelFaceFogged(pm, sm, i, fog_face_batcher))
 				continue;
@@ -2193,7 +2310,8 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 		if (Perf_markers_enabled)
 			Polymodel_perf_submodel_draw_count++;
 		double rotate_start_time = PolymodelPerfNow();
-		RotateModelPoints (pm,sm);
+		if (!RetainedPolymodelCanSkipPointRotation(pm, sm))
+			RotateModelPoints (pm,sm);
 		PolymodelPerfAdd(Polymodel_perf_submodel_rotate_time, rotate_start_time);
 			
 		double faces_start_time = PolymodelPerfNow();
@@ -2234,6 +2352,7 @@ int RenderPolygonModel(poly_model * pm, uint f_render_sub)
 	PolymodelBaseFaceBatcher cockpit_opaque_batcher;
 	PolymodelBaseFaceBatcher cockpit_alpha_batcher;
 	const bool use_cockpit_batches = Polymodel_cockpit_batching && UseHardware && !StateLimited &&
+		!RetainedPolymodelEnabled() &&
 		Polymodel_light_type != POLYMODEL_LIGHTING_LIGHTMAP && !Polymodel_use_effect;
 	if (use_cockpit_batches)
 	{

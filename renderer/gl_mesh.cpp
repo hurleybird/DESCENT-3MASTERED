@@ -25,7 +25,7 @@ VertexBuffer::VertexBuffer() : VertexBuffer(true, false)
 {
 }
 
-VertexBuffer::VertexBuffer(bool allow_dynamic, bool dynamic_hint)
+VertexBuffer::VertexBuffer(bool allow_dynamic, bool dynamic_hint, VertexBufferLayout layout)
 {
 	m_name = 0;
 	m_vaoname = 0;
@@ -33,6 +33,7 @@ VertexBuffer::VertexBuffer(bool allow_dynamic, bool dynamic_hint)
 	m_vertexcount = 0;
 	m_appendcounter = 0;
 	m_dynamic_hint = dynamic_hint;
+	m_layout = layout;
 }
 
 void VertexBuffer::Initialize(uint32_t numvertices, uint32_t datasize, void* data)
@@ -49,34 +50,37 @@ void VertexBuffer::Initialize(uint32_t numvertices, uint32_t datasize, void* dat
 	glBindBuffer(GL_ARRAY_BUFFER, m_name);
 	glBufferData(GL_ARRAY_BUFFER, datasize, data, m_dynamic_hint ? GL_STREAM_DRAW : GL_STATIC_DRAW);
 
-	//Create the standard vertex attributes
-	//Position
+	//Position is common to both retained and newrender layouts.
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, position));
 
-	//Color
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 4, GL_BYTE, GL_TRUE, sizeof(RendVertex), (void*)offsetof(RendVertex, r));
-
-	//Normal
-	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, normal));
-
-	//Lightmap page
-	glEnableVertexAttribArray(3);
-	glVertexAttribIPointer(3, 1, GL_INT, sizeof(RendVertex), (void*)offsetof(RendVertex, lmpage));
-
-	//Base UV
-	glEnableVertexAttribArray(4);
-	glVertexAttribPointer(4, 2, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, u1));
-
-	//Overlay UV
-	glEnableVertexAttribArray(5);
-	glVertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, u2));
-
-	//UV slide
-	glEnableVertexAttribArray(6);
-	glVertexAttribPointer(6, 2, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, u2));
+	if (m_layout == VertexBufferLayout::RetainedPolymodel)
+	{
+		//The generic legacy shader consumes color, UVs, and normals at 1..4.
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(RendVertex), (void*)offsetof(RendVertex, r));
+		glEnableVertexAttribArray(2);
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, u1));
+		glEnableVertexAttribArray(3);
+		glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, u2));
+		glEnableVertexAttribArray(4);
+		glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, normal));
+	}
+	else
+	{
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(RendVertex), (void*)offsetof(RendVertex, r));
+		glEnableVertexAttribArray(2);
+		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, normal));
+		glEnableVertexAttribArray(3);
+		glVertexAttribIPointer(3, 1, GL_INT, sizeof(RendVertex), (void*)offsetof(RendVertex, lmpage));
+		glEnableVertexAttribArray(4);
+		glVertexAttribPointer(4, 2, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, u1));
+		glEnableVertexAttribArray(5);
+		glVertexAttribPointer(5, 2, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, u2));
+		glEnableVertexAttribArray(6);
+		glVertexAttribPointer(6, 2, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, uslide));
+	}
 
 	m_size = datasize;
 	m_vertexcount = numvertices;
@@ -163,6 +167,27 @@ void VertexBuffer::DrawIndexed(PrimitiveType mode, ElementRange range) const
 {
 	rend_RecordDrawCall(RENDERER_DRAW_CALL_MESH);
 	glDrawElements(GetGLPrimitiveType(mode), range.count, GL_UNSIGNED_INT, (const void*)(range.offset * sizeof(uint32_t)));
+	rend_NotifyDepthBufferWrite();
+}
+
+void VertexBuffer::DrawIndexedRanges(PrimitiveType mode, const ElementRange* ranges, uint32_t count,
+	renderer_draw_call_category category) const
+{
+	if (!ranges || count == 0)
+		return;
+
+	thread_local std::vector<GLsizei> counts;
+	thread_local std::vector<const void*> offsets;
+	counts.resize(count);
+	offsets.resize(count);
+	for (uint32_t i = 0; i < count; i++)
+	{
+		counts[i] = (GLsizei)ranges[i].count;
+		offsets[i] = (const void*)(uintptr_t)(ranges[i].offset * sizeof(uint32_t));
+	}
+
+	rend_RecordDrawCall(category);
+	glMultiDrawElements(GetGLPrimitiveType(mode), counts.data(), GL_UNSIGNED_INT, offsets.data(), (GLsizei)count);
 	rend_NotifyDepthBufferWrite();
 }
 

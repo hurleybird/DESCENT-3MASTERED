@@ -143,6 +143,8 @@ bool PolymodelMotionHasActiveObject();
 void PolymodelMotionEndObject();
 void PolymodelMotionSetPoint(g3Point *point, poly_model *pm, int submodel_num, const vector *local_pos);
 void PolymodelMotionSetObjectPoint(g3Point *point, const vector *world_pos);
+bool PolymodelMotionGetSubmodelMatrices(poly_model *pm, int submodel_num,
+	float current_world[16], float previous_world[16], bool *has_previous);
 
 void PolymodelPerfReset();
 void PolymodelPerfFlush();

@@ -473,6 +473,29 @@ void rend_DrawPolygon3D(int handle,g3Point **p,int nv,int map_type=MAP_TYPE_BITM
 // Draws several 3D polygons that share the current renderer state and texture.
 void rend_DrawPolygon3DBatch(int handle,const renderer_poly_batch_item *items,int count,int map_type=MAP_TYPE_BITMAP);
 
+struct renderer_retained_polymodel_draw
+{
+	float transform[16];
+	float modelview[16];
+	float current_world[16];
+	float previous_world[16];
+	float base_color[3];
+	float u_offset;
+	float v_offset;
+	int effect_mode;
+	float fog_plane[3];
+	float fog_distance;
+	float fog_eye_distance;
+	float fog_depth;
+	int polygon_count;
+	int vertex_count;
+	bool has_previous;
+};
+
+// Selects the legacy material shader while sourcing a polymodel from retained local-space buffers.
+bool rend_BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw);
+void rend_EndRetainedPolymodelDraw();
+
 // Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 void rend_DrawPolygon2D(int handle,g3Point **p,int nv);
 
