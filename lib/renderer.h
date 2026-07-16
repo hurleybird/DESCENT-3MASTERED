@@ -482,6 +482,7 @@ struct renderer_retained_polymodel_draw
 	float base_color[3];
 	float u_offset;
 	float v_offset;
+	float depth_bias;
 	int effect_mode;
 	float fog_plane[3];
 	float fog_distance;

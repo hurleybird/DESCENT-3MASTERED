@@ -372,6 +372,7 @@ static bool DrawRetainedPolymodelRanges(poly_model *pm, bsp_info *sm, const int 
 	draw.base_color[2] = base_color ? base_color->z : 1.0f;
 	draw.u_offset = u_offset;
 	draw.v_offset = v_offset;
+	draw.depth_bias = Z_bias;
 	draw.effect_mode = effect_mode;
 	if (fog_plane)
 	{

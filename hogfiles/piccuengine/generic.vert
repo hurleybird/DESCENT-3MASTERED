@@ -35,6 +35,7 @@ uniform mat4 retained_current_world;
 uniform mat4 retained_previous_world;
 uniform vec2 retained_uv_offset;
 uniform vec3 retained_base_color;
+uniform float retained_depth_bias;
 uniform int retained_lighting_mode;
 uniform int retained_vertex_alpha;
 uniform float retained_alpha_scale;
@@ -126,6 +127,13 @@ void main()
 		// calculations in the coordinate system expected by the legacy fog
 		// equations.
 		gl_Position = retained_transform * local_position;
+		// CPU-built legacy polymodel vertices use an infinite-far depth mapping
+		// (window depth 1 - 1/z).  Keep retained geometry in that same depth
+		// convention so nearly coplanar detail models retain canonical visibility
+		// against finite-projection room geometry.
+		float retained_eye_z = max(gl_Position.w + retained_depth_bias, 0.0001);
+		float retained_legacy_depth = clamp(1.0 - (1.0 / retained_eye_z), 0.0, 1.0);
+		gl_Position.z = (retained_legacy_depth * 2.0 - 1.0) * gl_Position.w;
 		if (retained_custom_clip_enabled != 0)
 		{
 			vec3 clip_scale = retained_custom_clip_scale;

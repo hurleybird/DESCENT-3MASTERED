@@ -42,6 +42,7 @@ extern float View_zoom;
 extern vector View_position,Matrix_scale;
 extern matrix View_matrix,Unscaled_matrix;
 extern float Far_clip_z;
+extern float Z_bias;
 
 // For custom clipping plane
 extern ubyte Clip_custom;

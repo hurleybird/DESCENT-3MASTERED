@@ -1398,6 +1398,7 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_retained_previous_world_uniforms[i] = drawshaders[i].FindUniform("retained_previous_world");
 		drawshader_retained_uv_offset_uniforms[i] = drawshaders[i].FindUniform("retained_uv_offset");
 		drawshader_retained_base_color_uniforms[i] = drawshaders[i].FindUniform("retained_base_color");
+		drawshader_retained_depth_bias_uniforms[i] = drawshaders[i].FindUniform("retained_depth_bias");
 		drawshader_retained_lighting_mode_uniforms[i] = drawshaders[i].FindUniform("retained_lighting_mode");
 		drawshader_retained_vertex_alpha_uniforms[i] = drawshaders[i].FindUniform("retained_vertex_alpha");
 		drawshader_retained_alpha_scale_uniforms[i] = drawshaders[i].FindUniform("retained_alpha_scale");
@@ -2090,6 +2091,7 @@ bool GL4Renderer::BeginRetainedPolymodelDraw(const renderer_retained_polymodel_d
 	glUniformMatrix4fv(drawshader_retained_previous_world_uniforms[shader_index], 1, GL_FALSE, draw->previous_world);
 	glUniform2f(drawshader_retained_uv_offset_uniforms[shader_index], draw->u_offset, draw->v_offset);
 	glUniform3fv(drawshader_retained_base_color_uniforms[shader_index], 1, base_color);
+	glUniform1f(drawshader_retained_depth_bias_uniforms[shader_index], draw->depth_bias);
 	glUniform1i(drawshader_retained_lighting_mode_uniforms[shader_index], lighting_mode);
 	glUniform1i(drawshader_retained_vertex_alpha_uniforms[shader_index],
 		(OpenGL_state.cur_alpha_type & ATF_VERTEX) != 0 ? 1 : 0);
