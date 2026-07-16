@@ -34,6 +34,7 @@
 #include "lightmap_info.h"
 #include "TelComAutoMap.h"
 #include "config.h"
+#include "retained_room.h"
 
 //[ISB] Checks if a face is completely static and therefore should be in the normal static meshes.
 //Portals need to be put into another pass because they may or may not be visible. 
@@ -934,6 +935,7 @@ void NewRender_Render(vector& vieweye, matrix& vieworientation, int roomnum)
 
 void NewRender_InitNewLevel()
 {
+	RetainedRoomInvalidateAll();
 #ifndef NDEBUG
 	if (!rend_CanUseNewrender())
 		return;

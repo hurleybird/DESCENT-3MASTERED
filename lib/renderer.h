@@ -482,8 +482,12 @@ struct renderer_retained_polymodel_draw
 	float base_color[3];
 	float u_offset;
 	float v_offset;
+	float uv2_scale[2];
 	float depth_bias;
+	bool legacy_depth;
+	int lighting_mode_override;
 	int effect_mode;
+	float effect_alpha_scale;
 	float fog_plane[3];
 	float fog_distance;
 	float fog_eye_distance;

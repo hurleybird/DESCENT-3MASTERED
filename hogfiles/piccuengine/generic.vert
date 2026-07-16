@@ -28,18 +28,22 @@ layout(location = 14) in vec4 field_specular_color3;
 
 uniform int phong_enabled;
 uniform vec3 phong_light_direction;
+uniform int dynamic_light_count;
 uniform int retained_mode;
 uniform mat4 retained_transform;
 uniform mat4 retained_modelview;
 uniform mat4 retained_current_world;
 uniform mat4 retained_previous_world;
 uniform vec2 retained_uv_offset;
+uniform vec2 retained_uv2_scale;
 uniform vec3 retained_base_color;
 uniform float retained_depth_bias;
+uniform int retained_legacy_depth;
 uniform int retained_lighting_mode;
 uniform int retained_vertex_alpha;
 uniform float retained_alpha_scale;
 uniform int retained_effect_mode;
+uniform float retained_effect_alpha_scale;
 uniform vec3 retained_fog_plane;
 uniform float retained_fog_distance;
 uniform float retained_fog_eye_distance;
@@ -127,13 +131,15 @@ void main()
 		// calculations in the coordinate system expected by the legacy fog
 		// equations.
 		gl_Position = retained_transform * local_position;
-		// CPU-built legacy polymodel vertices use an infinite-far depth mapping
-		// (window depth 1 - 1/z).  Keep retained geometry in that same depth
-		// convention so nearly coplanar detail models retain canonical visibility
-		// against finite-projection room geometry.
-		float retained_eye_z = max(gl_Position.w + retained_depth_bias, 0.0001);
-		float retained_legacy_depth = clamp(1.0 - (1.0 / retained_eye_z), 0.0, 1.0);
-		gl_Position.z = (retained_legacy_depth * 2.0 - 1.0) * gl_Position.w;
+		// CPU-built legacy vertices use an infinite-far depth mapping (window
+		// depth 1 - 1/z).  Retained legacy geometry must use the same mapping so
+		// it shares a depth buffer exactly with immediate draws.
+		if (retained_legacy_depth != 0)
+		{
+			float retained_eye_z = max(gl_Position.w + retained_depth_bias, 0.0001);
+			float retained_depth_value = clamp(1.0 - (1.0 / retained_eye_z), 0.0, 1.0);
+			gl_Position.z = (retained_depth_value * 2.0 - 1.0) * gl_Position.w;
+		}
 		if (retained_custom_clip_enabled != 0)
 		{
 			vec3 clip_scale = retained_custom_clip_scale;
@@ -185,9 +191,15 @@ void main()
 			}
 			vertex_alpha = clamp(magnitude / max(retained_fog_depth, 0.0001), 0.0, 1.0);
 		}
-		outcolor = vec4(vertex_color, vertex_alpha * retained_alpha_scale);
-		outnormal = retained_lighting_mode == 2 ? vec4(normal.xyz, 1.0) : vec4(0.0, 0.0, 0.0, -1.0);
-		out_motion_world_position = retained_current_world * local_position;
+		outcolor = vec4(vertex_color,
+			vertex_alpha * retained_alpha_scale * retained_effect_alpha_scale);
+		vec4 retained_world_position = retained_current_world * local_position;
+		// The legacy generic stream overloads this attribute: Phong draws carry a
+		// normal, while dynamically-lightmapped draws carry perspective-correct
+		// world position.  Retained geometry must make the same selection.
+		outnormal = retained_lighting_mode == 2 ? vec4(normal.xyz, 1.0) :
+			(dynamic_light_count > 0 ? retained_world_position : vec4(0.0, 0.0, 0.0, -1.0));
+		out_motion_world_position = retained_world_position;
 		out_motion_previous_world_position = retained_previous_world * local_position;
 		#if defined(USE_SPECULAR)
 			out_field_specular_centers[0] = vec4(0.0);
@@ -202,7 +214,7 @@ void main()
 		#if defined(USE_TEXTURING)
 			outuv = vec3(uv.xy + retained_uv_offset, 1.0);
 			#if defined(USE_LIGHTMAP)
-				outuv2 = vec3(uv2.xy, 1.0);
+				outuv2 = vec3(uv2.xy * retained_uv2_scale, 1.0);
 			#endif
 		#endif
 		#if defined(USE_FOG)

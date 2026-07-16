@@ -309,12 +309,15 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_retained_current_world_uniforms[8] = {};
 	GLint drawshader_retained_previous_world_uniforms[8] = {};
 	GLint drawshader_retained_uv_offset_uniforms[8] = {};
+	GLint drawshader_retained_uv2_scale_uniforms[8] = {};
 	GLint drawshader_retained_base_color_uniforms[8] = {};
 	GLint drawshader_retained_depth_bias_uniforms[8] = {};
+	GLint drawshader_retained_legacy_depth_uniforms[8] = {};
 	GLint drawshader_retained_lighting_mode_uniforms[8] = {};
 	GLint drawshader_retained_vertex_alpha_uniforms[8] = {};
 	GLint drawshader_retained_alpha_scale_uniforms[8] = {};
 	GLint drawshader_retained_effect_mode_uniforms[8] = {};
+	GLint drawshader_retained_effect_alpha_scale_uniforms[8] = {};
 	GLint drawshader_retained_fog_plane_uniforms[8] = {};
 	GLint drawshader_retained_fog_distance_uniforms[8] = {};
 	GLint drawshader_retained_fog_eye_distance_uniforms[8] = {};

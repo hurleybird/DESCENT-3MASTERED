@@ -239,6 +239,8 @@ SET (MAIN_SOURCES
 		Descent3/procedurals.cpp
 		Descent3/program.cpp
 		Descent3/render.cpp
+		Descent3/retained_room.cpp
+		Descent3/retained_room.h
 		Descent3/renderobject.cpp
 		Descent3/robotfire.cpp
 		Descent3/room.cpp

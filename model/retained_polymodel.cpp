@@ -6,6 +6,7 @@
 #include "../renderer/gl_mesh.h"
 #include "psrand.h"
 #include "lightmap_info.h"
+#include "lightmap.h"
 
 #include <array>
 #include <algorithm>
@@ -372,8 +373,26 @@ static bool DrawRetainedPolymodelRanges(poly_model *pm, bsp_info *sm, const int 
 	draw.base_color[2] = base_color ? base_color->z : 1.0f;
 	draw.u_offset = u_offset;
 	draw.v_offset = v_offset;
+	draw.uv2_scale[0] = draw.uv2_scale[1] = 1.0f;
 	draw.depth_bias = Z_bias;
+	draw.legacy_depth = true;
+	draw.lighting_mode_override = -1;
 	draw.effect_mode = effect_mode;
+	draw.effect_alpha_scale = 1.0f;
+	if (Polymodel_light_type == POLYMODEL_LIGHTING_LIGHTMAP && count > 0)
+	{
+		const int submodel_num = sm - pm->submodel;
+		const int facenum = facenums[0];
+		const int lmi_handle = Polylighting_lightmap_object->lightmap_faces[submodel_num][facenum].lmi_handle;
+		const int lightmap_handle = LightmapInfo[lmi_handle].lm_handle;
+		if (lightmap_handle >= 0 && GameLightmaps[lightmap_handle].square_res > 0)
+		{
+			draw.uv2_scale[0] = (float)GameLightmaps[lightmap_handle].width /
+				GameLightmaps[lightmap_handle].square_res;
+			draw.uv2_scale[1] = (float)GameLightmaps[lightmap_handle].height /
+				GameLightmaps[lightmap_handle].square_res;
+		}
+	}
 	if (fog_plane)
 	{
 		draw.fog_plane[0] = fog_plane->x;

@@ -1397,12 +1397,15 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_retained_current_world_uniforms[i] = drawshaders[i].FindUniform("retained_current_world");
 		drawshader_retained_previous_world_uniforms[i] = drawshaders[i].FindUniform("retained_previous_world");
 		drawshader_retained_uv_offset_uniforms[i] = drawshaders[i].FindUniform("retained_uv_offset");
+		drawshader_retained_uv2_scale_uniforms[i] = drawshaders[i].FindUniform("retained_uv2_scale");
 		drawshader_retained_base_color_uniforms[i] = drawshaders[i].FindUniform("retained_base_color");
 		drawshader_retained_depth_bias_uniforms[i] = drawshaders[i].FindUniform("retained_depth_bias");
+		drawshader_retained_legacy_depth_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_depth");
 		drawshader_retained_lighting_mode_uniforms[i] = drawshaders[i].FindUniform("retained_lighting_mode");
 		drawshader_retained_vertex_alpha_uniforms[i] = drawshaders[i].FindUniform("retained_vertex_alpha");
 		drawshader_retained_alpha_scale_uniforms[i] = drawshaders[i].FindUniform("retained_alpha_scale");
 		drawshader_retained_effect_mode_uniforms[i] = drawshaders[i].FindUniform("retained_effect_mode");
+		drawshader_retained_effect_alpha_scale_uniforms[i] = drawshaders[i].FindUniform("retained_effect_alpha_scale");
 		drawshader_retained_fog_plane_uniforms[i] = drawshaders[i].FindUniform("retained_fog_plane");
 		drawshader_retained_fog_distance_uniforms[i] = drawshaders[i].FindUniform("retained_fog_distance");
 		drawshader_retained_fog_eye_distance_uniforms[i] = drawshaders[i].FindUniform("retained_fog_eye_distance");
@@ -2083,6 +2086,8 @@ bool GL4Renderer::BeginRetainedPolymodelDraw(const renderer_retained_polymodel_d
 		lighting_mode = 1;
 	else if (OpenGL_state.cur_light_state == LS_PHONG)
 		lighting_mode = 2;
+	if (draw->lighting_mode_override >= 0)
+		lighting_mode = draw->lighting_mode_override;
 
 	glUniform1i(drawshader_retained_mode_uniforms[shader_index], 1);
 	glUniformMatrix4fv(drawshader_retained_transform_uniforms[shader_index], 1, GL_FALSE, draw->transform);
@@ -2090,14 +2095,17 @@ bool GL4Renderer::BeginRetainedPolymodelDraw(const renderer_retained_polymodel_d
 	glUniformMatrix4fv(drawshader_retained_current_world_uniforms[shader_index], 1, GL_FALSE, draw->current_world);
 	glUniformMatrix4fv(drawshader_retained_previous_world_uniforms[shader_index], 1, GL_FALSE, draw->previous_world);
 	glUniform2f(drawshader_retained_uv_offset_uniforms[shader_index], draw->u_offset, draw->v_offset);
+	glUniform2fv(drawshader_retained_uv2_scale_uniforms[shader_index], 1, draw->uv2_scale);
 	glUniform3fv(drawshader_retained_base_color_uniforms[shader_index], 1, base_color);
 	glUniform1f(drawshader_retained_depth_bias_uniforms[shader_index], draw->depth_bias);
+	glUniform1i(drawshader_retained_legacy_depth_uniforms[shader_index], draw->legacy_depth ? 1 : 0);
 	glUniform1i(drawshader_retained_lighting_mode_uniforms[shader_index], lighting_mode);
 	glUniform1i(drawshader_retained_vertex_alpha_uniforms[shader_index],
 		(OpenGL_state.cur_alpha_type & ATF_VERTEX) != 0 ? 1 : 0);
 	glUniform1f(drawshader_retained_alpha_scale_uniforms[shader_index],
 		Alpha_multiplier * OpenGL_Alpha_factor / 255.0f);
 	glUniform1i(drawshader_retained_effect_mode_uniforms[shader_index], draw->effect_mode);
+	glUniform1f(drawshader_retained_effect_alpha_scale_uniforms[shader_index], draw->effect_alpha_scale);
 	glUniform3fv(drawshader_retained_fog_plane_uniforms[shader_index], 1, draw->fog_plane);
 	glUniform1f(drawshader_retained_fog_distance_uniforms[shader_index], draw->fog_distance);
 	glUniform1f(drawshader_retained_fog_eye_distance_uniforms[shader_index], draw->fog_eye_distance);

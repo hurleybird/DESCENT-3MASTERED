@@ -61,6 +61,7 @@
 #include "player.h"
 #include "args.h"
 #include "newrender.h"
+#include "retained_room.h"
 #ifdef EDITOR
 #include "editor\d3edit.h"
 #endif
@@ -3668,10 +3669,19 @@ struct RoomFogBatchedFace
 	}
 };
 
-static void FlushRoomFogFaceBatch(std::vector<RoomFogBatchedFace>& faces)
+static void FlushRoomFogFaceBatch(room* rp, std::vector<RoomFogBatchedFace>& faces,
+	std::vector<int>& retained_faces)
 {
-	if (faces.empty())
+	if (faces.empty() && retained_faces.empty())
 		return;
+
+	if (!retained_faces.empty())
+	{
+		RetainedRoomDrawFogFaces(rp, retained_faces.data(), (int)retained_faces.size(),
+			&Room_fog_plane, Room_fog_distance, Room_fog_eye_distance, rp->fog_depth,
+			Room_fog_plane_check != 1);
+		retained_faces.clear();
+	}
 
 	std::vector<renderer_poly_batch_item> items(faces.size());
 	for (size_t face_index = 0; face_index < faces.size(); face_index++)
@@ -3691,6 +3701,7 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 	g3Point* pointlist[MAX_VERTS_PER_FACE];
 	g3Point  pointbuffer[MAX_VERTS_PER_FACE];
 	std::vector<RoomFogBatchedFace> batched_faces;
+	std::vector<int> retained_faces;
 	const bool batch_fog = UseHardware && rend_CanUseNewrender();
 	rend_SetOverlayType(OT_NONE);
 	rend_SetTextureType(TT_FLAT);
@@ -3747,6 +3758,12 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 
 			p->p3_flags |= PF_RGBA;
 		}
+		if (batch_fog && !(fp->flags & FF_TRIANGULATED) &&
+			RetainedRoomCanDrawBaseFace(rp, Fog_faces[i]))
+		{
+			retained_faces.push_back(Fog_faces[i]);
+			continue;
+		}
 		if (batch_fog && !(fp->flags & FF_TRIANGULATED))
 		{
 			RoomFogBatchedFace batched_face = {};
@@ -3757,7 +3774,7 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 			continue;
 		}
 
-		FlushRoomFogFaceBatch(batched_faces);
+		FlushRoomFogFaceBatch(rp, batched_faces, retained_faces);
 		if (fp->flags & FF_TRIANGULATED)
 			g3_SetTriangulationTest(1);
 		g3_DrawPoly(fp->num_verts, pointlist, 0);
@@ -3765,7 +3782,7 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 			g3_SetTriangulationTest(0);
 	}
 
-	FlushRoomFogFaceBatch(batched_faces);
+	FlushRoomFogFaceBatch(rp, batched_faces, retained_faces);
 	if (suppress_ao)
 		rend_SetAOSuppression(0.0f);
 	rend_SetCoplanarPolygonOffset(0);
@@ -3872,6 +3889,10 @@ struct RoomBaseFaceBatchKey
 	ubyte alpha_value;
 	color_model color_model_value;
 	int ao_class;
+	int dynamic_lightmap_lmi;
+	float u_offset;
+	float v_offset;
+	float light_scalar;
 
 	bool Equals(const RoomBaseFaceBatchKey& other) const
 	{
@@ -3881,7 +3902,11 @@ struct RoomBaseFaceBatchKey
 			alpha_type == other.alpha_type &&
 			alpha_value == other.alpha_value &&
 			color_model_value == other.color_model_value &&
-			ao_class == other.ao_class;
+			ao_class == other.ao_class &&
+			dynamic_lightmap_lmi == other.dynamic_lightmap_lmi &&
+			u_offset == other.u_offset &&
+			v_offset == other.v_offset &&
+			light_scalar == other.light_scalar;
 	}
 };
 
@@ -3889,6 +3914,8 @@ struct RoomBaseFaceBatch
 {
 	RoomBaseFaceBatchKey key;
 	std::vector<RoomBatchedFace> faces;
+	room* retained_room = nullptr;
+	std::vector<int> retained_faces;
 };
 
 class RoomBaseFaceBatcher
@@ -3911,6 +3938,26 @@ public:
 		m_batches.push_back(batch);
 	}
 
+	void AddRetained(const RoomBaseFaceBatchKey& key, room* rp, int facenum)
+	{
+		for (size_t i = 0; i < m_batches.size(); i++)
+		{
+			if (m_batches[i].key.Equals(key) &&
+				(!m_batches[i].retained_room || m_batches[i].retained_room == rp))
+			{
+				m_batches[i].retained_room = rp;
+				m_batches[i].retained_faces.push_back(facenum);
+				return;
+			}
+		}
+
+		RoomBaseFaceBatch batch;
+		batch.key = key;
+		batch.retained_room = rp;
+		batch.retained_faces.push_back(facenum);
+		m_batches.push_back(batch);
+	}
+
 	void Flush()
 	{
 		if (m_batches.empty())
@@ -3919,7 +3966,7 @@ public:
 		for (size_t i = 0; i < m_batches.size(); i++)
 		{
 			RoomBaseFaceBatch& batch = m_batches[i];
-			if (batch.faces.empty())
+			if (batch.faces.empty() && batch.retained_faces.empty())
 				continue;
 
 			rend_SetAlphaType(batch.key.alpha_type);
@@ -3932,15 +3979,44 @@ public:
 			rend_SetTextureType(TT_PERSPECTIVE);
 			rend_SetAOClass(batch.key.ao_class);
 
-			std::vector<renderer_poly_batch_item> items(batch.faces.size());
-			for (size_t face_index = 0; face_index < batch.faces.size(); face_index++)
+			if (!batch.retained_faces.empty())
 			{
-				batch.faces[face_index].RefreshPointList();
-				items[face_index].pointlist = batch.faces[face_index].pointlist;
-				items[face_index].nv = batch.faces[face_index].nv;
+				rend_BindBitmap(batch.key.bitmap_handle);
+				if (batch.key.overlay_type != OT_NONE)
+					rend_BindLightmap(batch.key.overlay_map);
+				renderer_per_pixel_light per_pixel_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
+				int per_pixel_light_count = 0;
+				if (batch.key.dynamic_lightmap_lmi >= 0)
+				{
+					per_pixel_light_count = GetPerPixelLightmapLights(
+						(ushort)batch.key.dynamic_lightmap_lmi, per_pixel_lights,
+						RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+					if (per_pixel_light_count > 0)
+						rend_SetPerPixelDynamicLighting(
+							&LightmapInfo[batch.key.dynamic_lightmap_lmi].normal,
+							per_pixel_light_count, per_pixel_lights);
+				}
+				RetainedRoomDrawFaces(batch.retained_room, batch.retained_faces.data(),
+					(int)batch.retained_faces.size(), batch.key.u_offset,
+					batch.key.v_offset, batch.key.light_scalar,
+					batch.key.overlay_type != OT_NONE ? batch.key.overlay_map : -1);
+				if (per_pixel_light_count > 0)
+					rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 			}
 
-			rend_DrawPolygon3DBatch(batch.key.bitmap_handle, items.data(), (int)items.size(), MAP_TYPE_BITMAP);
+			if (!batch.faces.empty())
+			{
+				std::vector<renderer_poly_batch_item> items(batch.faces.size());
+				for (size_t face_index = 0; face_index < batch.faces.size(); face_index++)
+				{
+					batch.faces[face_index].RefreshPointList();
+					items[face_index].pointlist = batch.faces[face_index].pointlist;
+					items[face_index].nv = batch.faces[face_index].nv;
+				}
+
+				rend_DrawPolygon3DBatch(batch.key.bitmap_handle, items.data(),
+					(int)items.size(), MAP_TYPE_BITMAP);
+			}
 		}
 
 		rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
@@ -4070,7 +4146,6 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 		}
 		return true;
 	}
-
 	if (face_cc.cc_or)
 		return false;
 
@@ -4137,6 +4212,7 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	if (alpha_type != AT_ALWAYS)
 		return false;
 
+	int dynamic_lightmap_lmi = -1;
 	if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting &&
 		UseHardware && rend_CanUseNewrender())
 	{
@@ -4144,7 +4220,7 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 		int per_pixel_light_count = GetPerPixelLightmapLights(fp->lmi_handle, per_pixel_lights,
 			RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
 		if (per_pixel_light_count > 0)
-			return false;
+			dynamic_lightmap_lmi = fp->lmi_handle;
 	}
 
 	RoomBaseFaceBatchKey key = {};
@@ -4155,6 +4231,10 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	key.overlay_type = OT_NONE;
 	key.overlay_map = 0;
 	key.ao_class = RoomFaceAOClass(rp, fp);
+	key.dynamic_lightmap_lmi = dynamic_lightmap_lmi;
+	key.u_offset = uchange;
+	key.v_offset = vchange;
+	key.light_scalar = Room_light_val;
 
 	if (fp->flags & FF_LIGHTMAP)
 	{
@@ -4163,6 +4243,13 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 			key.overlay_type = OT_BLEND;
 			key.overlay_map = LightmapInfo[fp->lmi_handle].lm_handle;
 		}
+	}
+
+	if (RetainedRoomCanDrawBaseFace(rp, facenum))
+	{
+		batcher.AddRetained(key, rp, facenum);
+		AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face);
+		return true;
 	}
 
 	RoomBatchedFace batched_face;
@@ -4190,6 +4277,7 @@ void RenderFace(room* rp, int facenum)
 	static float lm_red[32], lm_green[32], lm_blue[32];
 	bool spec_face = 0;
 	bool specular_material_face = false;
+	bool retained_base_face = false;
 	SpecularBlock specblock = {};
 	face_cc.cc_and = 0xff;
 	face_cc.cc_or = 0;
@@ -4437,7 +4525,30 @@ void RenderFace(room* rp, int facenum)
 	}
 
 	rend_SetAOClass(RoomFaceAOClass(rp, fp));
-	drawn = g3_DrawPoly(fp->num_verts, pointlist, bm_handle, MAP_TYPE_BITMAP, &face_cc);
+	retained_base_face = !Render_mirror_for_room && !In_editor_mode &&
+		!face_cc.cc_or && !(rp->flags & RF_TRIANGULATE) && !specular_material_face &&
+		RetainedRoomCanDrawBaseFace(rp, facenum);
+	if (retained_base_face)
+	{
+		rend_BindBitmap(bm_handle);
+		if ((fp->flags & FF_LIGHTMAP) &&
+			!(GameTextures[BaseTextureTmapForFace(fp)].flags & TF_SATURATE))
+		{
+			rend_BindLightmap(LightmapInfo[fp->lmi_handle].lm_handle);
+		}
+		const int retained_lightmap = (fp->flags & FF_LIGHTMAP) &&
+			!(GameTextures[BaseTextureTmapForFace(fp)].flags & TF_SATURATE) ?
+			LightmapInfo[fp->lmi_handle].lm_handle : -1;
+		if (RetainedRoomDrawFaces(rp, &facenum, 1, uchange, vchange,
+			Room_light_val, retained_lightmap))
+			drawn = 1;
+		else
+			drawn = g3_DrawPoly(fp->num_verts, pointlist, bm_handle, MAP_TYPE_BITMAP, &face_cc);
+	}
+	else
+	{
+		drawn = g3_DrawPoly(fp->num_verts, pointlist, bm_handle, MAP_TYPE_BITMAP, &face_cc);
+	}
 	rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
 	if (specular_material_face)
 	{
