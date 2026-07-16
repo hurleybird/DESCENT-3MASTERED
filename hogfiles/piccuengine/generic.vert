@@ -157,8 +157,9 @@ void main()
 		vec3 vertex_color = retained_base_color;
 		if (retained_lighting_mode == 1)
 		{
-			vec3 light_direction = normalize(phong_light_direction);
-			float light = clamp((-dot(light_direction, normalize(normal.xyz)) + 1.0) * 0.5, 0.0, 1.0);
+			// Match SetPolymodelGouraudPointLighting. Imported model normals and
+			// light directions are already normalized by the model pipeline.
+			float light = clamp((-dot(phong_light_direction, normal.xyz) + 1.0) * 0.5, 0.0, 1.0);
 			vertex_color *= light;
 		}
 		float vertex_alpha = retained_vertex_alpha != 0 ? color.a : 1.0;
@@ -174,12 +175,20 @@ void main()
 			float table_square = table_input * table_input;
 			vertex_alpha = table_square * table_square * retained_specular_scalar;
 		}
-		if (retained_effect_mode == 1 || retained_effect_mode == 2)
+		if (retained_effect_mode == 1 || retained_effect_mode == 2 ||
+			retained_effect_mode == 4 || retained_effect_mode == 5)
 		{
 			float magnitude = view_position.z;
-			if (retained_effect_mode == 2)
+			if (retained_effect_mode == 5)
 			{
-				float distance_to_plane = dot(view_position, retained_fog_plane) + retained_fog_distance;
+				// Static rooms are retained directly in world coordinates.
+				magnitude = dot(local_position.xyz, retained_fog_plane) + retained_fog_distance;
+			}
+			else if (retained_effect_mode == 2 || retained_effect_mode == 4)
+			{
+				float distance_to_plane = retained_effect_mode == 4 ?
+					dot(local_position.xyz, retained_fog_plane) + retained_fog_distance :
+					dot(view_position, retained_fog_plane) + retained_fog_distance;
 				float denominator = retained_fog_eye_distance - distance_to_plane;
 				if (abs(denominator) < 0.0001)
 					magnitude = 0.0;
@@ -212,9 +221,16 @@ void main()
 			out_field_specular_colors[3] = vec4(0.0);
 		#endif
 		#if defined(USE_TEXTURING)
-			outuv = vec3(uv.xy + retained_uv_offset, 1.0);
+			// Legacy g3 texture vertices use 1 / (z + Z_bias). Hardware
+			// perspective interpolation otherwise supplies 1 / z, which subtly
+			// shifts textures on biased custom submodels such as cockpit arms.
+			float uv_perspective_scale = retained_legacy_depth != 0 ?
+				gl_Position.w / max(gl_Position.w + retained_depth_bias, 0.0001) : 1.0;
+			outuv = vec3((uv.xy + retained_uv_offset) * uv_perspective_scale,
+				uv_perspective_scale);
 			#if defined(USE_LIGHTMAP)
-				outuv2 = vec3(uv2.xy * retained_uv2_scale, 1.0);
+				outuv2 = vec3(uv2.xy * retained_uv2_scale * uv_perspective_scale,
+					uv_perspective_scale);
 			#endif
 		#endif
 		#if defined(USE_FOG)

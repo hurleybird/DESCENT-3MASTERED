@@ -350,6 +350,7 @@ class GL4Renderer : public IRenderer
 	bool post_protection_mask_cleared_this_frame = false;
 	renderer_draw_call_category draw_call_category = RENDERER_DRAW_CALL_3D;
 	bool depth_write_enabled = true;
+	bool depth_snapshot_invalidation_enabled = true;
 	vector per_pixel_light_direction = { 0, 0, -1 };
 	vector per_pixel_dynamic_face_normal = { 0, 0, 1 };
 	int per_pixel_dynamic_light_count = 0;
@@ -723,6 +724,10 @@ public:
 	void SetPostMaskOnly(int state) override;
 	void SetSoftParticleState(int state) override;
 	void NotifyDepthBufferWrite() override;
+	void SetDepthSnapshotInvalidation(bool enabled) override
+	{
+		depth_snapshot_invalidation_enabled = enabled;
+	}
 	void SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect) override;
 
 	// Draws a scaled 2d bitmap to our buffer

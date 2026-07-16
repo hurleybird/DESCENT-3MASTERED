@@ -675,6 +675,11 @@ void rend_SetZBufferWriteMask (int state);
 void rend_BeginDepthWriteLock();
 void rend_EndDepthWriteLock();
 
+// Allows late transparent geometry to preserve legacy depth ordering without
+// invalidating the opaque depth snapshot used by post-processing consumers.
+void rend_BeginLateDepthWrite();
+void rend_EndLateDepthWrite();
+
 // Sets where the software renderer should write to
 void rend_SetSoftwareParameters(float aspect,int width,int height,int pitch,ubyte *framebuffer);
 

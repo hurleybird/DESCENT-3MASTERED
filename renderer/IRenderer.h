@@ -205,6 +205,7 @@ public:
 	virtual void SetPostMaskOnly(int state) {}
 	virtual void SetSoftParticleState(int state) {}
 	virtual void NotifyDepthBufferWrite() {}
+	virtual void SetDepthSnapshotInvalidation(bool enabled) {}
 	virtual void SetCockpitBackingEffect(const renderer_cockpit_backing_effect *effect) {}
 
 	// Draws a scaled 2d bitmap to our buffer

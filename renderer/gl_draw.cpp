@@ -1508,7 +1508,8 @@ void GL4Renderer::InvalidateSoftParticleDepthTexture()
 
 void GL4Renderer::NotifyDepthBufferWrite()
 {
-	if (framebuffer_ok && OpenGL_state.cur_zbuffer_state != 0 && depth_write_enabled &&
+	if (depth_snapshot_invalidation_enabled && framebuffer_ok &&
+		OpenGL_state.cur_zbuffer_state != 0 && depth_write_enabled &&
 		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle()))
 	{
 		framebuffers[framebuffer_current_draw].MarkDepthDirty();
@@ -2100,6 +2101,12 @@ bool GL4Renderer::BeginRetainedPolymodelDraw(const renderer_retained_polymodel_d
 	glUniform1f(drawshader_retained_depth_bias_uniforms[shader_index], draw->depth_bias);
 	glUniform1i(drawshader_retained_legacy_depth_uniforms[shader_index], draw->legacy_depth ? 1 : 0);
 	glUniform1i(drawshader_retained_lighting_mode_uniforms[shader_index], lighting_mode);
+	if (lighting_mode == 1 && drawshader_light_direction_uniforms[shader_index] != -1)
+	{
+		glUniform3f(drawshader_light_direction_uniforms[shader_index],
+			per_pixel_light_direction.x, per_pixel_light_direction.y,
+			per_pixel_light_direction.z);
+	}
 	glUniform1i(drawshader_retained_vertex_alpha_uniforms[shader_index],
 		(OpenGL_state.cur_alpha_type & ATF_VERTEX) != 0 ? 1 : 0);
 	glUniform1f(drawshader_retained_alpha_scale_uniforms[shader_index],

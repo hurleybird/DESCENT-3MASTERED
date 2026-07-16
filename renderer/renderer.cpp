@@ -794,6 +794,8 @@ void rend_SetZBias(float z_bias)
 static int Renderer_depth_write_lock_count = 0;
 static int Renderer_depth_write_state_before_lock = 1;
 static int Renderer_depth_write_requested_state = 1;
+static int Renderer_late_depth_write_count = 0;
+static int Renderer_depth_write_state_before_late = 1;
 
 // Enables/disables writes the depth buffer
 void rend_SetZBufferWriteMask(int state)
@@ -840,6 +842,38 @@ void rend_EndDepthWriteLock()
 	{
 		Renderer_depth_write_requested_state = Renderer_depth_write_state_before_lock;
 		renderer_inst->SetZBufferWriteMask(Renderer_depth_write_requested_state);
+	}
+}
+
+void rend_BeginLateDepthWrite()
+{
+	if (!Renderer_initted)
+		return;
+
+	ASSERT(Renderer_depth_write_lock_count == 0);
+	if (Renderer_late_depth_write_count++ == 0)
+	{
+		Renderer_depth_write_state_before_late = Renderer_depth_write_requested_state;
+		Renderer_depth_write_requested_state = 1;
+		renderer_inst->SetDepthSnapshotInvalidation(false);
+		renderer_inst->SetZBufferWriteMask(1);
+	}
+}
+
+void rend_EndLateDepthWrite()
+{
+	if (!Renderer_initted)
+		return;
+
+	ASSERT(Renderer_late_depth_write_count > 0);
+	if (Renderer_late_depth_write_count <= 0)
+		return;
+
+	if (--Renderer_late_depth_write_count == 0)
+	{
+		Renderer_depth_write_requested_state = Renderer_depth_write_state_before_late;
+		renderer_inst->SetZBufferWriteMask(Renderer_depth_write_requested_state);
+		renderer_inst->SetDepthSnapshotInvalidation(true);
 	}
 }
 

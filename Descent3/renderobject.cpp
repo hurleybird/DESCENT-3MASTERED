@@ -2059,9 +2059,14 @@ void RenderObjectTransparents(object* obj, unsigned int random_state)
 	// transparent half is the remainder of that accepted render item, not a new
 	// visibility candidate.
 	obj->flags |= OF_SAFE_TO_RENDER;
-	rend_BeginDepthWriteLock();
+	// Legacy translucent polymodel faces wrote depth, which is observable on
+	// self-overlapping geometry such as the shield sphere. Keep those late depth
+	// writes for raster ordering, while leaving the opaque depth snapshot used by
+	// GTAO, motion blur, and soft particles immutable. This does not add a depth
+	// copy or resolve.
+	rend_BeginLateDepthWrite();
 	RenderObjectInternal(obj);
-	rend_EndDepthWriteLock();
+	rend_EndLateDepthWrite();
 
 	RenderObject_disable_motion_capture = saved_disable_motion_capture;
 	Polymodel_render_pass = saved_polymodel_pass;

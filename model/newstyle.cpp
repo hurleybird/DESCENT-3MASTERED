@@ -60,8 +60,11 @@ polymodel_render_pass Polymodel_render_pass = POLYMODEL_RENDER_ALL;
 
 static void RestorePolymodelDepthWriteMask()
 {
-	const bool transparent_pass = Polymodel_render_pass == POLYMODEL_RENDER_TRANSPARENT ||
-		Polymodel_render_pass == POLYMODEL_RENDER_TRANSLUCENT_ALL;
+	// The separated transparent object pass uses late depth writes to preserve
+	// legacy polymodel self-occlusion without invalidating the opaque depth
+	// snapshot consumed by AO and soft particles. Motion-blur ghost passes remain
+	// genuinely depth-read-only.
+	const bool transparent_pass = Polymodel_render_pass == POLYMODEL_RENDER_TRANSLUCENT_ALL;
 	rend_SetZBufferWriteMask(transparent_pass ? 0 : 1);
 }
 static int Multicolor_texture=-1;
@@ -418,7 +421,8 @@ struct PolymodelBaseFaceBatchKey
 			base_color == other.base_color &&
 			u_offset == other.u_offset && v_offset == other.v_offset &&
 			dynamic_lightmap_lmi == other.dynamic_lightmap_lmi &&
-			(lighting != LS_PHONG || light_direction == other.light_direction);
+			((lighting != LS_PHONG && lighting != LS_GOURAUD) ||
+			 light_direction == other.light_direction);
 	}
 };
 
@@ -459,7 +463,7 @@ struct PolymodelBaseFaceBatchKeyHasher
 		seed = PolymodelBaseFaceBatchHashFloat(seed, key.u_offset);
 		seed = PolymodelBaseFaceBatchHashFloat(seed, key.v_offset);
 		seed = PolymodelBaseFaceBatchHashInt(seed, key.dynamic_lightmap_lmi);
-		if (key.lighting == LS_PHONG)
+		if (key.lighting == LS_PHONG || key.lighting == LS_GOURAUD)
 		{
 			seed = PolymodelBaseFaceBatchHashFloat(seed, key.light_direction.x);
 			seed = PolymodelBaseFaceBatchHashFloat(seed, key.light_direction.y);
@@ -554,7 +558,10 @@ public:
 				rend_SetOverlayMap(batch.key.overlay_map);
 			rend_SetColorModel(batch.key.color_model_value);
 			rend_SetTextureType(batch.key.texture_type_value);
-			if (batch.key.lighting == LS_PHONG)
+			// Immediate Gouraud vertices already contain CPU lighting, but retained
+			// Gouraud vertices reconstruct the same value in the vertex shader and
+			// therefore need the submodel-local direction too.
+			if (batch.key.lighting == LS_PHONG || batch.key.lighting == LS_GOURAUD)
 				rend_SetPerPixelLightingDirection(&batch.key.light_direction);
 			rend_SetLighting(batch.key.lighting);
 			rend_SetFlatColor(batch.key.flat_color);

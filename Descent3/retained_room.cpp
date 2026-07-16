@@ -288,7 +288,9 @@ bool RetainedRoomDrawFogFaces(room* rp, const int* facenums, int count,
 	draw.depth_bias = Z_bias;
 	draw.legacy_depth = true;
 	draw.lighting_mode_override = 0;
-	draw.effect_mode = use_fog_plane ? 2 : 1;
+	// Room planes are expressed in world coordinates. Polymodel fog modes use
+	// submodel/view coordinates, so keep the coordinate spaces explicit here.
+	draw.effect_mode = use_fog_plane ? 4 : 5;
 	draw.effect_alpha_scale = Room_light_val;
 	if (fog_plane)
 	{

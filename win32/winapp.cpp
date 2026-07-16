@@ -375,6 +375,21 @@ void oeWin32Application::set_background_mode(bool enabled)
 		m_PositionOverride = true;
 		m_OverrideX = -32000;
 		m_OverrideY = -32000;
+		m_X = -32000;
+		m_Y = -32000;
+
+		// Capture mode is normally selected before init() creates the window, but
+		// make the guarantee hold if it is enabled later as well.  Hiding first
+		// avoids a visible/activating transition while the extended style changes.
+		if (m_hWnd)
+		{
+			ShowWindow((HWND)m_hWnd, SW_HIDE);
+			const LONG_PTR exstyle = GetWindowLongPtr((HWND)m_hWnd, GWL_EXSTYLE);
+			SetWindowLongPtr((HWND)m_hWnd, GWL_EXSTYLE,
+				exstyle | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
+			SetWindowPos((HWND)m_hWnd, HWND_BOTTOM, -32000, -32000, m_W, m_H,
+				SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+		}
 	}
 }
 

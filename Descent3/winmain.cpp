@@ -222,7 +222,7 @@ public:
 			ddio_KeyFlush();
 			return 0;
 		case WM_SETFOCUS:
-			if (!(flags() & OEAPP_CONSOLE))
+			if (!background_mode() && !(flags() & OEAPP_CONSOLE))
 				ddio_MouseMode(ShouldCaptureMouse() ? MOUSE_EXCLUSIVE_MODE : MOUSE_STANDARD_MODE);
 			return 0;
 		}
@@ -703,6 +703,9 @@ int PASCAL HandledWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine,
 		d3 = new oeD3Win32App(flags, (HInstance)hInst);
 		if (has_window_position)
 			d3->set_position_override(window_x, window_y);
+		// Establish non-activating capture behavior before any application
+		// initialization can create or reconfigure the game window. Capture mode
+		// deliberately supersedes an explicit window position.
 		if (FindArg("-capture-frame") || FindArg("-screenshot-frame"))
 			d3->set_background_mode(true);
 	}

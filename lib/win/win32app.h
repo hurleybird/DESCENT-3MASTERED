@@ -142,6 +142,7 @@ public:
 
 	// Prevent an automated capture window from taking focus.
 	void set_background_mode(bool enabled);
+	bool background_mode() const { return m_BackgroundMode; }
 
 	void set_flags(int newflags);
 
