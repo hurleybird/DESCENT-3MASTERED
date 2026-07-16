@@ -119,6 +119,20 @@ class GL4Renderer : public IRenderer
 	Framebuffer soft_particle_depth_framebuffer;
 	MotionVectorResources motion_vectors;
 	PostProtectionMaskResources post_protection_mask;
+
+	static constexpr int FRAME_PACING_FENCE_COUNT = 4;
+	GLsync frame_pacing_fences[FRAME_PACING_FENCE_COUNT] = {};
+	int frame_pacing_fence_head = 0;
+	int frame_pacing_fence_count = 0;
+	int frame_pacing_queue_depth = 0;
+	bool frame_pacing_telemetry_enabled = false;
+	double frame_pacing_last_present_time = 0.0;
+	double frame_pacing_latest_present_interval_ms = 0.0;
+	double frame_pacing_latest_swap_call_ms = 0.0;
+	double frame_pacing_latest_queue_wait_ms = 0.0;
+	uint64_t frame_pacing_present_serial = 0;
+	void SubmitFramePacingFence();
+	void DestroyFramePacingFences();
 	int framebuffer_current_draw = 0;
 	bool bloom_source_valid = false;
 	bool ao_scene_valid = false;
@@ -772,6 +786,9 @@ public:
 
 	// Flips the surface
 	void Flip() override;
+	void ConfigureFramePacing(int max_frames_in_flight, bool telemetry_enabled) override;
+	double WaitForFramePacing() override;
+	void GetFramePacingInfo(renderer_frame_pacing_info* info) override;
 	bool BeginPostPresentFrame() override;
 	bool IsPostPresentFramePending() const override;
 	void StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags = RF_CLEAR_ZBUFFER) override;

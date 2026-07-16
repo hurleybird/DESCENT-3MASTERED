@@ -135,6 +135,7 @@ struct automated_capture_state
 	int target_frame;
 	int gameplay_frame;
 	float fixed_delta;
+	bool realtime;
 	char output_path[PSPATHNAME_LEN];
 };
 
@@ -164,9 +165,43 @@ static bool AutomatedFramePerfEnabled()
 	return path && path[0];
 }
 
-static void AutomatedFramePerfLog(int gameplay_frame, double simulation_ms,
-	double render_ms, double present_ms, double tail_ms, double total_ms,
-	const tRendererStats& renderer_stats)
+static void InitRendererFramePacing()
+{
+	static bool initialized = false;
+	if (initialized)
+		return;
+	initialized = true;
+
+	// Two submitted frames preserved throughput while moving implicit driver
+	// backpressure ahead of simulation/input instead of leaving it in SwapBuffers.
+	// Keep zero available as the driver-managed comparison path.
+	int queue_depth = 2;
+	const int queue_arg = FindArg("-framequeue");
+	if (queue_arg)
+	{
+		const char* value = GetArg(queue_arg + 1);
+		char* end = nullptr;
+		const long parsed = value ? strtol(value, &end, 10) : -1;
+		if (value && end != value && *end == '\0' && parsed >= 0 && parsed <= 3)
+			queue_depth = (int)parsed;
+		else
+			mprintf((0, "Ignoring invalid -framequeue value; expected 0 through 3.\n"));
+	}
+
+	const char* telemetry_env = getenv("PICCU_FRAME_PACING_TELEMETRY");
+	const bool telemetry_enabled = AutomatedFramePerfEnabled() ||
+		(telemetry_env && telemetry_env[0] && strcmp(telemetry_env, "0") != 0);
+	rend_ConfigureFramePacing(queue_depth, telemetry_enabled);
+	AutomatedCaptureLog("frame pacing queue=%d telemetry=%d", queue_depth,
+		telemetry_enabled ? 1 : 0);
+	mprintf((0, "Frame pacing: queue depth %d, telemetry %s.\n", queue_depth,
+		telemetry_enabled ? "enabled" : "disabled"));
+}
+
+static void AutomatedFramePerfLog(int gameplay_frame, double frame_start_interval_ms,
+	double pacing_wait_ms, double simulation_ms, double render_ms, double present_ms,
+	double tail_ms, double cap_wait_ms, double total_ms, float frame_time_ms,
+	const renderer_frame_pacing_info& pacing_info, const tRendererStats& renderer_stats)
 {
 	const char* path = getenv("PICCU_FRAME_PERF_LOG");
 	if (!path || !path[0])
@@ -177,12 +212,17 @@ static void AutomatedFramePerfLog(int gameplay_frame, double simulation_ms,
 		return;
 	if (!wrote_header)
 	{
-		fputs("gameplay_frame\tsimulation_ms\trender_ms\tpresent_ms\ttail_ms\ttotal_ms\tpolygons\tvertices\ttexture_uploads\n", file);
+		fputs("gameplay_frame\tframe_start_interval_ms\tpacing_wait_ms\tsimulation_ms\trender_ms\tpresent_ms\ttail_ms\tcap_wait_ms\ttotal_ms\tframetime_ms\tpresent_interval_ms\tswap_call_ms\tqueue_depth\tqueued_frames\tgpu_frame_ms\tgpu_frame_serial\tpolygons\tvertices\ttexture_uploads\n", file);
 		wrote_header = true;
 	}
-	fprintf(file, "%d\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\t%d\t%d\n",
-		gameplay_frame, simulation_ms, render_ms, present_ms, tail_ms,
-		total_ms, renderer_stats.poly_count, renderer_stats.vert_count,
+	fprintf(file, "%d\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\t%d\t%.3f\t%llu\t%d\t%d\t%d\n",
+		gameplay_frame, frame_start_interval_ms, pacing_wait_ms, simulation_ms,
+		render_ms, present_ms, tail_ms, cap_wait_ms, total_ms, frame_time_ms,
+		pacing_info.latest_present_interval_ms, pacing_info.latest_swap_call_ms,
+		pacing_info.configured_queue_depth, pacing_info.queued_frames,
+		pacing_info.latest_gpu_frame_ms,
+		(unsigned long long)pacing_info.latest_gpu_frame_serial,
+		renderer_stats.poly_count, renderer_stats.vert_count,
 		renderer_stats.texture_uploads);
 	fclose(file);
 }
@@ -204,6 +244,7 @@ static void InitAutomatedCapture()
 		return;
 	Automated_capture.initialized = true;
 	Automated_capture.fixed_delta = 1.0f / 60.0f;
+	Automated_capture.realtime = FindArg("-capture-realtime") != 0;
 
 	const int frame_arg = FindAutomatedCaptureArg("-capture-frame",
 		"-screenshot-frame");
@@ -253,12 +294,12 @@ static void InitAutomatedCapture()
 
 	Automated_capture.enabled = true;
 	Automated_capture.target_frame = (int)target_frame;
-	AutomatedCaptureLog("armed frame=%d output=%s dt=%.9f",
+	AutomatedCaptureLog("armed frame=%d output=%s dt=%.9f realtime=%d",
 		Automated_capture.target_frame, Automated_capture.output_path,
-		Automated_capture.fixed_delta);
-	mprintf((0, "Automated capture armed: gameplay frame %d -> %s (dt %.6f).\n",
+		Automated_capture.fixed_delta, Automated_capture.realtime ? 1 : 0);
+	mprintf((0, "Automated capture armed: gameplay frame %d -> %s (dt %.6f, realtime %d).\n",
 		Automated_capture.target_frame, Automated_capture.output_path,
-		Automated_capture.fixed_delta));
+		Automated_capture.fixed_delta, Automated_capture.realtime ? 1 : 0));
 }
 
 static void BeginAutomatedCaptureFrame()
@@ -290,7 +331,8 @@ static void BeginAutomatedCaptureFrame()
 	Automated_capture.gameplay_frame_active = true;
 	Automated_capture.capture_pending =
 		Automated_capture.gameplay_frame == Automated_capture.target_frame;
-	Frametime = Automated_capture.fixed_delta;
+	if (!Automated_capture.realtime)
+		Frametime = Automated_capture.fixed_delta;
 }
 
 static void CaptureAutomatedFrameIfRequested()
@@ -3045,14 +3087,24 @@ void GameFrame(void)
 	INT64 curr_time;
 #endif
 	BeginAutomatedCaptureFrame();
+	InitRendererFramePacing();
 	const bool automated_perf_active = Automated_capture.gameplay_frame_active &&
 		AutomatedFramePerfEnabled();
 	const double automated_perf_frame_begin = automated_perf_active ? timer_GetTime64() : 0.0;
-	double automated_perf_render_begin = automated_perf_frame_begin;
-	double automated_perf_render_end = automated_perf_frame_begin;
-	double automated_perf_present_begin = automated_perf_frame_begin;
-	double automated_perf_present_end = automated_perf_frame_begin;
-	double automated_perf_pre_cap_end = automated_perf_frame_begin;
+	static double automated_perf_previous_frame_begin = 0.0;
+	const double automated_perf_frame_start_interval_ms = automated_perf_active &&
+		automated_perf_previous_frame_begin > 0.0 ?
+		(automated_perf_frame_begin - automated_perf_previous_frame_begin) * 1000.0 : 0.0;
+	if (automated_perf_active)
+		automated_perf_previous_frame_begin = automated_perf_frame_begin;
+	const double automated_perf_pacing_wait_ms = rend_WaitForFramePacing();
+	const double automated_perf_simulation_begin = automated_perf_active ? timer_GetTime64() : 0.0;
+	double automated_perf_render_begin = automated_perf_simulation_begin;
+	double automated_perf_render_end = automated_perf_simulation_begin;
+	double automated_perf_present_begin = automated_perf_simulation_begin;
+	double automated_perf_present_end = automated_perf_simulation_begin;
+	double automated_perf_pre_cap_end = automated_perf_simulation_begin;
+	double automated_perf_cap_end = automated_perf_simulation_begin;
 
 	bool is_game_idle = !Descent->active();
 
@@ -3363,10 +3415,12 @@ void GameFrame(void)
 			}
 			while (timer_GetTime64() < target_time) {}
 		}
+		if (automated_perf_active)
+			automated_perf_cap_end = timer_GetTime64();
 
 		//Compute how long frame took
 		CalcFrameTime(target_time);
-		if (Automated_capture.gameplay_frame_active)
+		if (Automated_capture.gameplay_frame_active && !Automated_capture.realtime)
 			Frametime = Automated_capture.fixed_delta;
 
 		//Update Gametime
@@ -3450,14 +3504,19 @@ void GameFrame(void)
 	if (automated_perf_active)
 	{
 		tRendererStats renderer_stats = {};
+		renderer_frame_pacing_info pacing_info = {};
 		rend_GetStatistics(&renderer_stats);
+		rend_GetFramePacingInfo(&pacing_info);
 		AutomatedFramePerfLog(Automated_capture.gameplay_frame,
-			(automated_perf_render_begin - automated_perf_frame_begin) * 1000.0,
+			automated_perf_frame_start_interval_ms,
+			automated_perf_pacing_wait_ms,
+			(automated_perf_render_begin - automated_perf_simulation_begin) * 1000.0,
 			(automated_perf_render_end - automated_perf_render_begin) * 1000.0,
 			(automated_perf_present_end - automated_perf_present_begin) * 1000.0,
 			(automated_perf_pre_cap_end - automated_perf_present_end) * 1000.0,
-			(automated_perf_pre_cap_end - automated_perf_frame_begin) * 1000.0,
-			renderer_stats);
+			(automated_perf_cap_end - automated_perf_pre_cap_end) * 1000.0,
+			(automated_perf_cap_end - automated_perf_frame_begin) * 1000.0,
+			Frametime * 1000.0f, pacing_info, renderer_stats);
 	}
 
 	EndAutomatedCaptureFrame();

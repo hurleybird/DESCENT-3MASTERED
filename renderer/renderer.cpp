@@ -697,6 +697,35 @@ void rend_Flip()
 	rend_PublishDrawCallStats();
 }
 
+void rend_ConfigureFramePacing(int max_frames_in_flight, bool telemetry_enabled)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->ConfigureFramePacing(max_frames_in_flight, telemetry_enabled);
+}
+
+double rend_WaitForFramePacing()
+{
+	if (!Renderer_initted)
+		return 0.0;
+
+	return renderer_inst->WaitForFramePacing();
+}
+
+void rend_GetFramePacingInfo(renderer_frame_pacing_info* info)
+{
+	if (!info)
+		return;
+	if (!Renderer_initted)
+	{
+		*info = {};
+		return;
+	}
+
+	renderer_inst->GetFramePacingInfo(info);
+}
+
 // Sets the argb characteristics of the font characters.  color1 is the upper left and proceeds clockwise
 void rend_SetCharacterParameters(ddgr_color color1, ddgr_color color2, ddgr_color color3, ddgr_color color4)
 {

@@ -168,12 +168,17 @@ static bool GL4_gpu_frame_queries_initialized = false;
 static bool GL4_gpu_frame_query_active = false;
 static int GL4_gpu_frame_query_active_index = -1;
 static int GL4_gpu_frame_query_write_index = 0;
+static bool GL4_frame_pacing_telemetry_enabled = false;
+static double GL4_latest_gpu_frame_ms = 0.0;
+static uint64_t GL4_latest_gpu_frame_serial = 0;
+static uint64_t GL4_next_gpu_frame_serial = 0;
 struct GL4GpuFrameQueryState
 {
 	bool pending = false;
 	int requested_samples = 0;
 	int actual_samples = 0;
 	int ssaa_factor = 1;
+	uint64_t serial = 0;
 };
 static GL4GpuFrameQueryState GL4_gpu_frame_query_state[GL4_GPU_FRAME_QUERY_COUNT];
 
@@ -186,7 +191,8 @@ static bool GL4PerfGpuFrameQueriesAvailable()
 
 static void GL4PerfGpuFramePoll()
 {
-	if (!Perf_markers_enabled || !GL4_gpu_frame_queries_initialized)
+	if ((!Perf_markers_enabled && !GL4_frame_pacing_telemetry_enabled) ||
+		!GL4_gpu_frame_queries_initialized)
 		return;
 
 	for (int i = 0; i < GL4_GPU_FRAME_QUERY_COUNT; i++)
@@ -201,20 +207,26 @@ static void GL4PerfGpuFramePoll()
 
 		GLuint64 elapsed_ns = 0;
 		glGetQueryObjectui64v(GL4_gpu_frame_queries[i], GL_QUERY_RESULT, &elapsed_ns);
+		GL4_latest_gpu_frame_ms = (double)elapsed_ns / 1000000.0;
+		GL4_latest_gpu_frame_serial = GL4_gpu_frame_query_state[i].serial;
 
-		char marker[96];
-		snprintf(marker, sizeof(marker), "GPU.FrameToBeforeSwap req=%d actual=%d ssaa=%d",
-			GL4_gpu_frame_query_state[i].requested_samples,
-			GL4_gpu_frame_query_state[i].actual_samples,
-			GL4_gpu_frame_query_state[i].ssaa_factor);
-		PerfMarkersRecordDuration(marker, PerfMarkersNow(), (double)elapsed_ns / 1000000000.0);
+		if (Perf_markers_enabled)
+		{
+			char marker[96];
+			snprintf(marker, sizeof(marker), "GPU.FrameToBeforeSwap req=%d actual=%d ssaa=%d",
+				GL4_gpu_frame_query_state[i].requested_samples,
+				GL4_gpu_frame_query_state[i].actual_samples,
+				GL4_gpu_frame_query_state[i].ssaa_factor);
+			PerfMarkersRecordDuration(marker, PerfMarkersNow(), (double)elapsed_ns / 1000000000.0);
+		}
 		GL4_gpu_frame_query_state[i].pending = false;
 	}
 }
 
 static void GL4PerfGpuFrameBegin(const Framebuffer& framebuffer, int ssaa_factor)
 {
-	if (!Perf_markers_enabled || GL4_gpu_frame_query_active || !GL4PerfGpuFrameQueriesAvailable())
+	if ((!Perf_markers_enabled && !GL4_frame_pacing_telemetry_enabled) ||
+		GL4_gpu_frame_query_active || !GL4PerfGpuFrameQueriesAvailable())
 		return;
 
 	if (!GL4_gpu_frame_queries_initialized)
@@ -232,6 +244,7 @@ static void GL4PerfGpuFrameBegin(const Framebuffer& framebuffer, int ssaa_factor
 	GL4_gpu_frame_query_state[index].requested_samples = (int)framebuffer.RequestedSamples();
 	GL4_gpu_frame_query_state[index].actual_samples = (int)framebuffer.Samples();
 	GL4_gpu_frame_query_state[index].ssaa_factor = ssaa_factor;
+	GL4_gpu_frame_query_state[index].serial = ++GL4_next_gpu_frame_serial;
 	glBeginQuery(GL_TIME_ELAPSED, GL4_gpu_frame_queries[index]);
 	GL4_gpu_frame_query_active = true;
 	GL4_gpu_frame_query_active_index = index;
@@ -267,6 +280,9 @@ static void GL4PerfGpuFrameShutdown()
 	memset(GL4_gpu_frame_query_state, 0, sizeof(GL4_gpu_frame_query_state));
 	GL4_gpu_frame_queries_initialized = false;
 	GL4_gpu_frame_query_write_index = 0;
+	GL4_latest_gpu_frame_ms = 0.0;
+	GL4_latest_gpu_frame_serial = 0;
+	GL4_next_gpu_frame_serial = 0;
 }
 
 enum GL4GpuSplitPoint
@@ -1414,6 +1430,100 @@ void GL4Renderer::Flip()
 		EndPostPresentFrame();
 }
 
+void GL4Renderer::DestroyFramePacingFences()
+{
+	if (glDeleteSync != nullptr)
+	{
+		for (GLsync& fence : frame_pacing_fences)
+		{
+			if (fence != nullptr)
+				glDeleteSync(fence);
+			fence = nullptr;
+		}
+	}
+	else
+	{
+		for (GLsync& fence : frame_pacing_fences)
+			fence = nullptr;
+	}
+	frame_pacing_fence_head = 0;
+	frame_pacing_fence_count = 0;
+	frame_pacing_last_present_time = 0.0;
+	frame_pacing_latest_present_interval_ms = 0.0;
+	frame_pacing_latest_swap_call_ms = 0.0;
+	frame_pacing_latest_queue_wait_ms = 0.0;
+}
+
+void GL4Renderer::ConfigureFramePacing(int max_frames_in_flight, bool telemetry_enabled)
+{
+	const int queue_depth = std::max(0, std::min(max_frames_in_flight,
+		FRAME_PACING_FENCE_COUNT - 1));
+	if (queue_depth != frame_pacing_queue_depth)
+		DestroyFramePacingFences();
+	frame_pacing_queue_depth = queue_depth;
+	frame_pacing_telemetry_enabled = telemetry_enabled;
+	GL4_frame_pacing_telemetry_enabled = telemetry_enabled;
+}
+
+void GL4Renderer::SubmitFramePacingFence()
+{
+	if (frame_pacing_queue_depth <= 0 || glFenceSync == nullptr)
+		return;
+	if (frame_pacing_fence_count >= FRAME_PACING_FENCE_COUNT)
+		return;
+
+	const int tail = (frame_pacing_fence_head + frame_pacing_fence_count) %
+		FRAME_PACING_FENCE_COUNT;
+	frame_pacing_fences[tail] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+	if (frame_pacing_fences[tail] != nullptr)
+		++frame_pacing_fence_count;
+}
+
+double GL4Renderer::WaitForFramePacing()
+{
+	if (frame_pacing_queue_depth <= 0 ||
+		frame_pacing_fence_count < frame_pacing_queue_depth ||
+		glClientWaitSync == nullptr || glDeleteSync == nullptr)
+	{
+		frame_pacing_latest_queue_wait_ms = 0.0;
+		return 0.0;
+	}
+
+	const double wait_start = PerfMarkersNow();
+	while (frame_pacing_fence_count >= frame_pacing_queue_depth)
+	{
+		GLsync& fence = frame_pacing_fences[frame_pacing_fence_head];
+		if (fence != nullptr)
+		{
+			const GLenum result = glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT,
+				GL_TIMEOUT_IGNORED);
+			if (result == GL_WAIT_FAILED)
+				mprintf((0, "GL4 frame pacing fence wait failed.\n"));
+			glDeleteSync(fence);
+			fence = nullptr;
+		}
+		frame_pacing_fence_head = (frame_pacing_fence_head + 1) %
+			FRAME_PACING_FENCE_COUNT;
+		--frame_pacing_fence_count;
+	}
+	frame_pacing_latest_queue_wait_ms = (PerfMarkersNow() - wait_start) * 1000.0;
+	return frame_pacing_latest_queue_wait_ms;
+}
+
+void GL4Renderer::GetFramePacingInfo(renderer_frame_pacing_info* info)
+{
+	if (!info)
+		return;
+	info->configured_queue_depth = frame_pacing_queue_depth;
+	info->queued_frames = frame_pacing_fence_count;
+	info->latest_present_interval_ms = frame_pacing_latest_present_interval_ms;
+	info->latest_swap_call_ms = frame_pacing_latest_swap_call_ms;
+	info->latest_queue_wait_ms = frame_pacing_latest_queue_wait_ms;
+	info->latest_present_serial = frame_pacing_present_serial;
+	info->latest_gpu_frame_ms = GL4_latest_gpu_frame_ms;
+	info->latest_gpu_frame_serial = GL4_latest_gpu_frame_serial;
+}
+
 bool GL4Renderer::BeginPostPresentFrame()
 {
 	return BeginPostPresentFrameInternal(false);
@@ -2260,6 +2370,14 @@ void GL4Renderer::EndPostPresentFrame()
 
 	GL4PerfGpuSplitEndBeforeSwap();
 	GL4PerfGpuFrameEndBeforeSwap();
+	const double present_call_time = PerfMarkersNow();
+	if (frame_pacing_last_present_time > 0.0)
+		frame_pacing_latest_present_interval_ms =
+			(present_call_time - frame_pacing_last_present_time) * 1000.0;
+	frame_pacing_last_present_time = present_call_time;
+	++frame_pacing_present_serial;
+	SubmitFramePacingFence();
+	const double swap_call_start = PerfMarkersNow();
 
 #if defined(SDL3)
 	{
@@ -2280,6 +2398,8 @@ void GL4Renderer::EndPostPresentFrame()
 		SDL_GL_SwapBuffers();
 	}
 #endif
+	frame_pacing_latest_swap_call_ms =
+		(PerfMarkersNow() - swap_call_start) * 1000.0;
 
 	{
 		PERF_MARKER_SCOPE("Renderer.Flip.NextFramebuffer");
@@ -3645,6 +3765,7 @@ void GL4Renderer::UpdateFramebuffer(void)
 
 void GL4Renderer::CloseFramebuffer(void)
 {
+	DestroyFramePacingFences();
 	GL4PerfGpuSplitShutdown();
 	GL4PerfGpuFrameShutdown();
 	for (int i = 0; i < NUM_GL4_FBOS; i++)

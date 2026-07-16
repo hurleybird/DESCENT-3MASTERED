@@ -28,6 +28,18 @@ struct g3Point;
 struct chunked_bitmap;
 struct vector;
 
+struct renderer_frame_pacing_info
+{
+	int configured_queue_depth = 0;
+	int queued_frames = 0;
+	double latest_present_interval_ms = 0.0;
+	double latest_swap_call_ms = 0.0;
+	double latest_queue_wait_ms = 0.0;
+	uint64_t latest_present_serial = 0;
+	double latest_gpu_frame_ms = 0.0;
+	uint64_t latest_gpu_frame_serial = 0;
+};
+
 //	for rend_Init prototype
 class oeApplication;
 
@@ -635,6 +647,13 @@ void rend_DrawCircle(int x, int y, int rad);
 
 // Flips the surface
 void rend_Flip();
+
+// Diagnostic frame pacing support. A queue depth of zero leaves driver-managed
+// submission behavior unchanged. Positive depths bound completed GL frame work
+// without enabling vertical synchronization.
+void rend_ConfigureFramePacing(int max_frames_in_flight, bool telemetry_enabled);
+double rend_WaitForFramePacing();
+void rend_GetFramePacingInfo(renderer_frame_pacing_info* info);
 
 // Sets the argb characteristics of the font characters.  color1 is the upper left and proceeds clockwise
 void rend_SetCharacterParameters (ddgr_color color1,ddgr_color color2,ddgr_color color3,ddgr_color color4);

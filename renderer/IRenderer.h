@@ -250,6 +250,13 @@ public:
 
 	// Flips the surface
 	virtual void Flip() = 0;
+	virtual void ConfigureFramePacing(int max_frames_in_flight, bool telemetry_enabled) {}
+	virtual double WaitForFramePacing() { return 0.0; }
+	virtual void GetFramePacingInfo(renderer_frame_pacing_info* info)
+	{
+		if (info)
+			*info = {};
+	}
 	virtual bool BeginPostPresentFrame() { return false; }
 	virtual bool IsPostPresentFramePending() const { return false; }
 	virtual void StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags = RF_CLEAR_ZBUFFER) {}
