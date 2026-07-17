@@ -218,13 +218,15 @@ void ColorFramebuffer::Update(int width, int height, GLint internal_format, GLen
 		return;
 	}
 
-	if ((uint32_t)width == m_width && (uint32_t)height == m_height && m_name != 0 && m_colorname != 0)
+	if ((uint32_t)width == m_width && (uint32_t)height == m_height &&
+		internal_format == m_internal_format && m_name != 0 && m_colorname != 0)
 		return;
 
 	Destroy();
 
 	m_width = (uint32_t)width;
 	m_height = (uint32_t)height;
+	m_internal_format = internal_format;
 
 	glGenFramebuffers(1, &m_name);
 	glGenTextures(1, &m_colorname);
@@ -257,6 +259,7 @@ void ColorFramebuffer::Destroy()
 	m_name = 0;
 	m_width = 0;
 	m_height = 0;
+	m_internal_format = 0;
 }
 
 Framebuffer::Framebuffer()
@@ -1401,7 +1404,7 @@ void BloomResources::DestroyFramebuffers()
 		framebuffers[i].Destroy();
 }
 
-Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
+ColorFramebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
 	const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture,
 	GLuint alpha_occlusion_mask_texture, float alpha_occlusion_mask_uv_origin_x,
 	float alpha_occlusion_mask_uv_origin_y, float alpha_occlusion_mask_uv_scale_x,
@@ -1451,13 +1454,14 @@ Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred
 	}
 
 	for (int i = 0; i < downsample_count; i++)
-		framebuffers[i].Update(widths[i], heights[i], 0);
+		framebuffers[i].Update(widths[i], heights[i], GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
 
 	int merge_count = downsample_count - 1;
 	for (int i = 0; i < merge_count; i++)
 	{
 		int level = downsample_count - 2 - i;
-		framebuffers[downsample_count + i].Update(widths[level], heights[level], 0);
+		framebuffers[downsample_count + i].Update(widths[level], heights[level],
+			GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
 	}
 
 	for (int i = downsample_count + merge_count; i < NUM_BLOOM_FBOS; i++)

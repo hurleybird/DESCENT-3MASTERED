@@ -467,7 +467,7 @@ void GLCompatibilityRenderer::Flip(void)
 	}
 
 	GLuint bloom_depth = bloom_source_valid ? bloom_source_framebuffer.DepthTextureForRead() : 0;
-	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_effect_source, OpenGL_preferred_state, OpenGL_state, display_gamma, bloom_depth, 0);
+	ColorFramebuffer* bloom_framebuffer = bloom.Apply(bloom_effect_source, OpenGL_preferred_state, OpenGL_state, display_gamma, bloom_depth, 0);
 	if (bloom_framebuffer)
 	{
 		bloom.compositeshader.Use();
@@ -619,7 +619,7 @@ void GLCompatibilityRenderer::CaptureBloomSource()
 		bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height());
 
 	GLuint bloom_depth = bloom_source_framebuffer.DepthTextureForRead();
-	Framebuffer* bloom_framebuffer = bloom.Apply(&bloom_source_framebuffer, OpenGL_preferred_state,
+	ColorFramebuffer* bloom_framebuffer = bloom.Apply(&bloom_source_framebuffer, OpenGL_preferred_state,
 		OpenGL_state, display_gamma, bloom_depth, 0);
 	if (bloom_framebuffer)
 	{

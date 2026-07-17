@@ -206,6 +206,7 @@ class ColorFramebuffer
 	GLuint m_colorname = 0;
 	uint32_t m_width = 0;
 	uint32_t m_height = 0;
+	GLint m_internal_format = 0;
 
 public:
 	void Update(int width, int height, GLint internal_format, GLenum format, GLenum type);
@@ -288,7 +289,7 @@ GLuint GL_GetFramebufferVAO();
 constexpr int NUM_BLOOM_FBOS = 16;
 struct BloomResources
 {
-	Framebuffer framebuffers[NUM_BLOOM_FBOS];
+	ColorFramebuffer framebuffers[NUM_BLOOM_FBOS];
 	ShaderProgram thresholdshader;
 	ShaderProgram downsampleshader;
 	ShaderProgram mergeshader;
@@ -313,7 +314,7 @@ struct BloomResources
 	void InitShaders();
 	void DestroyShaders();
 	void DestroyFramebuffers();
-	Framebuffer* Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
+	ColorFramebuffer* Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
 		const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture,
 		GLuint alpha_occlusion_mask_texture = 0, float alpha_occlusion_mask_uv_origin_x = 0.0f,
 		float alpha_occlusion_mask_uv_origin_y = 0.0f, float alpha_occlusion_mask_uv_scale_x = 1.0f,

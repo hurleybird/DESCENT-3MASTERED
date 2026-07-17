@@ -178,7 +178,7 @@ class GL4Renderer : public IRenderer
 	bool deferred_bloom_composite_pending = false;
 	bool deferred_bloom_apply_pending = false;
 	Framebuffer deferred_bloom_source_framebuffer;
-	Framebuffer* deferred_bloom_framebuffer = nullptr;
+	ColorFramebuffer* deferred_bloom_framebuffer = nullptr;
 	GLuint deferred_bloom_protection_mask_texture = 0;
 	bool cockpit_scene_frame_active = false;
 	float deferred_bloom_uv_origin_x = 0.0f;

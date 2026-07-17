@@ -1805,7 +1805,7 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 		(float)OpenGL_state.screen_width / (float)present_framebuffer->Width() : 1.0f;
 	const float post_uv_scale_y = present_framebuffer->Height() > 0 ?
 		(float)OpenGL_state.screen_height / (float)present_framebuffer->Height() : 1.0f;
-	Framebuffer* bloom_framebuffer = nullptr;
+	ColorFramebuffer* bloom_framebuffer = nullptr;
 	if (defer_bloom_composite)
 	{
 		if (bloom_enabled && present_framebuffer->Handle() != 0)
@@ -2246,7 +2246,7 @@ void GL4Renderer::ApplyDeferredBloom(GLuint alpha_occlusion_mask_texture)
 		return;
 	}
 
-	Framebuffer* bloom_framebuffer = bloom.Apply(&deferred_bloom_source_framebuffer,
+	ColorFramebuffer* bloom_framebuffer = bloom.Apply(&deferred_bloom_source_framebuffer,
 		OpenGL_preferred_state, OpenGL_state, deferred_display_gamma,
 		deferred_bloom_source_framebuffer.DepthTextureForRead(),
 		deferred_bloom_protection_mask_texture,
