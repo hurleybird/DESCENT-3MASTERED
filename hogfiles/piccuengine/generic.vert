@@ -61,6 +61,10 @@ uniform int retained_custom_clip_enabled;
 uniform vec3 retained_custom_clip_point;
 uniform vec3 retained_custom_clip_plane;
 uniform vec3 retained_custom_clip_scale;
+uniform int retained_near_clip_enabled;
+uniform int retained_far_clip_enabled;
+uniform float retained_far_clip_z;
+uniform int retained_per_pixel_specular_payload;
 
 out vec4 outcolor;
 // Legacy g3 draws submit already-projected vertices, so vertex alpha is
@@ -129,12 +133,18 @@ void main()
 			vec3 retained_gl_view_position = (retained_modelview * local_position).xyz;
 			view_position = vec3(retained_gl_view_position.xy, -retained_gl_view_position.z);
 		#else
-			if (retained_effect_mode != 0 || retained_custom_clip_enabled != 0)
+			if (retained_effect_mode != 0 || retained_custom_clip_enabled != 0 ||
+				retained_near_clip_enabled != 0 || retained_far_clip_enabled != 0 ||
+				retained_per_pixel_specular_payload != 0)
 			{
 				vec3 retained_gl_view_position = (retained_modelview * local_position).xyz;
 				view_position = vec3(retained_gl_view_position.xy, -retained_gl_view_position.z);
 			}
 		#endif
+		// gTransformModelView includes the legacy Z bias in its translation.
+		// CPU g3 view coordinates and clip codes do not, so remove it from the
+		// retained view-space payload used by fog, clipping, and specular lighting.
+		view_position.z += retained_depth_bias;
 		// Legacy g3 points use a positive forward Z, while the GL model-view
 		// matrix uses the conventional negative forward Z.  Keep the retained
 		// calculations in the coordinate system expected by the legacy fog
@@ -163,6 +173,9 @@ void main()
 		{
 			gl_ClipDistance[0] = 1.0;
 		}
+		gl_ClipDistance[1] = retained_near_clip_enabled != 0 ? view_position.z : 1.0;
+		gl_ClipDistance[2] = retained_far_clip_enabled != 0 ?
+			retained_far_clip_z - view_position.z : 1.0;
 		vec3 vertex_color = retained_base_color;
 		if (retained_lighting_mode == 1)
 		{
@@ -216,19 +229,39 @@ void main()
 		// The legacy generic stream overloads this attribute: Phong draws carry a
 		// normal, while dynamically-lightmapped draws carry perspective-correct
 		// world position.  Retained geometry must make the same selection.
-		outnormal = retained_lighting_mode == 2 ? vec4(normal.xyz, 1.0) :
-			(dynamic_light_count > 0 ? retained_world_position : vec4(0.0, 0.0, 0.0, -1.0));
-		out_motion_world_position = retained_world_position;
+		if (retained_per_pixel_specular_payload != 0)
+		{
+			vec3 retained_view_normal = mat3(retained_modelview) * normal.xyz;
+			outnormal = vec4(normalize(vec3(retained_view_normal.xy, -retained_view_normal.z)), 1.0);
+			out_motion_world_position = vec4(view_position, 1.0);
+		}
+		else
+		{
+			outnormal = retained_lighting_mode == 2 ? vec4(normal.xyz, 1.0) :
+				(dynamic_light_count > 0 ? retained_world_position : vec4(0.0, 0.0, 0.0, -1.0));
+			out_motion_world_position = retained_world_position;
+		}
 		out_motion_previous_world_position = retained_previous_world * local_position;
 		#if defined(USE_SPECULAR)
-			out_field_specular_centers[0] = vec4(0.0);
-			out_field_specular_centers[1] = vec4(0.0);
-			out_field_specular_centers[2] = vec4(0.0);
-			out_field_specular_centers[3] = vec4(0.0);
-			out_field_specular_colors[0] = vec4(0.0);
-			out_field_specular_colors[1] = vec4(0.0);
-			out_field_specular_colors[2] = vec4(0.0);
-			out_field_specular_colors[3] = vec4(0.0);
+			for (int i = 0; i < 4; i++)
+			{
+				vec4 source = i == 0 ? field_specular_center0 :
+					(i == 1 ? field_specular_center1 :
+					(i == 2 ? field_specular_center2 : field_specular_center3));
+				if (retained_per_pixel_specular_payload != 0 && source.w > 0.0)
+				{
+					vec3 retained_view_source = (retained_modelview * vec4(source.xyz, 1.0)).xyz;
+					out_field_specular_centers[i] = vec4(retained_view_source.xy, -retained_view_source.z, 1.0);
+					out_field_specular_colors[i] = i == 0 ? field_specular_color0 :
+						(i == 1 ? field_specular_color1 :
+						(i == 2 ? field_specular_color2 : field_specular_color3));
+				}
+				else
+				{
+					out_field_specular_centers[i] = vec4(0.0);
+					out_field_specular_colors[i] = vec4(0.0);
+				}
+			}
 		#endif
 		#if defined(USE_TEXTURING)
 			// Legacy g3 texture vertices use 1 / (z + Z_bias). Hardware

@@ -7,6 +7,7 @@
 #include "../renderer/gl_mesh.h"
 #include "renderer.h"
 #include "lightmap.h"
+#include "terrain.h"
 
 #include <algorithm>
 #include <array>
@@ -17,20 +18,25 @@
 struct RetainedRoomFace
 {
 	ElementRange index_range;
+	ElementRange reflected_index_range;
+	uint32_t first_vertex = 0;
 	uint32_t vertex_count = 0;
 };
 
 struct RetainedRoomCache
 {
 	VertexBuffer vertices{ false, false, VertexBufferLayout::RetainedPolymodel };
+	VertexBuffer specular_vertices{ false, false, VertexBufferLayout::RetainedRoomSpecular };
 	IndexBuffer indices{ false, false };
 	std::vector<RetainedRoomFace> faces;
+	std::vector<RendVertex> cpu_vertices;
 	uint32_t renderer_generation = 0;
 	int num_vertices = 0;
 	int num_faces = 0;
 	const vector* room_vertices = nullptr;
 	const face* room_faces = nullptr;
 	bool built = false;
+	bool specular_built = false;
 };
 
 struct RetainedRoomDeformation
@@ -41,8 +47,28 @@ struct RetainedRoomDeformation
 	bool enabled = false;
 };
 
+struct RetainedRoomTransform
+{
+	float matrix[16] = {};
+	bool enabled = false;
+};
+
+struct RetainedRoomClippedPolygon
+{
+	std::array<g3Point, MAX_POINTS_IN_POLY> points;
+	std::array<g3Point*, MAX_POINTS_IN_POLY> pointlist;
+	int count = 0;
+
+	void RefreshPointList()
+	{
+		for (int i = 0; i < count; i++)
+			pointlist[i] = &points[i];
+	}
+};
+
 static std::array<std::unique_ptr<RetainedRoomCache>, MAX_ROOMS> Retained_room_caches;
 static std::array<RetainedRoomDeformation, MAX_ROOMS> Retained_room_deformations;
+static std::array<RetainedRoomTransform, MAX_ROOMS> Retained_room_transforms;
 
 static void SetIdentity(float matrix[16])
 {
@@ -57,16 +83,20 @@ void RetainedRoomInvalidateAll()
 	{
 		std::unique_ptr<RetainedRoomCache>& cache = Retained_room_caches[i];
 		Retained_room_deformations[i] = {};
+		Retained_room_transforms[i] = {};
 		if (!cache)
 			continue;
 		if (cache->built && cache->renderer_generation == rend_GetGeneration())
 		{
 			cache->vertices.Destroy();
+			if (cache->specular_built)
+				cache->specular_vertices.Destroy();
 			cache->indices.Destroy();
 		}
 		else
 		{
 			cache->vertices.Invalidate();
+			cache->specular_vertices.Invalidate();
 			cache->indices.Invalidate();
 		}
 		cache.reset();
@@ -93,6 +123,48 @@ void RetainedRoomClearDeformation(room* rp)
 		Retained_room_deformations[roomnum] = {};
 }
 
+void RetainedRoomSetTransform(room* rp, const float transform[16])
+{
+	const int roomnum = rp ? (int)(rp - Rooms) : -1;
+	if (roomnum < 0 || roomnum >= MAX_ROOMS || !transform)
+		return;
+	memcpy(Retained_room_transforms[roomnum].matrix, transform,
+		sizeof(Retained_room_transforms[roomnum].matrix));
+	Retained_room_transforms[roomnum].enabled = true;
+}
+
+void RetainedRoomClearTransform(room* rp)
+{
+	const int roomnum = rp ? (int)(rp - Rooms) : -1;
+	if (roomnum >= 0 && roomnum < MAX_ROOMS)
+		Retained_room_transforms[roomnum] = {};
+}
+
+static void TransformDirection(const float matrix[16], const vector& input,
+	vector& output)
+{
+	output.x = matrix[0] * input.x + matrix[4] * input.y + matrix[8] * input.z;
+	output.y = matrix[1] * input.x + matrix[5] * input.y + matrix[9] * input.z;
+	output.z = matrix[2] * input.x + matrix[6] * input.y + matrix[10] * input.z;
+}
+
+static void ApplyRetainedRoomTransform(room* rp,
+	renderer_retained_polymodel_draw& draw)
+{
+	const int roomnum = rp ? (int)(rp - Rooms) : -1;
+	if (roomnum < 0 || roomnum >= MAX_ROOMS)
+		return;
+	const RetainedRoomTransform& transform = Retained_room_transforms[roomnum];
+	if (!transform.enabled)
+		return;
+	float transform_matrix[16];
+	memcpy(transform_matrix, transform.matrix, sizeof(transform_matrix));
+	g3_Mat4Multiply(draw.transform, transform_matrix);
+	g3_Mat4Multiply(draw.modelview, transform_matrix);
+	memcpy(draw.current_world, transform.matrix, sizeof(draw.current_world));
+	memcpy(draw.previous_world, transform.matrix, sizeof(draw.previous_world));
+}
+
 static void ApplyRetainedRoomDeformation(room* rp,
 	renderer_retained_polymodel_draw& draw)
 {
@@ -106,9 +178,38 @@ static void ApplyRetainedRoomDeformation(room* rp,
 	draw.deform_mode = 2;
 	draw.deform_seed = deformation.seed;
 	draw.deform_range = deformation.range;
-	draw.deform_direction[0] = deformation.direction.x;
-	draw.deform_direction[1] = deformation.direction.y;
-	draw.deform_direction[2] = deformation.direction.z;
+	vector direction = deformation.direction;
+	const RetainedRoomTransform& transform = Retained_room_transforms[roomnum];
+	if (transform.enabled)
+	{
+		// Deformation is additive after the CPU reflection. The retained shader
+		// applies it before the reflection matrix, so reflect the direction once
+		// here (a reflection is its own inverse) to preserve that ordering.
+		TransformDirection(transform.matrix, deformation.direction, direction);
+	}
+	draw.deform_direction[0] = direction.x;
+	draw.deform_direction[1] = direction.y;
+	draw.deform_direction[2] = direction.z;
+}
+
+static void ApplyRetainedRoomClipping(int clip_codes,
+	renderer_retained_polymodel_draw& draw)
+{
+	draw.near_clip_enabled = (clip_codes & CC_BEHIND) != 0;
+	draw.far_clip_enabled = (clip_codes & CC_OFF_FAR) != 0;
+	draw.far_clip_z = Far_clip_z;
+	draw.custom_clip_enabled = (clip_codes & CC_OFF_CUSTOM) != 0 && Clip_custom != 0;
+	if (!draw.custom_clip_enabled)
+		return;
+	draw.custom_clip_point[0] = Clip_plane_point.x;
+	draw.custom_clip_point[1] = Clip_plane_point.y;
+	draw.custom_clip_point[2] = Clip_plane_point.z;
+	draw.custom_clip_plane[0] = Clip_plane.x;
+	draw.custom_clip_plane[1] = Clip_plane.y;
+	draw.custom_clip_plane[2] = Clip_plane.z;
+	draw.custom_clip_scale[0] = Matrix_scale.x;
+	draw.custom_clip_scale[1] = Matrix_scale.y;
+	draw.custom_clip_scale[2] = Matrix_scale.z;
 }
 
 static void RegisterRetainedRoomReleaseCallback()
@@ -164,8 +265,18 @@ static bool BuildRetainedRoom(room* rp, RetainedRoomCache& cache)
 			indices.push_back(base_vertex + triangle + 1);
 			indices.push_back(base_vertex + triangle + 2);
 		}
+		cache.faces[facenum].first_vertex = base_vertex;
 		cache.faces[facenum].index_range =
 			ElementRange(first_index, (uint32_t)indices.size() - first_index);
+		const uint32_t first_reflected_index = (uint32_t)indices.size();
+		for (int triangle = 0; triangle < fp->num_verts - 2; triangle++)
+		{
+			indices.push_back(base_vertex + fp->num_verts - 1);
+			indices.push_back(base_vertex + fp->num_verts - 2 - triangle);
+			indices.push_back(base_vertex + fp->num_verts - 3 - triangle);
+		}
+		cache.faces[facenum].reflected_index_range = ElementRange(
+			first_reflected_index, (uint32_t)indices.size() - first_reflected_index);
 		cache.faces[facenum].vertex_count = fp->num_verts;
 	}
 
@@ -175,13 +286,261 @@ static bool BuildRetainedRoom(room* rp, RetainedRoomCache& cache)
 		(uint32_t)(vertices.size() * sizeof(RendVertex)), vertices.data());
 	cache.indices.Initialize((uint32_t)indices.size(),
 		(uint32_t)(indices.size() * sizeof(uint32_t)), indices.data());
+	cache.cpu_vertices = std::move(vertices);
 	cache.renderer_generation = rend_GetGeneration();
 	cache.num_vertices = rp->num_verts;
 	cache.num_faces = rp->num_faces;
 	cache.room_vertices = rp->verts;
 	cache.room_faces = rp->faces;
 	cache.built = true;
+	cache.specular_built = false;
 	return true;
+}
+
+static void GetTriangleCorners(const face* fp, int triangle, bool reflected,
+	int corners[3])
+{
+	if (reflected)
+	{
+		corners[0] = fp->num_verts - 1;
+		corners[1] = fp->num_verts - 2 - triangle;
+		corners[2] = fp->num_verts - 3 - triangle;
+	}
+	else
+	{
+		corners[0] = 0;
+		corners[1] = triangle + 1;
+		corners[2] = triangle + 2;
+	}
+}
+
+static bool TriangleCrossesBehind(room* rp, const face* fp,
+	const int corners[3])
+{
+	for (int i = 0; i < 3; i++)
+	{
+		const g3Point& point =
+			World_point_buffer[rp->wpb_index + fp->face_verts[corners[i]]];
+		if (point.p3_codes & CC_BEHIND)
+			return true;
+	}
+	return false;
+}
+
+static bool ClipPreparedTriangle(g3Point points[3],
+	RetainedRoomClippedPolygon& output)
+{
+	g3Point* pointlist[3] = { &points[0], &points[1], &points[2] };
+	g3Codes codes = { 0, 0xff };
+	for (int i = 0; i < 3; i++)
+	{
+		codes.cc_or |= points[i].p3_codes;
+		codes.cc_and &= points[i].p3_codes;
+	}
+	if (codes.cc_and || !(codes.cc_or & CC_BEHIND))
+		return false;
+
+	int count = 3;
+	g3Point** clipped = g3_ClipPolygon(pointlist, &count, &codes);
+	const bool survives = count > 0 && count <= MAX_POINTS_IN_POLY &&
+		!(codes.cc_or & CC_BEHIND) && !codes.cc_and;
+	if (survives)
+	{
+		output.count = count;
+		for (int i = 0; i < count; i++)
+		{
+			output.points[i] = *clipped[i];
+			output.points[i].p3_flags &= ~PF_TEMP_POINT;
+			if (!(output.points[i].p3_flags & PF_PROJECTED))
+				g3_ProjectPoint(&output.points[i]);
+		}
+	}
+	g3_FreeTempPoints(clipped, count);
+	return survives;
+}
+
+static void AppendRetainedRoomFaceRanges(room* rp, const RetainedRoomCache& cache,
+	int facenum, int clip_codes, std::vector<ElementRange>& ranges,
+	int& vertex_count)
+{
+	const RetainedRoomFace& retained_face = cache.faces[facenum];
+	const int roomnum = (int)(rp - Rooms);
+	const bool reflected = roomnum >= 0 && roomnum < MAX_ROOMS &&
+		Retained_room_transforms[roomnum].enabled;
+	const ElementRange& face_range = reflected ?
+		retained_face.reflected_index_range : retained_face.index_range;
+	if (!(clip_codes & CC_BEHIND))
+	{
+		ranges.push_back(face_range);
+		vertex_count += retained_face.vertex_count;
+		return;
+	}
+
+	const face* fp = &rp->faces[facenum];
+	const int triangle_count = (int)(face_range.count / 3);
+	for (int triangle = 0; triangle < triangle_count; triangle++)
+	{
+		int corners[3];
+		GetTriangleCorners(fp, triangle, reflected, corners);
+		// The legacy clipper has no near-plane edge clip. It first clips the
+		// triangle against the side/far/custom planes, then discards it if a
+		// behind code survives. Those camera-dependent intersection vertices
+		// cannot live in the static room VBO, so omit only those triangles here;
+		// BuildBaseBoundaryPolygons reproduces that final legacy operation.
+		if (TriangleCrossesBehind(rp, fp, corners))
+			continue;
+		ranges.emplace_back(face_range.offset + triangle * 3, 3);
+		vertex_count += 3;
+	}
+}
+
+static void BuildBaseBoundaryPolygons(room* rp, const int* facenums, int count,
+	int clip_codes, float u_offset, float v_offset, float light_scalar,
+	bool per_pixel_specular_payload,
+	std::vector<RetainedRoomClippedPolygon>& polygons)
+{
+	if (!(clip_codes & CC_BEHIND))
+		return;
+	const int roomnum = (int)(rp - Rooms);
+	const bool reflected = roomnum >= 0 && roomnum < MAX_ROOMS &&
+		Retained_room_transforms[roomnum].enabled;
+	for (int face_index = 0; face_index < count; face_index++)
+	{
+		const int facenum = facenums[face_index];
+		face* fp = &rp->faces[facenum];
+		for (int triangle = 0; triangle < fp->num_verts - 2; triangle++)
+		{
+			int corners[3];
+			GetTriangleCorners(fp, triangle, reflected, corners);
+			if (!TriangleCrossesBehind(rp, fp, corners))
+				continue;
+			g3Point points[3];
+			g3Point* pointlist[3] = { &points[0], &points[1], &points[2] };
+			for (int i = 0; i < 3; i++)
+			{
+				points[i] = World_point_buffer[
+					rp->wpb_index + fp->face_verts[corners[i]]];
+				points[i].p3_flags &= ~PF_TEMP_POINT;
+				const roomUVL& uv = fp->face_uvls[corners[i]];
+				points[i].p3_uvl.u = uv.u + u_offset;
+				points[i].p3_uvl.v = uv.v + v_offset;
+				points[i].p3_uvl.u2 = uv.u2;
+				points[i].p3_uvl.v2 = uv.v2;
+				points[i].p3_uvl.l = light_scalar;
+				points[i].p3_flags |= PF_UV | PF_UV2 | PF_L;
+			}
+			if (per_pixel_specular_payload)
+				PopulateRetainedRoomSpecularPoints(rp, facenum, corners,
+					pointlist, 3);
+			RetainedRoomClippedPolygon polygon;
+			if (ClipPreparedTriangle(points, polygon))
+				polygons.push_back(polygon);
+		}
+	}
+}
+
+static float FogVertexAlpha(const vector& world_position,
+	const vector* fog_plane, float fog_distance, float fog_eye_distance,
+	float fog_depth, bool use_fog_plane, const vector* viewer_eye,
+	const matrix* viewer_orient)
+{
+	float magnitude;
+	if (use_fog_plane)
+	{
+		const float distance = (world_position * *fog_plane) + fog_distance;
+		const vector to_vertex = world_position - *viewer_eye;
+		const float denominator = fog_eye_distance - distance;
+		const float t = denominator != 0.0f ? fog_eye_distance / denominator : 0.0f;
+		const vector portal_point = *viewer_eye + t * to_vertex;
+		const float eye_distance = -(viewer_orient->fvec * portal_point);
+		magnitude = (viewer_orient->fvec * world_position) + eye_distance;
+	}
+	else
+	{
+		magnitude = (world_position * *fog_plane) + fog_distance;
+	}
+	const float scalar = magnitude / std::max(fog_depth, 0.0001f);
+	return std::max(0.0f, std::min(1.0f, scalar)) * Room_light_val;
+}
+
+static void BuildFogBoundaryPolygons(room* rp, const int* facenums, int count,
+	int clip_codes, const vector* fog_plane, float fog_distance,
+	float fog_eye_distance, float fog_depth, bool use_fog_plane,
+	const vector* viewer_eye, const matrix* viewer_orient,
+	std::vector<RetainedRoomClippedPolygon>& polygons)
+{
+	if (!(clip_codes & CC_BEHIND) || !fog_plane || !viewer_eye || !viewer_orient)
+		return;
+	for (int face_index = 0; face_index < count; face_index++)
+	{
+		const int facenum = facenums[face_index];
+		face* fp = &rp->faces[facenum];
+		for (int triangle = 0; triangle < fp->num_verts - 2; triangle++)
+		{
+			int corners[3];
+			GetTriangleCorners(fp, triangle, false, corners);
+			if (!TriangleCrossesBehind(rp, fp, corners))
+				continue;
+			g3Point points[3];
+			for (int i = 0; i < 3; i++)
+			{
+				const int room_vertex = fp->face_verts[corners[i]];
+				points[i] = World_point_buffer[rp->wpb_index + room_vertex];
+				points[i].p3_flags &= ~PF_TEMP_POINT;
+				points[i].p3_a = FogVertexAlpha(rp->verts[room_vertex],
+					fog_plane, fog_distance, fog_eye_distance, fog_depth,
+					use_fog_plane, viewer_eye, viewer_orient);
+				points[i].p3_flags |= PF_RGBA;
+			}
+			RetainedRoomClippedPolygon polygon;
+			if (ClipPreparedTriangle(points, polygon))
+				polygons.push_back(polygon);
+		}
+	}
+}
+
+static void DrawBoundaryPolygons(std::vector<RetainedRoomClippedPolygon>& polygons,
+	int bitmap_handle)
+{
+	if (polygons.empty())
+		return;
+	std::vector<renderer_poly_batch_item> items(polygons.size());
+	for (size_t i = 0; i < polygons.size(); i++)
+	{
+		polygons[i].RefreshPointList();
+		items[i].pointlist = polygons[i].pointlist.data();
+		items[i].nv = polygons[i].count;
+	}
+	rend_DrawPolygon3DBatch(bitmap_handle, items.data(), (int)items.size(),
+		MAP_TYPE_BITMAP);
+}
+
+static VertexBuffer* GetRetainedRoomSpecularVertices(room* rp,
+	RetainedRoomCache& cache)
+{
+	if (cache.specular_built)
+		return &cache.specular_vertices;
+	if (cache.cpu_vertices.empty())
+		return nullptr;
+
+	std::vector<RetainedRoomSpecularVertex> vertices(cache.cpu_vertices.size());
+	for (size_t i = 0; i < cache.cpu_vertices.size(); i++)
+		vertices[i].base = cache.cpu_vertices[i];
+	for (int facenum = 0; facenum < (int)cache.faces.size(); facenum++)
+	{
+		const RetainedRoomFace& retained_face = cache.faces[facenum];
+		if (retained_face.vertex_count == 0)
+			continue;
+		PopulateRetainedRoomSpecularVertices(rp, facenum,
+			vertices.data() + retained_face.first_vertex,
+			(int)retained_face.vertex_count);
+	}
+
+	cache.specular_vertices.Initialize((uint32_t)vertices.size(),
+		(uint32_t)(vertices.size() * sizeof(RetainedRoomSpecularVertex)),
+		vertices.data());
+	cache.specular_built = true;
+	return &cache.specular_vertices;
 }
 
 static RetainedRoomCache* GetRetainedRoom(room* rp)
@@ -203,14 +562,19 @@ static RetainedRoomCache* GetRetainedRoom(room* rp)
 		if (cache.renderer_generation == rend_GetGeneration())
 		{
 			cache.vertices.Destroy();
+			if (cache.specular_built)
+				cache.specular_vertices.Destroy();
 			cache.indices.Destroy();
 		}
 		else
 		{
 			cache.vertices.Invalidate();
+			cache.specular_vertices.Invalidate();
 			cache.indices.Invalidate();
 		}
 		cache.built = false;
+		cache.specular_built = false;
+		cache.cpu_vertices.clear();
 	}
 	if (!cache.built && !BuildRetainedRoom(rp, cache))
 		return nullptr;
@@ -230,7 +594,8 @@ bool RetainedRoomCanDrawBaseFace(room* rp, int facenum)
 }
 
 bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
-	float u_offset, float v_offset, float light_scalar, int lightmap_handle)
+	int bitmap_handle, float u_offset, float v_offset, float light_scalar,
+	int lightmap_handle, int clip_codes, bool per_pixel_specular_payload)
 {
 	if (!rp || !facenums || count <= 0)
 		return false;
@@ -249,12 +614,14 @@ bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 			return false;
 		const RetainedRoomFace& retained_face = cache->faces[facenum];
 		if (retained_face.index_range.count != 0)
-		{
-			ranges.push_back(retained_face.index_range);
-			vertex_count += retained_face.vertex_count;
-		}
+			AppendRetainedRoomFaceRanges(rp, *cache, facenum, clip_codes,
+				ranges, vertex_count);
 	}
-	if (ranges.empty())
+	thread_local std::vector<RetainedRoomClippedPolygon> clipped_polygons;
+	clipped_polygons.clear();
+	BuildBaseBoundaryPolygons(rp, facenums, count, clip_codes, u_offset,
+		v_offset, light_scalar, per_pixel_specular_payload, clipped_polygons);
+	if (ranges.empty() && clipped_polygons.empty())
 		return true;
 
 	renderer_retained_polymodel_draw draw = {};
@@ -283,25 +650,37 @@ bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 	draw.polygon_count = (int)ranges.size();
 	draw.vertex_count = vertex_count;
 	draw.has_previous = false;
+	draw.per_pixel_specular_payload = per_pixel_specular_payload;
+	ApplyRetainedRoomTransform(rp, draw);
 	ApplyRetainedRoomDeformation(rp, draw);
+	ApplyRetainedRoomClipping(clip_codes, draw);
 
-	cache->vertices.Bind();
-	cache->indices.Bind();
-	if (!rend_BeginRetainedPolymodelDraw(&draw))
+	if (!ranges.empty())
 	{
+		VertexBuffer* vertices = per_pixel_specular_payload ?
+			GetRetainedRoomSpecularVertices(rp, *cache) : &cache->vertices;
+		if (!vertices)
+			return false;
+		vertices->Bind();
+		cache->indices.Bind();
+		if (!rend_BeginRetainedPolymodelDraw(&draw))
+		{
+			rendTEMP_UnbindVertexBuffer();
+			return false;
+		}
+		vertices->DrawIndexedRanges(PrimitiveType::Triangles, ranges.data(),
+			(uint32_t)ranges.size(), RENDERER_DRAW_CALL_3D);
+		rend_EndRetainedPolymodelDraw();
 		rendTEMP_UnbindVertexBuffer();
-		return false;
 	}
-	cache->vertices.DrawIndexedRanges(PrimitiveType::Triangles, ranges.data(),
-		(uint32_t)ranges.size(), RENDERER_DRAW_CALL_3D);
-	rend_EndRetainedPolymodelDraw();
-	rendTEMP_UnbindVertexBuffer();
+	DrawBoundaryPolygons(clipped_polygons, bitmap_handle);
 	return true;
 }
 
 bool RetainedRoomDrawFogFaces(room* rp, const int* facenums, int count,
 	const vector* fog_plane, float fog_distance, float fog_eye_distance,
-	float fog_depth, bool use_fog_plane)
+	float fog_depth, bool use_fog_plane, const vector* viewer_eye,
+	const matrix* viewer_orient, int clip_codes)
 {
 	if (!rp || !facenums || count <= 0)
 		return false;
@@ -320,12 +699,15 @@ bool RetainedRoomDrawFogFaces(room* rp, const int* facenums, int count,
 			return false;
 		const RetainedRoomFace& face = cache->faces[facenum];
 		if (face.index_range.count != 0)
-		{
-			ranges.push_back(face.index_range);
-			vertex_count += face.vertex_count;
-		}
+			AppendRetainedRoomFaceRanges(rp, *cache, facenum, clip_codes,
+				ranges, vertex_count);
 	}
-	if (ranges.empty())
+	thread_local std::vector<RetainedRoomClippedPolygon> clipped_polygons;
+	clipped_polygons.clear();
+	BuildFogBoundaryPolygons(rp, facenums, count, clip_codes, fog_plane,
+		fog_distance, fog_eye_distance, fog_depth, use_fog_plane,
+		viewer_eye, viewer_orient, clipped_polygons);
+	if (ranges.empty() && clipped_polygons.empty())
 		return true;
 
 	renderer_retained_polymodel_draw draw = {};
@@ -353,18 +735,24 @@ bool RetainedRoomDrawFogFaces(room* rp, const int* facenums, int count,
 	draw.fog_depth = fog_depth > 0.0f ? fog_depth : 1.0f;
 	draw.polygon_count = (int)ranges.size();
 	draw.vertex_count = vertex_count;
+	ApplyRetainedRoomTransform(rp, draw);
 	ApplyRetainedRoomDeformation(rp, draw);
+	ApplyRetainedRoomClipping(clip_codes, draw);
 
-	cache->vertices.Bind();
-	cache->indices.Bind();
-	if (!rend_BeginRetainedPolymodelDraw(&draw))
+	if (!ranges.empty())
 	{
+		cache->vertices.Bind();
+		cache->indices.Bind();
+		if (!rend_BeginRetainedPolymodelDraw(&draw))
+		{
+			rendTEMP_UnbindVertexBuffer();
+			return false;
+		}
+		cache->vertices.DrawIndexedRanges(PrimitiveType::Triangles, ranges.data(),
+			(uint32_t)ranges.size(), RENDERER_DRAW_CALL_3D);
+		rend_EndRetainedPolymodelDraw();
 		rendTEMP_UnbindVertexBuffer();
-		return false;
 	}
-	cache->vertices.DrawIndexedRanges(PrimitiveType::Triangles, ranges.data(),
-		(uint32_t)ranges.size(), RENDERER_DRAW_CALL_3D);
-	rend_EndRetainedPolymodelDraw();
-	rendTEMP_UnbindVertexBuffer();
+	DrawBoundaryPolygons(clipped_polygons, 0);
 	return true;
 }

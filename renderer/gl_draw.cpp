@@ -1423,6 +1423,10 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_retained_custom_clip_point_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_point");
 		drawshader_retained_custom_clip_plane_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_plane");
 		drawshader_retained_custom_clip_scale_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_scale");
+		drawshader_retained_near_clip_enabled_uniforms[i] = drawshaders[i].FindUniform("retained_near_clip_enabled");
+		drawshader_retained_far_clip_enabled_uniforms[i] = drawshaders[i].FindUniform("retained_far_clip_enabled");
+		drawshader_retained_far_clip_z_uniforms[i] = drawshaders[i].FindUniform("retained_far_clip_z");
+		drawshader_retained_per_pixel_specular_payload_uniforms[i] = drawshaders[i].FindUniform("retained_per_pixel_specular_payload");
 	}
 
 	lastdrawshader = -1;
@@ -2142,10 +2146,27 @@ bool GL4Renderer::BeginRetainedPolymodelDraw(const renderer_retained_polymodel_d
 		draw->custom_clip_plane);
 	glUniform3fv(drawshader_retained_custom_clip_scale_uniforms[shader_index], 1,
 		draw->custom_clip_scale);
+	glUniform1i(drawshader_retained_near_clip_enabled_uniforms[shader_index],
+		draw->near_clip_enabled ? 1 : 0);
+	glUniform1i(drawshader_retained_far_clip_enabled_uniforms[shader_index],
+		draw->far_clip_enabled ? 1 : 0);
+	glUniform1f(drawshader_retained_far_clip_z_uniforms[shader_index], draw->far_clip_z);
+	glUniform1i(drawshader_retained_per_pixel_specular_payload_uniforms[shader_index],
+		draw->per_pixel_specular_payload ? 1 : 0);
 	if (draw->custom_clip_enabled)
 	{
 		glEnable(GL_CLIP_DISTANCE0);
 		retained_custom_clip_active = true;
+	}
+	if (draw->near_clip_enabled)
+	{
+		glEnable(GL_CLIP_DISTANCE1);
+		retained_near_clip_active = true;
+	}
+	if (draw->far_clip_enabled)
+	{
+		glEnable(GL_CLIP_DISTANCE2);
+		retained_far_clip_active = true;
 	}
 
 	retained_include_motion_vectors = CurrentDrawUsesPixelMotionTarget();
@@ -2194,6 +2215,16 @@ void GL4Renderer::EndRetainedPolymodelDraw()
 	{
 		glDisable(GL_CLIP_DISTANCE0);
 		retained_custom_clip_active = false;
+	}
+	if (retained_near_clip_active)
+	{
+		glDisable(GL_CLIP_DISTANCE1);
+		retained_near_clip_active = false;
+	}
+	if (retained_far_clip_active)
+	{
+		glDisable(GL_CLIP_DISTANCE2);
+		retained_far_clip_active = false;
 	}
 	if (retained_include_motion_vectors || retained_include_motion_object_ids)
 	{

@@ -212,6 +212,7 @@ float Room_fog_eye_distance = 0;
 vector Room_fog_plane, Room_fog_portal_vert;
 short Fog_faces[MAX_FACES_PER_ROOM];
 bool Fog_face_retained[MAX_FACES_PER_ROOM];
+ubyte Fog_face_clip_codes[MAX_FACES_PER_ROOM];
 int Num_fog_faces_to_render = 0;
 
 struct deferred_fog_face
@@ -219,6 +220,7 @@ struct deferred_fog_face
 	int roomnum;
 	short facenum;
 	bool retained;
+	ubyte clip_codes;
 };
 
 static std::vector<deferred_fog_face> Deferred_fog_ao_faces;
@@ -720,16 +722,12 @@ void MakePointsFromMinMax(vector* corners, vector* minp, vector* maxp)
 void RotateRoomPoints(room* rp, vector* world_vecs)
 {
 	static PSRand legacy_jitter_rand;
-	const bool retained_world_vertices = world_vecs == rp->verts;
 	// Jig the vertices a bit if being deformed
 	if (Viewer_object->effect_info && (Viewer_object->effect_info->type_flags & EF_DEFORM))
 	{
-		if (retained_world_vertices)
-		{
-			RetainedRoomSetDeformation(rp, legacy_jitter_rand.get_state(),
-				&Global_alter_vec, Viewer_object->effect_info->deform_range *
-				Viewer_object->effect_info->deform_time);
-		}
+		RetainedRoomSetDeformation(rp, legacy_jitter_rand.get_state(),
+			&Global_alter_vec, Viewer_object->effect_info->deform_range *
+			Viewer_object->effect_info->deform_time);
 		for (int i = 0; i < rp->num_verts; i++)
 		{
 			vector vec = world_vecs[i];
@@ -743,8 +741,7 @@ void RotateRoomPoints(room* rp, vector* world_vecs)
 	}
 	else
 	{
-		if (retained_world_vertices)
-			RetainedRoomClearDeformation(rp);
+		RetainedRoomClearDeformation(rp);
 		for (int i = 0; i < rp->num_verts; i++)
 		{
 			g3_RotatePoint(&World_point_buffer[rp->wpb_index + i], &world_vecs[i]);
@@ -3316,6 +3313,116 @@ static void SetFieldSpecularSourcesForFace(room* rp, face* fp, g3Point** pointli
 	}
 }
 
+void PopulateRetainedRoomSpecularVertices(room* rp, int facenum,
+	RetainedRoomSpecularVertex* vertices, int count)
+{
+	if (!rp || !vertices || facenum < 0 || facenum >= rp->num_faces)
+		return;
+	face* fp = &rp->faces[facenum];
+	count = std::min(count, (int)fp->num_verts);
+	const bool has_smooth_normals = FaceHasSmoothSpecularNormals(fp);
+	const std::vector<vector>* resolved_normals = has_smooth_normals ? nullptr :
+		SpecularGetResolvedNormals(rp, facenum);
+	for (int vn = 0; vn < count; vn++)
+	{
+		if (resolved_normals && vn < (int)resolved_normals->size())
+			vertices[vn].base.normal = (*resolved_normals)[vn];
+		else if (has_smooth_normals)
+			vertices[vn].base.normal = SpecialFaces[fp->special_handle].vertnorms[vn];
+		else
+			vertices[vn].base.normal = fp->normal;
+	}
+
+	const int room_index = (int)(rp - Rooms);
+	if (room_index < 0 || room_index > Precomputed_specular_highest_room ||
+		room_index >= (int)Precomputed_specular_sources.size() ||
+		facenum >= (int)Precomputed_specular_sources[room_index].size())
+	{
+		return;
+	}
+	const PrecomputedSpecularFaceSources& cached =
+		Precomputed_specular_sources[room_index][facenum];
+	if ((int)cached.field_vertices.size() < count)
+		return;
+	for (int vn = 0; vn < count; vn++)
+	{
+		const PrecomputedSpecularSourceSet& sources = cached.field_vertices[vn];
+		const int source_count = std::min(sources.count, MAX_SPECULARS);
+		for (int i = 0; i < source_count; i++)
+		{
+			const specular_instance& source = sources.sources[i];
+			vertices[vn].field_specular_center[i][0] = source.bright_center.x;
+			vertices[vn].field_specular_center[i][1] = source.bright_center.y;
+			vertices[vn].field_specular_center[i][2] = source.bright_center.z;
+			vertices[vn].field_specular_center[i][3] = 1.0f;
+			float r, g, b;
+			SpecularUnpackColor(source.bright_color, r, g, b);
+			vertices[vn].field_specular_color[i][0] =
+				r * Render_per_pixel_static_specular_strength;
+			vertices[vn].field_specular_color[i][1] =
+				g * Render_per_pixel_static_specular_strength;
+			vertices[vn].field_specular_color[i][2] =
+				b * Render_per_pixel_static_specular_strength;
+			vertices[vn].field_specular_color[i][3] = 1.0f;
+		}
+	}
+}
+
+void PopulateRetainedRoomSpecularPoints(room* rp, int facenum,
+	const int* corners, g3Point** points, int count)
+{
+	if (!rp || !corners || !points || facenum < 0 || facenum >= rp->num_faces)
+		return;
+	face* fp = &rp->faces[facenum];
+	const bool has_smooth_normals = FaceHasSmoothSpecularNormals(fp);
+	const std::vector<vector>* resolved_normals = has_smooth_normals ? nullptr :
+		SpecularGetResolvedNormals(rp, facenum);
+	const int room_index = (int)(rp - Rooms);
+	const PrecomputedSpecularFaceSources* cached = nullptr;
+	if (room_index >= 0 && room_index <= Precomputed_specular_highest_room &&
+		room_index < (int)Precomputed_specular_sources.size() &&
+		facenum < (int)Precomputed_specular_sources[room_index].size())
+	{
+		cached = &Precomputed_specular_sources[room_index][facenum];
+	}
+
+	for (int i = 0; i < count; i++)
+	{
+		const int corner = corners[i];
+		g3Point* point = points[i];
+		if (corner < 0 || corner >= fp->num_verts || !point)
+			continue;
+		if (resolved_normals && corner < (int)resolved_normals->size())
+			point->p3_specular_normal = (*resolved_normals)[corner];
+		else if (has_smooth_normals)
+			point->p3_specular_normal = SpecialFaces[fp->special_handle].vertnorms[corner];
+		else
+			point->p3_specular_normal = fp->normal;
+		point->p3_specular_normal_valid = 1;
+		point->p3_specular_field_valid = 0;
+		point->p3_specular_field_count = 0;
+		if (!cached || corner >= (int)cached->field_vertices.size())
+			continue;
+
+		const PrecomputedSpecularSourceSet& sources = cached->field_vertices[corner];
+		point->p3_specular_field_valid = 1;
+		point->p3_specular_field_count = (ubyte)std::min(sources.count, MAX_SPECULARS);
+		for (int source_index = 0; source_index < point->p3_specular_field_count;
+			source_index++)
+		{
+			const specular_instance& source = sources.sources[source_index];
+			point->p3_specular_field_centers[source_index] = source.bright_center;
+			float r, g, b;
+			SpecularUnpackColor(source.bright_color, r, g, b);
+			point->p3_specular_field_colors[source_index] = {
+				r * Render_per_pixel_static_specular_strength,
+				g * Render_per_pixel_static_specular_strength,
+				b * Render_per_pixel_static_specular_strength
+			};
+		}
+	}
+}
+
 void RenderSpecularFacesFlat(room* rp)
 {
 	static int first = 1;
@@ -3403,6 +3510,9 @@ void RenderSpecularFacesFlat(room* rp)
 			}
 			SetSpecularNormalsForFace(rp, fp, pointlist);
 			SetFieldSpecularSourcesForFace(rp, fp, pointlist);
+			ubyte specular_clip_codes = 0;
+			for (int vn = 0; vn < fp->num_verts; vn++)
+				specular_clip_codes |= pointlist[vn]->p3_codes;
 
 			rend_UpdateSpecular(&specblock);
 			rend_SetOverlayType(OT_BLEND);
@@ -3410,13 +3520,24 @@ void RenderSpecularFacesFlat(room* rp)
 			rend_SetPerPixelDynamicLighting(dynamic_light_count > 0 ? &fp->normal : nullptr,
 				dynamic_light_count, dynamic_light_count > 0 ? dynamic_lights : nullptr);
 
-			if (fp->flags & FF_TRIANGULATED)
-				g3_SetTriangulationTest(1);
-
-			g3_DrawPoly(fp->num_verts, pointlist, bm_handle);
-
-			if (fp->flags & FF_TRIANGULATED)
-				g3_SetTriangulationTest(0);
+			bool retained_drawn = false;
+			if (!In_editor_mode && RetainedRoomCanDrawBaseFace(rp, face_index))
+			{
+				rend_BindBitmap(bm_handle);
+				rend_BindLightmap(LightmapInfo[fp->lmi_handle].lm_handle);
+				retained_drawn = RetainedRoomDrawFaces(rp, &face_index, 1,
+					bm_handle, 0.0f, 0.0f, 1.0f,
+					LightmapInfo[fp->lmi_handle].lm_handle,
+					specular_clip_codes, true);
+			}
+			if (!retained_drawn)
+			{
+				if (fp->flags & FF_TRIANGULATED)
+					g3_SetTriangulationTest(1);
+				g3_DrawPoly(fp->num_verts, pointlist, bm_handle);
+				if (fp->flags & FF_TRIANGULATED)
+					g3_SetTriangulationTest(0);
+			}
 		}
 
 		rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
@@ -3650,12 +3771,13 @@ bool Fog_disabled = 0;
 #endif
 
 // Adds a specular face to draw after the mine has been drawn
-void UpdateFogFace(room* rp, face* fp, bool retained)
+void UpdateFogFace(room* rp, face* fp, bool retained, ubyte clip_codes)
 {
 	if (Fog_disabled || !Detail_settings.Fog_enabled)
 		return;
 	Fog_faces[Num_fog_faces_to_render] = fp - rp->faces;
 	Fog_face_retained[Num_fog_faces_to_render] = retained;
+	Fog_face_clip_codes[Num_fog_faces_to_render] = clip_codes;
 	Num_fog_faces_to_render++;
 }
 
@@ -3666,7 +3788,8 @@ static void QueueDeferredFogAOFaces(room* rp)
 
 	int roomnum = rp - Rooms;
 	for (int i = 0; i < Num_fog_faces_to_render; i++)
-		Deferred_fog_ao_faces.push_back({ roomnum, Fog_faces[i], Fog_face_retained[i] });
+		Deferred_fog_ao_faces.push_back({ roomnum, Fog_faces[i], Fog_face_retained[i],
+			Fog_face_clip_codes[i] });
 }
 
 struct RoomFogBatchedFace
@@ -3683,7 +3806,7 @@ struct RoomFogBatchedFace
 };
 
 static void FlushRoomFogFaceBatch(room* rp, std::vector<RoomFogBatchedFace>& faces,
-	std::vector<int>& retained_faces)
+	std::vector<int>& retained_faces, ubyte& retained_clip_codes)
 {
 	if (faces.empty() && retained_faces.empty())
 		return;
@@ -3695,8 +3818,10 @@ static void FlushRoomFogFaceBatch(room* rp, std::vector<RoomFogBatchedFace>& fac
 		rend_SetCoplanarPolygonOffset(0.0001f);
 		RetainedRoomDrawFogFaces(rp, retained_faces.data(), (int)retained_faces.size(),
 			&Room_fog_plane, Room_fog_distance, Room_fog_eye_distance, rp->fog_depth,
-			Room_fog_plane_check != 1);
+			Room_fog_plane_check != 1, &Viewer_eye, &Viewer_orient,
+			retained_clip_codes);
 		retained_faces.clear();
+		retained_clip_codes = 0;
 	}
 
 	if (!faces.empty())
@@ -3724,6 +3849,7 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 	g3Point  pointbuffer[MAX_VERTS_PER_FACE];
 	std::vector<RoomFogBatchedFace> batched_faces;
 	std::vector<int> retained_faces;
+	ubyte retained_clip_codes = 0;
 	const bool batch_fog = UseHardware && rend_CanUseNewrender();
 	rend_SetOverlayType(OT_NONE);
 	rend_SetTextureType(TT_FLAT);
@@ -3779,10 +3905,11 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 
 			p->p3_flags |= PF_RGBA;
 		}
-		if (batch_fog && Fog_face_retained[i] && !(fp->flags & FF_TRIANGULATED) &&
+		if (batch_fog && Fog_face_retained[i] &&
 			RetainedRoomCanDrawBaseFace(rp, Fog_faces[i]))
 		{
 			retained_faces.push_back(Fog_faces[i]);
+			retained_clip_codes |= Fog_face_clip_codes[i];
 			continue;
 		}
 		if (batch_fog && !(fp->flags & FF_TRIANGULATED))
@@ -3795,7 +3922,7 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 			continue;
 		}
 
-		FlushRoomFogFaceBatch(rp, batched_faces, retained_faces);
+		FlushRoomFogFaceBatch(rp, batched_faces, retained_faces, retained_clip_codes);
 		rend_SetCoplanarPolygonOffset(0.0001f);
 		if (fp->flags & FF_TRIANGULATED)
 			g3_SetTriangulationTest(1);
@@ -3804,7 +3931,7 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 			g3_SetTriangulationTest(0);
 	}
 
-	FlushRoomFogFaceBatch(rp, batched_faces, retained_faces);
+	FlushRoomFogFaceBatch(rp, batched_faces, retained_faces, retained_clip_codes);
 	if (suppress_ao)
 		rend_SetAOSuppression(0.0f);
 	rend_SetCoplanarPolygonOffset(0);
@@ -3821,10 +3948,12 @@ static void RenderDeferredFogAOSuppression()
 	int old_num_fog_faces = Num_fog_faces_to_render;
 	short old_fog_faces[MAX_FACES_PER_ROOM];
 	bool old_fog_face_retained[MAX_FACES_PER_ROOM];
+	ubyte old_fog_face_clip_codes[MAX_FACES_PER_ROOM];
 	for (int i = 0; i < old_num_fog_faces && i < MAX_FACES_PER_ROOM; i++)
 	{
 		old_fog_faces[i] = Fog_faces[i];
 		old_fog_face_retained[i] = Fog_face_retained[i];
+		old_fog_face_clip_codes[i] = Fog_face_clip_codes[i];
 	}
 
 	int current_roomnum = -1;
@@ -3859,6 +3988,7 @@ static void RenderDeferredFogAOSuppression()
 		}
 		Fog_faces[Num_fog_faces_to_render] = item.facenum;
 		Fog_face_retained[Num_fog_faces_to_render] = item.retained;
+		Fog_face_clip_codes[Num_fog_faces_to_render] = item.clip_codes;
 		Num_fog_faces_to_render++;
 	}
 
@@ -3870,6 +4000,7 @@ static void RenderDeferredFogAOSuppression()
 	{
 		Fog_faces[i] = old_fog_faces[i];
 		Fog_face_retained[i] = old_fog_face_retained[i];
+		Fog_face_clip_codes[i] = old_fog_face_clip_codes[i];
 	}
 }
 
@@ -3921,6 +4052,7 @@ struct RoomBaseFaceBatchKey
 	color_model color_model_value;
 	int ao_class;
 	int dynamic_lightmap_lmi;
+	ubyte clip_codes;
 	float u_offset;
 	float v_offset;
 	float light_scalar;
@@ -3935,11 +4067,15 @@ struct RoomBaseFaceBatchKey
 			color_model_value == other.color_model_value &&
 			ao_class == other.ao_class &&
 			dynamic_lightmap_lmi == other.dynamic_lightmap_lmi &&
+			clip_codes == other.clip_codes &&
 			u_offset == other.u_offset &&
 			v_offset == other.v_offset &&
 			light_scalar == other.light_scalar;
 	}
 };
+
+static constexpr ubyte RETAINED_ROOM_CLIP_CODES =
+	CC_BEHIND | CC_OFF_FAR | CC_OFF_CUSTOM;
 
 struct RoomBaseFaceBatch
 {
@@ -4028,9 +4164,11 @@ public:
 							per_pixel_light_count, per_pixel_lights);
 				}
 				RetainedRoomDrawFaces(batch.retained_room, batch.retained_faces.data(),
-					(int)batch.retained_faces.size(), batch.key.u_offset,
+					(int)batch.retained_faces.size(), batch.key.bitmap_handle,
+					batch.key.u_offset,
 					batch.key.v_offset, batch.key.light_scalar,
-					batch.key.overlay_type != OT_NONE ? batch.key.overlay_map : -1);
+					batch.key.overlay_type != OT_NONE ? batch.key.overlay_map : -1,
+					batch.key.clip_codes);
 				if (per_pixel_light_count > 0)
 					rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 			}
@@ -4070,11 +4208,8 @@ static void CopyRoomBatchPoints(RoomBatchedFace& batched_face, g3Point** pointli
 	}
 }
 
-static constexpr ubyte RETAINED_ROOM_CPU_CLIP_CODES =
-	CC_BEHIND | CC_OFF_FAR | CC_OFF_CUSTOM;
-
 static void AddBatchedRoomFaceSideEffects(room* rp, face* fp, int facenum,
-	bool spec_face, bool retained)
+	bool spec_face, bool retained, ubyte clip_codes)
 {
 	if (!Render_mirror_for_room && Rendering_main_view && fp->portal_num == -1 &&
 		((fp->flags & FF_CORONA) || FastCoronas) && (fp->flags & FF_LIGHTMAP) && UseHardware &&
@@ -4098,17 +4233,14 @@ static void AddBatchedRoomFaceSideEffects(room* rp, face* fp, int facenum,
 	}
 
 	if (!Render_mirror_for_room && !In_editor_mode && (rp->flags & RF_FOG))
-		UpdateFogFace(rp, fp, retained);
+		UpdateFogFace(rp, fp, retained, clip_codes);
 
 	fp->renderframe = FrameCount % 256;
 }
 
 static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& batcher)
 {
-	if (Render_mirror_for_room || In_editor_mode)
-		return false;
-
-	if (rp->flags & RF_TRIANGULATE)
+	if (In_editor_mode)
 		return false;
 
 	face* fp = &rp->faces[facenum];
@@ -4181,8 +4313,6 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 		}
 		return true;
 	}
-	if (face_cc.cc_or & RETAINED_ROOM_CPU_CLIP_CODES)
-		return false;
 	if (rp->flags & RF_FOG && fp->portal_num != -1 && !(rp->portals[fp->portal_num].flags & PF_RENDER_FACES))
 		return false;
 
@@ -4266,6 +4396,7 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	key.overlay_map = 0;
 	key.ao_class = RoomFaceAOClass(rp, fp);
 	key.dynamic_lightmap_lmi = dynamic_lightmap_lmi;
+	key.clip_codes = face_cc.cc_or & RETAINED_ROOM_CLIP_CODES;
 	key.u_offset = uchange;
 	key.v_offset = vchange;
 	key.light_scalar = Room_light_val;
@@ -4282,14 +4413,16 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	if (RetainedRoomCanDrawBaseFace(rp, facenum))
 	{
 		batcher.AddRetained(key, rp, facenum);
-		AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face, true);
+		AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face, true,
+			face_cc.cc_or & RETAINED_ROOM_CLIP_CODES);
 		return true;
 	}
 
 	RoomBatchedFace batched_face;
 	CopyRoomBatchPoints(batched_face, pointlist, fp->num_verts);
 	batcher.Add(key, batched_face);
-	AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face, false);
+	AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face, false,
+		face_cc.cc_or & RETAINED_ROOM_CLIP_CODES);
 	return true;
 }
 
@@ -4313,6 +4446,7 @@ void RenderFace(room* rp, int facenum)
 	bool specular_material_face = false;
 	bool retained_base_face = false;
 	bool retained_base_face_drawn = false;
+	bool retained_geometry_eligible = false;
 	SpecularBlock specblock = {};
 	face_cc.cc_and = 0xff;
 	face_cc.cc_or = 0;
@@ -4522,6 +4656,8 @@ void RenderFace(room* rp, int facenum)
 		fp->flags |= FF_TRIANGULATED;
 		g3_SetTriangulationTest(1);
 	}
+	retained_geometry_eligible = !In_editor_mode &&
+		RetainedRoomCanDrawBaseFace(rp, facenum);
 
 	// Do special fog stuff for portal faces
 	if (rp->flags & RF_FOG && !In_editor_mode)
@@ -4529,6 +4665,7 @@ void RenderFace(room* rp, int facenum)
 		if (fp->portal_num != -1 && !(rp->portals[fp->portal_num].flags & PF_RENDER_FACES))
 		{
 			drawn = 1;
+			retained_base_face_drawn = retained_geometry_eligible;
 			goto draw_fog;
 		}
 	}
@@ -4560,10 +4697,7 @@ void RenderFace(room* rp, int facenum)
 	}
 
 	rend_SetAOClass(RoomFaceAOClass(rp, fp));
-	retained_base_face = !Render_mirror_for_room && !In_editor_mode &&
-		!(face_cc.cc_or & RETAINED_ROOM_CPU_CLIP_CODES) &&
-		!(rp->flags & RF_TRIANGULATE) && !specular_material_face &&
-		RetainedRoomCanDrawBaseFace(rp, facenum);
+	retained_base_face = retained_geometry_eligible;
 	if (retained_base_face)
 	{
 		rend_BindBitmap(bm_handle);
@@ -4575,8 +4709,10 @@ void RenderFace(room* rp, int facenum)
 		const int retained_lightmap = (fp->flags & FF_LIGHTMAP) &&
 			!(GameTextures[BaseTextureTmapForFace(fp)].flags & TF_SATURATE) ?
 			LightmapInfo[fp->lmi_handle].lm_handle : -1;
-		if (RetainedRoomDrawFaces(rp, &facenum, 1, uchange, vchange,
-			Room_light_val, retained_lightmap))
+		if (RetainedRoomDrawFaces(rp, &facenum, 1, bm_handle, uchange, vchange,
+			Room_light_val, retained_lightmap,
+			face_cc.cc_or & RETAINED_ROOM_CLIP_CODES,
+			specular_material_face))
 		{
 			drawn = 1;
 			retained_base_face_drawn = true;
@@ -4635,7 +4771,8 @@ void RenderFace(room* rp, int facenum)
 draw_fog:
 	if (!Render_mirror_for_room && !In_editor_mode && drawn && (rp->flags & RF_FOG))
 	{
-		UpdateFogFace(rp, fp, retained_base_face_drawn);
+		UpdateFogFace(rp, fp, retained_base_face_drawn,
+			face_cc.cc_or & RETAINED_ROOM_CLIP_CODES);
 	}
 
 	if (do_triangle_test)
@@ -5449,6 +5586,10 @@ void RenderMirroredRoom(room* rp)
 
 	// This is how far the mirror face is from the normalized plane
 	float mirror_dist = -(mirror_vec->x * norm->x + mirror_vec->y * norm->y + mirror_vec->z * norm->z);
+	g3Plane mirror_plane(*norm, *mirror_vec);
+	float retained_reflection[16];
+	g3_GenerateReflect(mirror_plane, retained_reflection);
+	RetainedRoomSetTransform(rp, retained_reflection);
 
 	for (int i = 0; i < rp->num_verts; i++)
 	{
@@ -5493,6 +5634,7 @@ void RenderMirroredRoom(room* rp)
 	RenderRoomObjects(rp);
 	rp->last_render_time = Gametime;
 	g3_SetCustomClipPlane(0, NULL, NULL);
+	RetainedRoomClearTransform(rp);
 }
 
 // Renders a specific room.  If pos_offset is not NULL, adds that offset to each of the

@@ -71,6 +71,13 @@ extern float Room_fog_eye_distance;
 extern vector Room_fog_plane,Room_fog_portal_vert;
 
 struct face;
+struct room;
+struct RetainedRoomSpecularVertex;
+
+void PopulateRetainedRoomSpecularVertices(room* rp, int facenum,
+	RetainedRoomSpecularVertex* vertices, int count);
+void PopulateRetainedRoomSpecularPoints(room* rp, int facenum,
+	const int* corners, g3Point** points, int count);
 
 struct fog_portal_data
 {

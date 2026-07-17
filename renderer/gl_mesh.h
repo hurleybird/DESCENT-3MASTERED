@@ -37,6 +37,7 @@ enum class VertexBufferLayout
 {
 	Standard,
 	RetainedPolymodel,
+	RetainedRoomSpecular,
 };
 
 //Future note: These will need to become interfaces if Vulkan support is added. 

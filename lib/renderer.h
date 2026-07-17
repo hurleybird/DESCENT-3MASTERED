@@ -517,6 +517,10 @@ struct renderer_retained_polymodel_draw
 	float custom_clip_point[3];
 	float custom_clip_plane[3];
 	float custom_clip_scale[3];
+	bool near_clip_enabled;
+	bool far_clip_enabled;
+	float far_clip_z;
+	bool per_pixel_specular_payload;
 	int polygon_count;
 	int vertex_count;
 	bool has_previous;
@@ -940,6 +944,16 @@ struct RendVertex
 	// Retained polymodel data.  Standard/newrender layouts leave these unused.
 	vector face_normal;
 	int source_vertex;
+};
+
+// Static room specular data is intentionally kept out of RendVertex: adding
+// eight vec4 payloads to the shared format would inflate terrain, polymodel,
+// and streaming buffers that never consume them.
+struct RetainedRoomSpecularVertex
+{
+	RendVertex base;
+	float field_specular_center[MAX_SPECULARS][4];
+	float field_specular_color[MAX_SPECULARS][4];
 };
 
 class IVertexBuffer

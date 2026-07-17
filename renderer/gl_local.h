@@ -349,6 +349,10 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_retained_custom_clip_point_uniforms[8] = {};
 	GLint drawshader_retained_custom_clip_plane_uniforms[8] = {};
 	GLint drawshader_retained_custom_clip_scale_uniforms[8] = {};
+	GLint drawshader_retained_near_clip_enabled_uniforms[8] = {};
+	GLint drawshader_retained_far_clip_enabled_uniforms[8] = {};
+	GLint drawshader_retained_far_clip_z_uniforms[8] = {};
+	GLint drawshader_retained_per_pixel_specular_payload_uniforms[8] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
 	bool retained_draw_active = false;
@@ -356,6 +360,8 @@ class GL4Renderer : public IRenderer
 	bool retained_include_motion_vectors = false;
 	bool retained_include_motion_object_ids = false;
 	bool retained_custom_clip_active = false;
+	bool retained_near_clip_active = false;
+	bool retained_far_clip_active = false;
 	float ao_suppression_draw_value = 0.0f;
 	float bloom_suppression_draw_value = 0.0f;
 	int ao_class_draw_value = 0;

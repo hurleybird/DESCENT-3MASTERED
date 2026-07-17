@@ -50,31 +50,68 @@ void VertexBuffer::Initialize(uint32_t numvertices, uint32_t datasize, void* dat
 	glBindBuffer(GL_ARRAY_BUFFER, m_name);
 	glBufferData(GL_ARRAY_BUFFER, datasize, data, m_dynamic_hint ? GL_STREAM_DRAW : GL_STATIC_DRAW);
 
-	//Position is common to both retained and newrender layouts.
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, position));
-
-	if (m_layout == VertexBufferLayout::RetainedPolymodel)
+	if (m_layout == VertexBufferLayout::RetainedPolymodel ||
+		m_layout == VertexBufferLayout::RetainedRoomSpecular)
 	{
+		const GLsizei stride = m_layout == VertexBufferLayout::RetainedRoomSpecular ?
+			(GLsizei)sizeof(RetainedRoomSpecularVertex) : (GLsizei)sizeof(RendVertex);
+		const size_t base_offset = m_layout == VertexBufferLayout::RetainedRoomSpecular ?
+			offsetof(RetainedRoomSpecularVertex, base) : 0;
+		auto attribute_offset = [base_offset](size_t member_offset)
+		{
+			return (void*)(base_offset + member_offset);
+		};
+
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride,
+			attribute_offset(offsetof(RendVertex, position)));
 		//The generic legacy shader consumes color, UVs, and normals at 1..4.
 		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(RendVertex), (void*)offsetof(RendVertex, r));
+		glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride,
+			attribute_offset(offsetof(RendVertex, r)));
 		glEnableVertexAttribArray(2);
-		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, u1));
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride,
+			attribute_offset(offsetof(RendVertex, u1)));
 		glEnableVertexAttribArray(3);
-		glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, u2));
+		glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, stride,
+			attribute_offset(offsetof(RendVertex, u2)));
 		glEnableVertexAttribArray(4);
-		glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, normal));
+		glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, stride,
+			attribute_offset(offsetof(RendVertex, normal)));
 		// The retained branch does not consume the generic stream's motion inputs.
 		// Reuse location 5 for the per-corner face normal and the final guaranteed
 		// GL4 attribute for the original model vertex index.
 		glEnableVertexAttribArray(5);
-		glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, sizeof(RendVertex), (void*)offsetof(RendVertex, face_normal));
+		glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, stride,
+			attribute_offset(offsetof(RendVertex, face_normal)));
 		glEnableVertexAttribArray(15);
-		glVertexAttribIPointer(15, 1, GL_INT, sizeof(RendVertex), (void*)offsetof(RendVertex, source_vertex));
+		glVertexAttribIPointer(15, 1, GL_INT, stride,
+			attribute_offset(offsetof(RendVertex, source_vertex)));
+
+		if (m_layout == VertexBufferLayout::RetainedRoomSpecular)
+		{
+			for (int i = 0; i < MAX_SPECULARS; i++)
+			{
+				const size_t center_offset =
+					offsetof(RetainedRoomSpecularVertex, field_specular_center) +
+					i * sizeof(((RetainedRoomSpecularVertex*)nullptr)->field_specular_center[0]);
+				const size_t color_offset =
+					offsetof(RetainedRoomSpecularVertex, field_specular_color) +
+					i * sizeof(((RetainedRoomSpecularVertex*)nullptr)->field_specular_color[0]);
+				glEnableVertexAttribArray(7 + i);
+				glVertexAttribPointer(7 + i, 4, GL_FLOAT, GL_FALSE, stride,
+					(void*)center_offset);
+				glEnableVertexAttribArray(11 + i);
+				glVertexAttribPointer(11 + i, 4, GL_FLOAT, GL_FALSE, stride,
+					(void*)color_offset);
+			}
+		}
 	}
 	else
 	{
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(RendVertex),
+			(void*)offsetof(RendVertex, position));
 		glEnableVertexAttribArray(1);
 		glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(RendVertex), (void*)offsetof(RendVertex, r));
 		glEnableVertexAttribArray(2);
