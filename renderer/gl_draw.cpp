@@ -1415,8 +1415,10 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_retained_specular_scalar_uniforms[i] = drawshaders[i].FindUniform("retained_specular_scalar");
 		drawshader_retained_specular_smooth_uniforms[i] = drawshaders[i].FindUniform("retained_specular_smooth");
 		drawshader_retained_deform_enabled_uniforms[i] = drawshaders[i].FindUniform("retained_deform_enabled");
+		drawshader_retained_deform_mode_uniforms[i] = drawshaders[i].FindUniform("retained_deform_mode");
 		drawshader_retained_deform_seed_uniforms[i] = drawshaders[i].FindUniform("retained_deform_seed");
 		drawshader_retained_deform_range_uniforms[i] = drawshaders[i].FindUniform("retained_deform_range");
+		drawshader_retained_deform_direction_uniforms[i] = drawshaders[i].FindUniform("retained_deform_direction");
 		drawshader_retained_custom_clip_enabled_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_enabled");
 		drawshader_retained_custom_clip_point_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_point");
 		drawshader_retained_custom_clip_plane_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_plane");
@@ -2124,8 +2126,14 @@ bool GL4Renderer::BeginRetainedPolymodelDraw(const renderer_retained_polymodel_d
 	glUniform1f(drawshader_retained_specular_scalar_uniforms[shader_index], draw->specular_scalar);
 	glUniform1i(drawshader_retained_specular_smooth_uniforms[shader_index], draw->specular_smooth ? 1 : 0);
 	glUniform1i(drawshader_retained_deform_enabled_uniforms[shader_index], draw->deform_enabled ? 1 : 0);
-	glUniform1ui(drawshader_retained_deform_seed_uniforms[shader_index], draw->deform_seed);
-	glUniform1f(drawshader_retained_deform_range_uniforms[shader_index], draw->deform_range);
+	if (draw->deform_enabled)
+	{
+		glUniform1i(drawshader_retained_deform_mode_uniforms[shader_index], draw->deform_mode);
+		glUniform1ui(drawshader_retained_deform_seed_uniforms[shader_index], draw->deform_seed);
+		glUniform1f(drawshader_retained_deform_range_uniforms[shader_index], draw->deform_range);
+		glUniform3fv(drawshader_retained_deform_direction_uniforms[shader_index], 1,
+			draw->deform_direction);
+	}
 	glUniform1i(drawshader_retained_custom_clip_enabled_uniforms[shader_index],
 		draw->custom_clip_enabled ? 1 : 0);
 	glUniform3fv(drawshader_retained_custom_clip_point_uniforms[shader_index], 1,

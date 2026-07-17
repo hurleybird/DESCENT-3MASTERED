@@ -420,6 +420,7 @@ static bool DrawRetainedPolymodelRanges(poly_model *pm, bsp_info *sm, const int 
 		Retained_polymodel_deformation.pm == pm && Retained_polymodel_deformation.sm == sm)
 	{
 		draw.deform_enabled = true;
+		draw.deform_mode = 1;
 		draw.deform_seed = Retained_polymodel_deformation.seed;
 		draw.deform_range = Retained_polymodel_deformation.range;
 	}

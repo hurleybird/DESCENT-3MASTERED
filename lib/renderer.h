@@ -509,8 +509,10 @@ struct renderer_retained_polymodel_draw
 	float specular_scalar;
 	bool specular_smooth;
 	bool deform_enabled;
+	int deform_mode;
 	uint32_t deform_seed;
 	float deform_range;
+	float deform_direction[3];
 	bool custom_clip_enabled;
 	float custom_clip_point[3];
 	float custom_clip_plane[3];

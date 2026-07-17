@@ -720,9 +720,16 @@ void MakePointsFromMinMax(vector* corners, vector* minp, vector* maxp)
 void RotateRoomPoints(room* rp, vector* world_vecs)
 {
 	static PSRand legacy_jitter_rand;
+	const bool retained_world_vertices = world_vecs == rp->verts;
 	// Jig the vertices a bit if being deformed
 	if (Viewer_object->effect_info && (Viewer_object->effect_info->type_flags & EF_DEFORM))
 	{
+		if (retained_world_vertices)
+		{
+			RetainedRoomSetDeformation(rp, legacy_jitter_rand.get_state(),
+				&Global_alter_vec, Viewer_object->effect_info->deform_range *
+				Viewer_object->effect_info->deform_time);
+		}
 		for (int i = 0; i < rp->num_verts; i++)
 		{
 			vector vec = world_vecs[i];
@@ -736,6 +743,8 @@ void RotateRoomPoints(room* rp, vector* world_vecs)
 	}
 	else
 	{
+		if (retained_world_vertices)
+			RetainedRoomClearDeformation(rp);
 		for (int i = 0; i < rp->num_verts; i++)
 		{
 			g3_RotatePoint(&World_point_buffer[rp->wpb_index + i], &world_vecs[i]);
@@ -4061,6 +4070,9 @@ static void CopyRoomBatchPoints(RoomBatchedFace& batched_face, g3Point** pointli
 	}
 }
 
+static constexpr ubyte RETAINED_ROOM_CPU_CLIP_CODES =
+	CC_BEHIND | CC_OFF_FAR | CC_OFF_CUSTOM;
+
 static void AddBatchedRoomFaceSideEffects(room* rp, face* fp, int facenum,
 	bool spec_face, bool retained)
 {
@@ -4169,9 +4181,8 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 		}
 		return true;
 	}
-	if (face_cc.cc_or)
+	if (face_cc.cc_or & RETAINED_ROOM_CPU_CLIP_CODES)
 		return false;
-
 	if (rp->flags & RF_FOG && fp->portal_num != -1 && !(rp->portals[fp->portal_num].flags & PF_RENDER_FACES))
 		return false;
 
@@ -4550,7 +4561,8 @@ void RenderFace(room* rp, int facenum)
 
 	rend_SetAOClass(RoomFaceAOClass(rp, fp));
 	retained_base_face = !Render_mirror_for_room && !In_editor_mode &&
-		!face_cc.cc_or && !(rp->flags & RF_TRIANGULATE) && !specular_material_face &&
+		!(face_cc.cc_or & RETAINED_ROOM_CPU_CLIP_CODES) &&
+		!(rp->flags & RF_TRIANGULATE) && !specular_material_face &&
 		RetainedRoomCanDrawBaseFace(rp, facenum);
 	if (retained_base_face)
 	{

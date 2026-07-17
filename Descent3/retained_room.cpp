@@ -33,7 +33,16 @@ struct RetainedRoomCache
 	bool built = false;
 };
 
+struct RetainedRoomDeformation
+{
+	uint32_t seed = 0;
+	vector direction = {};
+	float range = 0.0f;
+	bool enabled = false;
+};
+
 static std::array<std::unique_ptr<RetainedRoomCache>, MAX_ROOMS> Retained_room_caches;
+static std::array<RetainedRoomDeformation, MAX_ROOMS> Retained_room_deformations;
 
 static void SetIdentity(float matrix[16])
 {
@@ -44,8 +53,10 @@ static void SetIdentity(float matrix[16])
 
 void RetainedRoomInvalidateAll()
 {
-	for (std::unique_ptr<RetainedRoomCache>& cache : Retained_room_caches)
+	for (int i = 0; i < MAX_ROOMS; i++)
 	{
+		std::unique_ptr<RetainedRoomCache>& cache = Retained_room_caches[i];
+		Retained_room_deformations[i] = {};
 		if (!cache)
 			continue;
 		if (cache->built && cache->renderer_generation == rend_GetGeneration())
@@ -60,6 +71,44 @@ void RetainedRoomInvalidateAll()
 		}
 		cache.reset();
 	}
+}
+
+void RetainedRoomSetDeformation(room* rp, unsigned int seed,
+	const vector* direction, float range)
+{
+	const int roomnum = rp ? (int)(rp - Rooms) : -1;
+	if (roomnum < 0 || roomnum >= MAX_ROOMS || !direction)
+		return;
+	RetainedRoomDeformation& deformation = Retained_room_deformations[roomnum];
+	deformation.seed = seed;
+	deformation.direction = *direction;
+	deformation.range = range;
+	deformation.enabled = true;
+}
+
+void RetainedRoomClearDeformation(room* rp)
+{
+	const int roomnum = rp ? (int)(rp - Rooms) : -1;
+	if (roomnum >= 0 && roomnum < MAX_ROOMS)
+		Retained_room_deformations[roomnum] = {};
+}
+
+static void ApplyRetainedRoomDeformation(room* rp,
+	renderer_retained_polymodel_draw& draw)
+{
+	const int roomnum = rp ? (int)(rp - Rooms) : -1;
+	if (roomnum < 0 || roomnum >= MAX_ROOMS)
+		return;
+	const RetainedRoomDeformation& deformation = Retained_room_deformations[roomnum];
+	if (!deformation.enabled)
+		return;
+	draw.deform_enabled = true;
+	draw.deform_mode = 2;
+	draw.deform_seed = deformation.seed;
+	draw.deform_range = deformation.range;
+	draw.deform_direction[0] = deformation.direction.x;
+	draw.deform_direction[1] = deformation.direction.y;
+	draw.deform_direction[2] = deformation.direction.z;
 }
 
 static void RegisterRetainedRoomReleaseCallback()
@@ -234,6 +283,7 @@ bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 	draw.polygon_count = (int)ranges.size();
 	draw.vertex_count = vertex_count;
 	draw.has_previous = false;
+	ApplyRetainedRoomDeformation(rp, draw);
 
 	cache->vertices.Bind();
 	cache->indices.Bind();
@@ -303,6 +353,7 @@ bool RetainedRoomDrawFogFaces(room* rp, const int* facenums, int count,
 	draw.fog_depth = fog_depth > 0.0f ? fog_depth : 1.0f;
 	draw.polygon_count = (int)ranges.size();
 	draw.vertex_count = vertex_count;
+	ApplyRetainedRoomDeformation(rp, draw);
 
 	cache->vertices.Bind();
 	cache->indices.Bind();

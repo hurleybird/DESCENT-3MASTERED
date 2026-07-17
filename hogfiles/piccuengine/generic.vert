@@ -53,8 +53,10 @@ uniform vec3 retained_specular_light_position;
 uniform float retained_specular_scalar;
 uniform int retained_specular_smooth;
 uniform int retained_deform_enabled;
+uniform int retained_deform_mode;
 uniform uint retained_deform_seed;
 uniform float retained_deform_range;
+uniform vec3 retained_deform_direction;
 uniform int retained_custom_clip_enabled;
 uniform vec3 retained_custom_clip_point;
 uniform vec3 retained_custom_clip_plane;
@@ -105,21 +107,23 @@ uint AdvanceVisualRandom(uint state, uint delta)
 	return accumulated_multiplier * state + accumulated_increment;
 }
 
-float RetainedDeformationScale()
+vec3 RetainedDeformedPosition()
 {
 	if (retained_deform_enabled == 0)
-		return 1.0;
+		return position;
 	uint state = AdvanceVisualRandom(retained_deform_seed, uint(retained_source_vertex) + 1u);
 	int random_value = int((state >> 16u) & 0x7fffu);
 	float signed_value = float((random_value % 1000) - 500) / 500.0;
-	return 1.0 + retained_deform_range * signed_value;
+	if (retained_deform_mode == 2)
+		return position + retained_deform_direction * (retained_deform_range * signed_value);
+	return position * (1.0 + retained_deform_range * signed_value);
 }
 
 void main()
 {
 	if (retained_mode != 0)
 	{
-		vec4 local_position = vec4(position * RetainedDeformationScale(), 1.0);
+		vec4 local_position = vec4(RetainedDeformedPosition(), 1.0);
 		vec3 view_position = vec3(0.0);
 		#if defined(USE_FOG)
 			vec3 retained_gl_view_position = (retained_modelview * local_position).xyz;

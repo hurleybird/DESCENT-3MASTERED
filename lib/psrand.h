@@ -48,6 +48,11 @@ public:
 		state = newseed;
 	}
 
+	unsigned int get_state() const
+	{
+		return state;
+	}
+
 	int operator()()
 	{
 		state = state * 214013 + 2531011;

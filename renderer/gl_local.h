@@ -341,8 +341,10 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_retained_specular_scalar_uniforms[8] = {};
 	GLint drawshader_retained_specular_smooth_uniforms[8] = {};
 	GLint drawshader_retained_deform_enabled_uniforms[8] = {};
+	GLint drawshader_retained_deform_mode_uniforms[8] = {};
 	GLint drawshader_retained_deform_seed_uniforms[8] = {};
 	GLint drawshader_retained_deform_range_uniforms[8] = {};
+	GLint drawshader_retained_deform_direction_uniforms[8] = {};
 	GLint drawshader_retained_custom_clip_enabled_uniforms[8] = {};
 	GLint drawshader_retained_custom_clip_point_uniforms[8] = {};
 	GLint drawshader_retained_custom_clip_plane_uniforms[8] = {};
