@@ -21,7 +21,9 @@
 #include "game.h"
 #include "rtperformance.h"
 #include <math.h>
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 static float mat4_identity[16] =
 { 1, 0, 0, 0,
@@ -1452,6 +1454,7 @@ void GL4Renderer::DestroyFramePacingFences()
 	frame_pacing_latest_present_interval_ms = 0.0;
 	frame_pacing_latest_swap_call_ms = 0.0;
 	frame_pacing_latest_queue_wait_ms = 0.0;
+	frame_pacing_present_deadline = 0.0;
 }
 
 void GL4Renderer::ConfigureFramePacing(int max_frames_in_flight, bool telemetry_enabled)
@@ -1463,6 +1466,14 @@ void GL4Renderer::ConfigureFramePacing(int max_frames_in_flight, bool telemetry_
 	frame_pacing_queue_depth = queue_depth;
 	frame_pacing_telemetry_enabled = telemetry_enabled;
 	GL4_frame_pacing_telemetry_enabled = telemetry_enabled;
+}
+
+bool GL4Renderer::SchedulePresent(double interval_seconds)
+{
+	frame_pacing_present_deadline = interval_seconds > 0.0 &&
+		frame_pacing_last_present_time > 0.0 ?
+		frame_pacing_last_present_time + interval_seconds : 0.0;
+	return true;
 }
 
 void GL4Renderer::SubmitFramePacingFence()
@@ -2370,6 +2381,16 @@ void GL4Renderer::EndPostPresentFrame()
 
 	GL4PerfGpuSplitEndBeforeSwap();
 	GL4PerfGpuFrameEndBeforeSwap();
+	if (frame_pacing_present_deadline > 0.0)
+	{
+		double remaining = frame_pacing_present_deadline - PerfMarkersNow();
+		if (remaining > 0.002)
+		{
+			std::this_thread::sleep_for(std::chrono::duration<double>(remaining - 0.002));
+		}
+		while (PerfMarkersNow() < frame_pacing_present_deadline) {}
+	}
+	frame_pacing_present_deadline = 0.0;
 	const double present_call_time = PerfMarkersNow();
 	if (frame_pacing_last_present_time > 0.0)
 		frame_pacing_latest_present_interval_ms =

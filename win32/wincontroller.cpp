@@ -1343,7 +1343,15 @@ void gameWinController::mouse_geteval()
 		return;
 
 	if (Mouse_limitpolling && g_accum_frame_time != 0.0f)
+	{
+		// The previous polled displacement has already been applied. Leave Raw
+		// Input accumulating at the DDIO layer until the next limited poll, but do
+		// not replay the old controller sample on intervening game frames.
+		m_MseState.m_deltaX = 0;
+		m_MseState.m_deltaY = 0;
+		m_MseState.m_deltaZ = 0;
 		return;
+	}
 
 	int x, y, dx, dy;
 	unsigned int btnmask = (unsigned int)ddio_MouseGetState(&x, &y, &dx, &dy);

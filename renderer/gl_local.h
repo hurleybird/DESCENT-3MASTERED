@@ -130,6 +130,7 @@ class GL4Renderer : public IRenderer
 	double frame_pacing_latest_present_interval_ms = 0.0;
 	double frame_pacing_latest_swap_call_ms = 0.0;
 	double frame_pacing_latest_queue_wait_ms = 0.0;
+	double frame_pacing_present_deadline = 0.0;
 	uint64_t frame_pacing_present_serial = 0;
 	void SubmitFramePacingFence();
 	void DestroyFramePacingFences();
@@ -795,6 +796,7 @@ public:
 	// Flips the surface
 	void Flip() override;
 	void ConfigureFramePacing(int max_frames_in_flight, bool telemetry_enabled) override;
+	bool SchedulePresent(double interval_seconds) override;
 	double WaitForFramePacing() override;
 	void GetFramePacingInfo(renderer_frame_pacing_info* info) override;
 	bool BeginPostPresentFrame() override;

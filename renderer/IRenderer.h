@@ -251,6 +251,7 @@ public:
 	// Flips the surface
 	virtual void Flip() = 0;
 	virtual void ConfigureFramePacing(int max_frames_in_flight, bool telemetry_enabled) {}
+	virtual bool SchedulePresent(double interval_seconds) { return false; }
 	virtual double WaitForFramePacing() { return 0.0; }
 	virtual void GetFramePacingInfo(renderer_frame_pacing_info* info)
 	{

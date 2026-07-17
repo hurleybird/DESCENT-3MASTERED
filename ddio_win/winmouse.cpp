@@ -82,12 +82,10 @@ static struct mses_state
     sbyte cursor_count;
     float x_aspect, y_aspect; // used in calculating coordinates returned from ddio_MouseGetState
     HANDLE hmseevt;           // signaled if mouse input is awaiting.
-    short dx, dy, dz, imm_dz;
+    int dx, dy, dz, imm_dz;
     short mode;         // mode of mouse operation.
     short nbtns, naxis; // device caps.
     float last_read_time; // [ISB] This is the time that the last WM_INPUT came in at
-    float expire_time; // [ISB] How long a delta should be held for, to smooth out low poll devices at high framerates
-    bool polled;            // [ISB] When a latched delta is read, this should be set to true. This will zero the deltas next read
 } DDIO_mouse_state;
 
 static t_mse_button_info DIM_buttons;
@@ -220,14 +218,13 @@ int ddio_MouseGetState(int* x, int* y, int* dx, int* dy, int* z, int* dz)
     if (dz)
         *dz = DDIO_mouse_state.dz;
 
-    if (timer_GetTime() > DDIO_mouse_state.expire_time)
-    {
-        DDIO_mouse_state.dx = 0;
-        DDIO_mouse_state.dy = 0;
-        DDIO_mouse_state.dz = 0;
-    }
+    // Relative Raw Input reports are displacement, not a velocity sample. Consume
+    // every accumulated report exactly once; retaining a delta for an assumed
+    // polling interval can replay it on a later game frame.
+    DDIO_mouse_state.dx = 0;
+    DDIO_mouse_state.dy = 0;
+    DDIO_mouse_state.dz = 0;
     DDIO_mouse_state.btn_mask = 0;
-    DDIO_mouse_state.polled = true;
 
     DIM_buttons.is_down[MSEBTN_WHL_UP] = false;
     DIM_buttons.is_down[MSEBTN_WHL_DOWN] = false;
@@ -436,16 +433,8 @@ int RawInputHandler(HWND hWnd, unsigned int msg, unsigned int wParam, long lPara
                     }
                 }
 
-                if (DDIO_mouse_state.polled)
-                {
-                    DDIO_mouse_state.dx = 0;
-                    DDIO_mouse_state.dy = 0;
-                    DDIO_mouse_state.polled = false;
-                }
-
                 DDIO_mouse_state.dx += rawinput->data.mouse.lLastX;
                 DDIO_mouse_state.dy += rawinput->data.mouse.lLastY;
-                DDIO_mouse_state.expire_time = curtime + (1.f / 125);
                 // DDIO_mouse_state.btn_mask = buttons;
             }
 

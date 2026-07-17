@@ -705,6 +705,14 @@ void rend_ConfigureFramePacing(int max_frames_in_flight, bool telemetry_enabled)
 	renderer_inst->ConfigureFramePacing(max_frames_in_flight, telemetry_enabled);
 }
 
+bool rend_SchedulePresent(double interval_seconds)
+{
+	if (!Renderer_initted)
+		return false;
+
+	return renderer_inst->SchedulePresent(interval_seconds);
+}
+
 double rend_WaitForFramePacing()
 {
 	if (!Renderer_initted)

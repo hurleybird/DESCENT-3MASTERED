@@ -3578,16 +3578,17 @@ void GameFrame(void)
 		ProcessNormalEvents();
 		RTP_tENDTIME(normalevent_time, curr_time);
 
-		//[ISB] Flip right before timing.
-		//This seems to be a huge step in reducing stuttering, I'm not actually sure why..
+		bool post_present_frame_ready = false;
+		bool fallback_present = false;
+
+		// Fully compose the frame before waiting for its presentation deadline. The
+		// final backbuffer blit and SwapBuffers remain pending until after the wait,
+		// so variations in simulation/render time do not move the visible present.
 		if (!Skip_render_game_frame && !Dedicated_server)
 		{
 			if (Game_interface_mode == GAME_INTERFACE && !Menu_interface_mode)
 			{
-				if (automated_perf_active)
-					automated_perf_present_begin = timer_GetTime64();
-				PERF_MARKER_SCOPE("Renderer.Flip");
-				PerfMarkersRecordFramePacingState("BeforeFlip");
+				PERF_MARKER_SCOPE("Renderer.PreparePresent");
 				if (rend_BeginPostPresentFrame())
 				{
 					GameDrawPostPresentFrame(false);
@@ -3597,7 +3598,7 @@ void GameFrame(void)
 						DoScreenshot();
 						Screenshot_requested = false;
 					}
-					rend_EndPostPresentFrame();
+					post_present_frame_ready = true;
 				}
 				else
 				{
@@ -3607,19 +3608,15 @@ void GameFrame(void)
 						DoScreenshot();
 						Screenshot_requested = false;
 					}
-					rend_Flip();
+					fallback_present = true;
 				}
-				if (automated_perf_active)
-					automated_perf_present_end = timer_GetTime64();
 			}
 		}
 		PerfMarkersRecordFramePacingState("BeforeFramecap");
-		PerfMarkersEndFrame();
 		const double frame_work_end = timer_GetTime64();
 		frame_pacing_work_ms = (std::max)(0.0, frame_work_end - last_timer) * 1000.0;
 		if (automated_perf_active)
 			automated_perf_pre_cap_end = frame_work_end;
-		automated_perf_pacing_wait_ms = rend_WaitForFramePacing();
 		rend_GetFramePacingInfo(&frame_pacing_info);
 		if (automated_perf_active)
 			automated_perf_cap_begin = timer_GetTime64();
@@ -3643,7 +3640,9 @@ void GameFrame(void)
 			target_time = current_timer;
 		}
 
-		if (current_timer < target_time)
+		const bool renderer_schedules_present = post_present_frame_ready &&
+			rend_SchedulePresent(effective_interval);
+		if (!renderer_schedules_present && current_timer < target_time)
 		{
 			const double wait_time = target_time - current_timer;
 			if (wait_time > 0.0)
@@ -3660,11 +3659,37 @@ void GameFrame(void)
 			}
 			while (timer_GetTime64() < target_time) {}
 		}
+		if (post_present_frame_ready || fallback_present)
+		{
+			if (automated_perf_active)
+				automated_perf_present_begin = timer_GetTime64();
+			{
+				PERF_MARKER_SCOPE("Renderer.Flip");
+				PerfMarkersRecordFramePacingState("BeforeFlip");
+				if (post_present_frame_ready)
+					rend_EndPostPresentFrame();
+				else
+					rend_Flip();
+			}
+			if (automated_perf_active)
+				automated_perf_present_end = timer_GetTime64();
+		}
 		if (automated_perf_active)
 			automated_perf_cap_end = timer_GetTime64();
 
-		//Compute how long frame took
-		CalcFrameTime(target_time);
+		PerfMarkersEndFrame();
+		// Use the real submission time. Using the ideal deadline hid overshoot from
+		// both simulation and the FPS display and encouraged a short corrective
+		// interval after a late frame.
+		CalcFrameTime(timer_GetTime64());
+		automated_perf_pacing_wait_ms = rend_WaitForFramePacing();
+		rend_GetFramePacingInfo(&frame_pacing_info);
+		if (post_present_frame_ready &&
+			frame_pacing_info.latest_present_interval_ms > 0.0 &&
+			frame_pacing_info.latest_present_interval_ms < 1000.0)
+		{
+			Frametime = (float)(frame_pacing_info.latest_present_interval_ms / 1000.0);
+		}
 		if (Automated_capture.gameplay_frame_active && !Automated_capture.realtime)
 			Frametime = Automated_capture.fixed_delta;
 

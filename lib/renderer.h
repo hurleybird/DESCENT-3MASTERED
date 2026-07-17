@@ -658,6 +658,7 @@ void rend_Flip();
 // submission behavior unchanged. Positive depths bound completed GL frame work
 // without enabling vertical synchronization.
 void rend_ConfigureFramePacing(int max_frames_in_flight, bool telemetry_enabled);
+bool rend_SchedulePresent(double interval_seconds);
 double rend_WaitForFramePacing();
 void rend_GetFramePacingInfo(renderer_frame_pacing_info* info);
 
