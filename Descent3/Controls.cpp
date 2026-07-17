@@ -346,6 +346,8 @@ void ReadPlayerControls(game_controls *controls)
 	if (AutomatedCaptureSuppressesInput())
 	{
 		memset(controls, 0, sizeof(game_controls));
+		if (AutomatedCaptureForcesForwardInput())
+			controls->forward_thrust = LIMIT_FORWARD;
 		return;
 	}
 	if( !Control_system_init )

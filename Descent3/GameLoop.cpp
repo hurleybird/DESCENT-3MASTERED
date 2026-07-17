@@ -137,6 +137,7 @@ struct automated_capture_state
 	int gameplay_frame;
 	float fixed_delta;
 	bool realtime;
+	bool force_forward;
 	char output_path[PSPATHNAME_LEN];
 };
 
@@ -238,6 +239,12 @@ bool AutomatedCaptureSuppressesInput()
 	return FindArg("-capture-frame") || FindArg("-screenshot-frame");
 }
 
+bool AutomatedCaptureForcesForwardInput()
+{
+	return Automated_capture.gameplay_frame_active &&
+		Automated_capture.force_forward;
+}
+
 static int FindAutomatedCaptureArg(const char* primary, const char* alias)
 {
 	int argument = FindArg((char*)primary);
@@ -251,6 +258,7 @@ static void InitAutomatedCapture()
 	Automated_capture.initialized = true;
 	Automated_capture.fixed_delta = 1.0f / 60.0f;
 	Automated_capture.realtime = FindArg("-capture-realtime") != 0;
+	Automated_capture.force_forward = FindArg("-capture-forward") != 0;
 
 	const int frame_arg = FindAutomatedCaptureArg("-capture-frame",
 		"-screenshot-frame");
@@ -300,12 +308,14 @@ static void InitAutomatedCapture()
 
 	Automated_capture.enabled = true;
 	Automated_capture.target_frame = (int)target_frame;
-	AutomatedCaptureLog("armed frame=%d output=%s dt=%.9f realtime=%d",
+	AutomatedCaptureLog("armed frame=%d output=%s dt=%.9f realtime=%d forward=%d",
 		Automated_capture.target_frame, Automated_capture.output_path,
-		Automated_capture.fixed_delta, Automated_capture.realtime ? 1 : 0);
-	mprintf((0, "Automated capture armed: gameplay frame %d -> %s (dt %.6f, realtime %d).\n",
+		Automated_capture.fixed_delta, Automated_capture.realtime ? 1 : 0,
+		Automated_capture.force_forward ? 1 : 0);
+	mprintf((0, "Automated capture armed: gameplay frame %d -> %s (dt %.6f, realtime %d, forward %d).\n",
 		Automated_capture.target_frame, Automated_capture.output_path,
-		Automated_capture.fixed_delta, Automated_capture.realtime ? 1 : 0));
+		Automated_capture.fixed_delta, Automated_capture.realtime ? 1 : 0,
+		Automated_capture.force_forward ? 1 : 0));
 }
 
 static void BeginAutomatedCaptureFrame()
@@ -417,10 +427,24 @@ struct adaptive_frame_cadence_state
 };
 
 static adaptive_frame_cadence_state Adaptive_frame_cadence = {};
+static bool Adaptive_frame_pacing_enabled = false;
 
 static void ResetAdaptiveFrameCadence()
 {
 	Adaptive_frame_cadence = {};
+}
+
+bool IsAdaptiveFramePacingEnabled()
+{
+	return Adaptive_frame_pacing_enabled;
+}
+
+void SetAdaptiveFramePacingEnabled(bool enabled)
+{
+	if (Adaptive_frame_pacing_enabled == enabled)
+		return;
+	Adaptive_frame_pacing_enabled = enabled;
+	ResetAdaptiveFrameCadence();
 }
 
 static void AddCadenceSample(double* samples, int& count, int& write, double value)
@@ -456,8 +480,7 @@ static double QuantizeCadenceInterval(double interval)
 static double UpdateAdaptiveFrameCadence(double user_interval, double cpu_work,
 	const renderer_frame_pacing_info& pacing_info, bool eligible)
 {
-	static const bool disabled = FindArg("-noadaptivepacing") != 0;
-	if (disabled || !eligible || user_interval <= 0.0)
+	if (!IsAdaptiveFramePacingEnabled() || !eligible || user_interval <= 0.0)
 	{
 		ResetAdaptiveFrameCadence();
 		return user_interval;

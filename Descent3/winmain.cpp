@@ -703,10 +703,9 @@ int PASCAL HandledWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine,
 		d3 = new oeD3Win32App(flags, (HInstance)hInst);
 		if (has_window_position)
 			d3->set_position_override(window_x, window_y);
-		// Establish non-activating capture behavior before any application
-		// initialization can create or reconfigure the game window. Capture mode
-		// deliberately supersedes an explicit window position.
-		if (FindArg("-capture-frame") || FindArg("-screenshot-frame"))
+		// Background execution is an explicit window-behavior choice. Keep it
+		// independent from capture, input, and save-loading arguments.
+		if (FindArg("-background"))
 			d3->set_background_mode(true);
 	}
 	AutomatedCaptureLog("winmain application allocated");

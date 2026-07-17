@@ -140,7 +140,7 @@ public:
 	// Keep explicit command-line placement across renderer initialization.
 	void set_position_override(int x, int y);
 
-	// Prevent an automated capture window from taking focus.
+	// Keep an explicitly backgrounded application hidden and non-activating.
 	void set_background_mode(bool enabled);
 	bool background_mode() const { return m_BackgroundMode; }
 

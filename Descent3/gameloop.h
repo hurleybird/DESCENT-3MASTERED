@@ -51,6 +51,8 @@ void SetFrameLimitFps(int fps);
 int GetFrameLimitFps();
 void SetFrameLimitCommandLineOverride(bool enabled);
 bool FrameLimitHasCommandLineOverride();
+bool IsAdaptiveFramePacingEnabled();
+void SetAdaptiveFramePacingEnabled(bool enabled);
 
 extern bool Perf_markers_enabled;
 void PerfMarkersSetEnabled(bool enabled);
@@ -66,6 +68,7 @@ bool RendererShouldCountMsaaTransitionFrame();
 // Automated renderer captures must not consume live workstation input. This
 // is based on the command-line request, so it is valid before gameplay starts.
 bool AutomatedCaptureSuppressesInput();
+bool AutomatedCaptureForcesForwardInput();
 
 // Writes an opt-in lifecycle trace when PICCU_CAPTURE_LOG names a file.
 void AutomatedCaptureLog(const char* format, ...);
