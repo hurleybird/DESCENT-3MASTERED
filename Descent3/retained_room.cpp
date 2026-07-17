@@ -314,19 +314,6 @@ static void GetTriangleCorners(const face* fp, int triangle, bool reflected,
 	}
 }
 
-static bool TriangleCrossesBehind(room* rp, const face* fp,
-	const int corners[3])
-{
-	for (int i = 0; i < 3; i++)
-	{
-		const g3Point& point =
-			World_point_buffer[rp->wpb_index + fp->face_verts[corners[i]]];
-		if (point.p3_codes & CC_BEHIND)
-			return true;
-	}
-	return false;
-}
-
 static bool ClipPreparedTriangle(g3Point points[3],
 	RetainedRoomClippedPolygon& output)
 {
@@ -337,8 +324,20 @@ static bool ClipPreparedTriangle(g3Point points[3],
 		codes.cc_or |= points[i].p3_codes;
 		codes.cc_and &= points[i].p3_codes;
 	}
-	if (codes.cc_and || !(codes.cc_or & CC_BEHIND))
+	if (codes.cc_and)
 		return false;
+	if (!codes.cc_or)
+	{
+		output.count = 3;
+		for (int i = 0; i < 3; i++)
+		{
+			output.points[i] = points[i];
+			output.points[i].p3_flags &= ~PF_TEMP_POINT;
+			if (!(output.points[i].p3_flags & PF_PROJECTED))
+				g3_ProjectPoint(&output.points[i]);
+		}
+		return true;
+	}
 
 	int count = 3;
 	g3Point** clipped = g3_ClipPolygon(pointlist, &count, &codes);
@@ -376,22 +375,9 @@ static void AppendRetainedRoomFaceRanges(room* rp, const RetainedRoomCache& cach
 		return;
 	}
 
-	const face* fp = &rp->faces[facenum];
-	const int triangle_count = (int)(face_range.count / 3);
-	for (int triangle = 0; triangle < triangle_count; triangle++)
-	{
-		int corners[3];
-		GetTriangleCorners(fp, triangle, reflected, corners);
-		// The legacy clipper has no near-plane edge clip. It first clips the
-		// triangle against the side/far/custom planes, then discards it if a
-		// behind code survives. Those camera-dependent intersection vertices
-		// cannot live in the static room VBO, so omit only those triangles here;
-		// BuildBaseBoundaryPolygons reproduces that final legacy operation.
-		if (TriangleCrossesBehind(rp, fp, corners))
-			continue;
-		ranges.emplace_back(face_range.offset + triangle * 3, 3);
-		vertex_count += 3;
-	}
+	// A face that crosses the legacy behind plane must remain one coherent
+	// projected stream. Mixing retained triangles with CPU-clipped triangles
+	// changes interpolation as individual vertices cross the plane.
 }
 
 static void BuildBaseBoundaryPolygons(room* rp, const int* facenums, int count,
@@ -412,8 +398,6 @@ static void BuildBaseBoundaryPolygons(room* rp, const int* facenums, int count,
 		{
 			int corners[3];
 			GetTriangleCorners(fp, triangle, reflected, corners);
-			if (!TriangleCrossesBehind(rp, fp, corners))
-				continue;
 			g3Point points[3];
 			g3Point* pointlist[3] = { &points[0], &points[1], &points[2] };
 			for (int i = 0; i < 3; i++)
@@ -479,8 +463,6 @@ static void BuildFogBoundaryPolygons(room* rp, const int* facenums, int count,
 		{
 			int corners[3];
 			GetTriangleCorners(fp, triangle, false, corners);
-			if (!TriangleCrossesBehind(rp, fp, corners))
-				continue;
 			g3Point points[3];
 			for (int i = 0; i < 3; i++)
 			{

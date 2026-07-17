@@ -3908,8 +3908,12 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 		if (batch_fog && Fog_face_retained[i] &&
 			RetainedRoomCanDrawBaseFace(rp, Fog_faces[i]))
 		{
+			const ubyte face_clip_codes = Fog_face_clip_codes[i];
+			if (!retained_faces.empty() && retained_clip_codes != face_clip_codes)
+				FlushRoomFogFaceBatch(rp, batched_faces, retained_faces,
+					retained_clip_codes);
+			retained_clip_codes = face_clip_codes;
 			retained_faces.push_back(Fog_faces[i]);
-			retained_clip_codes |= Fog_face_clip_codes[i];
 			continue;
 		}
 		if (batch_fog && !(fp->flags & FF_TRIANGULATED))
