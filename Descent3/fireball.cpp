@@ -200,9 +200,9 @@ void DrawFireballObject(object* obj)
 	int rot_angle;
 	int bm_handle;
 	if (Fireballs[obj->id].type == FT_BILLOW)
-		rot_angle = ((objnum * 5000) + (FrameCount * 160)) % 65536;
+		rot_angle = Get60HzVisualAngle(160.0f, objnum * 5000);
 	else
-		rot_angle = ((objnum * 5000) + (FrameCount * 30)) % 65536;
+		rot_angle = Get60HzVisualAngle(30.0f, objnum * 5000);
 
 	norm_time = time_live / obj->lifetime;
 	if (norm_time >= 1)
@@ -1905,12 +1905,12 @@ void DrawBlastRingObject(object* obj)
 	if (lifenorm < .1)
 	{
 		sphere_norm = lifenorm * 10;
-		rot_angle = (FrameCount * 20) % 65536;
+		rot_angle = Get60HzVisualAngle(20.0f);
 	}
 	else
 	{
 		sphere_norm = 1.0 - ((lifenorm - .1) * 1.5);
-		rot_angle = (FrameCount * 550) % 65536;
+		rot_angle = Get60HzVisualAngle(550.0f);
 		if (sphere_norm < 0)
 			sphere_norm = 0;
 	}

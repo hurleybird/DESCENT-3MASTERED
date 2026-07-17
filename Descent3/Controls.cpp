@@ -345,9 +345,20 @@ void ReadPlayerControls(game_controls *controls)
 {
 	if (AutomatedCaptureSuppressesInput())
 	{
+		static bool capture_primary_was_down = false;
 		memset(controls, 0, sizeof(game_controls));
 		if (AutomatedCaptureForcesForwardInput())
 			controls->forward_thrust = LIMIT_FORWARD;
+		const bool capture_primary_down =
+			AutomatedCaptureForcesPrimaryFireInput();
+		if (capture_primary_down)
+		{
+			controls->fire_primary_down_count =
+				capture_primary_was_down ? 0 : 1;
+			controls->fire_primary_down_state = true;
+			controls->fire_primary_down_time = Frametime;
+		}
+		capture_primary_was_down = capture_primary_down;
 		return;
 	}
 	if( !Control_system_init )

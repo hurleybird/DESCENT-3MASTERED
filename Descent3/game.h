@@ -88,6 +88,14 @@ extern int Clear_screen;
 //NOTE: this is a count of 3d frames, not game frames
 extern int FrameCount;
 
+// Visual effects authored around the original 60 Hz presentation should use
+// this clock instead of render-frame count. The phase advances at the same
+// real-time rate at every rendering cadence while remaining continuous above
+// 60 Hz.
+double Get60HzVisualFrame();
+int Get60HzVisualTick();
+int Get60HzVisualAngle(float units_per_frame, int offset = 0);
+
 //Vars for game 3D window
 extern int Game_window_x,Game_window_y,Game_window_w,Game_window_h;
 extern int Max_window_w,Max_window_h;

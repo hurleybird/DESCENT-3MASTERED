@@ -1243,7 +1243,7 @@ void DrawVisSineWave(vis_effect* vis)
 	rend_SetAOSuppression(1.0f);
 	int cur_sin = (vis - VisEffects) * 5000;
 
-	cur_sin += (FrameCount * 2000);
+	cur_sin = Get60HzVisualAngle(2000.0f, cur_sin);
 
 	base_from = vis->end_pos;
 	from = base_from;
@@ -2096,6 +2096,14 @@ static bool VisEffectIsSpecialFireball(int id)
 		id == AXIS_BILLBOARD_INDEX;
 }
 
+static float GetSunCoronaSizeScale(int visnum)
+{
+	uint32_t noise = (uint32_t)Get60HzVisualTick() * 1664525u +
+		(uint32_t)visnum * 1013904223u;
+	noise ^= noise >> 16;
+	return 1.0f + ((noise % 10u) / 100.0f);
+}
+
 static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey& key,
 	VisFireballBatchItem& item, VisFireballBatchKey& blend_key, VisFireballBatchItem& blend_item,
 	bool& has_blend_item)
@@ -2122,15 +2130,15 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 	fireball* fb = &Fireballs[vis->id];
 
 	if (fb->type == FT_BILLOW)
-		rot_angle = ((visnum * 5000) + (FrameCount * 160)) % 65536;
+		rot_angle = Get60HzVisualAngle(160.0f, visnum * 5000);
 	else if (vis->flags & VF_ATTACHED)
 		rot_angle = 0;
 	else if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX)
-		rot_angle = ((visnum * 5000) + (FrameCount * 860)) % 65536;
+		rot_angle = Get60HzVisualAngle(860.0f, visnum * 5000);
 	else if (vis->id == SUN_CORONA_INDEX)
 	{
-		rot_angle = ((visnum * 5000) + (FrameCount * 500)) % 65536;
-		size *= 1.0f + ((rand() % 10) / 100.0f);
+		rot_angle = Get60HzVisualAngle(500.0f, visnum * 5000);
+		size *= GetSunCoronaSizeScale(visnum);
 	}
 	else
 		rot_angle = (visnum * 5000) % 65536;
@@ -3936,15 +3944,15 @@ void DrawVisEffect(vis_effect* vis)
 	fireball* fb = &Fireballs[vis->id];
 
 	if (fb->type == FT_BILLOW)
-		rot_angle = ((visnum * 5000) + (FrameCount * 160)) % 65536;
+		rot_angle = Get60HzVisualAngle(160.0f, visnum * 5000);
 	else if (vis->flags & VF_ATTACHED)
 		rot_angle = 0;
 	else if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX)
-		rot_angle = ((visnum * 5000) + (FrameCount * 860)) % 65536;
+		rot_angle = Get60HzVisualAngle(860.0f, visnum * 5000);
 	else if (vis->id == SUN_CORONA_INDEX)
 	{
-		rot_angle = ((visnum * 5000) + (FrameCount * 500)) % 65536;
-		size *= 1.0 + ((rand() % 10) / 100);
+		rot_angle = Get60HzVisualAngle(500.0f, visnum * 5000);
+		size *= GetSunCoronaSizeScale(visnum);
 	}
 	else
 		rot_angle = (visnum * 5000) % 65536;

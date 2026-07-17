@@ -35,6 +35,7 @@
 #include "AIMain.h"
 
 #include <stdlib.h>
+#include <algorithm>
 
 #include "psrand.h"
 
@@ -107,7 +108,8 @@ void WBFireAnimFrame(object* obj, otype_wb_info* static_wb, int wb_index)
 	}
 }
 
-bool WBIsBatteryReady(object* obj, otype_wb_info* static_wb, int wb_index)
+static float WBGetFireWait(object* obj, otype_wb_info* static_wb,
+	int wb_index)
 {
 	dynamic_wb_info* p_dwb = &obj->dynamic_wb[wb_index];
 	float scalar = 1.0;
@@ -121,14 +123,41 @@ bool WBIsBatteryReady(object* obj, otype_wb_info* static_wb, int wb_index)
 		// Add 25% on the firing time of quaded weapons
 		quad_time = static_wb->gp_fire_wait[p_dwb->cur_firing_mask] * 0.25f;
 	}
+	return static_wb->gp_fire_wait[p_dwb->cur_firing_mask] * scalar +
+		quad_time;
+}
+
+bool WBIsBatteryReady(object* obj, otype_wb_info* static_wb, int wb_index)
+{
+	dynamic_wb_info* p_dwb = &obj->dynamic_wb[wb_index];
+	const float fire_wait = WBGetFireWait(obj, static_wb, wb_index);
 
 	if (!(p_dwb->flags & DWBF_ANIMATING) &&
-		(p_dwb->last_fire_time + (static_wb->gp_fire_wait[p_dwb->cur_firing_mask] * scalar) + quad_time) < Gametime)
+		p_dwb->last_fire_time + fire_wait <= Gametime)
 	{
 		return true;
 	}
 
 	return false;
+}
+
+static void WBAdvanceFireTime(object* obj, otype_wb_info* static_wb,
+	int wb_index)
+{
+	dynamic_wb_info* p_dwb = &obj->dynamic_wb[wb_index];
+	const float fire_wait = WBGetFireWait(obj, static_wb, wb_index);
+	const float scheduled_time = p_dwb->last_fire_time + fire_wait;
+	const float overdue = Gametime - scheduled_time;
+	const float continuity_window = std::max(fire_wait, Frametime * 1.5f);
+
+	// Preserve sub-frame overshoot while a battery is firing continuously.
+	// A release, weapon switch, or other genuine gap resets the schedule so a
+	// stale battery cannot discharge a backlog when it becomes active again.
+	if (p_dwb->last_fire_time >= 0.0f && overdue >= 0.0f &&
+		overdue <= continuity_window)
+		p_dwb->last_fire_time = scheduled_time;
+	else
+		p_dwb->last_fire_time = Gametime;
 }
 
 #include "stringtable.h"
@@ -276,7 +305,7 @@ void WBFireBattery(object* obj, otype_wb_info* static_wb, int poly_wb_index, int
 	// Don't do any of this if its the local client and a permissable netgame
 	if (!((Game_mode & GM_MULTI) && obj->type == OBJ_PLAYER && obj->id == Player_num && Netgame.flags & NF_PERMISSABLE))
 	{
-		p_dwb->last_fire_time = Gametime;
+		WBAdvanceFireTime(obj, static_wb, dynamic_wb_index);
 
 		if (num_fired >= 1 && obj->type == OBJ_PLAYER)
 			Players[obj->id].last_fire_weapon_time = Gametime;

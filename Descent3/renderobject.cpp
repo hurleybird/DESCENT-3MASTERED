@@ -2304,7 +2304,7 @@ void DrawPowerupGlowDisk(object* obj)
 		return;
 	light_info* li = ObjGetLightInfo(obj);
 	int objnum = obj - Objects;
-	float size_adjust = FixSin((objnum * 5000) + (FrameCount * 600));
+	float size_adjust = FixSin(Get60HzVisualAngle(600.0f, objnum * 5000));
 	size_adjust += 1.0;
 	size_adjust /= 2;	// now in range 0 to 1.0
 	size_adjust += .5;

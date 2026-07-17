@@ -23,6 +23,7 @@
 #include <stdarg.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <vector>
 #include "gameloop.h"
 #include "game.h"
@@ -118,6 +119,25 @@ int Timedemo_frame = -1;
 //NOTE: this is a count of 3d frames, not game frames
 int FrameCount = 0;
 
+double Get60HzVisualFrame()
+{
+	return (double)Gametime * 60.0;
+}
+
+int Get60HzVisualTick()
+{
+	return (int)floor(Get60HzVisualFrame());
+}
+
+int Get60HzVisualAngle(float units_per_frame, int offset)
+{
+	double phase = fmod(Get60HzVisualFrame() * units_per_frame + offset,
+		65536.0);
+	if (phase < 0.0)
+		phase += 65536.0;
+	return (int)phase;
+}
+
 static bool Screenshot_requested = false;
 extern bool Skip_render_game_frame;
 extern bool Menu_interface_mode;
@@ -138,6 +158,10 @@ struct automated_capture_state
 	float fixed_delta;
 	bool realtime;
 	bool force_forward;
+	bool force_primary_fire;
+	int force_primary_slot;
+	bool force_primary_alt;
+	bool primary_slot_applied;
 	char output_path[PSPATHNAME_LEN];
 };
 
@@ -245,6 +269,12 @@ bool AutomatedCaptureForcesForwardInput()
 		Automated_capture.force_forward;
 }
 
+bool AutomatedCaptureForcesPrimaryFireInput()
+{
+	return Automated_capture.gameplay_frame_active &&
+		Automated_capture.force_primary_fire;
+}
+
 static int FindAutomatedCaptureArg(const char* primary, const char* alias)
 {
 	int argument = FindArg((char*)primary);
@@ -259,6 +289,23 @@ static void InitAutomatedCapture()
 	Automated_capture.fixed_delta = 1.0f / 60.0f;
 	Automated_capture.realtime = FindArg("-capture-realtime") != 0;
 	Automated_capture.force_forward = FindArg("-capture-forward") != 0;
+	Automated_capture.force_primary_fire =
+		FindArg("-capture-fire-primary") != 0;
+	Automated_capture.force_primary_slot = -1;
+	Automated_capture.force_primary_alt =
+		FindArg("-capture-primary-alt") != 0;
+	const int primary_slot_arg = FindArg("-capture-primary-slot");
+	if (primary_slot_arg)
+	{
+		const char* value = GetArg(primary_slot_arg + 1);
+		char* end = nullptr;
+		const long slot = value ? strtol(value, &end, 10) : -1;
+		if (value && end != value && *end == '\0' && slot >= 0 &&
+			slot < 5)
+		{
+			Automated_capture.force_primary_slot = (int)slot;
+		}
+	}
 
 	const int frame_arg = FindAutomatedCaptureArg("-capture-frame",
 		"-screenshot-frame");
@@ -308,14 +355,16 @@ static void InitAutomatedCapture()
 
 	Automated_capture.enabled = true;
 	Automated_capture.target_frame = (int)target_frame;
-	AutomatedCaptureLog("armed frame=%d output=%s dt=%.9f realtime=%d forward=%d",
+	AutomatedCaptureLog("armed frame=%d output=%s dt=%.9f realtime=%d forward=%d primary=%d",
 		Automated_capture.target_frame, Automated_capture.output_path,
 		Automated_capture.fixed_delta, Automated_capture.realtime ? 1 : 0,
-		Automated_capture.force_forward ? 1 : 0);
-	mprintf((0, "Automated capture armed: gameplay frame %d -> %s (dt %.6f, realtime %d, forward %d).\n",
+		Automated_capture.force_forward ? 1 : 0,
+		Automated_capture.force_primary_fire ? 1 : 0);
+	mprintf((0, "Automated capture armed: gameplay frame %d -> %s (dt %.6f, realtime %d, forward %d, primary %d).\n",
 		Automated_capture.target_frame, Automated_capture.output_path,
 		Automated_capture.fixed_delta, Automated_capture.realtime ? 1 : 0,
-		Automated_capture.force_forward ? 1 : 0));
+		Automated_capture.force_forward ? 1 : 0,
+		Automated_capture.force_primary_fire ? 1 : 0));
 }
 
 static void BeginAutomatedCaptureFrame()
@@ -345,6 +394,14 @@ static void BeginAutomatedCaptureFrame()
 		return;
 
 	Automated_capture.gameplay_frame_active = true;
+	if (!Automated_capture.primary_slot_applied &&
+		Automated_capture.force_primary_slot >= 0)
+	{
+		SelectWeapon(Automated_capture.force_primary_slot);
+		if (Automated_capture.force_primary_alt)
+			SelectWeapon(Automated_capture.force_primary_slot);
+		Automated_capture.primary_slot_applied = true;
+	}
 	Automated_capture.capture_pending =
 		Automated_capture.gameplay_frame == Automated_capture.target_frame;
 	if (!Automated_capture.realtime)

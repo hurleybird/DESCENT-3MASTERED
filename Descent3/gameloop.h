@@ -69,6 +69,7 @@ bool RendererShouldCountMsaaTransitionFrame();
 // is based on the command-line request, so it is valid before gameplay starts.
 bool AutomatedCaptureSuppressesInput();
 bool AutomatedCaptureForcesForwardInput();
+bool AutomatedCaptureForcesPrimaryFireInput();
 
 // Writes an opt-in lifecycle trace when PICCU_CAPTURE_LOG names a file.
 void AutomatedCaptureLog(const char* format, ...);

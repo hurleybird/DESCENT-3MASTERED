@@ -189,6 +189,43 @@ bool ObjectsAreRelated(int o1, int o2)
 
 bool Enable_omega_collions = false;
 
+struct ElectricalSparkClock
+{
+	int parent_handle;
+	int last_tick;
+};
+
+static ElectricalSparkClock Electrical_spark_clocks[MAX_OBJECTS][MAX_WB_GUNPOINTS] = {};
+
+static int GetElectricalSpark60HzTicks(const object* weapon_obj,
+	const object* parent_obj)
+{
+	if (!weapon_obj || !parent_obj)
+		return 1;
+
+	const int parent_num = OBJNUM(parent_obj);
+	const int gun_num = weapon_obj->ctype.laser_info.src_gun_num;
+	if (parent_num < 0 || parent_num >= MAX_OBJECTS ||
+		gun_num < 0 || gun_num >= MAX_WB_GUNPOINTS)
+		return 1;
+
+	ElectricalSparkClock& clock = Electrical_spark_clocks[parent_num][gun_num];
+	const int tick = Get60HzVisualTick();
+	if (clock.parent_handle != parent_obj->handle || tick < clock.last_tick)
+	{
+		clock.parent_handle = parent_obj->handle;
+		clock.last_tick = tick - 1;
+	}
+
+	int elapsed_ticks = tick - clock.last_tick;
+	if (elapsed_ticks <= 0)
+		return 0;
+	if (elapsed_ticks > 8)
+		elapsed_ticks = 8;
+	clock.last_tick = tick;
+	return elapsed_ticks;
+}
+
 // Picks out a target for an elecrical weapon to fire on
 void AquireElectricalTarget(object* obj)
 {
@@ -1698,7 +1735,9 @@ void DrawElectricalWeapon(object* obj)
 	if (fate == HIT_WALL || fate == HIT_TERRAIN)
 	{
 		dest_vector = hit_data.hit_pnt;
-		CreateRandomSparks((ps_rand() % 4), &dest_vector, obj->roomnum, COOL_SPARK_INDEX);
+		const int spark_ticks = GetElectricalSpark60HzTicks(obj, parent_obj);
+		for (int tick = 0; tick < spark_ticks; tick++)
+			CreateRandomSparks((ps_rand() % 4), &dest_vector, obj->roomnum, COOL_SPARK_INDEX);
 	}
 
 	vector render_src_vector = src_vector;
@@ -1744,7 +1783,7 @@ void DrawElectricalWeapon(object* obj)
 	center_vecs[0] = render_src_vector;	// Set first one equal to our render origin
 	center_vecs[num_segments - 1] = dest_vector;
 	vector from = render_src_vector;
-	int cur_sin = FrameCount * 5000;
+	int cur_sin = Get60HzVisualAngle(5000.0f);
 
 	for (i = 1; i < num_segments - 1; i++, from += line_norm, cur_sin += 8000)
 	{
@@ -1869,27 +1908,91 @@ void DoFusionEffect(object* objp, int weapon_type)
 }
 
 // Do the spray effect
+struct SprayEmissionClock
+{
+	int object_handle;
+	float last_call_time;
+	float last_frame_time;
+	float next_emission_time;
+};
+
+static SprayEmissionClock Spray_visual_clocks[MAX_OBJECTS][MAX_WBS_PER_OBJ] = {};
+
+static int GetSpray60HzAges(object* obj, ubyte wb_index, float ages[8])
+{
+	constexpr float interval = 1.0f / 60.0f;
+	const int objnum = obj ? OBJNUM(obj) : -1;
+
+	if (objnum < 0 || objnum >= MAX_OBJECTS || wb_index >= MAX_WBS_PER_OBJ)
+	{
+		ages[0] = 0.0f;
+		return 1;
+	}
+
+	SprayEmissionClock& clock = Spray_visual_clocks[objnum][wb_index];
+	const float elapsed = Gametime - clock.last_call_time;
+	const float longest_frame = clock.last_frame_time > Frametime ?
+		clock.last_frame_time : Frametime;
+	if (clock.object_handle != obj->handle || elapsed < 0.0f ||
+		elapsed > longest_frame * 1.5f + 0.00001f)
+	{
+		clock.object_handle = obj->handle;
+		clock.next_emission_time = Gametime;
+	}
+	clock.last_call_time = Gametime;
+	clock.last_frame_time = Frametime;
+
+	int count = 0;
+	while (clock.next_emission_time <= Gametime + 0.00001f && count < 8)
+	{
+		const float age = Gametime - clock.next_emission_time;
+		ages[count++] = age > 0.0f ? age : 0.0f;
+		clock.next_emission_time += interval;
+	}
+	if (count == 8 && clock.next_emission_time <= Gametime)
+		clock.next_emission_time = Gametime + interval;
+	return count;
+}
+
+static int GetSprayEmissionAges(object* obj, ubyte wb_index,
+	float ages[8])
+{
+	return GetSpray60HzAges(obj, wb_index, ages);
+}
+
 void DoSprayEffect(object* obj, otype_wb_info* static_wb, ubyte wb_index)
 {
 	vector laser_pos, laser_dir;
 	int cur_m_bit;
 	const bool close_screen_source = VisEffectIsCloseScreenSourceObject(obj);
+	float emission_ages[8];
+	const int emission_count = GetSprayEmissionAges(obj, wb_index,
+		emission_ages);
+	if (emission_count == 0)
+		return;
 
 	ASSERT(!(obj->flags & OF_DYING));
 
 	poly_model* pm = &Poly_models[obj->rtype.pobj_info.model_num];
 
-	// Go through each gun point
-	for (cur_m_bit = 0; cur_m_bit < pm->poly_wb[0].num_gps; cur_m_bit++)
+	for (int emission = 0; emission < emission_count; emission++)
 	{
-		// Figure out out if this weapon fires from this gunpoint
-		if (static_wb->gp_fire_masks[obj->dynamic_wb[wb_index].cur_firing_mask] & (0x01 << cur_m_bit))
+		const float emission_age = emission_ages[emission];
+		// Go through each gun point
+		for (cur_m_bit = 0; cur_m_bit < pm->poly_wb[0].num_gps; cur_m_bit++)
 		{
+			// Figure out if this weapon fires from this gunpoint.
+			if (!(static_wb->gp_fire_masks[obj->dynamic_wb[wb_index].cur_firing_mask] &
+				(0x01 << cur_m_bit)))
+			{
+				continue;
+			}
 			int weapon_num = static_wb->gp_weapon_index[cur_m_bit];
 			const bool close_screen_weapon = close_screen_source ||
 				(WeaponIsNapalmSource(weapon_num) && VisEffectIsLocalPlayerAttachedSourceObject(obj));
 
 			WeaponCalcGun(&laser_pos, &laser_dir, obj, pm->poly_wb[0].gp_index[cur_m_bit]);
+			laser_pos -= obj->mtype.phys_info.velocity * emission_age;
 			int visnum = VisEffectCreate(VIS_FIREBALL, SPRAY_INDEX, obj->roomnum, &laser_pos);
 
 			if (visnum < 0)
@@ -1925,7 +2028,15 @@ void DoSprayEffect(object* obj, otype_wb_info* static_wb, ubyte wb_index)
 			vis->mass = Weapons[weapon_num].phys_info.mass;
 			vis->size = Weapons[weapon_num].size;
 			vis->lifetime = Weapons[weapon_num].life_time;
-			vis->lifeleft = vis->lifetime;
+			vis->lifeleft = vis->lifetime - emission_age;
+			vis->creation_time -= emission_age;
+			vis->pos += vis->velocity * emission_age;
+			laser_pos = vis->pos;
+			if (vis->lifeleft <= 0.0f)
+			{
+				VisEffectDelete(visnum);
+				continue;
+			}
 			if (close_screen_weapon)
 				vis->flags |= VF_CLOSE_SCREEN_EFFECT;
 
@@ -1961,9 +2072,9 @@ void DoSprayEffect(object* obj, otype_wb_info* static_wb, ubyte wb_index)
 
 				float velmag = vm_GetMagnitudeFast(&vis->velocity);
 				vector velnorm = vis->velocity / velmag;
-				float len = Frametime * velmag;
+				constexpr float spray_interval = 1.0f / 60.0f;
+				float len = spray_interval * velmag;
 				float fextras = len * 2;
-				float fps = 1.0 / Frametime;
 
 				int extras = fextras;
 
@@ -1989,9 +2100,9 @@ void DoSprayEffect(object* obj, otype_wb_info* static_wb, ubyte wb_index)
 						if (close_screen_weapon)
 							extravis->flags |= VF_CLOSE_SCREEN_EFFECT;
 
-						float life_adjust = ((Frametime / (float)extras) * (t + 1));
+						float life_adjust = ((spray_interval / (float)extras) * (t + 1));
 
-						extravis->lifeleft = Frametime * (fps / 2);
+						extravis->lifeleft = 0.5f;
 						extravis->lifeleft *= life_scalar;
 						life_adjust *= life_scalar;
 
