@@ -758,14 +758,22 @@ void DoDebrisFrame(object* obj)
 	//Create smoke, if this debris smokes
 	if (death_flags & DF_DEBRIS_SMOKES)
 	{
-		if (Gametime - obj->ctype.debris_info.last_smoke_time > .015 && (rand() % 2))
+		float smoke_ages[8] = {};
+		const int smoke_events = Get60HzVisualEventAges(OBJNUM(obj), obj->handle,
+			VIS60_DEBRIS_SMOKE, smoke_ages, 8);
+		for (int event = 0; event < smoke_events; ++event)
 		{
+			if (!(rand() % 2))
+				continue;
 			// Create a small flame puff every now and then
 			int visnum = CreateFireball(&obj->pos, BLACK_SMOKE_INDEX, obj->roomnum, VISUAL_FIREBALL);
 
 			if (visnum >= 0)
+			{
 				VisEffects[visnum].size = obj->size / 2;	// Make small!
-			obj->ctype.debris_info.last_smoke_time = Gametime;
+				VisEffects[visnum].creation_time -= smoke_ages[event];
+				VisEffects[visnum].lifeleft -= smoke_ages[event];
+			}
 		}
 	}
 }
@@ -983,14 +991,15 @@ void DoDyingFrame(object* objp)
 		objp->effect_info->deform_time = 1.0;
 		objp->effect_info->deform_range = (1.0 - dying_norm) * .2f;
 		int dying_chance = (dying_norm * 10) + 1;
-		//Create random electrical effect
-		if (Gametime - objp->ctype.dying_info.last_spark_time > .01)
+		float spark_ages[8] = {};
+		const int spark_events = Get60HzVisualEventAges(OBJNUM(objp), objp->handle,
+			VIS60_DYING_SPARKS, spark_ages, 8);
+		for (int event = 0; event < spark_events; ++event)
 		{
 			if ((ps_rand() % dying_chance) == 0) {
 				int num_bolts = ((1.0 - dying_norm) * 5.0) + 3;
 				CreateElectricalBolts(objp, num_bolts);
 			}
-			objp->ctype.dying_info.last_spark_time = Gametime;
 		}
 	}
 	//If fireball death, do fireballs
@@ -998,17 +1007,26 @@ void DoDyingFrame(object* objp)
 		vector velocity_norm = objp->mtype.phys_info.velocity;
 		vm_NormalizeVector(&velocity_norm);
 		vector pos = objp->pos - (velocity_norm * (objp->size / 2));
-		if (OBJECT_OUTSIDE(objp))
+		float fireball_ages[8] = {};
+		const int fireball_events = Get60HzVisualEventAges(OBJNUM(objp), objp->handle,
+			VIS60_DYING_FIREBALLS, fireball_ages, 8);
+		for (int event = 0; event < fireball_events; ++event)
 		{
-			int visnum = CreateFireball(&pos, BLACK_SMOKE_INDEX, objp->roomnum, VISUAL_FIREBALL);
-			MarkCloseScreenEffectForObject(visnum, objp);
-		}
-		// Create an explosion that follows every now and then
-		if ((Gametime - objp->ctype.dying_info.last_fireball_time > .01) && (ps_rand() % 3) == 0)
-		{
+			if (OBJECT_OUTSIDE(objp))
+			{
+				int smoke_visnum = CreateFireball(&pos, BLACK_SMOKE_INDEX, objp->roomnum, VISUAL_FIREBALL);
+				MarkCloseScreenEffectForObject(smoke_visnum, objp);
+				if (smoke_visnum >= 0)
+				{
+					VisEffects[smoke_visnum].creation_time -= fireball_ages[event];
+					VisEffects[smoke_visnum].lifeleft -= fireball_ages[event];
+				}
+			}
+			// Create an explosion that follows every now and then.
+			if ((ps_rand() % 3) != 0)
+				continue;
 			if (!(objp->flags & OF_POLYGON_OBJECT))
 				return;
-			objp->ctype.dying_info.last_fireball_time = Gametime;
 			vector dest;
 			poly_model* pm = &Poly_models[objp->rtype.pobj_info.model_num];
 			bsp_info* sm = &pm->submodel[0];
@@ -1018,6 +1036,8 @@ void DoDyingFrame(object* objp)
 			if (visnum >= 0) //DAJ this pervents a -1 array index
 			{
 				MarkCloseScreenEffectForObject(visnum, objp);
+				VisEffects[visnum].creation_time -= fireball_ages[event];
+				VisEffects[visnum].lifeleft -= fireball_ages[event];
 				VisEffects[visnum].size += ((ps_rand() % 20) / 20.0) * 3.0;
 				if ((ps_rand() % 2))
 				{
@@ -1031,15 +1051,23 @@ void DoDyingFrame(object* objp)
 	}
 	//If smoke death, do smoke
 	if (death_flags & DF_DELAY_SMOKES) {
-		// see if we should draw some smoke
-		if ((Gametime - objp->ctype.dying_info.last_smoke_time > .01) && (ps_rand() % 3) == 0) {	// don't draw most of the time
-			objp->ctype.dying_info.last_smoke_time = Gametime;
+		float smoke_ages[8] = {};
+		const int smoke_events = Get60HzVisualEventAges(OBJNUM(objp), objp->handle,
+			VIS60_DYING_SMOKE, smoke_ages, 8);
+		for (int event = 0; event < smoke_events; ++event) {
+			if ((ps_rand() % 3) != 0)
+				continue;
 
 			//Make even less likely inside
 			if (OBJECT_OUTSIDE(objp) || ((ps_rand() % 2) == 0))
 			{
 				int visnum = CreateFireball(&objp->pos, BLACK_SMOKE_INDEX, objp->roomnum, VISUAL_FIREBALL);
 				MarkCloseScreenEffectForObject(visnum, objp);
+				if (visnum >= 0)
+				{
+					VisEffects[visnum].creation_time -= smoke_ages[event];
+					VisEffects[visnum].lifeleft -= smoke_ages[event];
+				}
 			}
 		}
 	}
@@ -1061,7 +1089,11 @@ void DoGravityFieldEffect(object* obj)
 		sphere_norm = 0;
 	SetShakeMagnitude(25);
 	float vdist = vm_VectorDistanceQuick(&Viewer_object->pos, &obj->pos);
-	CreateRandomSparks(3, &obj->pos, obj->roomnum, -1, 2);
+	float gravity_effect_ages[8];
+	const int gravity_effect_events = Get60HzVisualEventAges(OBJNUM(obj), obj->handle,
+		VIS60_GRAVITY_FIELD, gravity_effect_ages, 8);
+	for (int event = 0; event < gravity_effect_events; ++event)
+		CreateRandomSparks(3, &obj->pos, obj->roomnum, -1, 2);
 
 	if (!(obj->flags & OF_SERVER_SAYS_DELETE))
 	{
@@ -1246,8 +1278,12 @@ void DoGravityFieldEffect(object* obj)
 					vis->velocity.x = 1;
 					vis->velocity.y = .25;
 				}
-				if ((ps_rand() % 8) == 0)
-					CreateRandomSparks(ps_rand() % 3, &hit_obj_ptr->pos, hit_obj_ptr->roomnum, -1, (ps_rand() % 2) + 2);
+				for (int event = 0; event < gravity_effect_events; ++event)
+				{
+					if ((ps_rand() % 8) == 0)
+						CreateRandomSparks(ps_rand() % 3, &hit_obj_ptr->pos, hit_obj_ptr->roomnum, -1,
+							(ps_rand() % 2) + 2);
+				}
 
 			}
 

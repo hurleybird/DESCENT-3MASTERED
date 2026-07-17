@@ -5078,7 +5078,6 @@ void RenderRoomUnsorted(room* rp)
 // Figures out a scalar value to apply to all vertices in the room
 void ComputeRoomPulseLight(room* rp)
 {
-	static PSRand flicker_rand;
 	if (rp->pulse_time == 0 || In_editor_mode)
 		Room_light_val = 1.0;
 	else
@@ -5104,8 +5103,7 @@ void ComputeRoomPulseLight(room* rp)
 		}
 		if (rp->flags & RF_FLICKER)
 		{
-			flicker_rand.seed((Gametime * 1000) + (rp - Rooms));
-			if (flicker_rand() % 2)
+			if (Get60HzVisualNoise((uint32_t)(rp - Rooms), 3) & 1u)
 				Room_light_val = 0;
 		}
 	}

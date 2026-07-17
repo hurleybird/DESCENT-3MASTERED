@@ -946,64 +946,65 @@ void WeaponDoFrame(object* obj)
 
 	if ((Weapons[obj->id].flags & WF_SMOKE) && draw_effects)
 	{
+		float smoke_ages[8] = {};
+		const int smoke_events = Get60HzVisualEventAges(OBJNUM(obj), obj->handle,
+			VIS60_WEAPON_SMOKE, smoke_ages, 8);
 		if (Weapons[obj->id].flags & WF_PLANAR_SMOKE)
 		{
-			vector newpos = obj->pos - (obj->orient.fvec * (obj->size / 2));
-			int visnum = VisEffectCreate(VIS_FIREBALL, BILLBOARD_SMOKETRAIL_INDEX, obj->roomnum, &newpos);
-			if (visnum >= 0)
+			for (int event = 0; event < smoke_events; ++event)
 			{
-				vis_effect* vis = &VisEffects[visnum];
-				vis->custom_handle = Weapons[obj->id].smoke_handle;
-				vis->lifeleft = 1.0;
-				vis->lifetime = 1.0;
+				vector newpos = obj->pos - obj->mtype.phys_info.velocity * smoke_ages[event] -
+					(obj->orient.fvec * (obj->size / 2));
+				int visnum = VisEffectCreate(VIS_FIREBALL, BILLBOARD_SMOKETRAIL_INDEX, obj->roomnum, &newpos);
+				if (visnum >= 0)
+				{
+					vis_effect* vis = &VisEffects[visnum];
+					vis->custom_handle = Weapons[obj->id].smoke_handle;
+					vis->lifeleft = 1.0f - smoke_ages[event];
+					vis->lifetime = 1.0f;
+					vis->creation_time -= smoke_ages[event];
 
-				vis->end_pos = obj->ctype.laser_info.last_smoke_pos;
-				vis->billboard_info.width = 4;
-				vis->lighting_color = GR_RGB16(Weapons[obj->id].lighting_info.red_light1 * 255.0, Weapons[obj->id].lighting_info.green_light1 * 255.0, Weapons[obj->id].lighting_info.blue_light1 * 255.0);
-				if (close_screen_weapon)
-					vis->flags |= VF_CLOSE_SCREEN_EFFECT;
-				obj->ctype.laser_info.last_smoke_pos = vis->pos;
+					vis->end_pos = obj->ctype.laser_info.last_smoke_pos;
+					vis->billboard_info.width = 4;
+					vis->lighting_color = GR_RGB16(Weapons[obj->id].lighting_info.red_light1 * 255.0, Weapons[obj->id].lighting_info.green_light1 * 255.0, Weapons[obj->id].lighting_info.blue_light1 * 255.0);
+					if (close_screen_weapon)
+						vis->flags |= VF_CLOSE_SCREEN_EFFECT;
+					obj->ctype.laser_info.last_smoke_pos = vis->pos;
+				}
 			}
 		}
 		else
 		{
-			// Create blobby smoke
-			// Create extras
-			vector blobpos = obj->pos - (obj->orient.fvec * obj->size);
-
-			float delta_time = Frametime;
-			vector delta_vec = obj->mtype.phys_info.velocity * delta_time;
-
-			float mag = vm_GetMagnitudeFast(&delta_vec);
-			float extras = (mag * 4) + .5;
-			int int_extras = extras + 1;
-
-			int_extras = min(int_extras, 2);
-
-			delta_vec /= int_extras;
-			delta_time /= int_extras;
-
-			vector new_blobpos = blobpos;
-
-			for (int i = 0; i < int_extras; i++)
+			const float event_delta = 1.0f / 60.0f;
+			for (int event = 0; event < smoke_events; ++event)
 			{
-				int visnum = CreateFireball(&new_blobpos, SMOKE_TRAIL_INDEX, obj->roomnum, VISUAL_FIREBALL);
+				vector blobpos = obj->pos - obj->mtype.phys_info.velocity * smoke_ages[event] -
+					(obj->orient.fvec * obj->size);
+				vector delta_vec = obj->mtype.phys_info.velocity * event_delta;
+				const float mag = vm_GetMagnitudeFast(&delta_vec);
+				int extras = min((int)((mag * 4.0f) + 1.5f), 2);
+				delta_vec /= extras;
 
-				if (visnum >= 0)
+				for (int i = 0; i < extras; ++i)
 				{
-					vis_effect* vis = &VisEffects[visnum];
+					vector new_blobpos = blobpos - delta_vec * (float)i;
+					int visnum = CreateFireball(&new_blobpos, SMOKE_TRAIL_INDEX, obj->roomnum, VISUAL_FIREBALL);
 
-					vis->custom_handle = Weapons[obj->id].smoke_handle;
-					vis->lifeleft -= (i * delta_time);
-					vis->creation_time -= (i * delta_time);
+					if (visnum >= 0)
+					{
+						vis_effect* vis = &VisEffects[visnum];
+						const float age = smoke_ages[event] + i * (event_delta / extras);
 
-					if (Weapons[obj->id].flags & WF_REVERSE_SMOKE)
-						vis->flags |= VF_REVERSE;
-					if (close_screen_weapon)
-						vis->flags |= VF_CLOSE_SCREEN_EFFECT;
+						vis->custom_handle = Weapons[obj->id].smoke_handle;
+						vis->lifeleft -= age;
+						vis->creation_time -= age;
+
+						if (Weapons[obj->id].flags & WF_REVERSE_SMOKE)
+							vis->flags |= VF_REVERSE;
+						if (close_screen_weapon)
+							vis->flags |= VF_CLOSE_SCREEN_EFFECT;
+					}
 				}
-
-				new_blobpos -= delta_vec;
 			}
 		}
 	}
@@ -1014,10 +1015,24 @@ void WeaponDoFrame(object* obj)
 		weapon* weap = &Weapons[obj->id];
 		float particle_interval = (1.0 / (float)weap->particle_count);
 
-		if (Gametime - obj->ctype.laser_info.last_drop_time > particle_interval)
+		if (obj->ctype.laser_info.last_drop_time <= 0.0f ||
+			obj->ctype.laser_info.last_drop_time < obj->creation_time)
+			obj->ctype.laser_info.last_drop_time = Gametime - particle_interval;
+
+		int particles_due = (int)((Gametime - obj->ctype.laser_info.last_drop_time) /
+			particle_interval);
+		if (particles_due > 8)
 		{
-			CreateRandomParticles(1, &pos, obj->roomnum, weap->particle_handle, weap->particle_size, weap->particle_life, close_screen_weapon);
-			obj->ctype.laser_info.last_drop_time = Gametime;
+			obj->ctype.laser_info.last_drop_time = Gametime - 8.0f * particle_interval;
+			particles_due = 8;
+		}
+		for (int particle = 0; particle < particles_due; ++particle)
+		{
+			obj->ctype.laser_info.last_drop_time += particle_interval;
+			const float age = Gametime - obj->ctype.laser_info.last_drop_time;
+			vector event_pos = pos - obj->mtype.phys_info.velocity * age;
+			CreateRandomParticles(1, &event_pos, obj->roomnum, weap->particle_handle,
+				weap->particle_size, weap->particle_life, close_screen_weapon, age);
 		}
 
 	}

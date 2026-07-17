@@ -1475,26 +1475,32 @@ void DoNewPlayerDeathFrame(int slot)
 			Death[slot].fate_frametime = Gametime;
 		}
 
-		//	do smoke trails and special visual effects.
-		if ((ps_rand() % 6) == 0)
+		float death_effect_ages[8] = {};
+		const int death_effect_events = Get60HzVisualEventAges(OBJNUM(playerobj),
+			playerobj->handle, VIS60_PLAYER_DEATH, death_effect_ages, 8);
+		for (int event = 0; event < death_effect_events; ++event)
 		{
-			//	smoke
-			int visnum;
-			vector smoke_pt;
-			smoke_pt = (-playerobj->orient.fvec) * (playerobj->size * 0.5f);
-			smoke_pt = playerobj->pos + smoke_pt;
-			visnum = CreateFireball(&smoke_pt, BLACK_SMOKE_INDEX, playerobj->roomnum, VISUAL_FIREBALL);
-			if (visnum >= 0)
+			//	do smoke trails and special visual effects.
+			if ((ps_rand() % 6) == 0)
 			{
-				VisEffects[visnum].size = 1.0 + ((ps_rand() % 3) / 3.0);	// Make small!
-				if (VisEffectIsCloseScreenSourceObject(playerobj))
-					VisEffects[visnum].flags |= VF_CLOSE_SCREEN_EFFECT;
+				int visnum;
+				vector smoke_pt;
+				smoke_pt = (-playerobj->orient.fvec) * (playerobj->size * 0.5f);
+				smoke_pt = playerobj->pos + smoke_pt;
+				visnum = CreateFireball(&smoke_pt, BLACK_SMOKE_INDEX, playerobj->roomnum, VISUAL_FIREBALL);
+				if (visnum >= 0)
+				{
+					VisEffects[visnum].size = 1.0 + ((ps_rand() % 3) / 3.0);	// Make small!
+					VisEffects[visnum].creation_time -= death_effect_ages[event];
+					VisEffects[visnum].lifeleft -= death_effect_ages[event];
+					if (VisEffectIsCloseScreenSourceObject(playerobj))
+						VisEffects[visnum].flags |= VF_CLOSE_SCREEN_EFFECT;
+				}
 			}
-		}
 
-		// Create an explosion that follows every now and then
-		if ((ps_rand() % 5) == 0)
-		{
+			// Create an explosion that follows every now and then
+			if ((ps_rand() % 5) != 0)
+				continue;
 			vector dest;
 			poly_model* pm = Death[slot].dying_model;
 			bsp_info* sm = &pm->submodel[0];
@@ -1505,6 +1511,8 @@ void DoNewPlayerDeathFrame(int slot)
 
 			if (visnum >= 0) //DAJ added to pervent -1 array index
 			{
+				VisEffects[visnum].creation_time -= death_effect_ages[event];
+				VisEffects[visnum].lifeleft -= death_effect_ages[event];
 				if (VisEffectIsCloseScreenSourceObject(playerobj))
 					VisEffects[visnum].flags |= VF_CLOSE_SCREEN_EFFECT;
 

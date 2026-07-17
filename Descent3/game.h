@@ -95,6 +95,32 @@ extern int FrameCount;
 double Get60HzVisualFrame();
 int Get60HzVisualTick();
 int Get60HzVisualAngle(float units_per_frame, int offset = 0);
+uint32_t Get60HzVisualNoise(uint32_t key, uint32_t salt = 0);
+
+enum visual_60hz_clock_channel
+{
+	VIS60_WEATHER_SNOW,
+	VIS60_WEATHER_PUDDLES,
+	VIS60_WEATHER_DROPLETS,
+	VIS60_DEBRIS_SMOKE,
+	VIS60_DYING_SPARKS,
+	VIS60_DYING_FIREBALLS,
+	VIS60_DYING_SMOKE,
+	VIS60_PLAYER_DEATH,
+	VIS60_ATTACHED_NAPALM,
+	VIS60_DAMAGE_LIGHTNING,
+	VIS60_VIRUS_LIGHTNING,
+	VIS60_GRAVITY_FIELD,
+	VIS60_WEAPON_SMOKE,
+	VIS60_SPLINTER_SMOKE,
+	VIS60_CLOCK_CHANNEL_COUNT
+};
+
+// Returns the canonical 60 Hz events elapsed since the last call for this
+// object/channel. Ages allow low-rate callers to place caught-up emissions at
+// the point they would already have reached.
+int Get60HzVisualEventAges(int object_index, int object_handle,
+	visual_60hz_clock_channel channel, float* ages, int max_events = 8);
 
 //Vars for game 3D window
 extern int Game_window_x,Game_window_y,Game_window_w,Game_window_h;

@@ -779,7 +779,8 @@ void CreateRandomSparks(int num_sparks, vector* pos, int roomnum, int which_inde
 }
 
 // Creates a some particles that go in random directions
-void CreateRandomParticles(int num_sparks, vector* pos, int roomnum, int bm_handle, float size, float life, bool close_screen_effect)
+void CreateRandomParticles(int num_sparks, vector* pos, int roomnum, int bm_handle,
+	float size, float life, bool close_screen_effect, float age)
 {
 	// Create some sparks
 	float tenth_life = life / 10.0;
@@ -808,11 +809,13 @@ void CreateRandomParticles(int num_sparks, vector* pos, int roomnum, int bm_hand
 
 			vm_NormalizeVectorFast(&vis->velocity);
 			vis->velocity *= 10 + (ps_rand() % 10);
+			vis->pos += vis->velocity * age;
 			vis->size = size + (((ps_rand() % 11) - 5) * tenth_size);
 			vis->flags |= VF_USES_LIFELEFT;
 			float lifetime = life + (((ps_rand() % 11) - 5) * tenth_life);
-			vis->lifeleft = lifetime;
+			vis->lifeleft = lifetime - age;
 			vis->lifetime = lifetime;
+			vis->creation_time -= age;
 			vis->custom_handle = bm_handle;
 			if (close_screen_effect)
 				vis->flags |= VF_CLOSE_SCREEN_EFFECT;
@@ -4389,6 +4392,11 @@ void AttachRandomNapalmEffectsToObject(object* obj)
 {
 	if (obj->flags & OF_DEAD)
 		return;
+	float effect_ages[8] = {};
+	const int effect_events = Get60HzVisualEventAges(OBJNUM(obj), obj->handle,
+		VIS60_ATTACHED_NAPALM, effect_ages, 8);
+	if (effect_events == 0)
+		return;
 
 	vector velocity_norm = obj->mtype.phys_info.velocity;
 	vm_NormalizeVector(&velocity_norm);
@@ -4397,21 +4405,29 @@ void AttachRandomNapalmEffectsToObject(object* obj)
 	// Napalm effects here are attached to the burning object. Only napalm attached
 	// to the local player belongs to the close-screen late pass.
 	const bool close_screen_napalm = VisEffectIsLocalPlayerAttachedSourceObject(obj);
-	if (obj->movement_type == MT_PHYSICS && (OBJECT_OUTSIDE(obj) && (ps_rand() % 3) == 0) || (ps_rand() % 3) == 0)
-	{
-		int visnum = CreateFireball(&pos, BLACK_SMOKE_INDEX, obj->roomnum, VISUAL_FIREBALL);
-		if (visnum >= 0 && close_screen_napalm)
-			VisEffects[visnum].flags |= VF_CLOSE_SCREEN_EFFECT;
-	}
-
 	float size_scalar = obj->size / 7.0;
 
 	size_scalar = std::max(1.0f, size_scalar);
 	size_scalar = std::min(4.0f, size_scalar);
 
-	// Create an explosion that follows every now and then
-	if ((ps_rand() % 3) == 0)
+	for (int event = 0; event < effect_events; ++event)
 	{
+		if ((obj->movement_type == MT_PHYSICS && OBJECT_OUTSIDE(obj) &&
+			(ps_rand() % 3) == 0) || (ps_rand() % 3) == 0)
+		{
+			int smoke_visnum = CreateFireball(&pos, BLACK_SMOKE_INDEX, obj->roomnum, VISUAL_FIREBALL);
+			if (smoke_visnum >= 0)
+			{
+				VisEffects[smoke_visnum].creation_time -= effect_ages[event];
+				VisEffects[smoke_visnum].lifeleft -= effect_ages[event];
+				if (close_screen_napalm)
+					VisEffects[smoke_visnum].flags |= VF_CLOSE_SCREEN_EFFECT;
+			}
+		}
+
+		// Create an explosion that follows every now and then.
+		if ((ps_rand() % 3) != 0)
+			continue;
 		if (!(obj->flags & OF_POLYGON_OBJECT))
 			return;
 
@@ -4447,6 +4463,8 @@ void AttachRandomNapalmEffectsToObject(object* obj)
 			if (close_screen_napalm)
 				VisEffects[visnum].flags |= VF_CLOSE_SCREEN_EFFECT;
 
+			VisEffects[visnum].creation_time -= effect_ages[event];
+			VisEffects[visnum].lifeleft -= effect_ages[event];
 			VisEffects[visnum].size += ((ps_rand() % 20) / 20.0) * 1.0;
 
 			VisEffects[visnum].size *= size_scalar;
@@ -4459,6 +4477,7 @@ void AttachRandomNapalmEffectsToObject(object* obj)
 					VisEffects[visnum].velocity = obj->mtype.phys_info.velocity;
 					VisEffects[visnum].mass = obj->mtype.phys_info.mass;
 					VisEffects[visnum].drag = obj->mtype.phys_info.drag;
+					VisEffects[visnum].pos += VisEffects[visnum].velocity * effect_ages[event];
 				}
 			}
 		}

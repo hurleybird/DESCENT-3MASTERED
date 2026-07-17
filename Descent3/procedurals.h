@@ -87,6 +87,7 @@ void ClearAllProceduralsFromTexture (int texnum);
 
 // Does a procedural for this texture
 void EvaluateProcedural (int texnum);
+void SetProceduralVisualTick(int tick);
 
 // Returns the next free procelement
 int ProcElementAllocate ();

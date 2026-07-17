@@ -2635,8 +2635,13 @@ void DrawSparkyDamageLightning(object* obj)
 		int shield_modulo = 20 - (12 * shield_norm);
 		if (shield_modulo < 1)
 			shield_modulo = 1;
-		if ((ps_rand() % shield_modulo) == 0)
+		float lightning_ages[8] = {};
+		const int lightning_events = Get60HzVisualEventAges(OBJNUM(obj), obj->handle,
+			VIS60_DAMAGE_LIGHTNING, lightning_ages, 8);
+		for (int event = 0; event < lightning_events; ++event)
 		{
+			if ((ps_rand() % shield_modulo) != 0)
+				continue;
 			poly_model* pm = &Poly_models[obj->rtype.pobj_info.model_num];
 			if (pm->n_models == 0)
 				return;
@@ -2653,6 +2658,8 @@ void DrawSparkyDamageLightning(object* obj)
 				vis_effect* vis = &VisEffects[visnum];
 				vis->lifeleft = 1.0;
 				vis->lifetime = 1.0;
+				vis->creation_time -= lightning_ages[event];
+				vis->lifeleft -= lightning_ages[event];
 				vis->end_pos = obj->pos;
 				vis->velocity.x = .15f;
 				vis->velocity.y = 3;
@@ -2675,15 +2682,20 @@ void DrawVirusLightning(object* obj)
 	if (!(obj->effect_info->type_flags & EF_VIRUS_INFECTED))
 		return;
 
-	float shield_norm = (float)(ps_rand() % RAND_MAX) / (float)RAND_MAX;
-	shield_norm = 1 - shield_norm;
-
-	ASSERT(shield_norm >= 0 && shield_norm <= 1);
-	int shield_modulo = 20 - (16 * shield_norm);
-	if (shield_modulo < 1)
-		shield_modulo = 1;
-	if ((ps_rand() % shield_modulo) == 0)
+	float lightning_ages[8] = {};
+	const int lightning_events = Get60HzVisualEventAges(OBJNUM(obj), obj->handle,
+		VIS60_VIRUS_LIGHTNING, lightning_ages, 8);
+	for (int event = 0; event < lightning_events; ++event)
 	{
+		float shield_norm = (float)(ps_rand() % RAND_MAX) / (float)RAND_MAX;
+		shield_norm = 1 - shield_norm;
+
+		ASSERT(shield_norm >= 0 && shield_norm <= 1);
+		int shield_modulo = 20 - (16 * shield_norm);
+		if (shield_modulo < 1)
+			shield_modulo = 1;
+		if ((ps_rand() % shield_modulo) != 0)
+			continue;
 		poly_model* pm = &Poly_models[obj->rtype.pobj_info.model_num];
 		if (pm->n_models == 0)
 			return;
@@ -2700,6 +2712,8 @@ void DrawVirusLightning(object* obj)
 			vis_effect* vis = &VisEffects[visnum];
 			vis->lifeleft = 1.0;
 			vis->lifetime = 1.0;
+			vis->creation_time -= lightning_ages[event];
+			vis->lifeleft -= lightning_ages[event];
 			vis->end_pos = obj->pos;
 			vis->velocity.x = .15f;
 			vis->velocity.y = 3;

@@ -39,6 +39,13 @@
 #define PERM(x)          perm[(x)&TABMASK]
 #define INDEX(ix,iy)  PERM((ix)+PERM((iy)))
 #define RANDNBR   ((prand())/(float) RAND_MAX)
+
+static int Procedural_visual_tick = 0;
+
+void SetProceduralVisualTick(int tick)
+{
+	Procedural_visual_tick = tick;
+}
 #define LERP(t,x0,x1) ((x0)+(t)*((x1)-(x0)))
 #define SMOOTHSTEP(x)  ((x))
 
@@ -543,7 +550,7 @@ void AddProcSphereLightning(int handle, static_proc_element* proc)
 
 	if (Detail_settings.Procedurals_enabled)
 	{
-		if (proc->frequency != 0 && ((FrameCount) % proc->frequency) != 0)
+		if (proc->frequency != 0 && (Procedural_visual_tick % proc->frequency) != 0)
 			return;
 	}
 	float norm = ((float)proc->size / 255.0);
@@ -557,7 +564,7 @@ void AddProcSphereLightning(int handle, static_proc_element* proc)
 
 void AddProcRisingEmber(int handle, static_proc_element* proc)
 {
-	if (proc->frequency == 0 || (FrameCount % proc->frequency) == 0)
+	if (proc->frequency == 0 || (Procedural_visual_tick % proc->frequency) == 0)
 	{
 		// Add a new fizzle
 		int num = prand() % 7;
@@ -608,12 +615,12 @@ constexpr fix NarrowToFix(int value)
 
 void AddProcSpinners(int handle, static_proc_element* proc)
 {
-	if (proc->frequency == 0 || (FrameCount % proc->frequency) == 0)
+	if (proc->frequency == 0 || (Procedural_visual_tick % proc->frequency) == 0)
 	{
 
 		int proc_num = (proc - GameTextures[handle].procedural->static_proc_elements) * 60;
 		int speed_adjust = 1 + ((proc->speed / 255.0) * 5.0);
-		int cur_angle = (((FrameCount + proc_num) * speed_adjust) % 64) * 1024;
+		int cur_angle = (((Procedural_visual_tick + proc_num) * speed_adjust) % 64) * 1024;
 
 		int index = ProcElementAllocate();
 		if (index > -1)
@@ -653,7 +660,7 @@ void DoDynamicSpinners(int handle, dynamic_proc_element* proc)
 
 void AddProcRandomEmber(int handle, static_proc_element* proc)
 {
-	if (proc->frequency == 0 || (FrameCount % proc->frequency) == 0)
+	if (proc->frequency == 0 || (Procedural_visual_tick % proc->frequency) == 0)
 	{
 		// Add a new fizzle
 		int num = (prand() % 4) + 1;
@@ -701,7 +708,7 @@ void AddProcRoamers(int handle, static_proc_element* proc)
 {
 	proc->x1 += (ps_rand() % 5) - 2;
 	proc->y1 += (ps_rand() % 5) - 2;
-	if (proc->frequency == 0 || (FrameCount % proc->frequency) == 0)
+	if (proc->frequency == 0 || (Procedural_visual_tick % proc->frequency) == 0)
 	{
 		// Add a new fizzle
 		int num = (prand() % 4) + 1;
@@ -747,7 +754,7 @@ void DoDynamicRoamers(int handle, dynamic_proc_element* proc)
 
 void AddProcFountain(int handle, static_proc_element* proc)
 {
-	if (proc->frequency == 0 || (FrameCount % proc->frequency) == 0)
+	if (proc->frequency == 0 || (Procedural_visual_tick % proc->frequency) == 0)
 	{
 		// Add a new fizzle
 		int num = (prand() % 4) + 1;
@@ -800,7 +807,7 @@ void DoDynamicFountain(int handle, dynamic_proc_element* proc)
 
 void AddProcCone(int handle, static_proc_element* proc)
 {
-	if (proc->frequency == 0 || (FrameCount % proc->frequency) == 0)
+	if (proc->frequency == 0 || (Procedural_visual_tick % proc->frequency) == 0)
 	{
 		// Add a new fizzle
 		int num = (prand() % 4) + 1;
@@ -854,7 +861,7 @@ void DoDynamicCone(int handle, dynamic_proc_element* proc)
 
 void AddProcFallRight(int handle, static_proc_element* proc)
 {
-	if (proc->frequency == 0 || (FrameCount % proc->frequency) == 0)
+	if (proc->frequency == 0 || (Procedural_visual_tick % proc->frequency) == 0)
 	{
 		// Add a new fizzle
 		int num = (prand() % 2) + 1;
@@ -902,7 +909,7 @@ void DoDynamicFallRight(int handle, dynamic_proc_element* proc)
 
 void AddProcFallLeft(int handle, static_proc_element* proc)
 {
-	if (proc->frequency == 0 || (FrameCount % proc->frequency) == 0)
+	if (proc->frequency == 0 || (Procedural_visual_tick % proc->frequency) == 0)
 	{
 		// Add a new fizzle
 		int num = (prand() % 2) + 1;
@@ -1197,7 +1204,7 @@ void AddProcHeightBlob(static_proc_element* proc, int handle)
 	int x = proc->x1;
 	int y = proc->y1;
 	int procnum = proc - GameTextures[handle].procedural->static_proc_elements;
-	if (proc->frequency && ((FrameCount + procnum) % proc->frequency))
+	if (proc->frequency && ((Procedural_visual_tick + procnum) % proc->frequency))
 		return;
 	int radius = proc->size;
 	int height = proc->speed;
@@ -1224,7 +1231,7 @@ void AddProcHeightBlob(static_proc_element* proc, int handle)
 void AddProcRaindrops(static_proc_element* proc, int handle)
 {
 	int procnum = proc - GameTextures[handle].procedural->static_proc_elements;
-	if (proc->frequency && ((FrameCount + procnum) % proc->frequency))
+	if (proc->frequency && ((Procedural_visual_tick + procnum) % proc->frequency))
 		return;
 	ubyte proc_frequency = proc->frequency;
 	ubyte proc_size = proc->size;
@@ -1247,7 +1254,7 @@ void AddProcRaindrops(static_proc_element* proc, int handle)
 void AddProcBlobdrops(static_proc_element* proc, int handle)
 {
 	int procnum = proc - GameTextures[handle].procedural->static_proc_elements;
-	if (proc->frequency && ((FrameCount + procnum) % proc->frequency))
+	if (proc->frequency && ((Procedural_visual_tick + procnum) % proc->frequency))
 		return;
 	ubyte proc_frequency = proc->frequency;
 	ubyte proc_size = proc->size;
@@ -1270,7 +1277,7 @@ void AddProcBlobdrops(static_proc_element* proc, int handle)
 void AddProcSineBlob(static_proc_element* proc, int handle)
 {
 	int procnum = proc - GameTextures[handle].procedural->static_proc_elements;
-	if (proc->frequency && ((FrameCount + procnum) % proc->frequency))
+	if (proc->frequency && ((Procedural_visual_tick + procnum) % proc->frequency))
 		return;
 	int x = proc->x1;
 	int y = proc->y1;

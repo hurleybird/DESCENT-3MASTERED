@@ -49,6 +49,11 @@ void ResetWeather()
 // Makes droplets appear on the windshield, plus makes rain fall in the distance
 void DoRainEffect()
 {
+	float droplet_ages[8] = {};
+	const int viewer_index = OBJNUM(Viewer_object);
+	const int droplet_events = Get60HzVisualEventAges(viewer_index,
+		Viewer_object->handle, VIS60_WEATHER_DROPLETS, droplet_ages, 8);
+
 	// See how many droplets to create on the windshield
 	// This is dependant on how fast the player is moving forward
 	int randval = 1 + ((1.0 - Weather.rain_intensity_scalar) * MAX_RAIN_INTENSITY);
@@ -76,8 +81,12 @@ void DoRainEffect()
 	if ((upvec * Viewer_object->orient.uvec) < 0)
 		randval = 8000; // Make sure rain does fall upwards
 
-	if (Viewer_object->type == OBJ_PLAYER && OBJECT_OUTSIDE(Viewer_object) && (ps_rand() % randval) == 0)
+	for (int event = 0; event < droplet_events; ++event)
 	{
+		if (Viewer_object->type != OBJ_PLAYER || !OBJECT_OUTSIDE(Viewer_object) ||
+			(ps_rand() % randval) != 0)
+			continue;
+
 		// Put some droplets on the windshield
 		vector pos = { 0,0,0 };
 
@@ -92,6 +101,8 @@ void DoRainEffect()
 			float life = .4 + ((ps_rand() % 500) / 1000.0);
 			vis->lifeleft = life;
 			vis->lifetime = life;
+			vis->creation_time -= droplet_ages[event];
+			vis->lifeleft -= droplet_ages[event];
 			vis->size = .01 + ((ps_rand() % 500) / 3000.0);
 
 			if (vis->size > .05)
@@ -107,7 +118,9 @@ void DoRainEffect()
 
 	if (OBJECT_OUTSIDE(Viewer_object))
 	{
-		int num = 20 + (ps_rand() % 15);
+		PSRand rain_rand;
+		rain_rand.seed(Get60HzVisualNoise((uint32_t)Viewer_object->handle, 4));
+		int num = 20 + (rain_rand() % 15);
 		angvec angs;
 		int i;
 
@@ -119,9 +132,9 @@ void DoRainEffect()
 		{
 			vector pos = Viewer_object->pos;
 
-			float z = ((ps_rand() % 1000) / 1000.0) * 700;
-			float x = (((ps_rand() % 1000) - 500) / 500.0) * 300;
-			float y = (((ps_rand() % 1000) - 500) / 500.0) * 200;
+			float z = ((rain_rand() % 1000) / 1000.0) * 700;
+			float x = (((rain_rand() % 1000) - 500) / 500.0) * 300;
+			float y = (((rain_rand() % 1000) - 500) / 500.0) * 200;
 
 			pos += x * mat.rvec;
 			pos += y * mat.uvec;
@@ -143,38 +156,45 @@ void DoRainEffect()
 			}
 		}
 
-		num /= 2;
-		for (i = 0; i < num; i++)
+		float puddle_ages[8] = {};
+		const int puddle_events = Get60HzVisualEventAges(viewer_index,
+			Viewer_object->handle, VIS60_WEATHER_PUDDLES, puddle_ages, 8);
+		for (int event = 0; event < puddle_events; ++event)
 		{
-			vector pos = Viewer_object->pos;
-
-			float z = ((ps_rand() % 1000) / 1000.0) * 700;
-			float x = (((ps_rand() % 1000) - 500) / 500.0) * 300;
-			float y = (((ps_rand() % 1000) - 500) / 500.0) * 200;
-
-			pos += x * mat.rvec;
-			pos += y * mat.uvec;
-			pos += z * mat.fvec;
-
-			if (pos.z < 0 || pos.z >= TERRAIN_DEPTH * TERRAIN_SIZE)
-				continue;
-			if (pos.x < 0 || pos.x >= TERRAIN_WIDTH * TERRAIN_SIZE)
-				continue;
-
-			// Create puddle drops on the terrain
-			vector norm;
-			float ypos = GetTerrainGroundPoint(&pos, &norm);
-			pos.y = ypos;
-			int visnum = VisEffectCreate(VIS_FIREBALL, PUDDLEDROP_INDEX, Viewer_object->roomnum, &pos);
-			if (visnum >= 0)
+			const int puddle_count = num / 2;
+			for (i = 0; i < puddle_count; i++)
 			{
-				vis_effect* vis = &VisEffects[visnum];
-				float life = .2f;
-				float size = .7 + ((ps_rand() % 10) / 20.0);
-				vis->lifeleft = life;
-				vis->lifetime = life;
-				vis->end_pos = norm;
-				vis->flags |= VF_PLANAR;
+				vector pos = Viewer_object->pos;
+
+				float z = ((ps_rand() % 1000) / 1000.0) * 700;
+				float x = (((ps_rand() % 1000) - 500) / 500.0) * 300;
+				float y = (((ps_rand() % 1000) - 500) / 500.0) * 200;
+
+				pos += x * mat.rvec;
+				pos += y * mat.uvec;
+				pos += z * mat.fvec;
+
+				if (pos.z < 0 || pos.z >= TERRAIN_DEPTH * TERRAIN_SIZE)
+					continue;
+				if (pos.x < 0 || pos.x >= TERRAIN_WIDTH * TERRAIN_SIZE)
+					continue;
+
+				// Create puddle drops on the terrain.
+				vector norm;
+				float ypos = GetTerrainGroundPoint(&pos, &norm);
+				pos.y = ypos;
+				int visnum = VisEffectCreate(VIS_FIREBALL, PUDDLEDROP_INDEX, Viewer_object->roomnum, &pos);
+				if (visnum >= 0)
+				{
+					vis_effect* vis = &VisEffects[visnum];
+					float life = .2f;
+					float size = .7 + ((ps_rand() % 10) / 20.0);
+					vis->lifeleft = life - puddle_ages[event];
+					vis->lifetime = life;
+					vis->creation_time -= puddle_ages[event];
+					vis->end_pos = norm;
+					vis->flags |= VF_PLANAR;
+				}
 			}
 		}
 	}
@@ -185,59 +205,61 @@ void DoSnowEffect()
 {
 	if (OBJECT_OUTSIDE(Viewer_object))
 	{
-		int num = 20 + (ps_rand() % 15);
-
-		if (Weather.snowflakes_to_create + num > 250)
+		float snow_ages[8] = {};
+		const int snow_events = Get60HzVisualEventAges(OBJNUM(Viewer_object),
+			Viewer_object->handle, VIS60_WEATHER_SNOW, snow_ages, 8);
+		for (int event = 0; event < snow_events; ++event)
 		{
-			num = 250 - Weather.snowflakes_to_create;
+			int num = 20 + (ps_rand() % 15);
 
-			if (num < 1)
+			if (Weather.snowflakes_to_create + num > 250)
 			{
-				Weather.snowflakes_to_create = 0;
-				return;
+				num = 250 - Weather.snowflakes_to_create;
+
+				if (num < 1)
+				{
+					Weather.snowflakes_to_create = 0;
+					return;
+				}
 			}
-		}
 
-		//angvec angs;
-		matrix mat;
+			matrix mat = Viewer_object->orient;
 
-		//vm_ExtractAnglesFromMatrix (&angs,&Viewer_object->orient);
-		//vm_AnglesToMatrix (&mat,0,angs.h,0);
-
-		mat = Viewer_object->orient;
-
-		for (int i = 0; i < num; i++)
-		{
-			vector pos = Viewer_object->pos;
-
-			float z = ((ps_rand() % 1000) / 1000.0) * 300;
-			float x = (((ps_rand() % 1000) - 500) / 500.0) * 200;
-			int y = (ps_rand() % 80);
-
-			pos += x * mat.rvec;
-			pos += y * mat.uvec;
-			pos += z * mat.fvec;
-
-			if (pos.z < 0 || pos.z >= TERRAIN_DEPTH * TERRAIN_SIZE)
-				continue;
-			if (pos.x < 0 || pos.x >= TERRAIN_WIDTH * TERRAIN_SIZE)
-				continue;
-
-			// Create falling rain
-			vector down_vec = { 0,-30,0 };
-			int visnum = VisEffectCreate(VIS_FIREBALL, SNOWFLAKE_INDEX, Viewer_object->roomnum, &pos);
-			if (visnum >= 0)
+			for (int i = 0; i < num; i++)
 			{
-				vis_effect* vis = &VisEffects[visnum];
-				float life = 1.5 + ((ps_rand() % 100) / 100.0);
-				vis->lifeleft = life;
-				vis->lifetime = life;
-				vis->lighting_color = GR_RGB16(200, 200, (ps_rand() % 50) + 200);
-				vis->size = ((ps_rand() % 1000) / 1000.0) + .5;
+				vector pos = Viewer_object->pos;
 
-				vis->flags |= VF_WINDSHIELD_EFFECT | VF_USES_LIFELEFT | VF_CLOSE_SCREEN_EFFECT;
+				float z = ((ps_rand() % 1000) / 1000.0) * 300;
+				float x = (((ps_rand() % 1000) - 500) / 500.0) * 200;
+				int y = (ps_rand() % 80);
 
-				vis->velocity = down_vec;
+				pos += x * mat.rvec;
+				pos += y * mat.uvec;
+				pos += z * mat.fvec;
+
+				if (pos.z < 0 || pos.z >= TERRAIN_DEPTH * TERRAIN_SIZE)
+					continue;
+				if (pos.x < 0 || pos.x >= TERRAIN_WIDTH * TERRAIN_SIZE)
+					continue;
+
+				vector down_vec = { 0,-30,0 };
+				int visnum = VisEffectCreate(VIS_FIREBALL, SNOWFLAKE_INDEX, Viewer_object->roomnum, &pos);
+				if (visnum >= 0)
+				{
+					vis_effect* vis = &VisEffects[visnum];
+					float life = 1.5 + ((ps_rand() % 100) / 100.0);
+					vis->lifeleft = life;
+					vis->lifetime = life;
+					vis->creation_time -= snow_ages[event];
+					vis->lighting_color = GR_RGB16(200, 200, (ps_rand() % 50) + 200);
+					vis->size = ((ps_rand() % 1000) / 1000.0) + .5;
+
+					vis->flags |= VF_WINDSHIELD_EFFECT | VF_USES_LIFELEFT | VF_CLOSE_SCREEN_EFFECT;
+
+					vis->velocity = down_vec;
+					vis->pos += vis->velocity * snow_ages[event];
+					vis->lifeleft -= snow_ages[event];
+				}
 			}
 		}
 	}

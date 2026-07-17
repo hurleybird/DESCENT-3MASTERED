@@ -97,7 +97,8 @@ void CreateRandomLineSparks (int num_sparks,vector *pos,int roomnum,ushort color
 int VisEffectCreateControlled(ubyte type,object *parent,ubyte id,int roomnum,vector *pos,float lifetime,vector *velocity,int phys_flags=0,float size=0,float mass=0.0f,float drag=0.0f,bool isreal=0);
 
 // Creates a some particles that go in random directions
-void CreateRandomParticles (int num_sparks,vector *pos,int roomnum,int bm_handle,float size,float life,bool close_screen_effect=false);
+void CreateRandomParticles(int num_sparks, vector* pos, int roomnum, int bm_handle,
+	float size, float life, bool close_screen_effect = false, float age = 0.0f);
 
 // Attaches viseffects that move with an object
 void AttachRandomNapalmEffectsToObject (object *obj);

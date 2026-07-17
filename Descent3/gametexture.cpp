@@ -195,6 +195,7 @@ int AllocateProceduralForTexture(int handle)
 	GameTextures[handle].procedural->proc2 = NULL;
 
 	GameTextures[handle].procedural->last_evaluation_time = 0;
+	GameTextures[handle].procedural->evaluation_time = 0;
 	GameTextures[handle].procedural->osc_time = 0;
 	GameTextures[handle].procedural->osc_value = 8;
 
@@ -206,6 +207,7 @@ int AllocateProceduralForTexture(int handle)
 	GameTextures[handle].procedural->palette = (ushort*)mem_malloc(256 * 2);
 
 	GameTextures[handle].procedural->last_procedural_frame = -1;
+	GameTextures[handle].procedural->last_procedural_tick = -1;
 	GameTextures[handle].procedural->heat = 128;
 
 	GameTextures[handle].procedural->dynamic_proc_elements = -1;
@@ -299,7 +301,8 @@ int GetTextureBitmap(int handle, int framenum, bool force)
 
 		if (GameTextures[handle].procedural->last_procedural_frame == FrameCount)
 			do_eval = 0;
-		if (timer_GetTime() < GameTextures[handle].procedural->last_evaluation_time + GameTextures[handle].procedural->evaluation_time)
+		const int visual_tick = Get60HzVisualTick();
+		if (GameTextures[handle].procedural->last_procedural_tick == visual_tick)
 			do_eval = 0;
 
 		if (!force && !Detail_settings.Procedurals_enabled)
@@ -310,8 +313,17 @@ int GetTextureBitmap(int handle, int framenum, bool force)
 
 		if (do_eval)
 		{
-			EvaluateProcedural(handle);
+			int steps = visual_tick - GameTextures[handle].procedural->last_procedural_tick;
+			if (GameTextures[handle].procedural->last_procedural_tick < 0 ||
+				steps < 1 || steps > 8)
+				steps = 1;
+			for (int step = steps - 1; step >= 0; --step)
+			{
+				SetProceduralVisualTick(visual_tick - step);
+				EvaluateProcedural(handle);
+			}
 			GameTextures[handle].procedural->last_procedural_frame = FrameCount;
+			GameTextures[handle].procedural->last_procedural_tick = visual_tick;
 			GameTextures[handle].procedural->last_evaluation_time = timer_GetTime();
 			src_bitmap = GameTextures[handle].procedural->procedural_bitmap;
 			GameBitmaps[src_bitmap].flags |= BF_CHANGED;

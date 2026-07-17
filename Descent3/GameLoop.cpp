@@ -138,6 +138,67 @@ int Get60HzVisualAngle(float units_per_frame, int offset)
 	return (int)phase;
 }
 
+uint32_t Get60HzVisualNoise(uint32_t key, uint32_t salt)
+{
+	uint32_t value = (uint32_t)Get60HzVisualTick() * 0x9e3779b9u;
+	value ^= key * 0x85ebca6bu;
+	value ^= salt * 0xc2b2ae35u;
+	value ^= value >> 16;
+	value *= 0x7feb352du;
+	value ^= value >> 15;
+	value *= 0x846ca68bu;
+	return value ^ (value >> 16);
+}
+
+struct visual_60hz_event_clock
+{
+	int object_handle;
+	int last_tick;
+	float last_call_time;
+	bool initialized;
+};
+
+static visual_60hz_event_clock Visual_60hz_event_clocks[MAX_OBJECTS]
+	[VIS60_CLOCK_CHANNEL_COUNT] = {};
+
+int Get60HzVisualEventAges(int object_index, int object_handle,
+	visual_60hz_clock_channel channel, float* ages, int max_events)
+{
+	if (!ages || max_events <= 0 || object_index < 0 ||
+		object_index >= MAX_OBJECTS || channel < 0 ||
+		channel >= VIS60_CLOCK_CHANNEL_COUNT)
+		return 0;
+
+	visual_60hz_event_clock& clock =
+		Visual_60hz_event_clocks[object_index][channel];
+	const int tick = Get60HzVisualTick();
+	const float call_gap = Gametime - clock.last_call_time;
+	const float continuity_limit = (std::max)(0.05f, Frametime * 2.5f);
+	if (!clock.initialized || clock.object_handle != object_handle || tick < clock.last_tick ||
+		call_gap < 0.0f || call_gap > continuity_limit)
+	{
+		clock.initialized = true;
+		clock.object_handle = object_handle;
+		clock.last_tick = tick - 1;
+	}
+	clock.last_call_time = Gametime;
+
+	int first_tick = clock.last_tick + 1;
+	if (first_tick > tick)
+		return 0;
+	if (tick - first_tick + 1 > max_events)
+		first_tick = tick - max_events + 1;
+
+	int count = 0;
+	for (int event_tick = first_tick; event_tick <= tick; ++event_tick)
+	{
+		const float age = Gametime - (float)event_tick / 60.0f;
+		ages[count++] = age > 0.0f ? age : 0.0f;
+	}
+	clock.last_tick = tick;
+	return count;
+}
+
 static bool Screenshot_requested = false;
 extern bool Skip_render_game_frame;
 extern bool Menu_interface_mode;

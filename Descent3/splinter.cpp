@@ -22,6 +22,8 @@
 #include "polymodel.h"
 #include "renderer.h"
 #include "gametexture.h"
+#include "game.h"
+#include "viseffect.h"
 
 
 #include "Macros.h"
@@ -82,13 +84,22 @@ void DoSplinterFrame(object* obj)
 	}
 	else
 	{
-		//Create smoke for some splinters
-		if (((obj - Objects) % 8) == 0)
+		float smoke_ages[8] = {};
+		const int smoke_events = Get60HzVisualEventAges(OBJNUM(obj), obj->handle,
+			VIS60_SPLINTER_SMOKE, smoke_ages, 8);
+		for (int event = 0; event < smoke_events; ++event)
 		{
-			if (ps_rand() % 4)
+			// Create smoke for some splinters.
+			if (((obj - Objects) % 8) == 0 && (ps_rand() % 4))
 			{
 				int type = ((obj - Objects) % 2) ? GetRandomSmallExplosion() : BLACK_SMOKE_INDEX;
-				CreateFireball(&obj->pos, type, obj->roomnum, VISUAL_FIREBALL);
+				vector pos = obj->pos - obj->mtype.phys_info.velocity * smoke_ages[event];
+				int visnum = CreateFireball(&pos, type, obj->roomnum, VISUAL_FIREBALL);
+				if (visnum >= 0)
+				{
+					VisEffects[visnum].creation_time -= smoke_ages[event];
+					VisEffects[visnum].lifeleft -= smoke_ages[event];
+				}
 			}
 		}
 	}

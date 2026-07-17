@@ -340,7 +340,8 @@ void DoObjectLight(object* obj)
 				return;
 			}
 
-			light_distance += ((ps_rand() % factor) - (factor / 2));
+			light_distance += ((int)(Get60HzVisualNoise((uint32_t)obj->handle, 1) %
+				(uint32_t)factor) - (factor / 2));
 			if (light_distance < 0)
 				return;
 		}
@@ -397,7 +398,7 @@ void DoObjectLight(object* obj)
 		// If this is object is flickering, just compare it with a random value
 		if (li->flags & OLF_FLICKERING)
 		{
-			if (ps_rand() % 2 == 1)
+			if (Get60HzVisualNoise((uint32_t)obj->handle, 2) & 1u)
 				return;
 		}
 

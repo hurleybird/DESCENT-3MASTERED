@@ -112,6 +112,7 @@ struct proc_struct
 	ubyte osc_value;
 
 	int	last_procedural_frame;		// last frame a procedural was calculated for this texture
+	int last_procedural_tick;		// last canonical 60 Hz simulation step
 };
 
 struct texture
