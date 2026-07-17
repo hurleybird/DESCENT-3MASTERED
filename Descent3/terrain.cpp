@@ -101,6 +101,14 @@ ubyte TerrainEdgeJump[MAX_TERRAIN_LOD];
 
 // Unique terrain geometry identifier
 int Terrain_checksum = -1;
+unsigned int Terrain_render_revision = 1;
+
+void TerrainRenderDataChanged()
+{
+	Terrain_render_revision++;
+	if (Terrain_render_revision == 0)
+		Terrain_render_revision = 1;
+}
 
 // Occlusion data for knowing what to draw
 ubyte Terrain_occlusion_map[256][32];
@@ -354,6 +362,7 @@ void BuildMinMaxTerrain()
 	int i, w, h, start, x, y, cell;
 	int row_width, xoffset, yoffset, total_rows;
 	int minheight, maxheight, cellheight;
+	TerrainRenderDataChanged();
 
 	mprintf((0, "Building min/max terrain table.\n"));
 
@@ -450,6 +459,7 @@ void DeformTerrainPoint(int x, int z, int change_height)
 {
 	terrain_segment* tseg = &Terrain_seg[z * TERRAIN_WIDTH + x];
 	int i;
+	int old_height = tseg->ypos;
 
 	change_height += tseg->ypos;
 
@@ -458,6 +468,8 @@ void DeformTerrainPoint(int x, int z, int change_height)
 
 	tseg->ypos = change_height;
 	tseg->y = tseg->ypos * TERRAIN_HEIGHT_INCREMENT;
+	if (tseg->ypos != old_height)
+		TerrainRenderDataChanged();
 
 	int sx = max(0, x - 1);
 	int sz = max(0, z - 1);

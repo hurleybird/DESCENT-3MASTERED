@@ -186,6 +186,16 @@ static GLuint Terrain_compute_base_texture_array = 0;
 static GLuint Terrain_compute_lightmap_array = 0;
 static GLuint Terrain_compute_visibility_query = 0;
 static GLuint Terrain_compute_no_depth_visibility_query = 0;
+static constexpr int TERRAIN_GPU_TIMER_QUERY_COUNT = 4;
+struct TerrainGpuTimerQuery
+{
+	GLuint begin = 0;
+	GLuint compute_end = 0;
+	GLuint end = 0;
+	bool pending = false;
+};
+static TerrainGpuTimerQuery Terrain_gpu_timer_queries[TERRAIN_GPU_TIMER_QUERY_COUNT];
+static int Terrain_gpu_timer_next_query = 0;
 static GLint Terrain_compute_cell_count_uniform = -1;
 static GLint Terrain_compute_row0_uniform = -1;
 static GLint Terrain_compute_xstep_uniform = -1;
@@ -210,12 +220,15 @@ static std::vector<TerrainGpuDrawCommand> Terrain_compute_draw_commands;
 static uint32_t Terrain_compute_last_emitted_vertices = 0;
 static int Terrain_compute_base_texture_array_width = 0;
 static int Terrain_compute_base_texture_array_height = 0;
+static int Terrain_compute_max_texture_array_layers = 0;
+static int Terrain_compute_base_texture_filtering = -1;
+static int Terrain_compute_base_texture_mipping = -1;
 static std::vector<int> Terrain_compute_base_texture_handles;
-static std::vector<uint32_t> Terrain_compute_base_texture_checksums;
+static std::vector<std::vector<ushort>> Terrain_compute_base_texture_snapshots;
 static std::vector<uint32_t> Terrain_compute_base_texture_opaque_counts;
 static int Terrain_compute_lightmap_array_size = 0;
 static int Terrain_compute_lightmap_array_handles[4] = { -1, -1, -1, -1 };
-static uint32_t Terrain_compute_lightmap_checksums[4] = { 0, 0, 0, 0 };
+static std::vector<ushort> Terrain_compute_lightmap_snapshots[4];
 static uint32_t Terrain_compute_lightmap_opaque_counts[4] = { 0, 0, 0, 0 };
 static constexpr int TERRAIN_COMPUTE_VERTS_PER_TRIANGLE = 18;
 static constexpr int TERRAIN_COMPUTE_VERTS_PER_CELL = TERRAIN_COMPUTE_VERTS_PER_TRIANGLE * 2;
@@ -224,16 +237,23 @@ static constexpr bool TERRAIN_ISSUE_LOGGING_ENABLED = false;
 static uint32_t Terrain_compute_renderer_generation = 0;
 static bool Terrain_compute_release_registered = false;
 
-static void SetTerrainComputeBaseTextureFilter()
+static void SetTerrainComputeBaseTextureFilter(bool force)
 {
 	const int filtering = Render_preferred_state.filtering;
 	const bool mipmapped = Render_preferred_state.mipping != 0;
+	if (!force && Terrain_compute_base_texture_filtering == filtering &&
+		Terrain_compute_base_texture_mipping == (mipmapped ? 1 : 0))
+	{
+		return;
+	}
 	GLenum mag_filter = filtering ? GL_LINEAR : GL_NEAREST;
 	GLenum min_filter = mag_filter;
 	if (mipmapped)
 		min_filter = filtering ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST;
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, min_filter);
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, mag_filter);
+	Terrain_compute_base_texture_filtering = filtering;
+	Terrain_compute_base_texture_mipping = mipmapped ? 1 : 0;
 }
 
 static void InvalidateTerrainComputeRendererCache()
@@ -249,6 +269,9 @@ static void InvalidateTerrainComputeRendererCache()
 	Terrain_compute_lightmap_array = 0;
 	Terrain_compute_visibility_query = 0;
 	Terrain_compute_no_depth_visibility_query = 0;
+	for (int i = 0; i < TERRAIN_GPU_TIMER_QUERY_COUNT; i++)
+		Terrain_gpu_timer_queries[i] = {};
+	Terrain_gpu_timer_next_query = 0;
 	Terrain_compute_cell_count_uniform = -1;
 	Terrain_compute_row0_uniform = -1;
 	Terrain_compute_xstep_uniform = -1;
@@ -265,14 +288,17 @@ static void InvalidateTerrainComputeRendererCache()
 	Terrain_compute_last_emitted_vertices = 0;
 	Terrain_compute_base_texture_array_width = 0;
 	Terrain_compute_base_texture_array_height = 0;
+	Terrain_compute_max_texture_array_layers = 0;
+	Terrain_compute_base_texture_filtering = -1;
+	Terrain_compute_base_texture_mipping = -1;
 	Terrain_compute_base_texture_handles.clear();
-	Terrain_compute_base_texture_checksums.clear();
+	Terrain_compute_base_texture_snapshots.clear();
 	Terrain_compute_base_texture_opaque_counts.clear();
 	Terrain_compute_lightmap_array_size = 0;
 	for (int i = 0; i < TERRAIN_COMPUTE_LIGHTMAP_LAYERS; i++)
 	{
 		Terrain_compute_lightmap_array_handles[i] = -1;
-		Terrain_compute_lightmap_checksums[i] = 0;
+		Terrain_compute_lightmap_snapshots[i].clear();
 		Terrain_compute_lightmap_opaque_counts[i] = 0;
 	}
 }
@@ -338,12 +364,21 @@ static void TerrainComputeReleaseRendererResources()
 
 	if (glDeleteQueries != nullptr)
 	{
-		GLuint queries[2] = {};
+		GLuint queries[2 + TERRAIN_GPU_TIMER_QUERY_COUNT * 3] = {};
 		GLsizei query_count = 0;
 		if (Terrain_compute_visibility_query != 0)
 			queries[query_count++] = Terrain_compute_visibility_query;
 		if (Terrain_compute_no_depth_visibility_query != 0)
 			queries[query_count++] = Terrain_compute_no_depth_visibility_query;
+		for (int i = 0; i < TERRAIN_GPU_TIMER_QUERY_COUNT; i++)
+		{
+			if (Terrain_gpu_timer_queries[i].begin != 0)
+				queries[query_count++] = Terrain_gpu_timer_queries[i].begin;
+			if (Terrain_gpu_timer_queries[i].compute_end != 0)
+				queries[query_count++] = Terrain_gpu_timer_queries[i].compute_end;
+			if (Terrain_gpu_timer_queries[i].end != 0)
+				queries[query_count++] = Terrain_gpu_timer_queries[i].end;
+		}
 		if (query_count > 0)
 			glDeleteQueries(query_count, queries);
 	}
@@ -428,27 +463,6 @@ static void SetTerrainComputeDebugLabel(const char* format, ...)
 	}
 }
 
-static uint32_t TerrainComputeBitmapChecksum(int bmhandle)
-{
-	uint32_t hash = 2166136261u;
-	int width = bm_w(bmhandle, 0);
-	int height = bm_h(bmhandle, 0);
-	int format = bm_format(bmhandle);
-	ushort* data = bm_data(bmhandle, 0);
-
-	hash = (hash ^ (uint32_t)width) * 16777619u;
-	hash = (hash ^ (uint32_t)height) * 16777619u;
-	hash = (hash ^ (uint32_t)format) * 16777619u;
-
-	if (!data || width <= 0 || height <= 0)
-		return hash;
-
-	for (int i = 0; i < width * height; i++)
-		hash = (hash ^ (uint32_t)data[i]) * 16777619u;
-
-	return hash;
-}
-
 static uint32_t TerrainComputeBitmapPixelToRgba(ushort src, int format)
 {
 	if (format == BITMAP_FORMAT_4444)
@@ -519,9 +533,9 @@ static bool EnsureTerrainComputeBaseTextureArray()
 	if (layer_count <= 0)
 		return true;
 
-	GLint max_layers = 0;
-	glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &max_layers);
-	if (layer_count > max_layers)
+	if (Terrain_compute_max_texture_array_layers <= 0)
+		glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &Terrain_compute_max_texture_array_layers);
+	if (layer_count > Terrain_compute_max_texture_array_layers)
 	{
 		SetTerrainComputeStatus("fallback texture layers");
 		return false;
@@ -583,7 +597,7 @@ static bool EnsureTerrainComputeBaseTextureArray()
 		Terrain_compute_base_texture_array_width = array_width;
 		Terrain_compute_base_texture_array_height = array_height;
 		Terrain_compute_base_texture_handles = bitmap_handles;
-		Terrain_compute_base_texture_checksums.assign(bitmap_handles.size(), 0);
+		Terrain_compute_base_texture_snapshots.assign(bitmap_handles.size(), {});
 		Terrain_compute_base_texture_opaque_counts.assign(bitmap_handles.size(), 0);
 	}
 	else if (Terrain_compute_base_texture_opaque_counts.size() != bitmap_handles.size())
@@ -591,27 +605,40 @@ static bool EnsureTerrainComputeBaseTextureArray()
 		Terrain_compute_base_texture_opaque_counts.assign(bitmap_handles.size(), 0);
 	}
 
-	SetTerrainComputeBaseTextureFilter();
+	SetTerrainComputeBaseTextureFilter(recreate);
 
 	bool uploaded = false;
 	std::vector<uint32_t> pixels;
 	for (int i = 0; i < layer_count; i++)
 	{
 		int bmhandle = bitmap_handles[i];
-		uint32_t checksum = Terrain_compute_base_texture_checksums[i];
-		bool should_check = recreate || checksum == 0 ||
+		bool should_check = recreate || Terrain_compute_base_texture_snapshots[i].empty() ||
 			TerrainComputeBaseTextureMayChange(Terrain_compute_batches[i].texture, bmhandle);
-		if (should_check)
-			checksum = TerrainComputeBitmapChecksum(bmhandle);
-		if (!recreate && checksum == Terrain_compute_base_texture_checksums[i])
+		if (!should_check)
 			continue;
+
+		int source_width = bm_w(bmhandle, 0);
+		int source_height = bm_h(bmhandle, 0);
+		ushort* source_data = bm_data(bmhandle, 0);
+		if (source_width <= 0 || source_height <= 0 || source_data == nullptr)
+		{
+			SetTerrainComputeStatus("fallback base texture data");
+			return false;
+		}
+		size_t source_count = (size_t)source_width * (size_t)source_height;
+		std::vector<ushort>& snapshot = Terrain_compute_base_texture_snapshots[i];
+		if (!recreate && snapshot.size() == source_count &&
+			memcmp(snapshot.data(), source_data, source_count * sizeof(ushort)) == 0)
+		{
+			continue;
+		}
 
 		ConvertTerrainBaseTextureToRgba(bmhandle, array_width, array_height, pixels);
 		if (TERRAIN_ISSUE_LOGGING_ENABLED)
 			Terrain_compute_base_texture_opaque_counts[i] = CountTerrainOpaqueTexels(pixels);
 		glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, array_width, array_height, 1,
 			GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-		Terrain_compute_base_texture_checksums[i] = checksum;
+		snapshot.assign(source_data, source_data + source_count);
 		uploaded = true;
 	}
 
@@ -640,27 +667,6 @@ static void BindTerrainComputeTextureArrays()
 	glBindTexture(GL_TEXTURE_2D_ARRAY, Terrain_compute_base_texture_array);
 	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, Terrain_compute_lightmap_array);
-}
-
-static uint32_t TerrainComputeLightmapChecksum(int lmhandle)
-{
-	uint32_t hash = 2166136261u;
-	int width = lm_w(lmhandle);
-	int height = lm_h(lmhandle);
-	int size = GameLightmaps[lmhandle].square_res;
-	ushort* data = lm_data(lmhandle);
-
-	hash = (hash ^ (uint32_t)width) * 16777619u;
-	hash = (hash ^ (uint32_t)height) * 16777619u;
-	hash = (hash ^ (uint32_t)size) * 16777619u;
-
-	if (!data || width <= 0 || height <= 0)
-		return hash;
-
-	for (int i = 0; i < width * height; i++)
-		hash = (hash ^ (uint32_t)data[i]) * 16777619u;
-
-	return hash;
 }
 
 static void ConvertTerrainLightmapToRgba(int lmhandle, int size, std::vector<uint32_t>& pixels)
@@ -729,7 +735,7 @@ static bool EnsureTerrainComputeLightmapArray()
 		for (int i = 0; i < TERRAIN_COMPUTE_LIGHTMAP_LAYERS; i++)
 		{
 			Terrain_compute_lightmap_array_handles[i] = TerrainLightmaps[i];
-			Terrain_compute_lightmap_checksums[i] = 0;
+			Terrain_compute_lightmap_snapshots[i].clear();
 			Terrain_compute_lightmap_opaque_counts[i] = 0;
 		}
 	}
@@ -737,15 +743,28 @@ static bool EnsureTerrainComputeLightmapArray()
 	std::vector<uint32_t> pixels;
 	for (int i = 0; i < TERRAIN_COMPUTE_LIGHTMAP_LAYERS; i++)
 	{
-		uint32_t checksum = TerrainComputeLightmapChecksum(TerrainLightmaps[i]);
-		if (!recreate && checksum == Terrain_compute_lightmap_checksums[i])
+		int lmhandle = TerrainLightmaps[i];
+		int width = lm_w(lmhandle);
+		int height = lm_h(lmhandle);
+		ushort* source_data = lm_data(lmhandle);
+		if (width <= 0 || height <= 0 || source_data == nullptr)
+		{
+			SetTerrainComputeStatus("fallback lightmap data");
+			return false;
+		}
+		size_t source_count = (size_t)width * (size_t)height;
+		std::vector<ushort>& snapshot = Terrain_compute_lightmap_snapshots[i];
+		if (!recreate && snapshot.size() == source_count &&
+			memcmp(snapshot.data(), source_data, source_count * sizeof(ushort)) == 0)
+		{
 			continue;
+		}
 
-		ConvertTerrainLightmapToRgba(TerrainLightmaps[i], size, pixels);
+		ConvertTerrainLightmapToRgba(lmhandle, size, pixels);
 		if (TERRAIN_ISSUE_LOGGING_ENABLED)
 			Terrain_compute_lightmap_opaque_counts[i] = CountTerrainOpaqueTexels(pixels);
 		glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, size, size, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-		Terrain_compute_lightmap_checksums[i] = checksum;
+		snapshot.assign(source_data, source_data + source_count);
 	}
 
 	if (TERRAIN_ISSUE_LOGGING_ENABLED)
@@ -1562,13 +1581,6 @@ static void InvalidateTerrainComputeInputUpload()
 	Terrain_compute_input_uploaded = false;
 }
 
-static uint32_t TerrainComputeHashU32(uint32_t hash, uint32_t value)
-{
-	hash ^= value;
-	hash *= 16777619u;
-	return hash;
-}
-
 static int CountPotentialRenderableTerrainCells()
 {
 	int count = 0;
@@ -1591,32 +1603,7 @@ static int CountPotentialRenderableTerrainCells()
 
 static uint32_t TerrainComputeDrawWorkSignature()
 {
-	uint32_t hash = 2166136261u;
-	hash = TerrainComputeHashU32(hash, (uint32_t)Terrain_checksum);
-	hash = TerrainComputeHashU32(hash, (uint32_t)Show_invisible_terrain);
-	hash = TerrainComputeHashU32(hash, (uint32_t)TERRAIN_WIDTH);
-	hash = TerrainComputeHashU32(hash, (uint32_t)TERRAIN_DEPTH);
-
-	for (int i = 0; i < TERRAIN_WIDTH * TERRAIN_DEPTH; i++)
-	{
-		const terrain_segment& segment = Terrain_seg[i];
-		uint32_t y_bits = 0;
-		memcpy(&y_bits, &segment.y, sizeof(y_bits));
-		hash = TerrainComputeHashU32(hash, y_bits);
-		hash = TerrainComputeHashU32(hash, (uint32_t)(ubyte)segment.ypos);
-		hash = TerrainComputeHashU32(hash, (uint32_t)(segment.flags & TF_INVISIBLE));
-		hash = TerrainComputeHashU32(hash, (uint32_t)(ushort)segment.texseg_index);
-		hash = TerrainComputeHashU32(hash, (uint32_t)(ubyte)segment.lm_quad);
-	}
-
-	for (int i = 0; i < TERRAIN_TEX_WIDTH * TERRAIN_TEX_DEPTH; i++)
-	{
-		const terrain_tex_segment& tex_segment = Terrain_tex_seg[i];
-		hash = TerrainComputeHashU32(hash, (uint32_t)(ushort)tex_segment.tex_index);
-		hash = TerrainComputeHashU32(hash, (uint32_t)(ubyte)tex_segment.rotation);
-	}
-
-	return hash;
+	return Terrain_render_revision;
 }
 
 static void BuildTerrainComputeFullDrawWork()
@@ -1779,6 +1766,96 @@ static bool TerrainComputeVisibilityQueryAvailable()
 {
 	return glGenQueries != nullptr && glBeginQuery != nullptr && glEndQuery != nullptr &&
 		glGetQueryObjectuiv != nullptr;
+}
+
+static bool TerrainGpuTimerAvailable()
+{
+	return glGenQueries != nullptr && glQueryCounter != nullptr &&
+		glGetQueryObjectuiv != nullptr && glGetQueryObjectui64v != nullptr;
+}
+
+static void PollTerrainGpuTimers()
+{
+	if (!TerrainGpuTimerAvailable())
+		return;
+
+	for (int i = 0; i < TERRAIN_GPU_TIMER_QUERY_COUNT; i++)
+	{
+		TerrainGpuTimerQuery& query = Terrain_gpu_timer_queries[i];
+		if (!query.pending)
+			continue;
+
+		GLuint available = GL_FALSE;
+		glGetQueryObjectuiv(query.end, GL_QUERY_RESULT_AVAILABLE, &available);
+		if (available == GL_FALSE)
+			continue;
+
+		GLuint64 begin_time = 0;
+		GLuint64 compute_end_time = 0;
+		GLuint64 end_time = 0;
+		glGetQueryObjectui64v(query.begin, GL_QUERY_RESULT, &begin_time);
+		glGetQueryObjectui64v(query.compute_end, GL_QUERY_RESULT, &compute_end_time);
+		glGetQueryObjectui64v(query.end, GL_QUERY_RESULT, &end_time);
+		query.pending = false;
+		if (compute_end_time >= begin_time && end_time >= compute_end_time)
+		{
+			PerfMarkersRecordDuration("GPU.Terrain.Surface", PerfMarkersNow(),
+				(double)(end_time - begin_time) / 1000000000.0);
+			PerfMarkersRecordDuration("GPU.Terrain.Generate", PerfMarkersNow(),
+				(double)(compute_end_time - begin_time) / 1000000000.0);
+			PerfMarkersRecordDuration("GPU.Terrain.Draw", PerfMarkersNow(),
+				(double)(end_time - compute_end_time) / 1000000000.0);
+		}
+	}
+}
+
+static int BeginTerrainGpuTimer()
+{
+	if (!Perf_markers_enabled || !TerrainGpuTimerAvailable())
+		return -1;
+
+	PollTerrainGpuTimers();
+	for (int attempt = 0; attempt < TERRAIN_GPU_TIMER_QUERY_COUNT; attempt++)
+	{
+		int index = (Terrain_gpu_timer_next_query + attempt) % TERRAIN_GPU_TIMER_QUERY_COUNT;
+		TerrainGpuTimerQuery& query = Terrain_gpu_timer_queries[index];
+		if (query.pending)
+			continue;
+
+		if (query.begin == 0 || query.compute_end == 0 || query.end == 0)
+		{
+			GLuint names[3] = {};
+			glGenQueries(3, names);
+			query.begin = names[0];
+			query.compute_end = names[1];
+			query.end = names[2];
+			if (query.begin == 0 || query.compute_end == 0 || query.end == 0)
+				return -1;
+		}
+
+		glQueryCounter(query.begin, GL_TIMESTAMP);
+		Terrain_gpu_timer_next_query = (index + 1) % TERRAIN_GPU_TIMER_QUERY_COUNT;
+		return index;
+	}
+
+	return -1;
+}
+
+static void EndTerrainGpuTimer(int index)
+{
+	if (index < 0 || index >= TERRAIN_GPU_TIMER_QUERY_COUNT)
+		return;
+
+	TerrainGpuTimerQuery& query = Terrain_gpu_timer_queries[index];
+	glQueryCounter(query.end, GL_TIMESTAMP);
+	query.pending = true;
+}
+
+static void MarkTerrainGpuComputeEnd(int index)
+{
+	if (index < 0 || index >= TERRAIN_GPU_TIMER_QUERY_COUNT)
+		return;
+	glQueryCounter(Terrain_gpu_timer_queries[index].compute_end, GL_TIMESTAMP);
 }
 
 static bool BeginTerrainComputeVisibilityQuery()
@@ -2162,6 +2239,7 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 		PrepareTerrainComputeIndirectCommands();
 	}
 
+	int gpu_timer_query = BeginTerrainGpuTimer();
 	GLuint groups = (GLuint)((Terrain_compute_cell_inputs.size() + 127) / 128);
 	{
 		PERF_MARKER_SCOPE("Compute.Dispatch");
@@ -2172,6 +2250,7 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT |
 			GL_COMMAND_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
 	}
+	MarkTerrainGpuComputeEnd(gpu_timer_query);
 	CheckTerrainComputeGpuEmission();
 	rendTEMP_ClearShaderBinding();
 
@@ -2218,6 +2297,7 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 		glMultiDrawArraysIndirect(GL_TRIANGLES, nullptr, (GLsizei)Terrain_compute_batches.size(),
 			sizeof(TerrainGpuDrawCommand));
 	}
+	EndTerrainGpuTimer(gpu_timer_query);
 	EndTerrainComputeVisibilityQuery(visibility_query_active);
 	rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);

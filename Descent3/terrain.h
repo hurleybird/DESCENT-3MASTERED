@@ -196,6 +196,8 @@ extern int Terrain_occlusion_checksum;
 
 extern int Check_terrain_portal;
 extern int Terrain_checksum;
+extern unsigned int Terrain_render_revision;
+void TerrainRenderDataChanged();
 
 // Our lighting maps for the terrain, one for each quadrant (starting at lower left)
 extern int TerrainLightmaps[4];
