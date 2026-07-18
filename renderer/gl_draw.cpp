@@ -1443,7 +1443,7 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_room_fog_depth_uniforms[i] = drawshaders[i].FindUniform("room_fog_depth");
 		drawshader_room_fog_intensity_uniforms[i] = drawshaders[i].FindUniform("room_fog_intensity");
 		drawshader_room_fog_triangle_count_uniforms[i] = drawshaders[i].FindUniform("room_fog_triangle_count");
-		drawshader_room_fog_overlay_uniforms[i] = drawshaders[i].FindUniform("room_fog_overlay");
+		drawshader_fog_composite_mode_uniforms[i] = drawshaders[i].FindUniform("fog_composite_mode");
 	}
 
 	lastdrawshader = -1;
@@ -1665,7 +1665,33 @@ void GL4Renderer::SelectDrawShader()
 		glUniform1f(drawshader_room_fog_depth_uniforms[shader_index], room_fog_depth);
 		glUniform1f(drawshader_room_fog_intensity_uniforms[shader_index], room_fog_intensity);
 		glUniform1i(drawshader_room_fog_triangle_count_uniforms[shader_index], room_fog_triangle_count);
-		glUniform1i(drawshader_room_fog_overlay_uniforms[shader_index], room_fog_overlay ? 1 : 0);
+		int fog_composite_mode = 0;
+		if (room_fog_overlay)
+		{
+			fog_composite_mode = 2;
+		}
+		else
+		{
+			switch (OpenGL_state.cur_alpha_type)
+			{
+			case AT_SPECULAR:
+			case AT_SATURATE_TEXTURE:
+			case AT_SATURATE_VERTEX:
+			case AT_SATURATE_CONSTANT_VERTEX:
+			case AT_SATURATE_TEXTURE_VERTEX:
+			case AT_LIGHTMAP_BLEND_SATURATE:
+				fog_composite_mode = 1;
+				break;
+			case AT_LIGHTMAP_BLEND:
+			case AT_LIGHTMAP_BLEND_VERTEX:
+				fog_composite_mode = 3;
+				break;
+			default:
+				break;
+			}
+		}
+		glUniform1i(drawshader_fog_composite_mode_uniforms[shader_index],
+			fog_composite_mode);
 		if (room_fog_enabled && room_fog_portal_buffer != 0)
 			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, GL4_ROOM_FOG_PORTAL_BINDING,
 				room_fog_portal_buffer);
@@ -2311,14 +2337,38 @@ bool GL4Renderer::SetRoomFogState(const renderer_room_fog_state *state)
 	room_fog_intensity = state->intensity;
 	room_fog_triangle_count = state->triangle_count;
 
-	if (room_fog_portal_buffer == 0)
+	const bool portal_data_changed =
+		room_fog_portal_cache.size() != (size_t)state->triangle_count ||
+		(state->triangle_count > 0 &&
+			memcmp(room_fog_portal_cache.data(), state->triangles,
+				(size_t)state->triangle_count * sizeof(renderer_room_fog_triangle)) != 0);
+	if (portal_data_changed)
+	{
+		if (state->triangle_count > 0)
+		{
+			room_fog_portal_cache.assign(state->triangles,
+				state->triangles + state->triangle_count);
+		}
+		else
+		{
+			room_fog_portal_cache.clear();
+		}
+		if (room_fog_portal_buffer == 0)
+			glGenBuffers(1, &room_fog_portal_buffer);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, room_fog_portal_buffer);
+		const GLsizeiptr data_size = std::max<GLsizeiptr>(
+			(GLsizeiptr)sizeof(renderer_room_fog_triangle),
+			(GLsizeiptr)state->triangle_count * sizeof(renderer_room_fog_triangle));
+		glBufferData(GL_SHADER_STORAGE_BUFFER, data_size,
+			state->triangle_count > 0 ? state->triangles : nullptr, GL_STREAM_DRAW);
+	}
+	else if (room_fog_portal_buffer == 0)
+	{
 		glGenBuffers(1, &room_fog_portal_buffer);
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, room_fog_portal_buffer);
-	const GLsizeiptr data_size = std::max<GLsizeiptr>(
-		(GLsizeiptr)sizeof(renderer_room_fog_triangle),
-		(GLsizeiptr)state->triangle_count * sizeof(renderer_room_fog_triangle));
-	glBufferData(GL_SHADER_STORAGE_BUFFER, data_size,
-		state->triangle_count > 0 ? state->triangles : nullptr, GL_STREAM_DRAW);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, room_fog_portal_buffer);
+		glBufferData(GL_SHADER_STORAGE_BUFFER,
+			(GLsizeiptr)sizeof(renderer_room_fog_triangle), nullptr, GL_STREAM_DRAW);
+	}
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, GL4_ROOM_FOG_PORTAL_BINDING,
 		room_fog_portal_buffer);
 	legacy_draw_uniforms_dirty = true;

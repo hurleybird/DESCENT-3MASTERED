@@ -137,7 +137,8 @@ void DrawPostrenderFace(int roomnum, int facenum, bool change_z)
 		PERF_MARKER_SCOPE("PostRenderFace.SetupRoom");
 		SetupPostrenderRoom(rp);
 	}
-	const bool material_fog = BeginRoomMaterialFog(rp, &Viewer_eye, Viewer_roomnum);
+	const bool material_fog = BeginRoomMaterialFog(rp, &Viewer_eye,
+		Viewer_roomnum, Room_light_val);
 
 	// Render!
 	if (change_z)

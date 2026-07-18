@@ -84,6 +84,18 @@ vector RenderObject_LightDirection;
 static bool RenderObject_disable_motion_capture = false;
 static bool RenderObject_transparent_extra_disable_motion_capture = false;
 
+static bool BeginObjectMaterialFog(object* obj)
+{
+	if (!obj || OBJECT_OUTSIDE(obj) || obj->roomnum < 0 ||
+		obj->roomnum >= MAX_ROOMS || !(Rooms[obj->roomnum].flags & RF_FOG))
+	{
+		return false;
+	}
+	// Legacy model fog used the authored density directly; unlike room-face fog,
+	// it was not modulated by the room pulse-light scalar.
+	return BeginCurrentViewRoomMaterialFog(&Rooms[obj->roomnum], 1.0f);
+}
+
 enum render_object_pass
 {
 	RENDER_OBJECT_ALL,
@@ -1600,7 +1612,10 @@ static bool RenderObjectInternal(object* obj)
 
 void RenderObject(object* obj)
 {
+	const bool material_fog = BeginObjectMaterialFog(obj);
 	RenderObjectInternal(obj);
+	if (material_fog)
+		EndRoomMaterialFog();
 }
 
 // Sets the polygon render object type to static (one lightval for whole object)
@@ -1773,7 +1788,8 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 		}
 
 		// Fog this object if needed
-		if (!OBJECT_OUTSIDE(obj) && (Rooms[obj->roomnum].flags & RF_FOG) && Room_fog_plane_check != -1)
+		if (!RoomMaterialFogActive() && !OBJECT_OUTSIDE(obj) &&
+			(Rooms[obj->roomnum].flags & RF_FOG) && Room_fog_plane_check != -1)
 		{
 			pe.type |= PEF_FOGGED_MODEL;
 			pe.fog_distance = Room_fog_distance;
@@ -2031,7 +2047,10 @@ bool RenderObjectOpaque(object* obj, unsigned int* random_state)
 	const polymodel_render_pass saved_polymodel_pass = Polymodel_render_pass;
 	RenderObject_pass = RENDER_OBJECT_OPAQUE;
 	Polymodel_render_pass = POLYMODEL_RENDER_OPAQUE;
+	const bool material_fog = BeginObjectMaterialFog(obj);
 	const bool rendered = RenderObjectInternal(obj);
+	if (material_fog)
+		EndRoomMaterialFog();
 	Polymodel_render_pass = saved_polymodel_pass;
 	RenderObject_pass = saved_object_pass;
 	return rendered;
@@ -2065,7 +2084,10 @@ void RenderObjectTransparents(object* obj, unsigned int random_state)
 	// AO, motion blur, and soft particles immutable. This does not add a depth
 	// copy or resolve.
 	rend_BeginLateDepthWrite();
+	const bool material_fog = BeginObjectMaterialFog(obj);
 	RenderObjectInternal(obj);
+	if (material_fog)
+		EndRoomMaterialFog();
 	rend_EndLateDepthWrite();
 
 	RenderObject_disable_motion_capture = saved_disable_motion_capture;

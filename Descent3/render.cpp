@@ -3788,7 +3788,8 @@ void UpdateFogFace(room* rp, face* fp, bool retained, ubyte clip_codes)
 	Num_fog_faces_to_render++;
 }
 
-bool BeginRoomMaterialFog(room* rp, const vector* eye, int viewer_room)
+bool BeginRoomMaterialFog(room* rp, const vector* eye, int viewer_room,
+	float intensity)
 {
 	if (!rp || !eye || !(rp->flags & RF_FOG) || !Detail_settings.Fog_enabled ||
 		!UseHardware || !rend_CanUseNewrender() || In_editor_mode ||
@@ -3835,11 +3836,16 @@ bool BeginRoomMaterialFog(room* rp, const vector* eye, int viewer_room)
 	state.color[1] = rp->fog_g;
 	state.color[2] = rp->fog_b;
 	state.depth = rp->fog_depth;
-	state.intensity = Room_light_val;
+	state.intensity = intensity;
 	state.triangles = portal_triangles.empty() ? nullptr : portal_triangles.data();
 	state.triangle_count = (int)portal_triangles.size();
 	Room_material_fog_active = rend_SetRoomFogState(&state);
 	return Room_material_fog_active;
+}
+
+bool BeginCurrentViewRoomMaterialFog(room* rp, float intensity)
+{
+	return BeginRoomMaterialFog(rp, &Viewer_eye, Viewer_roomnum, intensity);
 }
 
 void EndRoomMaterialFog()
@@ -3849,6 +3855,11 @@ void EndRoomMaterialFog()
 	renderer_room_fog_state state = {};
 	rend_SetRoomFogState(&state);
 	Room_material_fog_active = false;
+}
+
+bool RoomMaterialFogActive()
+{
+	return Room_material_fog_active;
 }
 
 static void QueueDeferredFogAOFaces(room* rp)
@@ -5731,7 +5742,8 @@ void RenderRoom(room* rp)
 
 	// Figure out pulse lighting for room
 	ComputeRoomPulseLight(rp);
-	const bool material_fog = BeginRoomMaterialFog(rp, &Viewer_eye, Viewer_roomnum);
+	const bool material_fog = BeginRoomMaterialFog(rp, &Viewer_eye,
+		Viewer_roomnum, Room_light_val);
 
 	// Mark it visible for automap
 	AutomapVisMap[rp - Rooms] = 1;

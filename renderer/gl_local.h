@@ -361,7 +361,7 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_room_fog_depth_uniforms[8] = {};
 	GLint drawshader_room_fog_intensity_uniforms[8] = {};
 	GLint drawshader_room_fog_triangle_count_uniforms[8] = {};
-	GLint drawshader_room_fog_overlay_uniforms[8] = {};
+	GLint drawshader_fog_composite_mode_uniforms[8] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
 	bool retained_draw_active = false;
@@ -459,6 +459,7 @@ class GL4Renderer : public IRenderer
 	GLuint legacycommonbuffername = 0;
 	GLuint fogbuffername = 0;
 	GLuint room_fog_portal_buffer = 0;
+	std::vector<renderer_room_fog_triangle> room_fog_portal_cache;
 	bool room_fog_enabled = false;
 	bool room_fog_overlay = false;
 	bool room_fog_viewer_inside = false;

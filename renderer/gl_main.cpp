@@ -3821,6 +3821,7 @@ void GL4Renderer::CloseFramebuffer(void)
 	}
 	room_fog_enabled = false;
 	room_fog_triangle_count = 0;
+	room_fog_portal_cache.clear();
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 

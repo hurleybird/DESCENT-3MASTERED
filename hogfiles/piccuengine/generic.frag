@@ -78,7 +78,9 @@ uniform vec3 room_fog_color;
 uniform float room_fog_depth;
 uniform float room_fog_intensity;
 uniform int room_fog_triangle_count;
-uniform int room_fog_overlay;
+// 0: base material, 1: additive light/specular, 2: portal cap,
+// 3: multiplicative material overlay (already applied to a fogged base).
+uniform int fog_composite_mode;
 
 in vec4 outcolor;
 noperspective in float out_retained_effect_alpha;
@@ -477,8 +479,12 @@ void main()
 		vec3 room_world_position = out_room_fog_world_position.xyz /
 			out_room_fog_world_position.w;
 		room_fog_amount = RoomFogAmount(room_world_position);
-		if (room_fog_overlay != 0)
+		if (fog_composite_mode == 2)
 			color = vec4(room_fog_color, room_fog_amount);
+		else if (fog_composite_mode == 1)
+			color.rgb *= 1.0 - room_fog_amount;
+		else if (fog_composite_mode == 3)
+			room_fog_amount = 0.0;
 		else
 			color.rgb = mix(color.rgb, room_fog_color, room_fog_amount);
 	}
@@ -497,7 +503,10 @@ void main()
 		float fog_end = clamp(1.0 - (1.0 / max(fog.end_dist, 0.0001)), 0.0, 1.0);
 		float fog_depth = clamp(-outpt.z, 0.0, 1.0);
 		float mag = clamp((fog_depth - fog_start) / max(fog_end - fog_start, 0.0001), 0.0, 1.0);
-		color = vec4(mix(color.rgb, fog.color.rgb, mag), color.a);
+		if (fog_composite_mode == 1)
+			color.rgb *= 1.0 - mag;
+		else if (fog_composite_mode != 3)
+			color.rgb = mix(color.rgb, fog.color.rgb, mag);
 		bloom_mask = max(bloom_mask, mag);
 	#endif
 	if (motion_vector_mode == 2 && color.a <= 0.001)
