@@ -514,6 +514,9 @@ private:
 	int CopyVertices(const gl_vertex* vertices, int numvertices);
 	void SetDrawDefaults();
 	void SelectDrawShader();
+	bool UsesExactRoomFogMultiply() const;
+	void SetCurrentFogCompositeMode(int mode);
+	void DrawRoomFogMultiplyCorrection(GLenum primitive, GLint first, GLsizei count);
 	GLuint PrepareSoftParticleDepthTexture();
 	void InvalidateSoftParticleDepthTexture();
 	void BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xscalar, float yscalar,

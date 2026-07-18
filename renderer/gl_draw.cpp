@@ -162,6 +162,38 @@ static void GL4UseSceneColorDrawBuffer()
 	glReadBuffer(GL_COLOR_ATTACHMENT0);
 }
 
+bool GL4Renderer::UsesExactRoomFogMultiply() const
+{
+	return room_fog_enabled && !room_fog_overlay &&
+		(OpenGL_state.cur_alpha_type == AT_LIGHTMAP_BLEND ||
+		 OpenGL_state.cur_alpha_type == AT_LIGHTMAP_BLEND_VERTEX);
+}
+
+void GL4Renderer::SetCurrentFogCompositeMode(int mode)
+{
+	if (lastdrawshader >= 0 &&
+		drawshader_fog_composite_mode_uniforms[lastdrawshader] != -1)
+	{
+		glUniform1i(drawshader_fog_composite_mode_uniforms[lastdrawshader], mode);
+	}
+}
+
+void GL4Renderer::DrawRoomFogMultiplyCorrection(GLenum primitive, GLint first,
+	GLsizei count)
+{
+	// The fogged destination is D = B*T + F*(1-T). A destination-multiplying
+	// material M belongs on the surface, so the exact result is
+	// D*M + F*(1-T)*(1-M). The first draw supplies D*M; this color-only pass
+	// restores the fog term without another depth copy or resolve.
+	GL4UseSceneColorDrawBuffer();
+	SetCurrentFogCompositeMode(5);
+	glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ZERO, GL_ONE);
+	rend_RecordDrawCall(draw_call_category);
+	glDrawArrays(primitive, first, count);
+	glBlendFuncSeparate(GL_DST_COLOR, GL_ZERO, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	SetCurrentFogCompositeMode(4);
+}
+
 static void GL4BuildOrtho(float* mat, float left, float right, float bottom, float top, float znear, float zfar)
 {
 	memset(mat, 0, sizeof(float[16]));
@@ -1974,8 +2006,27 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 			GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors, include_ao_class,
 				include_motion_object_ids);
 	}
+	const bool exact_room_fog_multiply = drawing_to_scene && UsesExactRoomFogMultiply();
+	if (exact_room_fog_multiply)
+		SetCurrentFogCompositeMode(4);
 	rend_RecordDrawCall(draw_call_category);
 	glDrawArrays(GL_TRIANGLE_FAN, offset, nv);
+	if (exact_room_fog_multiply)
+	{
+		DrawRoomFogMultiplyCorrection(GL_TRIANGLE_FAN, offset, nv);
+		if (override_draw_buffers)
+		{
+			if (cockpit_scene_frame_active)
+				GL4UseSceneColorDrawBuffer();
+			else
+				GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors,
+					include_ao_class, include_motion_object_ids);
+		}
+		else
+		{
+			UseSceneDrawBuffers();
+		}
+	}
 	NotifyDepthBufferWrite();
 	if (include_motion_vectors || include_motion_object_ids)
 	{
@@ -2096,8 +2147,28 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 			GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors, include_ao_class,
 				include_motion_object_ids);
 	}
+	const bool exact_room_fog_multiply = drawing_to_scene && UsesExactRoomFogMultiply();
+	if (exact_room_fog_multiply)
+		SetCurrentFogCompositeMode(4);
 	rend_RecordDrawCall(draw_call_category);
 	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)vertices.size());
+	if (exact_room_fog_multiply)
+	{
+		DrawRoomFogMultiplyCorrection(GL_TRIANGLES, offset,
+			(GLsizei)vertices.size());
+		if (override_draw_buffers)
+		{
+			if (cockpit_scene_frame_active)
+				GL4UseSceneColorDrawBuffer();
+			else
+				GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors,
+					include_ao_class, include_motion_object_ids);
+		}
+		else
+		{
+			UseSceneDrawBuffers();
+		}
+	}
 	NotifyDepthBufferWrite();
 	if (include_motion_vectors || include_motion_object_ids)
 	{

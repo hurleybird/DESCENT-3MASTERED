@@ -77,7 +77,8 @@ uniform float room_fog_depth;
 uniform float room_fog_intensity;
 uniform int room_fog_triangle_count;
 // 0: base material, 1: additive light/specular, 2: portal cap,
-// 3: multiplicative material overlay (already applied to a fogged base).
+// 3: approximate multiplicative overlay fallback, 4: raw multiplier pass,
+// 5: exact additive fog correction for a multiplier already applied to the base.
 uniform int fog_composite_mode;
 
 in vec4 outcolor;
@@ -435,6 +436,18 @@ void main()
 			// similar overlays) must converge to the neutral multiplier as the
 			// underlying surface disappears into fog.
 			color.rgb = mix(vec3(1.0), color.rgb, 1.0 - room_fog_amount);
+			room_fog_amount = 0.0;
+		}
+		else if (fog_composite_mode == 4)
+		{
+			// The destination-multiply pass needs the unmodified material value.
+			room_fog_amount = 0.0;
+		}
+		else if (fog_composite_mode == 5)
+		{
+			color.rgb = room_fog_color * room_fog_amount *
+				(vec3(1.0) - color.rgb);
+			color.a = 0.0;
 			room_fog_amount = 0.0;
 		}
 		else

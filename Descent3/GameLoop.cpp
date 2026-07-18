@@ -21,6 +21,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <limits.h>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -95,6 +96,7 @@
 #include "gamespy.h"
 #include "viseffect.h"
 #include "args.h"
+#include "scorch.h"
 
 #ifdef EDITOR
 #include "editor\d3edit.h"
@@ -220,6 +222,9 @@ struct automated_capture_state
 	bool realtime;
 	bool force_forward;
 	bool force_primary_fire;
+	int force_primary_until_frame;
+	bool place_scorch;
+	bool scorch_placed;
 	int force_primary_slot;
 	bool force_primary_alt;
 	bool primary_slot_applied;
@@ -333,13 +338,109 @@ bool AutomatedCaptureForcesForwardInput()
 bool AutomatedCaptureForcesPrimaryFireInput()
 {
 	return Automated_capture.gameplay_frame_active &&
-		Automated_capture.force_primary_fire;
+		Automated_capture.force_primary_fire &&
+		Automated_capture.gameplay_frame <= Automated_capture.force_primary_until_frame;
 }
 
 static int FindAutomatedCaptureArg(const char* primary, const char* alias)
 {
 	int argument = FindArg((char*)primary);
 	return argument ? argument : FindArg((char*)alias);
+}
+
+static void PlaceAutomatedCaptureScorch()
+{
+	if (!Automated_capture.place_scorch || Automated_capture.scorch_placed ||
+		!Player_object || Player_num < 0)
+		return;
+
+	Automated_capture.scorch_placed = true;
+	vector scorch_direction = Player_object->orient.fvec +
+		Player_object->orient.rvec * 0.35f -
+		Player_object->orient.uvec * 0.20f;
+	vm_NormalizeVectorFast(&scorch_direction);
+	vector ray_end = Player_object->pos + scorch_direction * 500.0f;
+	fvi_query query = {};
+	query.p0 = &Player_object->pos;
+	query.p1 = &ray_end;
+	query.startroom = Player_object->roomnum;
+	query.thisobjnum = Players[Player_num].objnum;
+	query.flags = FQ_IGNORE_MOVING_OBJECTS | FQ_IGNORE_WEAPONS |
+		FQ_IGNORE_RENDER_THROUGH_PORTALS;
+	fvi_info hit = {};
+	if (fvi_FindIntersection(&query, &hit) != HIT_WALL || hit.num_hits <= 0)
+	{
+		AutomatedCaptureLog("capture scorch placement missed room geometry");
+		return;
+	}
+
+	int scorch_texture = -1;
+	float scorch_size = 1.0f;
+	const int battery_index = Players[Player_num].weapon[PW_PRIMARY].index;
+	if (battery_index >= 0 && battery_index < MAX_PLAYER_WEAPONS)
+	{
+		const otype_wb_info& battery = Ships[Players[Player_num].ship_index].static_wb[battery_index];
+		for (int gun = 0; gun < MAX_WB_GUNPOINTS; gun++)
+		{
+			const int weapon_index = battery.gp_weapon_index[gun];
+			if (weapon_index >= 0 && weapon_index < MAX_WEAPONS &&
+				Weapons[weapon_index].used && Weapons[weapon_index].scorch_handle >= 0)
+			{
+				scorch_texture = Weapons[weapon_index].scorch_handle;
+				scorch_size = Weapons[weapon_index].scorch_size < 0.5f ?
+					0.5f : Weapons[weapon_index].scorch_size;
+				break;
+			}
+		}
+	}
+	if (scorch_texture < 0)
+	{
+		for (int weapon_index = 0; weapon_index < MAX_WEAPONS; weapon_index++)
+		{
+			if (Weapons[weapon_index].used && Weapons[weapon_index].scorch_handle >= 0)
+			{
+				scorch_texture = Weapons[weapon_index].scorch_handle;
+				scorch_size = Weapons[weapon_index].scorch_size < 0.5f ?
+					0.5f : Weapons[weapon_index].scorch_size;
+				break;
+			}
+		}
+	}
+	if (scorch_texture < 0)
+	{
+		AutomatedCaptureLog("capture scorch placement found no loaded scorch texture");
+		return;
+	}
+
+	room& hit_room = Rooms[hit.hit_face_room[0]];
+	face& hit_face = hit_room.faces[hit.hit_face[0]];
+	vector scorch_position = hit.hit_face_pnt[0];
+	float nearest_edge = 15.0f;
+	vector* edge_start = &hit_room.verts[
+		hit_face.face_verts[hit_face.num_verts - 1]];
+	for (int vertex = 0; vertex < hit_face.num_verts; vertex++)
+	{
+		vector* edge_end = &hit_room.verts[hit_face.face_verts[vertex]];
+		vector edge_direction;
+		vm_GetNormalizedDir(&edge_direction, edge_end, edge_start);
+		const vector from_edge = scorch_position - *edge_start;
+		const vector closest = *edge_start + edge_direction *
+			(from_edge * edge_direction);
+		const float distance = vm_VectorDistance(&closest, &scorch_position);
+		if (distance < nearest_edge)
+			nearest_edge = distance;
+		edge_start = edge_end;
+	}
+	float placed_size = scorch_size < 2.0f ? 2.0f : scorch_size;
+	if (placed_size > 4.0f)
+		placed_size = 4.0f;
+	if (placed_size >= nearest_edge)
+		placed_size = nearest_edge * 0.45f;
+	AddScorch(hit.hit_face_room[0], hit.hit_face[0], &scorch_position,
+		scorch_texture, placed_size);
+	AutomatedCaptureLog("capture scorch placed room=%d face=%d texture=%d size=%.3f",
+		hit.hit_face_room[0], hit.hit_face[0], scorch_texture,
+		placed_size);
 }
 
 static void InitAutomatedCapture()
@@ -352,6 +453,20 @@ static void InitAutomatedCapture()
 	Automated_capture.force_forward = FindArg("-capture-forward") != 0;
 	Automated_capture.force_primary_fire =
 		FindArg("-capture-fire-primary") != 0;
+	Automated_capture.place_scorch = FindArg("-capture-scorch") != 0;
+	Automated_capture.force_primary_until_frame = INT_MAX;
+	const int primary_until_arg = FindArg("-capture-fire-until");
+	if (primary_until_arg)
+	{
+		const char* value = GetArg(primary_until_arg + 1);
+		char* end = nullptr;
+		const long frame = value ? strtol(value, &end, 10) : -1;
+		if (value && end != value && *end == '\0' && frame >= 0 &&
+			frame <= 1000000)
+		{
+			Automated_capture.force_primary_until_frame = (int)frame;
+		}
+	}
 	Automated_capture.force_primary_slot = -1;
 	Automated_capture.force_primary_alt =
 		FindArg("-capture-primary-alt") != 0;
@@ -455,6 +570,7 @@ static void BeginAutomatedCaptureFrame()
 		return;
 
 	Automated_capture.gameplay_frame_active = true;
+	PlaceAutomatedCaptureScorch();
 	if (!Automated_capture.primary_slot_applied &&
 		Automated_capture.force_primary_slot >= 0)
 	{
