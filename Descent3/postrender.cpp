@@ -137,6 +137,7 @@ void DrawPostrenderFace(int roomnum, int facenum, bool change_z)
 		PERF_MARKER_SCOPE("PostRenderFace.SetupRoom");
 		SetupPostrenderRoom(rp);
 	}
+	const bool material_fog = BeginRoomMaterialFog(rp, &Viewer_eye, Viewer_roomnum);
 
 	// Render!
 	if (change_z)
@@ -160,6 +161,8 @@ void DrawPostrenderFace(int roomnum, int facenum, bool change_z)
 		RenderFogFaces(rp);
 		Num_fog_faces_to_render = 0;
 	}
+	if (material_fog)
+		EndRoomMaterialFog();
 
 	// Restore statelimited setting
 	StateLimited = save_state;

@@ -1975,6 +1975,8 @@ bool CheckCdForValidity(int cd);
 
 // Sound initialization
 	int soundres = Sound_system.InitSoundLib(Descent, Sound_mixer, Sound_quality, false);
+	if (FindArg("-nosound"))
+		Sound_system.SetMasterVolume(0.0f);
 	AutomatedCaptureLog("systems1 sound result=%d", soundres);
 
 	//	Initialize Cinematics system

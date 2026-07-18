@@ -3814,6 +3814,13 @@ void GL4Renderer::CloseFramebuffer(void)
 	motion_vectors.Destroy();
 	frozen_static_motion_valid = false;
 	post_protection_mask.Destroy();
+	if (room_fog_portal_buffer != 0)
+	{
+		glDeleteBuffers(1, &room_fog_portal_buffer);
+		room_fog_portal_buffer = 0;
+	}
+	room_fog_enabled = false;
+	room_fog_triangle_count = 0;
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 

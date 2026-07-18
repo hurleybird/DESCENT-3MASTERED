@@ -708,7 +708,8 @@ int PASCAL HandledWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine,
 		if (FindArg("-background"))
 			d3->set_background_mode(true);
 	}
-	AutomatedCaptureLog("winmain application allocated");
+	AutomatedCaptureLog("winmain application allocated background=%d",
+		d3->background_mode() ? 1 : 0);
 	atexit(D3End);
 
 	w32_mouseman_hack = false;

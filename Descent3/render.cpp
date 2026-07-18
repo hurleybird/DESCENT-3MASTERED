@@ -214,6 +214,7 @@ short Fog_faces[MAX_FACES_PER_ROOM];
 bool Fog_face_retained[MAX_FACES_PER_ROOM];
 ubyte Fog_face_clip_codes[MAX_FACES_PER_ROOM];
 int Num_fog_faces_to_render = 0;
+static bool Room_material_fog_active = false;
 
 struct deferred_fog_face
 {
@@ -3775,10 +3776,79 @@ void UpdateFogFace(room* rp, face* fp, bool retained, ubyte clip_codes)
 {
 	if (Fog_disabled || !Detail_settings.Fog_enabled)
 		return;
+	if (Room_material_fog_active &&
+		(fp->portal_num < 0 ||
+		 (rp->portals[fp->portal_num].flags & PF_RENDER_FACES)))
+	{
+		return;
+	}
 	Fog_faces[Num_fog_faces_to_render] = fp - rp->faces;
 	Fog_face_retained[Num_fog_faces_to_render] = retained;
 	Fog_face_clip_codes[Num_fog_faces_to_render] = clip_codes;
 	Num_fog_faces_to_render++;
+}
+
+bool BeginRoomMaterialFog(room* rp, const vector* eye, int viewer_room)
+{
+	if (!rp || !eye || !(rp->flags & RF_FOG) || !Detail_settings.Fog_enabled ||
+		!UseHardware || !rend_CanUseNewrender() || In_editor_mode ||
+		Render_mirror_for_room || rp->fog_depth <= 0.0f)
+	{
+		return false;
+	}
+
+	thread_local std::vector<renderer_room_fog_triangle> portal_triangles;
+	portal_triangles.clear();
+	for (int portal_index = 0; portal_index < rp->num_portals; portal_index++)
+	{
+		// Use the same material/door visibility decision as room traversal: a
+		// transparent rendered portal remains an opening, while an opaque one is
+		// a terminating material surface rather than a fog boundary.
+		if (!RenderPastPortal(rp, &rp->portals[portal_index]))
+			continue;
+		const int facenum = rp->portals[portal_index].portal_face;
+		if (facenum < 0 || facenum >= rp->num_faces)
+			continue;
+		const face* fp = &rp->faces[facenum];
+		if (!fp->face_verts || fp->num_verts < 3)
+			continue;
+		const vector& a = rp->verts[fp->face_verts[0]];
+		for (int triangle = 0; triangle < fp->num_verts - 2; triangle++)
+		{
+			const vector& b = rp->verts[fp->face_verts[triangle + 1]];
+			const vector& c = rp->verts[fp->face_verts[triangle + 2]];
+			renderer_room_fog_triangle item = {};
+			item.a[0] = a.x; item.a[1] = a.y; item.a[2] = a.z;
+			item.b[0] = b.x; item.b[1] = b.y; item.b[2] = b.z;
+			item.c[0] = c.x; item.c[1] = c.y; item.c[2] = c.z;
+			portal_triangles.push_back(item);
+		}
+	}
+
+	renderer_room_fog_state state = {};
+	state.enabled = true;
+	state.viewer_inside = viewer_room == (int)(rp - Rooms);
+	state.viewer_position[0] = eye->x;
+	state.viewer_position[1] = eye->y;
+	state.viewer_position[2] = eye->z;
+	state.color[0] = rp->fog_r;
+	state.color[1] = rp->fog_g;
+	state.color[2] = rp->fog_b;
+	state.depth = rp->fog_depth;
+	state.intensity = Room_light_val;
+	state.triangles = portal_triangles.empty() ? nullptr : portal_triangles.data();
+	state.triangle_count = (int)portal_triangles.size();
+	Room_material_fog_active = rend_SetRoomFogState(&state);
+	return Room_material_fog_active;
+}
+
+void EndRoomMaterialFog()
+{
+	if (!Room_material_fog_active)
+		return;
+	renderer_room_fog_state state = {};
+	rend_SetRoomFogState(&state);
+	Room_material_fog_active = false;
 }
 
 static void QueueDeferredFogAOFaces(room* rp)
@@ -3851,6 +3921,8 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 	std::vector<int> retained_faces;
 	ubyte retained_clip_codes = 0;
 	const bool batch_fog = UseHardware && rend_CanUseNewrender();
+	if (Room_material_fog_active)
+		rend_SetRoomFogOverlay(1);
 	rend_SetOverlayType(OT_NONE);
 	rend_SetTextureType(TT_FLAT);
 	rend_SetLighting(LS_NONE);
@@ -3940,6 +4012,8 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 		rend_SetAOSuppression(0.0f);
 	rend_SetCoplanarPolygonOffset(0);
 	rend_SetZBufferWriteMask(1);
+	if (Room_material_fog_active)
+		rend_SetRoomFogOverlay(0);
 }
 
 static void RenderDeferredFogAOSuppression()
@@ -5657,6 +5731,7 @@ void RenderRoom(room* rp)
 
 	// Figure out pulse lighting for room
 	ComputeRoomPulseLight(rp);
+	const bool material_fog = BeginRoomMaterialFog(rp, &Viewer_eye, Viewer_roomnum);
 
 	// Mark it visible for automap
 	AutomapVisMap[rp - Rooms] = 1;
@@ -5687,6 +5762,8 @@ void RenderRoom(room* rp)
 		RenderFogFaces(rp, false);
 		Num_fog_faces_to_render = 0;
 	}
+	if (material_fog)
+		EndRoomMaterialFog();
 }
 
 #define MAX_OBJECTS_PER_ROOM 2000

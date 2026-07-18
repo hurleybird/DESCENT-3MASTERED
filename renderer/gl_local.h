@@ -354,6 +354,14 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_retained_far_clip_enabled_uniforms[8] = {};
 	GLint drawshader_retained_far_clip_z_uniforms[8] = {};
 	GLint drawshader_retained_per_pixel_specular_payload_uniforms[8] = {};
+	GLint drawshader_room_fog_enabled_uniforms[8] = {};
+	GLint drawshader_room_fog_viewer_inside_uniforms[8] = {};
+	GLint drawshader_room_fog_viewer_position_uniforms[8] = {};
+	GLint drawshader_room_fog_color_uniforms[8] = {};
+	GLint drawshader_room_fog_depth_uniforms[8] = {};
+	GLint drawshader_room_fog_intensity_uniforms[8] = {};
+	GLint drawshader_room_fog_triangle_count_uniforms[8] = {};
+	GLint drawshader_room_fog_overlay_uniforms[8] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
 	bool retained_draw_active = false;
@@ -450,6 +458,15 @@ class GL4Renderer : public IRenderer
 	GLuint commonbuffername = 0;
 	GLuint legacycommonbuffername = 0;
 	GLuint fogbuffername = 0;
+	GLuint room_fog_portal_buffer = 0;
+	bool room_fog_enabled = false;
+	bool room_fog_overlay = false;
+	bool room_fog_viewer_inside = false;
+	float room_fog_viewer_position[3] = {};
+	float room_fog_color[3] = {};
+	float room_fog_depth = 1.0f;
+	float room_fog_intensity = 1.0f;
+	int room_fog_triangle_count = 0;
 	GLuint specularbuffername = 0;
 	GLuint terrainfogbuffername = 0;
 	int terrainfogcounter = 0;
@@ -731,6 +748,8 @@ public:
 		int map_type = MAP_TYPE_BITMAP) override;
 	bool BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw) override;
 	void EndRetainedPolymodelDraw() override;
+	bool SetRoomFogState(const renderer_room_fog_state *state) override;
+	void SetRoomFogOverlay(int state) override;
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 	void DrawPolygon2D(int handle, g3Point** p, int nv) override;
 

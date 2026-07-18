@@ -59,11 +59,33 @@ uniform sampler2D soft_particle_depth;
 uniform vec2 soft_particle_screen_size;
 uniform float soft_particle_depth_range;
 
+struct RoomFogPortalTriangle
+{
+	vec4 a;
+	vec4 b;
+	vec4 c;
+};
+
+layout(std430, binding = 5) readonly buffer RoomFogPortalBuffer
+{
+	RoomFogPortalTriangle room_fog_portals[];
+};
+
+uniform int room_fog_enabled;
+uniform int room_fog_viewer_inside;
+uniform vec3 room_fog_viewer_position;
+uniform vec3 room_fog_color;
+uniform float room_fog_depth;
+uniform float room_fog_intensity;
+uniform int room_fog_triangle_count;
+uniform int room_fog_overlay;
+
 in vec4 outcolor;
 noperspective in float out_retained_effect_alpha;
 in vec4 outnormal;
 in vec4 out_motion_world_position;
 in vec4 out_motion_previous_world_position;
+in vec4 out_room_fog_world_position;
 #if defined(USE_SPECULAR)
 in vec4 out_field_specular_centers[4];
 in vec4 out_field_specular_colors[4];
@@ -280,6 +302,51 @@ float SoftParticleEyeDepth(float depth)
 	return 1.0 / max(1.0 - clamp(depth, 0.0, 0.9999), 0.0001);
 }
 
+float RoomFogAmount(vec3 world_position)
+{
+	vec3 segment = world_position - room_fog_viewer_position;
+	float segment_length = length(segment);
+	if (segment_length <= 0.0001)
+		return 0.0;
+
+	float fog_length = segment_length;
+	if (room_fog_viewer_inside == 0)
+	{
+		float first_entry = 2.0;
+		for (int i = 0; i < room_fog_triangle_count; i++)
+		{
+			vec3 a = room_fog_portals[i].a.xyz;
+			vec3 edge1 = room_fog_portals[i].b.xyz - a;
+			vec3 edge2 = room_fog_portals[i].c.xyz - a;
+			vec3 p = cross(segment, edge2);
+			float determinant = dot(edge1, p);
+			if (abs(determinant) <= 0.000001)
+				continue;
+			float inverse_determinant = 1.0 / determinant;
+			vec3 from_a = room_fog_viewer_position - a;
+			float u = dot(from_a, p) * inverse_determinant;
+			vec3 q = cross(from_a, edge1);
+			float v = dot(segment, q) * inverse_determinant;
+			float t = dot(edge2, q) * inverse_determinant;
+			// Slightly overlap adjacent fan triangles so numerical error at a
+			// portal edge cannot turn fog on and off while the camera moves.
+			const float edge_epsilon = 0.0002;
+			if (u >= -edge_epsilon && v >= -edge_epsilon &&
+				u + v <= 1.0 + edge_epsilon && t >= -edge_epsilon &&
+				t <= 1.0 + edge_epsilon)
+			{
+				first_entry = min(first_entry, clamp(t, 0.0, 1.0));
+			}
+		}
+		if (first_entry > 1.0)
+			return 0.0;
+		fog_length *= 1.0 - first_entry;
+	}
+
+	return clamp((fog_length / max(room_fog_depth, 0.0001)) *
+		room_fog_intensity, 0.0, 1.0);
+}
+
 void main()
 {
 	velocity = vec2(0.0);
@@ -330,6 +397,7 @@ void main()
 
 	float ao_mask = 0.0;
 	float bloom_mask = 0.0;
+	float room_fog_amount = 0.0;
 
 	#if defined(USE_SPECULAR)
 		vec4 base_color = texture(colortexture, outuv.xy / outuv.z);
@@ -404,6 +472,16 @@ void main()
 			color.a *= fade;
 		}
 	}
+	if (room_fog_enabled != 0 && abs(out_room_fog_world_position.w) > 0.00001)
+	{
+		vec3 room_world_position = out_room_fog_world_position.xyz /
+			out_room_fog_world_position.w;
+		room_fog_amount = RoomFogAmount(room_world_position);
+		if (room_fog_overlay != 0)
+			color = vec4(room_fog_color, room_fog_amount);
+		else
+			color.rgb = mix(color.rgb, room_fog_color, room_fog_amount);
+	}
 	float suppression_alpha = clamp(color.a, 0.0, 1.0);
 	if (post_mask_use_luminance != 0)
 	{
@@ -411,6 +489,7 @@ void main()
 		suppression_alpha *= clamp(visible, 0.0, 1.0);
 	}
 	ao_mask = clamp(ao_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
+	ao_mask = max(ao_mask, room_fog_amount);
 	bloom_mask = clamp(bloom_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
 	
 	#if defined(USE_FOG)

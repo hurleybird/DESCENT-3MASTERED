@@ -526,9 +526,33 @@ struct renderer_retained_polymodel_draw
 	bool has_previous;
 };
 
+struct renderer_room_fog_triangle
+{
+	float a[4];
+	float b[4];
+	float c[4];
+};
+
+struct renderer_room_fog_state
+{
+	bool enabled;
+	bool viewer_inside;
+	float viewer_position[3];
+	float color[3];
+	float depth;
+	float intensity;
+	const renderer_room_fog_triangle *triangles;
+	int triangle_count;
+};
+
 // Selects the legacy material shader while sourcing a polymodel from retained local-space buffers.
 bool rend_BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw);
 void rend_EndRetainedPolymodelDraw();
+
+// Applies homogeneous local-room fog in the material shader. Portal triangles
+// describe the room openings through which an outside eye ray can enter.
+bool rend_SetRoomFogState(const renderer_room_fog_state *state);
+void rend_SetRoomFogOverlay(int state);
 
 // Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 void rend_DrawPolygon2D(int handle,g3Point **p,int nv);

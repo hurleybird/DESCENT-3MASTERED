@@ -35,6 +35,7 @@ constexpr size_t DRAW_BUFFER_TARGET_BYTES = 64u * 1024u * 1024u;
 constexpr int MIN_VERTS_PER_BUFFER = 65536;
 constexpr float PIXEL_MOTION_BLUR_REFERENCE_FRAME_TIME = 1.0f / 60.0f;
 constexpr unsigned int GL4_MOTION_OBJECT_LEGACY_BLUR_MASK = 0x80000000u;
+constexpr GLuint GL4_ROOM_FOG_PORTAL_BINDING = 5;
 
 static int GL4DrawBufferVertexCapacity()
 {
@@ -1079,6 +1080,14 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 			vert.motion_previous_world_position.w = payloadw;
 		}
 	}
+	if (room_fog_enabled)
+	{
+		float payloadw = 1.0f / (pnt->p3_z + Z_bias);
+		vert.motion_previous_world_position.x = pnt->p3_vecPreRot.x * payloadw;
+		vert.motion_previous_world_position.y = pnt->p3_vecPreRot.y * payloadw;
+		vert.motion_previous_world_position.z = pnt->p3_vecPreRot.z * payloadw;
+		vert.motion_previous_world_position.w = payloadw;
+	}
 
 	float z = GL4DepthFromEyeZ(pnt->p3_z + Z_bias);
 	vert.vert.z = -z;
@@ -1427,6 +1436,14 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_retained_far_clip_enabled_uniforms[i] = drawshaders[i].FindUniform("retained_far_clip_enabled");
 		drawshader_retained_far_clip_z_uniforms[i] = drawshaders[i].FindUniform("retained_far_clip_z");
 		drawshader_retained_per_pixel_specular_payload_uniforms[i] = drawshaders[i].FindUniform("retained_per_pixel_specular_payload");
+		drawshader_room_fog_enabled_uniforms[i] = drawshaders[i].FindUniform("room_fog_enabled");
+		drawshader_room_fog_viewer_inside_uniforms[i] = drawshaders[i].FindUniform("room_fog_viewer_inside");
+		drawshader_room_fog_viewer_position_uniforms[i] = drawshaders[i].FindUniform("room_fog_viewer_position");
+		drawshader_room_fog_color_uniforms[i] = drawshaders[i].FindUniform("room_fog_color");
+		drawshader_room_fog_depth_uniforms[i] = drawshaders[i].FindUniform("room_fog_depth");
+		drawshader_room_fog_intensity_uniforms[i] = drawshaders[i].FindUniform("room_fog_intensity");
+		drawshader_room_fog_triangle_count_uniforms[i] = drawshaders[i].FindUniform("room_fog_triangle_count");
+		drawshader_room_fog_overlay_uniforms[i] = drawshaders[i].FindUniform("room_fog_overlay");
 	}
 
 	lastdrawshader = -1;
@@ -1638,6 +1655,20 @@ void GL4Renderer::SelectDrawShader()
 			glActiveTexture(GL_TEXTURE0);
 			Last_texel_unit_set = 0;
 		}
+	}
+	if (drawshader_room_fog_enabled_uniforms[shader_index] != -1)
+	{
+		glUniform1i(drawshader_room_fog_enabled_uniforms[shader_index], room_fog_enabled ? 1 : 0);
+		glUniform1i(drawshader_room_fog_viewer_inside_uniforms[shader_index], room_fog_viewer_inside ? 1 : 0);
+		glUniform3fv(drawshader_room_fog_viewer_position_uniforms[shader_index], 1, room_fog_viewer_position);
+		glUniform3fv(drawshader_room_fog_color_uniforms[shader_index], 1, room_fog_color);
+		glUniform1f(drawshader_room_fog_depth_uniforms[shader_index], room_fog_depth);
+		glUniform1f(drawshader_room_fog_intensity_uniforms[shader_index], room_fog_intensity);
+		glUniform1i(drawshader_room_fog_triangle_count_uniforms[shader_index], room_fog_triangle_count);
+		glUniform1i(drawshader_room_fog_overlay_uniforms[shader_index], room_fog_overlay ? 1 : 0);
+		if (room_fog_enabled && room_fog_portal_buffer != 0)
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, GL4_ROOM_FOG_PORTAL_BINDING,
+				room_fog_portal_buffer);
 	}
 
 	const bool phong_enabled = OpenGL_state.cur_light_state == LS_PHONG;
@@ -1891,6 +1922,14 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 				vertp->motion_previous_world_position.z = pnt->p3_motion_prev_world_pos.z * payloadw;
 				vertp->motion_previous_world_position.w = payloadw;
 			}
+		}
+		if (room_fog_enabled)
+		{
+			float payloadw = 1.0f / (pnt->p3_z + Z_bias);
+			vertp->motion_previous_world_position.x = pnt->p3_vecPreRot.x * payloadw;
+			vertp->motion_previous_world_position.y = pnt->p3_vecPreRot.y * payloadw;
+			vertp->motion_previous_world_position.z = pnt->p3_vecPreRot.z * payloadw;
+			vertp->motion_previous_world_position.w = payloadw;
 		}
 
 		float z = GL4DepthFromEyeZ(pnt->p3_z + Z_bias);
@@ -2243,6 +2282,52 @@ void GL4Renderer::EndRetainedPolymodelDraw()
 	retained_override_draw_buffers = false;
 	retained_include_motion_vectors = false;
 	retained_include_motion_object_ids = false;
+	legacy_draw_uniforms_dirty = true;
+}
+
+bool GL4Renderer::SetRoomFogState(const renderer_room_fog_state *state)
+{
+	if (!state || !state->enabled)
+	{
+		room_fog_enabled = false;
+		room_fog_overlay = false;
+		room_fog_viewer_inside = false;
+		room_fog_triangle_count = 0;
+		legacy_draw_uniforms_dirty = true;
+		return true;
+	}
+	if (state->depth <= 0.0f || state->triangle_count < 0 ||
+		(state->triangle_count > 0 && !state->triangles))
+	{
+		return false;
+	}
+
+	room_fog_enabled = true;
+	room_fog_viewer_inside = state->viewer_inside;
+	memcpy(room_fog_viewer_position, state->viewer_position,
+		sizeof(room_fog_viewer_position));
+	memcpy(room_fog_color, state->color, sizeof(room_fog_color));
+	room_fog_depth = state->depth;
+	room_fog_intensity = state->intensity;
+	room_fog_triangle_count = state->triangle_count;
+
+	if (room_fog_portal_buffer == 0)
+		glGenBuffers(1, &room_fog_portal_buffer);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, room_fog_portal_buffer);
+	const GLsizeiptr data_size = std::max<GLsizeiptr>(
+		(GLsizeiptr)sizeof(renderer_room_fog_triangle),
+		(GLsizeiptr)state->triangle_count * sizeof(renderer_room_fog_triangle));
+	glBufferData(GL_SHADER_STORAGE_BUFFER, data_size,
+		state->triangle_count > 0 ? state->triangles : nullptr, GL_STREAM_DRAW);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, GL4_ROOM_FOG_PORTAL_BINDING,
+		room_fog_portal_buffer);
+	legacy_draw_uniforms_dirty = true;
+	return true;
+}
+
+void GL4Renderer::SetRoomFogOverlay(int state)
+{
+	room_fog_overlay = room_fog_enabled && state != 0;
 	legacy_draw_uniforms_dirty = true;
 }
 

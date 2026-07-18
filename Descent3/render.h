@@ -156,6 +156,11 @@ void SortStates (state_limited_element *state_array,int cellcount);
 // Sets up fog if this room is fogged
 void SetupRoomFog (room *rp,vector *eye,matrix *orient,int viewer_room);
 
+// Enables the GL4 per-material room-volume fog state for a room. The caller
+// must pair a successful begin with EndRoomMaterialFog().
+bool BeginRoomMaterialFog(room *rp, const vector *eye, int viewer_room);
+void EndRoomMaterialFog();
+
 //Draw the specified face
 //Parameters:	rp - pointer to the room the face is un
 //				facenum - which face in the specified room

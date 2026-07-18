@@ -185,6 +185,8 @@ public:
 	}
 	virtual bool BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw) { return false; }
 	virtual void EndRetainedPolymodelDraw() {}
+	virtual bool SetRoomFogState(const renderer_room_fog_state *state) { return false; }
+	virtual void SetRoomFogOverlay(int state) {}
 
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 	virtual void DrawPolygon2D(int handle, g3Point** p, int nv) = 0;
