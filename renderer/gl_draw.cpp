@@ -929,8 +929,8 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 	vert.normal.y = 0.0f;
 	vert.normal.z = 0.0f;
 	vert.normal.w = -1.0f;
-	const bool per_pixel_specular_draw = (OpenGL_state.cur_alpha_type == AT_SPECULAR ||
-		per_pixel_specular_mode != 0) && OpenGL_preferred_state.per_pixel_lighting;
+	const bool per_pixel_specular_draw = OpenGL_state.cur_alpha_type == AT_SPECULAR &&
+		OpenGL_preferred_state.per_pixel_lighting;
 
 	float alpha = Alpha_multiplier * OpenGL_Alpha_factor;
 	if (OpenGL_state.cur_alpha_type & ATF_VERTEX)
@@ -1439,6 +1439,7 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_room_fog_enabled_uniforms[i] = drawshaders[i].FindUniform("room_fog_enabled");
 		drawshader_room_fog_viewer_inside_uniforms[i] = drawshaders[i].FindUniform("room_fog_viewer_inside");
 		drawshader_room_fog_viewer_position_uniforms[i] = drawshaders[i].FindUniform("room_fog_viewer_position");
+		drawshader_room_fog_viewer_forward_uniforms[i] = drawshaders[i].FindUniform("room_fog_viewer_forward");
 		drawshader_room_fog_color_uniforms[i] = drawshaders[i].FindUniform("room_fog_color");
 		drawshader_room_fog_depth_uniforms[i] = drawshaders[i].FindUniform("room_fog_depth");
 		drawshader_room_fog_intensity_uniforms[i] = drawshaders[i].FindUniform("room_fog_intensity");
@@ -1544,8 +1545,7 @@ void GL4Renderer::SelectDrawShader()
 {
 	int shader_index = 0;
 
-	const bool specular_shader = OpenGL_state.cur_alpha_type == AT_SPECULAR ||
-		(per_pixel_specular_mode != 0 && OpenGL_preferred_state.per_pixel_lighting);
+	const bool specular_shader = OpenGL_state.cur_alpha_type == AT_SPECULAR;
 
 	if (OpenGL_state.cur_fog_state)
 	{
@@ -1661,6 +1661,7 @@ void GL4Renderer::SelectDrawShader()
 		glUniform1i(drawshader_room_fog_enabled_uniforms[shader_index], room_fog_enabled ? 1 : 0);
 		glUniform1i(drawshader_room_fog_viewer_inside_uniforms[shader_index], room_fog_viewer_inside ? 1 : 0);
 		glUniform3fv(drawshader_room_fog_viewer_position_uniforms[shader_index], 1, room_fog_viewer_position);
+		glUniform3fv(drawshader_room_fog_viewer_forward_uniforms[shader_index], 1, room_fog_viewer_forward);
 		glUniform3fv(drawshader_room_fog_color_uniforms[shader_index], 1, room_fog_color);
 		glUniform1f(drawshader_room_fog_depth_uniforms[shader_index], room_fog_depth);
 		glUniform1f(drawshader_room_fog_intensity_uniforms[shader_index], room_fog_intensity);
@@ -1705,11 +1706,8 @@ void GL4Renderer::SelectDrawShader()
 			per_pixel_light_direction.y, per_pixel_light_direction.z);
 	if (drawshader_per_pixel_specular_enabled_uniforms[shader_index] != -1)
 	{
-		int shader_specular_mode = 0;
-		if (OpenGL_state.cur_alpha_type == AT_SPECULAR && OpenGL_preferred_state.per_pixel_lighting)
-			shader_specular_mode = 1;
-		else if (OpenGL_preferred_state.per_pixel_lighting)
-			shader_specular_mode = per_pixel_specular_mode;
+		const int shader_specular_mode =
+			OpenGL_state.cur_alpha_type == AT_SPECULAR && OpenGL_preferred_state.per_pixel_lighting;
 		glUniform1i(drawshader_per_pixel_specular_enabled_uniforms[shader_index],
 			shader_specular_mode);
 	}
@@ -1772,17 +1770,11 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 			MakeFilterTypeCurrent(Overlay_map, MAP_TYPE_LIGHTMAP, 1);
 		}
 
-		if (per_pixel_specular_mode == 2 && per_pixel_specular_map >= 0)
-		{
-			MakeBitmapCurrent(per_pixel_specular_map, MAP_TYPE_BITMAP, 3);
-			MakeWrapTypeCurrent(per_pixel_specular_map, MAP_TYPE_BITMAP, 3);
-			MakeFilterTypeCurrent(per_pixel_specular_map, MAP_TYPE_BITMAP, 3);
-		}
 	}
 
 	float alpha = Alpha_multiplier * OpenGL_Alpha_factor;
-	const bool per_pixel_specular_draw = (OpenGL_state.cur_alpha_type == AT_SPECULAR ||
-		per_pixel_specular_mode != 0) && OpenGL_preferred_state.per_pixel_lighting;
+	const bool per_pixel_specular_draw = OpenGL_state.cur_alpha_type == AT_SPECULAR &&
+		OpenGL_preferred_state.per_pixel_lighting;
 
 	gl_vertex* vertp = GL_vertices;
 
@@ -2043,12 +2035,6 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 			MakeFilterTypeCurrent(Overlay_map, MAP_TYPE_LIGHTMAP, 1);
 		}
 
-		if (per_pixel_specular_mode == 2 && per_pixel_specular_map >= 0)
-		{
-			MakeBitmapCurrent(per_pixel_specular_map, MAP_TYPE_BITMAP, 3);
-			MakeWrapTypeCurrent(per_pixel_specular_map, MAP_TYPE_BITMAP, 3);
-			MakeFilterTypeCurrent(per_pixel_specular_map, MAP_TYPE_BITMAP, 3);
-		}
 	}
 
 	int triangle_vertices = 0;
@@ -2332,6 +2318,8 @@ bool GL4Renderer::SetRoomFogState(const renderer_room_fog_state *state)
 	room_fog_viewer_inside = state->viewer_inside;
 	memcpy(room_fog_viewer_position, state->viewer_position,
 		sizeof(room_fog_viewer_position));
+	memcpy(room_fog_viewer_forward, state->viewer_forward,
+		sizeof(room_fog_viewer_forward));
 	memcpy(room_fog_color, state->color, sizeof(room_fog_color));
 	room_fog_depth = state->depth;
 	room_fog_intensity = state->intensity;
@@ -2603,7 +2591,8 @@ void GL4Renderer::DrawScaledBitmap(int x1, int y1, int x2, int y2,
 }
 
 void GL4Renderer::DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
-	int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas)
+	int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas,
+	const vector* world_position)
 {
 	g3Point* ptr_pnts[4];
 	g3Point pnts[4];
@@ -2636,9 +2625,7 @@ void GL4Renderer::DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
 		pnts[i].p3_flags = PF_PROJECTED;
 		pnts[i].p3_motion_world_valid = 0;
 		pnts[i].p3_motion_prev_world_valid = 0;
-		pnts[i].p3_vecPreRot.x = 0.0f;
-		pnts[i].p3_vecPreRot.y = 0.0f;
-		pnts[i].p3_vecPreRot.z = 0.0f;
+		pnts[i].p3_vecPreRot = world_position ? *world_position : vector{0.0f, 0.0f, 0.0f};
 	}
 
 
@@ -2662,6 +2649,20 @@ void GL4Renderer::DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
 	pnts[3].p3_sy = y2;
 	pnts[3].p3_u = u0;
 	pnts[3].p3_v = v1;
+
+	// World-space fog needs the actual camera-facing quad, not one position
+	// repeated at all four corners. Reconstruct each corner from the projected
+	// coordinates and eye-space depth after screen clipping has been applied.
+	if (world_position)
+	{
+		for (int i = 0; i < 4; i++)
+		{
+			pnts[i].p3_vec.x = ((pnts[i].p3_sx - Window_cx) / Window_w2) * zval;
+			pnts[i].p3_vec.y = -((pnts[i].p3_sy - Window_cy) / Window_h2) * zval;
+			pnts[i].p3_vec.z = zval;
+			g3_SetPointPreRotFromView(&pnts[i]);
+		}
+	}
 
 	ptr_pnts[0] = &pnts[0];
 	ptr_pnts[1] = &pnts[1];

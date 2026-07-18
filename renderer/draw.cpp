@@ -346,7 +346,8 @@ void g3_DrawBitmap(vector *pos,float width,float height,int bm,int color)
 	const bool suppress_motion_vectors = PolymodelMotionHasActiveObject();
 	if (suppress_motion_vectors)
 		rend_SuspendMotionVectorWrites();
-	rend_DrawScaledBitmapWithZ(x1, y1, x2, y2, bm, u0, v0, u1, v1, pnt.p3_z, color);
+	rend_DrawScaledBitmapWithZ(x1, y1, x2, y2, bm, u0, v0, u1, v1, pnt.p3_z,
+		color, nullptr, pos);
 	if (suppress_motion_vectors)
 		rend_ResumeMotionVectorWrites();
 }
@@ -397,6 +398,7 @@ void g3_DrawRotatedBitmap(vector *pos,angle rot_angle,float width,float height,i
 		rot_points[i].p3_motion_prev_world_valid = 0;
 		rot_points[i].p3_l = 1.0;
 		rot_points[i].p3_vec += pnt.p3_vec;
+		g3_SetPointPreRotFromView(&rot_points[i]);
 
 		g3_CodePoint(&rot_points[i]);
 		pntlist[i] = &rot_points[i];

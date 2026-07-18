@@ -235,6 +235,11 @@ g3Codes g3_CheckCodes(int nv,g3Point **pointlist);
 //rotates a point. returns codes.  does not check if already rotated
 ubyte g3_RotatePoint(g3Point *dest,vector *src);
 
+// Reconstructs the source-space position represented by a point's current
+// view-space coordinates. This is used by geometry builders that construct
+// camera-facing vertices after rotating their center point.
+void g3_SetPointPreRotFromView(g3Point *point);
+
 //projects a point
 void g3_ProjectPoint(g3Point *point);
 

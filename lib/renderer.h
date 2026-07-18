@@ -142,8 +142,6 @@ struct renderer_per_pixel_light
 void rend_SetLighting(light_state);
 void rend_SetPerPixelLightingDirection(const vector *lightdir);
 void rend_SetPerPixelDynamicLighting(const vector *face_normal, int count, const renderer_per_pixel_light *lights);
-void rend_SetPerPixelSpecularMode(int mode);
-void rend_SetPerPixelSpecularMap(int handle);
 
 enum color_model
 {
@@ -538,6 +536,7 @@ struct renderer_room_fog_state
 	bool enabled;
 	bool viewer_inside;
 	float viewer_position[3];
+	float viewer_forward[3];
 	float color[3];
 	float depth;
 	float intensity;
@@ -632,7 +631,8 @@ void rend_RegisterResourceReleaseCallback(renderer_resource_release_callback cal
 void rend_DrawScaledBitmap (int x1,int y1,int x2,int y2,int bm,float u0,float v0,float u1,float v1,int color=-1,float *alphas=NULL);
 
 void rend_DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
-	int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas = nullptr);
+	int bm, float u0, float v0, float u1, float v1, float zval, int color,
+	float* alphas = nullptr, const vector* world_position = nullptr);
 
 // Sets the state of bilinear filtering for our textures
 void rend_SetFiltering (sbyte state);

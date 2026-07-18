@@ -161,8 +161,18 @@ void SetupRoomFog (room *rp,vector *eye,matrix *orient,int viewer_room);
 bool BeginRoomMaterialFog(room *rp, const vector *eye, int viewer_room,
 	float intensity);
 bool BeginCurrentViewRoomMaterialFog(room *rp, float intensity);
+bool BeginRoomnumMaterialFog(int roomnum, float intensity);
 void EndRoomMaterialFog();
 bool RoomMaterialFogActive();
+
+class RoomMaterialFogScope
+{
+	bool owns_state = false;
+
+public:
+	explicit RoomMaterialFogScope(int roomnum, float intensity = 1.0f);
+	~RoomMaterialFogScope();
+};
 
 //Draw the specified face
 //Parameters:	rp - pointer to the room the face is un

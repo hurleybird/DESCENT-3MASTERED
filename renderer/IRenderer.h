@@ -105,8 +105,6 @@ public:
 	virtual void SetPerPixelLightingDirection(const vector *lightdir) = 0;
 	virtual void SetPerPixelDynamicLighting(const vector *face_normal, int count,
 		const renderer_per_pixel_light *lights) = 0;
-	virtual void SetPerPixelSpecularMode(int mode) {}
-	virtual void SetPerPixelSpecularMap(int handle) {}
 
 	// Adds a bias to each coordinates z value.  This is useful for making 2d bitmaps
 	// get drawn without being clipped by the zbuffer
@@ -214,7 +212,7 @@ public:
 	// NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color
 	virtual void DrawScaledBitmap(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, int color = -1, float* alphas = nullptr) = 0;
 
-	virtual void DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas = nullptr) = 0;
+	virtual void DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas = nullptr, const vector* world_position = nullptr) = 0;
 
 	//	given a chunked bitmap, renders it.
 	virtual void DrawChunkedBitmap(chunked_bitmap* chunk, int x, int y, ubyte alpha) = 0;

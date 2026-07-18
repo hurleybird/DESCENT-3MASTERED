@@ -1324,12 +1324,14 @@ struct VisFireballBatchKey
 	int bitmap_handle;
 	sbyte alpha_type;
 	bool soft_particles;
+	int roomnum;
 
 	bool Equals(const VisFireballBatchKey& other) const
 	{
 		return bitmap_handle == other.bitmap_handle &&
 			alpha_type == other.alpha_type &&
-			soft_particles == other.soft_particles;
+			soft_particles == other.soft_particles &&
+			roomnum == other.roomnum;
 	}
 };
 
@@ -1354,13 +1356,26 @@ struct VisWeatherBatchKey
 	sbyte alpha_type;
 	bool soft_particles;
 	bool zbuffer_state;
+	int roomnum;
 
 	bool Equals(const VisWeatherBatchKey& other) const
 	{
 		return bitmap_handle == other.bitmap_handle &&
 			alpha_type == other.alpha_type &&
 			soft_particles == other.soft_particles &&
-			zbuffer_state == other.zbuffer_state;
+			zbuffer_state == other.zbuffer_state &&
+			roomnum == other.roomnum;
+	}
+};
+
+struct VisWeatherLineBatchKey
+{
+	bool soft_particles;
+	int roomnum;
+
+	bool Equals(const VisWeatherLineBatchKey& other) const
+	{
+		return soft_particles == other.soft_particles && roomnum == other.roomnum;
 	}
 };
 
@@ -1381,12 +1396,14 @@ struct VisSmokeTrailBatchKey
 	int bitmap_handle;
 	sbyte alpha_type;
 	bool soft_particles;
+	int roomnum;
 
 	bool Equals(const VisSmokeTrailBatchKey& other) const
 	{
 		return bitmap_handle == other.bitmap_handle &&
 			alpha_type == other.alpha_type &&
-			soft_particles == other.soft_particles;
+			soft_particles == other.soft_particles &&
+			roomnum == other.roomnum;
 	}
 };
 
@@ -1395,12 +1412,14 @@ struct VisMassDriverBatchKey
 	int bitmap_handle;
 	sbyte alpha_type;
 	bool soft_particles;
+	int roomnum;
 
 	bool Equals(const VisMassDriverBatchKey& other) const
 	{
 		return bitmap_handle == other.bitmap_handle &&
 			alpha_type == other.alpha_type &&
-			soft_particles == other.soft_particles;
+			soft_particles == other.soft_particles &&
+			roomnum == other.roomnum;
 	}
 };
 
@@ -1446,7 +1465,7 @@ static bool VisWeather_quad_batch_valid = false;
 static VisWeatherBatchKey VisWeather_quad_batch_key = {};
 static std::vector<VisFireballBatchItem> VisWeather_quad_batch_items;
 static bool VisWeather_line_batch_valid = false;
-static bool VisWeather_line_batch_soft = false;
+static VisWeatherLineBatchKey VisWeather_line_batch_key = {};
 static std::vector<VisWeatherLineBatchItem> VisWeather_line_batch_items;
 static bool VisSmokeTrail_batch_valid = false;
 static VisSmokeTrailBatchKey VisSmokeTrail_batch_key = {};
@@ -2024,6 +2043,7 @@ static bool VisEffectBuildRotatedBatchItem(VisFireballBatchItem& item, const vec
 		item.points[i].p3_flags = PF_UV | PF_RGBA;
 		item.points[i].p3_l = 1.0f;
 		item.points[i].p3_vec += center.p3_vec;
+		g3_SetPointPreRotFromView(&item.points[i]);
 		g3_CodePoint(&item.points[i]);
 	}
 
@@ -2312,6 +2332,7 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 	key.bitmap_handle = bm_handle;
 	key.alpha_type = batch_alpha_type;
 	key.soft_particles = VisEffectShouldUseSoftParticlesForEffect(vis);
+	key.roomnum = vis->roomnum;
 
 	blend_key = key;
 	blend_key.bitmap_handle = blend_bm_handle;
@@ -2408,7 +2429,7 @@ static bool VisEffectClipAndProjectLineBatchItem(VisWeatherLineBatchItem& item)
 }
 
 static bool VisEffectBuildWeatherLineBatchItem(vis_effect* vis, VisWeatherLineBatchItem& item,
-	bool& soft_particles)
+	VisWeatherLineBatchKey& key)
 {
 	if (vis->id != FADING_LINE_INDEX)
 		return false;
@@ -2448,7 +2469,8 @@ static bool VisEffectBuildWeatherLineBatchItem(vis_effect* vis, VisWeatherLineBa
 	item.points[0].p3_a = (vis->flags & VF_WINDSHIELD_EFFECT) ? 0.3f : (1.0f - norm_time);
 	item.points[1].p3_a = 0.0f;
 
-	soft_particles = false;
+	key.soft_particles = false;
+	key.roomnum = vis->roomnum;
 	return VisEffectClipAndProjectLineBatchItem(item);
 }
 
@@ -2543,6 +2565,7 @@ static bool VisEffectBuildWeatherQuadBatchItem(vis_effect* vis, VisWeatherBatchK
 	key.soft_particles = (vis->id == SNOWFLAKE_INDEX) ?
 		VisEffectShouldUseSoftSnowParticles(zbuffer_state) : false;
 	key.zbuffer_state = zbuffer_state;
+	key.roomnum = vis->roomnum;
 
 	return VisEffectClipAndProjectBatchItem(item, 0.0f, key.soft_particles);
 }
@@ -2631,6 +2654,7 @@ static bool VisEffectBuildSmokeTrailBatchItem(vis_effect* vis, VisSmokeTrailBatc
 	key.alpha_type = (GameTextures[texnum].flags & TF_SATURATE) ?
 		AT_SATURATE_TEXTURE_VERTEX : AT_TEXTURE_VERTEX;
 	key.soft_particles = VisEffectShouldUseSoftParticles();
+	key.roomnum = vis->roomnum;
 
 	return VisEffectProjectBatchItemNoViewportClip(item, 0.0f, key.soft_particles);
 }
@@ -2697,6 +2721,7 @@ static void VisEffectAppendMassDriverTubeBatchParts(const vis_effect* vis, const
 	key.bitmap_handle = bm_handle;
 	key.alpha_type = AT_SATURATE_TEXTURE_VERTEX;
 	key.soft_particles = false;
+	key.roomnum = vis->roomnum;
 
 	for (int k = 0; k < circle_pieces; k++)
 	{
@@ -2783,6 +2808,7 @@ static bool VisEffectBuildMassDriverBatchParts(vis_effect* vis, std::vector<VisM
 	trail_key.bitmap_handle = trail_bm_handle;
 	trail_key.alpha_type = AT_SATURATE_TEXTURE_VERTEX;
 	trail_key.soft_particles = false;
+	trail_key.roomnum = vis->roomnum;
 
 	const int int_gametime = (int)Gametime;
 	const int frameroll = (int)((Gametime - int_gametime) * -(65536 * 4));
@@ -2821,6 +2847,8 @@ static void FlushVisFireballBatchesNow()
 		marker = marker_buffer;
 	}
 	PERF_MARKER_SCOPE(marker);
+	RoomMaterialFogScope material_fog(Close_screen_rendering_late ? -1 :
+		VisFireball_batch_key.roomnum);
 
 	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
 
@@ -2872,6 +2900,8 @@ static void FlushVisSmokeTrailBatchesNow()
 		marker = marker_buffer;
 	}
 	PERF_MARKER_SCOPE(marker);
+	RoomMaterialFogScope material_fog(Close_screen_rendering_late ? -1 :
+		VisSmokeTrail_batch_key.roomnum);
 
 	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
 
@@ -2923,6 +2953,8 @@ static void FlushVisMassDriverBatchesNow()
 		marker = marker_buffer;
 	}
 	PERF_MARKER_SCOPE(marker);
+	RoomMaterialFogScope material_fog(Close_screen_rendering_late ? -1 :
+		VisMassDriver_batch_key.roomnum);
 
 	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
 
@@ -2974,6 +3006,8 @@ static void FlushVisWeatherQuadBatchesNow()
 		marker = marker_buffer;
 	}
 	PERF_MARKER_SCOPE(marker);
+	RoomMaterialFogScope material_fog(Close_screen_rendering_late ? -1 :
+		VisWeather_quad_batch_key.roomnum);
 
 	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
 
@@ -3027,6 +3061,8 @@ static void FlushVisWeatherLineBatchesNow()
 		marker = marker_buffer;
 	}
 	PERF_MARKER_SCOPE(marker);
+	RoomMaterialFogScope material_fog(Close_screen_rendering_late ? -1 :
+		VisWeather_line_batch_key.roomnum);
 
 	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
 
@@ -3039,7 +3075,7 @@ static void FlushVisWeatherLineBatchesNow()
 	rend_SetZBufferState(1);
 	rend_SetZBufferWriteMask(0);
 	rend_SetAOSuppression(1.0f);
-	rend_SetSoftParticleState(VisWeather_line_batch_soft ? 1 : 0);
+	rend_SetSoftParticleState(VisWeather_line_batch_key.soft_particles ? 1 : 0);
 
 	std::vector<renderer_line_batch_item> renderer_items;
 	renderer_items.resize(VisWeather_line_batch_items.size());
@@ -3122,19 +3158,20 @@ static void QueueVisWeatherQuadBatchItem(const VisWeatherBatchKey& key, const Vi
 	VisWeather_quad_batch_items.push_back(item);
 }
 
-static void QueueVisWeatherLineBatchItem(bool soft_particles, const VisWeatherLineBatchItem& item)
+static void QueueVisWeatherLineBatchItem(const VisWeatherLineBatchKey& key,
+	const VisWeatherLineBatchItem& item)
 {
 	FlushVisFireballBatchesNow();
 	FlushVisSmokeTrailBatchesNow();
 	FlushVisMassDriverBatchesNow();
 	FlushVisWeatherQuadBatchesNow();
 
-	if (VisWeather_line_batch_valid && VisWeather_line_batch_soft != soft_particles)
+	if (VisWeather_line_batch_valid && !VisWeather_line_batch_key.Equals(key))
 		FlushVisWeatherLineBatchesNow();
 
 	if (!VisWeather_line_batch_valid)
 	{
-		VisWeather_line_batch_soft = soft_particles;
+		VisWeather_line_batch_key = key;
 		VisWeather_line_batch_valid = true;
 	}
 
@@ -3238,10 +3275,10 @@ void DrawVisEffectMaybeBatched(vis_effect* vis)
 		if (vis->id == FADING_LINE_INDEX)
 		{
 			VisWeatherLineBatchItem line_item = {};
-			bool soft_particles = false;
-			if (VisEffectBuildWeatherLineBatchItem(vis, line_item, soft_particles))
+			VisWeatherLineBatchKey line_key = {};
+			if (VisEffectBuildWeatherLineBatchItem(vis, line_item, line_key))
 			{
-				QueueVisWeatherLineBatchItem(soft_particles, line_item);
+				QueueVisWeatherLineBatchItem(line_key, line_item);
 				return;
 			}
 		}
@@ -3861,6 +3898,7 @@ void DrawVisMassDriverEffect(vis_effect* vis, bool f_boss)
 void DrawVisEffect(vis_effect* vis)
 {
 	ASSERT(vis->type != VIS_NONE);
+	RoomMaterialFogScope material_fog(Close_screen_rendering_late ? -1 : vis->roomnum);
 	renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
 
 	// First check to see if these are special types

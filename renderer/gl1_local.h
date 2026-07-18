@@ -391,7 +391,7 @@ public:
 	// NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color
 	void DrawScaledBitmap(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, int color = -1, float* alphas = nullptr) override;
 
-	void DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas = nullptr) override;
+	void DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas = nullptr, const vector* world_position = nullptr) override;
 
 	//	given a chunked bitmap, renders it.
 	void DrawChunkedBitmap(chunked_bitmap* chunk, int x, int y, ubyte alpha) override;

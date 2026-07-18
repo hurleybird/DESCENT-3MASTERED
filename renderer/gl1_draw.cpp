@@ -505,8 +505,10 @@ void GLCompatibilityRenderer::DrawScaledBitmap(int x1, int y1, int x2, int y2,
 }
 
 void GLCompatibilityRenderer::DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
-	int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas)
+	int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas,
+	const vector* world_position)
 {
+	(void)world_position;
 	g3Point* ptr_pnts[4];
 	g3Point pnts[4];
 	float r, g, b;

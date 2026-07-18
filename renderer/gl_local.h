@@ -357,6 +357,7 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_room_fog_enabled_uniforms[8] = {};
 	GLint drawshader_room_fog_viewer_inside_uniforms[8] = {};
 	GLint drawshader_room_fog_viewer_position_uniforms[8] = {};
+	GLint drawshader_room_fog_viewer_forward_uniforms[8] = {};
 	GLint drawshader_room_fog_color_uniforms[8] = {};
 	GLint drawshader_room_fog_depth_uniforms[8] = {};
 	GLint drawshader_room_fog_intensity_uniforms[8] = {};
@@ -385,8 +386,6 @@ class GL4Renderer : public IRenderer
 	vector per_pixel_light_direction = { 0, 0, -1 };
 	vector per_pixel_dynamic_face_normal = { 0, 0, 1 };
 	int per_pixel_dynamic_light_count = 0;
-	int per_pixel_specular_mode = 0;
-	int per_pixel_specular_map = -1;
 	GLfloat per_pixel_dynamic_positions[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
 	GLfloat per_pixel_dynamic_colors[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS][3] = {};
 	GLfloat per_pixel_dynamic_radii[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS] = {};
@@ -464,6 +463,7 @@ class GL4Renderer : public IRenderer
 	bool room_fog_overlay = false;
 	bool room_fog_viewer_inside = false;
 	float room_fog_viewer_position[3] = {};
+	float room_fog_viewer_forward[3] = {};
 	float room_fog_color[3] = {};
 	float room_fog_depth = 1.0f;
 	float room_fog_intensity = 1.0f;
@@ -676,8 +676,6 @@ public:
 	void SetPerPixelLightingDirection(const vector *lightdir) override;
 	void SetPerPixelDynamicLighting(const vector *face_normal, int count,
 		const renderer_per_pixel_light *lights) override;
-	void SetPerPixelSpecularMode(int mode) override;
-	void SetPerPixelSpecularMap(int handle) override;
 
 	// Adds a bias to each coordinates z value.  This is useful for making 2d bitmaps
 	// get drawn without being clipped by the zbuffer
@@ -777,7 +775,7 @@ public:
 	// NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color
 	void DrawScaledBitmap(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, int color = -1, float* alphas = nullptr) override;
 
-	void DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas = nullptr) override;
+	void DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas = nullptr, const vector* world_position = nullptr) override;
 
 	//	given a chunked bitmap, renders it.
 	void DrawChunkedBitmap(chunked_bitmap* chunk, int x, int y, ubyte alpha) override;

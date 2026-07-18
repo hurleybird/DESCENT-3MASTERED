@@ -13,9 +13,6 @@ uniform sampler2D colortexture;
 #if defined(USE_LIGHTMAP)
 uniform sampler2D lightmaptexture;
 #endif
-#if defined(USE_SPECULAR)
-uniform sampler2D specularmasktexture;
-#endif
 #endif
 
 uniform int phong_enabled;
@@ -74,6 +71,7 @@ layout(std430, binding = 5) readonly buffer RoomFogPortalBuffer
 uniform int room_fog_enabled;
 uniform int room_fog_viewer_inside;
 uniform vec3 room_fog_viewer_position;
+uniform vec3 room_fog_viewer_forward;
 uniform vec3 room_fog_color;
 uniform float room_fog_depth;
 uniform float room_fog_intensity;
@@ -259,46 +257,6 @@ vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 	return clamp(lightmap_color + dynamic_color, vec3(0.0), vec3(1.0));
 }
 
-#if defined(USE_SPECULAR)
-vec3 ApplyDynamicLightmapLightingFromView(vec3 lightmap_color, vec3 view_position)
-{
-	if (dynamic_light_count == 0)
-		return lightmap_color;
-
-	vec3 dynamic_color = vec3(0.0);
-
-	for (int i = 0; i < 8; i++)
-	{
-		if (i >= dynamic_light_count)
-			break;
-
-		vec3 light_delta = view_position - dynamic_light_positions[i];
-		float radius = max(dynamic_light_radii[i], 0.0001);
-		float distance = length(light_delta);
-		vec3 light_vector = (distance > 0.0001) ? light_delta / distance : vec3(0.0, 0.0, 1.0);
-		float scalar = 1.0 - (distance / radius);
-		if (scalar <= 0.0)
-			continue;
-		scalar = pow(scalar, max(dynamic_light_falloffs[i], 0.0001));
-
-		if (dynamic_light_directional[i] != 0)
-		{
-			vec3 light_direction = normalize(dynamic_light_directions[i]);
-			float direction_dot = dot(light_vector, light_direction);
-			float dot_range = dynamic_light_dot_ranges[i];
-			if (direction_dot < dot_range)
-				continue;
-
-			scalar *= (direction_dot - dot_range) / max(1.0 - dot_range, 0.0001);
-		}
-
-		dynamic_color += dynamic_light_colors[i] * scalar;
-	}
-
-	return clamp(lightmap_color + dynamic_color, vec3(0.0), vec3(1.0));
-}
-#endif
-
 float SoftParticleEyeDepth(float depth)
 {
 	return 1.0 / max(1.0 - clamp(depth, 0.0, 0.9999), 0.0001);
@@ -311,7 +269,10 @@ float RoomFogAmount(vec3 world_position)
 	if (segment_length <= 0.0001)
 		return 0.0;
 
-	float fog_length = segment_length;
+	// The original room fog density is measured along camera-forward depth,
+	// rather than Euclidean ray length. Preserve that authored presentation in
+	// the per-fragment volume path so oblique walls do not become over-fogged.
+	float fog_length = max(dot(segment, room_fog_viewer_forward), 0.0);
 	if (room_fog_viewer_inside == 0)
 	{
 		float first_entry = 2.0;
@@ -405,8 +366,7 @@ void main()
 		vec4 base_color = texture(colortexture, outuv.xy / outuv.z);
 		if (specular_data.debug_tint > 0.5)
 		{
-			float debug_mask = per_pixel_specular_enabled == 2 ?
-				texture(specularmasktexture, outuv.xy / outuv.z).a : base_color.a;
+			float debug_mask = base_color.a;
 			float mask_alpha = (debug_mask > 0.001) ?
 				clamp(debug_mask * 3.0, 0.35, 0.9) : 0.0;
 			vec3 tint_color = (specular_data.debug_authored > 0.5) ?
@@ -417,22 +377,8 @@ void main()
 		{
 			vec3 lightmap_color = texture(lightmaptexture, outuv2.xy / outuv2.z).rgb;
 			vec3 specular_color = ApplyPerPixelSpecular(lightmap_color);
-			float mask_alpha = base_color.a;
-			if (per_pixel_specular_enabled == 2)
-			{
-				mask_alpha = texture(specularmasktexture, outuv.xy / outuv.z).a;
-				vec3 view_position = out_motion_world_position.xyz / max(out_motion_world_position.w, 0.0001);
-				lightmap_color = ApplyDynamicLightmapLightingFromView(lightmap_color, view_position);
-				vec3 lit_base = base_color.rgb * lightmap_color * vertex_color.rgb;
-				float specular_alpha = clamp(mask_alpha * specular_data.alpha_strength, 0.0, 1.0);
-				color = vec4(clamp(lit_base + specular_color * specular_alpha, vec3(0.0), vec3(1.0)),
-					vertex_color.a);
-			}
-			else
-			{
-				float specular_alpha = clamp(mask_alpha * specular_data.alpha_strength, 0.0, 1.0);
-				color = vec4(specular_color, clamp(specular_alpha * vertex_color.a, 0.0, 1.0));
-			}
+			float specular_alpha = clamp(base_color.a * specular_data.alpha_strength, 0.0, 1.0);
+			color = vec4(specular_color, clamp(specular_alpha * vertex_color.a, 0.0, 1.0));
 		}
 		else
 		{
@@ -484,7 +430,13 @@ void main()
 		else if (fog_composite_mode == 1)
 			color.rgb *= 1.0 - room_fog_amount;
 		else if (fog_composite_mode == 3)
+		{
+			// Destination-multiplying materials (scorches, dark smoke, and
+			// similar overlays) must converge to the neutral multiplier as the
+			// underlying surface disappears into fog.
+			color.rgb = mix(vec3(1.0), color.rgb, 1.0 - room_fog_amount);
 			room_fog_amount = 0.0;
+		}
 		else
 			color.rgb = mix(color.rgb, room_fog_color, room_fog_amount);
 	}
@@ -505,7 +457,9 @@ void main()
 		float mag = clamp((fog_depth - fog_start) / max(fog_end - fog_start, 0.0001), 0.0, 1.0);
 		if (fog_composite_mode == 1)
 			color.rgb *= 1.0 - mag;
-		else if (fog_composite_mode != 3)
+		else if (fog_composite_mode == 3)
+			color.rgb = mix(vec3(1.0), color.rgb, 1.0 - mag);
+		else
 			color.rgb = mix(color.rgb, fog.color.rgb, mag);
 		bloom_mask = max(bloom_mask, mag);
 	#endif

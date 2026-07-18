@@ -107,6 +107,48 @@ int MainMenu()
 		}
 	}
 
+	// Automated renderer captures must never fall through into interactive UI.
+	// Resolve the pilot and load-game request before creating the menu so an
+	// incomplete harness invocation fails closed instead of opening PilotSelect.
+	static bool first_time = true;
+	if (first_time)
+	{
+		int pilotarg = FindArg("+name");
+		if (!pilotarg)
+			pilotarg = FindArg("-pilot");
+
+		if (pilotarg)
+		{
+			char pfilename[_MAX_FNAME];
+			strcpy(pfilename, GameArgs[pilotarg + 1]);
+			strcat(pfilename, ".plt");
+			Current_pilot.set_filename(pfilename);
+			PltReadFile(&Current_pilot, true);
+			Current_pilot.commit_state();
+		}
+		first_time = false;
+	}
+
+	char pfilename[_MAX_FNAME];
+	Current_pilot.get_filename(pfilename);
+	const bool automated_capture = FindArg("-capture-frame") ||
+		FindArg("-screenshot-frame");
+	if (automated_capture)
+	{
+		if (pfilename[0] == '\0' || !strcmp(pfilename, " "))
+		{
+			AutomatedCaptureLog("capture aborted: no pilot argument");
+			Mem_quick_exit = 1;
+			return 1;
+		}
+		SetGameMode(GM_NONE);
+		if (ProcessCommandLine())
+			return 0;
+		AutomatedCaptureLog("capture aborted: invalid or missing loadgame argument");
+		Mem_quick_exit = 1;
+		return 1;
+	}
+
 	// setup screen
 	SetScreenMode(SM_MENU);
 	// create interface
@@ -128,28 +170,6 @@ int MainMenu()
 	//	page in ui data.
 	newuiCore_PageInBitmaps();
 	// do special junk.
-
-		//Only check for pilot arg first time, not every tme
-	static bool first_time = true;
-	if (first_time)
-	{
-		int pilotarg = FindArg("+name");
-		if (!pilotarg)
-			pilotarg = FindArg("-pilot");
-
-		if (pilotarg)
-		{
-			char pfilename[_MAX_FNAME];
-			strcpy(pfilename, GameArgs[pilotarg + 1]);
-			strcat(pfilename, ".plt");
-			Current_pilot.set_filename(pfilename);
-			PltReadFile(&Current_pilot, true);
-			Current_pilot.commit_state();
-		}
-		first_time = false;
-	}
-	char pfilename[_MAX_FNAME];
-	Current_pilot.get_filename(pfilename);
 
 	if ((pfilename[0] == '\0') || (strlen(pfilename) == 0) || (!strcmp(pfilename, " ")))
 		PilotSelect();

@@ -2852,21 +2852,6 @@ void GL4Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int coun
 		per_pixel_dynamic_directions, per_pixel_dynamic_dot_ranges, per_pixel_dynamic_directional);
 }
 
-void GL4Renderer::SetPerPixelSpecularMode(int mode)
-{
-	int clamped_mode = std::max(0, std::min(mode, 2));
-	if (per_pixel_specular_mode == clamped_mode)
-		return;
-
-	per_pixel_specular_mode = clamped_mode;
-	legacy_draw_uniforms_dirty = true;
-}
-
-void GL4Renderer::SetPerPixelSpecularMap(int handle)
-{
-	per_pixel_specular_map = handle;
-}
-
 void GL4Renderer::SetColorModel(color_model state)
 {
 	if (state == OpenGL_state.cur_color_model)

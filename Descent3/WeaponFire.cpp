@@ -56,6 +56,7 @@
 #include "BOA.h"
 #include "vibeinterface.h"
 #include "renderer.h"
+#include "render.h"
 #include "../renderer/HardwareInternal.h"
 
 bool AreObjectsAttached(const object* obj1, const object* obj2)
@@ -2166,6 +2167,7 @@ struct WeaponStreamerBatchItem
 {
 	g3Point points[2];
 	renderer_line_batch_item item;
+	int roomnum;
 
 	void RefreshItem()
 	{
@@ -2215,11 +2217,13 @@ static bool ClipAndProjectWeaponStreamerBatchItem(WeaponStreamerBatchItem& item)
 	return true;
 }
 
-static bool QueueWeaponStreamerBatchItem(const g3Point* p0, const g3Point* p1)
+static bool QueueWeaponStreamerBatchItem(const g3Point* p0, const g3Point* p1,
+	int roomnum)
 {
 	WeaponStreamerBatchItem item = {};
 	item.points[0] = *p0;
 	item.points[1] = *p1;
+	item.roomnum = roomnum;
 
 	if (!ClipAndProjectWeaponStreamerBatchItem(item))
 		return false;
@@ -2240,14 +2244,27 @@ void FlushWeaponStreamerBatches()
 	rend_SetZBufferWriteMask(0);
 	rend_SetAOSuppression(1.0f);
 
-	std::vector<renderer_line_batch_item> renderer_items(WeaponStreamer_batch_items.size());
-	for (size_t i = 0; i < WeaponStreamer_batch_items.size(); i++)
+	for (size_t first = 0; first < WeaponStreamer_batch_items.size();)
 	{
-		WeaponStreamer_batch_items[i].RefreshItem();
-		renderer_items[i] = WeaponStreamer_batch_items[i].item;
-	}
+		const int roomnum = WeaponStreamer_batch_items[first].roomnum;
+		size_t end = first + 1;
+		while (end < WeaponStreamer_batch_items.size() &&
+			WeaponStreamer_batch_items[end].roomnum == roomnum)
+		{
+			end++;
+		}
 
-	rend_DrawSpecialLineBatch(renderer_items.data(), (int)renderer_items.size());
+		std::vector<renderer_line_batch_item> renderer_items(end - first);
+		for (size_t i = first; i < end; i++)
+		{
+			WeaponStreamer_batch_items[i].RefreshItem();
+			renderer_items[i - first] = WeaponStreamer_batch_items[i].item;
+		}
+
+		RoomMaterialFogScope material_fog(roomnum);
+		rend_DrawSpecialLineBatch(renderer_items.data(), (int)renderer_items.size());
+		first = end;
+	}
 
 	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferWriteMask(1);
@@ -2306,7 +2323,7 @@ void DrawWeaponStreamer(object* obj)
 	pnts[0].p3_a = (1.0 - norm_time) * .3f;
 	pnts[1].p3_a = 0;
 
-	if (QueueWeaponStreamerBatchItem(&pnts[0], &pnts[1]))
+	if (QueueWeaponStreamerBatchItem(&pnts[0], &pnts[1], obj->roomnum))
 	{
 		rend_SetAOSuppression(0.0f);
 		rend_SetZBufferWriteMask(1);

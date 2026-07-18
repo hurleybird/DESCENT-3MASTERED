@@ -3186,23 +3186,11 @@ static void PrepareSpecularDynamicLight(renderer_per_pixel_light& light)
 	}
 }
 
-static bool PerPixelSpecularMaterialEnabled()
-{
-	return Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender();
-}
-
 static bool UseFieldStaticSpecularForFace(face* fp)
 {
 	return Render_per_pixel_field_static_specular &&
 		(!Render_per_pixel_field_missing_only_static_specular ||
 		 fp->special_handle == BAD_SPECIAL_FACE_INDEX);
-}
-
-static bool UsePerPixelSpecularMaterialForFace(room* rp, face* fp)
-{
-	return PerPixelSpecularMaterialEnabled() && !Render_mirror_for_room &&
-		SpecularShouldQueueFace(rp, fp) && fp->lmi_handle != BAD_LMI_INDEX &&
-		SpecularTextureHasMask(fp);
 }
 
 static bool BuildPerPixelSpecularState(room* rp, int face_index, SpecularBlock& specblock,
@@ -3793,10 +3781,35 @@ bool BeginRoomMaterialFog(room* rp, const vector* eye, int viewer_room,
 {
 	if (!rp || !eye || !(rp->flags & RF_FOG) || !Detail_settings.Fog_enabled ||
 		!UseHardware || !rend_CanUseNewrender() || In_editor_mode ||
-		Render_mirror_for_room || rp->fog_depth <= 0.0f)
+		rp->fog_depth <= 0.0f)
 	{
 		return false;
 	}
+
+	const face* mirror_face = nullptr;
+	const vector* mirror_point = nullptr;
+	if (Render_mirror_for_room)
+	{
+		if (Mirror_room < 0 || Mirror_room > Highest_room_index ||
+			!Rooms[Mirror_room].used || Rooms[Mirror_room].mirror_face < 0 ||
+			Rooms[Mirror_room].mirror_face >= Rooms[Mirror_room].num_faces)
+		{
+			return false;
+		}
+		mirror_face = &Rooms[Mirror_room].faces[Rooms[Mirror_room].mirror_face];
+		if (!mirror_face->face_verts || mirror_face->num_verts < 3)
+			return false;
+		mirror_point = &Rooms[Mirror_room].verts[mirror_face->face_verts[0]];
+	}
+
+	auto fog_world_position = [&](const vector& source)
+	{
+		if (!mirror_face)
+			return source;
+		const float distance = vm_DotProduct(&source, &mirror_face->normal) -
+			vm_DotProduct(mirror_point, &mirror_face->normal);
+		return source - (mirror_face->normal * (distance * 2.0f));
+	};
 
 	thread_local std::vector<renderer_room_fog_triangle> portal_triangles;
 	portal_triangles.clear();
@@ -3813,11 +3826,11 @@ bool BeginRoomMaterialFog(room* rp, const vector* eye, int viewer_room,
 		const face* fp = &rp->faces[facenum];
 		if (!fp->face_verts || fp->num_verts < 3)
 			continue;
-		const vector& a = rp->verts[fp->face_verts[0]];
+		const vector a = fog_world_position(rp->verts[fp->face_verts[0]]);
 		for (int triangle = 0; triangle < fp->num_verts - 2; triangle++)
 		{
-			const vector& b = rp->verts[fp->face_verts[triangle + 1]];
-			const vector& c = rp->verts[fp->face_verts[triangle + 2]];
+			const vector b = fog_world_position(rp->verts[fp->face_verts[triangle + 1]]);
+			const vector c = fog_world_position(rp->verts[fp->face_verts[triangle + 2]]);
 			renderer_room_fog_triangle item = {};
 			item.a[0] = a.x; item.a[1] = a.y; item.a[2] = a.z;
 			item.b[0] = b.x; item.b[1] = b.y; item.b[2] = b.z;
@@ -3828,10 +3841,13 @@ bool BeginRoomMaterialFog(room* rp, const vector* eye, int viewer_room,
 
 	renderer_room_fog_state state = {};
 	state.enabled = true;
-	state.viewer_inside = viewer_room == (int)(rp - Rooms);
+	state.viewer_inside = !Render_mirror_for_room && viewer_room == (int)(rp - Rooms);
 	state.viewer_position[0] = eye->x;
 	state.viewer_position[1] = eye->y;
 	state.viewer_position[2] = eye->z;
+	state.viewer_forward[0] = Viewer_orient.fvec.x;
+	state.viewer_forward[1] = Viewer_orient.fvec.y;
+	state.viewer_forward[2] = Viewer_orient.fvec.z;
 	state.color[0] = rp->fog_r;
 	state.color[1] = rp->fog_g;
 	state.color[2] = rp->fog_b;
@@ -3848,6 +3864,17 @@ bool BeginCurrentViewRoomMaterialFog(room* rp, float intensity)
 	return BeginRoomMaterialFog(rp, &Viewer_eye, Viewer_roomnum, intensity);
 }
 
+bool BeginRoomnumMaterialFog(int roomnum, float intensity)
+{
+	if (ROOMNUM_OUTSIDE(roomnum) || roomnum < 0 || roomnum > Highest_room_index ||
+		!Rooms[roomnum].used)
+	{
+		return false;
+	}
+
+	return BeginCurrentViewRoomMaterialFog(&Rooms[roomnum], intensity);
+}
+
 void EndRoomMaterialFog()
 {
 	if (!Room_material_fog_active)
@@ -3860,6 +3887,18 @@ void EndRoomMaterialFog()
 bool RoomMaterialFogActive()
 {
 	return Room_material_fog_active;
+}
+
+RoomMaterialFogScope::RoomMaterialFogScope(int roomnum, float intensity)
+{
+	if (!RoomMaterialFogActive())
+		owns_state = BeginRoomnumMaterialFog(roomnum, intensity);
+}
+
+RoomMaterialFogScope::~RoomMaterialFogScope()
+{
+	if (owns_state)
+		EndRoomMaterialFog();
 }
 
 static void QueueDeferredFogAOFaces(room* rp)
@@ -4339,9 +4378,7 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	if (No_render_windows_hack == 1 && fp->portal_num != -1)
 		return false;
 
-	bool spec_face = SpecularShouldQueueFace(rp, fp);
-	if (spec_face && UsePerPixelSpecularMaterialForFace(rp, fp))
-		return false;
+	const bool spec_face = SpecularShouldQueueFace(rp, fp);
 
 	float uchange = 0;
 	float vchange = 0;
@@ -4532,11 +4569,9 @@ void RenderFace(room* rp, int facenum)
 	static int first = 1;
 	static float lm_red[32], lm_green[32], lm_blue[32];
 	bool spec_face = 0;
-	bool specular_material_face = false;
 	bool retained_base_face = false;
 	bool retained_base_face_drawn = false;
 	bool retained_geometry_eligible = false;
-	SpecularBlock specblock = {};
 	face_cc.cc_and = 0xff;
 	face_cc.cc_or = 0;
 #ifdef EDITOR
@@ -4560,7 +4595,6 @@ void RenderFace(room* rp, int facenum)
 
 	if (!Render_mirror_for_room && SpecularShouldQueueFace(rp, fp))
 		spec_face = 1;
-	specular_material_face = spec_face && UsePerPixelSpecularMaterialForFace(rp, fp);
 
 	// Figure out if there is any texture sliding
 	if (GameTextures[fp->tmap].slide_u != 0)
@@ -4641,7 +4675,7 @@ void RenderFace(room* rp, int facenum)
 	}
 	if (face_cc.cc_and)	// This entire face is off the screen
 	{
-		if (spec_face && !specular_material_face && UseSmoothSpecularForFace(fp))
+		if (spec_face && UseSmoothSpecularForFace(fp))
 		{
 			fp->flags |= FF_SPEC_INVISIBLE;
 			UpdateSpecularFace(rp, fp);
@@ -4760,24 +4794,7 @@ void RenderFace(room* rp, int facenum)
 	}
 
 	//Draw the damn thing
-	if (specular_material_face)
-	{
-		if (BuildPerPixelSpecularState(rp, facenum, specblock, per_pixel_lights, per_pixel_light_count))
-		{
-			SetSpecularNormalsForFace(rp, fp, pointlist);
-			SetFieldSpecularSourcesForFace(rp, fp, pointlist);
-			rend_UpdateSpecular(&specblock);
-			rend_SetPerPixelSpecularMap(SpecularBitmapHandle(fp));
-			rend_SetPerPixelSpecularMode(2);
-			if (per_pixel_light_count > 0)
-				rend_SetPerPixelDynamicLighting(&fp->normal, per_pixel_light_count, per_pixel_lights);
-		}
-		else
-		{
-			specular_material_face = false;
-		}
-	}
-	else if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender())
+	if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender())
 	{
 		per_pixel_light_count = GetPerPixelLightmapLights(fp->lmi_handle, per_pixel_lights,
 			RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
@@ -4801,7 +4818,7 @@ void RenderFace(room* rp, int facenum)
 		if (RetainedRoomDrawFaces(rp, &facenum, 1, bm_handle, uchange, vchange,
 			Room_light_val, retained_lightmap,
 			face_cc.cc_or & RETAINED_ROOM_CLIP_CODES,
-			specular_material_face))
+			false))
 		{
 			drawn = 1;
 			retained_base_face_drawn = true;
@@ -4814,11 +4831,6 @@ void RenderFace(room* rp, int facenum)
 		drawn = g3_DrawPoly(fp->num_verts, pointlist, bm_handle, MAP_TYPE_BITMAP, &face_cc);
 	}
 	rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
-	if (specular_material_face)
-	{
-		rend_SetPerPixelSpecularMode(0);
-		rend_SetPerPixelSpecularMap(-1);
-	}
 	if (per_pixel_light_count > 0)
 		rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 
@@ -4835,11 +4847,7 @@ void RenderFace(room* rp, int facenum)
 	// Draw a specular face
 	if (!Render_mirror_for_room && spec_face)
 	{
-		if (specular_material_face)
-		{
-			// PPX specular was rendered with the opaque material pass.
-		}
-		else if (drawn)
+		if (drawn)
 			UpdateSpecularFace(rp, fp);
 		else
 		{
@@ -5088,8 +5096,7 @@ void RenderRoomUnsorted(room* rp)
 		{
 			if (UseSmoothSpecularForFace(fp))
 			{
-				if (!Render_mirror_for_room && SpecularShouldQueueFace(rp, fp) &&
-					!UsePerPixelSpecularMaterialForFace(rp, fp))
+				if (!Render_mirror_for_room && SpecularShouldQueueFace(rp, fp))
 				{
 					fp->flags |= FF_SPEC_INVISIBLE;
 					UpdateSpecularFace(rp, fp);
@@ -5702,7 +5709,11 @@ void RenderMirroredRoom(room* rp)
 	rend_SetColorModel(CM_MONO);
 	rend_SetLighting(LS_GOURAUD);
 	rend_SetWrapType(WT_WRAP);
+	const bool material_fog = BeginRoomMaterialFog(rp, &Viewer_eye,
+		Viewer_roomnum, Room_light_val);
 	RenderRoomUnsorted(rp);
+	if (material_fog)
+		EndRoomMaterialFog();
 
 	if (restore_index == false)
 	{

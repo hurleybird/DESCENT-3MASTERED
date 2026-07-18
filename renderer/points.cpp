@@ -84,6 +84,21 @@ ubyte g3_RotatePoint(g3Point *dest,vector *src)
 	return g3_CodePoint( dest );
 }
 
+void g3_SetPointPreRotFromView(g3Point *point)
+{
+	vector unscaled_view = point->p3_vec;
+	unscaled_view.x /= Matrix_scale.x;
+	unscaled_view.y /= Matrix_scale.y;
+	unscaled_view.z /= Matrix_scale.z;
+	matrix inverse_view = ~Unscaled_matrix;
+	point->p3_vecPreRot = View_position + (unscaled_view * inverse_view);
+	point->p3_specular_normal_valid = 0;
+	point->p3_specular_field_valid = 0;
+	point->p3_specular_field_count = 0;
+	point->p3_motion_world_valid = 0;
+	point->p3_motion_prev_world_valid = 0;
+}
+
 //projects a point
 void g3_ProjectPoint(g3Point *p)
 {

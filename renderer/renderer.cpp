@@ -565,12 +565,12 @@ void rend_DrawScaledBitmap(int x1, int y1, int x2, int y2, int bm, float u0, flo
 	renderer_inst->DrawScaledBitmap(x1, y1, x2, y2, bm, u0, v0, u1, v1, color, alphas);
 }
 
-void rend_DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas)
+void rend_DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, float zval, int color, float* alphas, const vector* world_position)
 {
 	if (!Renderer_initted)
 		return;
 
-	renderer_inst->DrawScaledBitmapWithZ(x1, y1, x2, y2, bm, u0, v0, u1, v1, zval, color, alphas);
+	renderer_inst->DrawScaledBitmapWithZ(x1, y1, x2, y2, bm, u0, v0, u1, v1, zval, color, alphas, world_position);
 }
 
 // Sets the state of bilinear filtering for our textures
@@ -1337,22 +1337,6 @@ void rend_SetPerPixelDynamicLighting(const vector *face_normal, int count, const
 		return;
 
 	renderer_inst->SetPerPixelDynamicLighting(face_normal, count, lights);
-}
-
-void rend_SetPerPixelSpecularMode(int mode)
-{
-	if (!Renderer_initted)
-		return;
-
-	renderer_inst->SetPerPixelSpecularMode(mode);
-}
-
-void rend_SetPerPixelSpecularMap(int handle)
-{
-	if (!Renderer_initted)
-		return;
-
-	renderer_inst->SetPerPixelSpecularMap(handle);
 }
 
 void rend_SetColorModel(color_model model)
