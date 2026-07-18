@@ -328,6 +328,13 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_retained_base_color_uniforms[8] = {};
 	GLint drawshader_retained_depth_bias_uniforms[8] = {};
 	GLint drawshader_retained_legacy_depth_uniforms[8] = {};
+	GLint drawshader_retained_legacy_world_projection_uniforms[8] = {};
+	GLint drawshader_retained_legacy_view_position_uniforms[8] = {};
+	GLint drawshader_retained_legacy_view_right_uniforms[8] = {};
+	GLint drawshader_retained_legacy_view_up_uniforms[8] = {};
+	GLint drawshader_retained_legacy_view_forward_uniforms[8] = {};
+	GLint drawshader_retained_legacy_viewport_scale_uniforms[8] = {};
+	GLint drawshader_retained_legacy_viewport_center_uniforms[8] = {};
 	GLint drawshader_retained_lighting_mode_uniforms[8] = {};
 	GLint drawshader_retained_vertex_alpha_uniforms[8] = {};
 	GLint drawshader_retained_alpha_scale_uniforms[8] = {};

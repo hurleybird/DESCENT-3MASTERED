@@ -495,6 +495,13 @@ struct renderer_retained_polymodel_draw
 	float uv2_scale[2];
 	float depth_bias;
 	bool legacy_depth;
+	bool legacy_world_projection;
+	float legacy_view_position[3];
+	float legacy_view_right[3];
+	float legacy_view_up[3];
+	float legacy_view_forward[3];
+	float legacy_viewport_scale[2];
+	float legacy_viewport_center[2];
 	int lighting_mode_override;
 	int effect_mode;
 	float effect_alpha_scale;

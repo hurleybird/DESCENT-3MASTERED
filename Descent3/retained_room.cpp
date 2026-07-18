@@ -212,6 +212,35 @@ static void ApplyRetainedRoomClipping(int clip_codes,
 	draw.custom_clip_scale[2] = Matrix_scale.z;
 }
 
+static void ApplyRetainedRoomLegacyProjection(
+	renderer_retained_polymodel_draw& draw)
+{
+	// Room boundaries can meet geometry still submitted through g3's projected
+	// stream. Match its affine w=1 raster contract so shared edges quantize to
+	// the same samples; equivalent NDC positions with varying w are not enough.
+	draw.legacy_world_projection = true;
+	draw.legacy_view_position[0] = View_position.x;
+	draw.legacy_view_position[1] = View_position.y;
+	draw.legacy_view_position[2] = View_position.z;
+	draw.legacy_view_right[0] = View_matrix.rvec.x;
+	draw.legacy_view_right[1] = View_matrix.rvec.y;
+	draw.legacy_view_right[2] = View_matrix.rvec.z;
+	draw.legacy_view_up[0] = View_matrix.uvec.x;
+	draw.legacy_view_up[1] = View_matrix.uvec.y;
+	draw.legacy_view_up[2] = View_matrix.uvec.z;
+	draw.legacy_view_forward[0] = View_matrix.fvec.x;
+	draw.legacy_view_forward[1] = View_matrix.fvec.y;
+	draw.legacy_view_forward[2] = View_matrix.fvec.z;
+	draw.legacy_viewport_scale[0] = Window_width > 0 ?
+		(2.0f * Window_w2) / (float)Window_width : 1.0f;
+	draw.legacy_viewport_scale[1] = Window_height > 0 ?
+		(2.0f * Window_h2) / (float)Window_height : 1.0f;
+	draw.legacy_viewport_center[0] = Window_width > 0 ?
+		(2.0f * Window_cx) / (float)Window_width - 1.0f : 0.0f;
+	draw.legacy_viewport_center[1] = Window_height > 0 ?
+		1.0f - (2.0f * Window_cy) / (float)Window_height : 0.0f;
+}
+
 static void RegisterRetainedRoomReleaseCallback()
 {
 	static bool registered = false;
@@ -672,6 +701,7 @@ bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 	ApplyRetainedRoomTransform(rp, draw);
 	ApplyRetainedRoomDeformation(rp, draw);
 	ApplyRetainedRoomClipping(clip_codes, draw);
+	ApplyRetainedRoomLegacyProjection(draw);
 
 	if (!ranges.empty())
 	{
@@ -756,6 +786,7 @@ bool RetainedRoomDrawFogFaces(room* rp, const int* facenums, int count,
 	ApplyRetainedRoomTransform(rp, draw);
 	ApplyRetainedRoomDeformation(rp, draw);
 	ApplyRetainedRoomClipping(clip_codes, draw);
+	ApplyRetainedRoomLegacyProjection(draw);
 
 	if (!ranges.empty())
 	{

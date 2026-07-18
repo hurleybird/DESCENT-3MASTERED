@@ -1442,6 +1442,13 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_retained_base_color_uniforms[i] = drawshaders[i].FindUniform("retained_base_color");
 		drawshader_retained_depth_bias_uniforms[i] = drawshaders[i].FindUniform("retained_depth_bias");
 		drawshader_retained_legacy_depth_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_depth");
+		drawshader_retained_legacy_world_projection_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_world_projection");
+		drawshader_retained_legacy_view_position_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_view_position");
+		drawshader_retained_legacy_view_right_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_view_right");
+		drawshader_retained_legacy_view_up_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_view_up");
+		drawshader_retained_legacy_view_forward_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_view_forward");
+		drawshader_retained_legacy_viewport_scale_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_viewport_scale");
+		drawshader_retained_legacy_viewport_center_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_viewport_center");
 		drawshader_retained_lighting_mode_uniforms[i] = drawshaders[i].FindUniform("retained_lighting_mode");
 		drawshader_retained_vertex_alpha_uniforms[i] = drawshaders[i].FindUniform("retained_vertex_alpha");
 		drawshader_retained_alpha_scale_uniforms[i] = drawshaders[i].FindUniform("retained_alpha_scale");
@@ -2228,6 +2235,23 @@ bool GL4Renderer::BeginRetainedPolymodelDraw(const renderer_retained_polymodel_d
 	glUniform3fv(drawshader_retained_base_color_uniforms[shader_index], 1, base_color);
 	glUniform1f(drawshader_retained_depth_bias_uniforms[shader_index], draw->depth_bias);
 	glUniform1i(drawshader_retained_legacy_depth_uniforms[shader_index], draw->legacy_depth ? 1 : 0);
+	glUniform1i(drawshader_retained_legacy_world_projection_uniforms[shader_index],
+		draw->legacy_world_projection ? 1 : 0);
+	if (draw->legacy_world_projection)
+	{
+		glUniform3fv(drawshader_retained_legacy_view_position_uniforms[shader_index], 1,
+			draw->legacy_view_position);
+		glUniform3fv(drawshader_retained_legacy_view_right_uniforms[shader_index], 1,
+			draw->legacy_view_right);
+		glUniform3fv(drawshader_retained_legacy_view_up_uniforms[shader_index], 1,
+			draw->legacy_view_up);
+		glUniform3fv(drawshader_retained_legacy_view_forward_uniforms[shader_index], 1,
+			draw->legacy_view_forward);
+		glUniform2fv(drawshader_retained_legacy_viewport_scale_uniforms[shader_index], 1,
+			draw->legacy_viewport_scale);
+		glUniform2fv(drawshader_retained_legacy_viewport_center_uniforms[shader_index], 1,
+			draw->legacy_viewport_center);
+	}
 	glUniform1i(drawshader_retained_lighting_mode_uniforms[shader_index], lighting_mode);
 	if (lighting_mode == 1 && drawshader_light_direction_uniforms[shader_index] != -1)
 	{

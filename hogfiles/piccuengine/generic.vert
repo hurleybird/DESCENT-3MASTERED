@@ -39,6 +39,13 @@ uniform vec2 retained_uv2_scale;
 uniform vec3 retained_base_color;
 uniform float retained_depth_bias;
 uniform int retained_legacy_depth;
+uniform int retained_legacy_world_projection;
+uniform vec3 retained_legacy_view_position;
+uniform vec3 retained_legacy_view_right;
+uniform vec3 retained_legacy_view_up;
+uniform vec3 retained_legacy_view_forward;
+uniform vec2 retained_legacy_viewport_scale;
+uniform vec2 retained_legacy_viewport_center;
 uniform int retained_lighting_mode;
 uniform int retained_vertex_alpha;
 uniform float retained_alpha_scale;
@@ -130,6 +137,7 @@ void main()
 	{
 		vec4 local_position = vec4(RetainedDeformedPosition(), 1.0);
 		vec3 view_position = vec3(0.0);
+		float retained_projection_eye_z = 0.0;
 		#if defined(USE_FOG)
 			vec3 retained_gl_view_position = (retained_modelview * local_position).xyz;
 			view_position = vec3(retained_gl_view_position.xy, -retained_gl_view_position.z);
@@ -150,13 +158,46 @@ void main()
 		// matrix uses the conventional negative forward Z.  Keep the retained
 		// calculations in the coordinate system expected by the legacy fog
 		// equations.
-		gl_Position = retained_transform * local_position;
+		if (retained_legacy_world_projection != 0)
+		{
+			precise vec3 legacy_world_position =
+				(retained_current_world * local_position).xyz;
+			precise vec3 legacy_delta =
+				legacy_world_position - retained_legacy_view_position;
+			precise float legacy_x0 = legacy_delta.x * retained_legacy_view_right.x;
+			precise float legacy_x1 = legacy_delta.y * retained_legacy_view_right.y;
+			precise float legacy_x2 = legacy_delta.z * retained_legacy_view_right.z;
+			precise float legacy_y0 = legacy_delta.x * retained_legacy_view_up.x;
+			precise float legacy_y1 = legacy_delta.y * retained_legacy_view_up.y;
+			precise float legacy_y2 = legacy_delta.z * retained_legacy_view_up.z;
+			precise float legacy_z0 = legacy_delta.x * retained_legacy_view_forward.x;
+			precise float legacy_z1 = legacy_delta.y * retained_legacy_view_forward.y;
+			precise float legacy_z2 = legacy_delta.z * retained_legacy_view_forward.z;
+			precise float legacy_x = (legacy_x0 + legacy_x1) + legacy_x2;
+			precise float legacy_y = (legacy_y0 + legacy_y1) + legacy_y2;
+			precise float legacy_z = (legacy_z0 + legacy_z1) + legacy_z2;
+			view_position = vec3(legacy_x, legacy_y, legacy_z);
+			retained_projection_eye_z = legacy_z;
+			precise float legacy_inverse_z = 1.0 / max(legacy_z, 0.0001);
+			gl_Position = vec4(
+				legacy_x * legacy_inverse_z * retained_legacy_viewport_scale.x +
+					retained_legacy_viewport_center.x,
+				legacy_y * legacy_inverse_z * retained_legacy_viewport_scale.y +
+					retained_legacy_viewport_center.y,
+				0.0, 1.0);
+		}
+		else
+		{
+			gl_Position = retained_transform * local_position;
+		}
 		// CPU-built legacy vertices use an infinite-far depth mapping (window
 		// depth 1 - 1/z).  Retained legacy geometry must use the same mapping so
 		// it shares a depth buffer exactly with immediate draws.
 		if (retained_legacy_depth != 0)
 		{
-			float retained_eye_z = max(gl_Position.w + retained_depth_bias, 0.0001);
+			float retained_eye_z = max(
+				(retained_legacy_world_projection != 0 ? retained_projection_eye_z :
+					gl_Position.w) + retained_depth_bias, 0.0001);
 			float retained_depth_value = clamp(1.0 - (1.0 / retained_eye_z), 0.0, 1.0);
 			gl_Position.z = (retained_depth_value * 2.0 - 1.0) * gl_Position.w;
 		}
@@ -227,7 +268,11 @@ void main()
 			vertex_alpha * retained_alpha_scale * retained_effect_alpha_scale);
 		out_retained_effect_alpha = outcolor.a;
 		vec4 retained_world_position = retained_current_world * local_position;
-		out_room_fog_world_position = retained_world_position;
+		float retained_payload_scale = retained_legacy_world_projection != 0 ?
+			1.0 / max(retained_projection_eye_z + retained_depth_bias, 0.0001) : 1.0;
+		vec4 retained_interpolated_world_position =
+			retained_world_position * retained_payload_scale;
+		out_room_fog_world_position = retained_interpolated_world_position;
 		// The legacy generic stream overloads this attribute: Phong draws carry a
 		// normal, while dynamically-lightmapped draws carry perspective-correct
 		// world position.  Retained geometry must make the same selection.
@@ -235,15 +280,18 @@ void main()
 		{
 			vec3 retained_view_normal = mat3(retained_modelview) * normal.xyz;
 			outnormal = vec4(normalize(vec3(retained_view_normal.xy, -retained_view_normal.z)), 1.0);
-			out_motion_world_position = vec4(view_position, 1.0);
+			out_motion_world_position =
+				vec4(view_position, 1.0) * retained_payload_scale;
 		}
 		else
 		{
 			outnormal = retained_lighting_mode == 2 ? vec4(normal.xyz, 1.0) :
-				(dynamic_light_count > 0 ? retained_world_position : vec4(0.0, 0.0, 0.0, -1.0));
-			out_motion_world_position = retained_world_position;
+				(dynamic_light_count > 0 ? retained_interpolated_world_position :
+					vec4(0.0, 0.0, 0.0, -1.0));
+			out_motion_world_position = retained_interpolated_world_position;
 		}
-		out_motion_previous_world_position = retained_previous_world * local_position;
+		out_motion_previous_world_position =
+			(retained_previous_world * local_position) * retained_payload_scale;
 		#if defined(USE_SPECULAR)
 			for (int i = 0; i < 4; i++)
 			{
@@ -253,7 +301,9 @@ void main()
 				if (retained_per_pixel_specular_payload != 0 && source.w > 0.0)
 				{
 					vec3 retained_view_source = (retained_modelview * vec4(source.xyz, 1.0)).xyz;
-					out_field_specular_centers[i] = vec4(retained_view_source.xy, -retained_view_source.z, 1.0);
+					out_field_specular_centers[i] =
+						vec4(retained_view_source.xy, -retained_view_source.z, 1.0) *
+						retained_payload_scale;
 					out_field_specular_colors[i] = i == 0 ? field_specular_color0 :
 						(i == 1 ? field_specular_color1 :
 						(i == 2 ? field_specular_color2 : field_specular_color3));
@@ -269,8 +319,10 @@ void main()
 			// Legacy g3 texture vertices use 1 / (z + Z_bias). Hardware
 			// perspective interpolation otherwise supplies 1 / z, which subtly
 			// shifts textures on biased custom submodels such as cockpit arms.
-			float uv_perspective_scale = retained_legacy_depth != 0 ?
-				gl_Position.w / max(gl_Position.w + retained_depth_bias, 0.0001) : 1.0;
+			float uv_perspective_scale = retained_legacy_world_projection != 0 ?
+				1.0 / max(retained_projection_eye_z + retained_depth_bias, 0.0001) :
+				(retained_legacy_depth != 0 ?
+					gl_Position.w / max(gl_Position.w + retained_depth_bias, 0.0001) : 1.0);
 			outuv = vec3((uv.xy + retained_uv_offset) * uv_perspective_scale,
 				uv_perspective_scale);
 			#if defined(USE_LIGHTMAP)
