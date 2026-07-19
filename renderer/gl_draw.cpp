@@ -2771,6 +2771,8 @@ void GL4Renderer::DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
 // Fills a rectangle on the display
 void GL4Renderer::FillRect(ddgr_color color, int x1, int y1, int x2, int y2)
 {
+	captured_scene_draw_count_valid = false;
+
 	int r = GR_COLOR_RED(color);
 	int g = GR_COLOR_GREEN(color);
 	int b = GR_COLOR_BLUE(color);

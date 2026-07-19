@@ -1344,6 +1344,11 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		glClearColor(0.0, 0.0, 0.0, 1.0);
 		glclearflags |= GL_COLOR_BUFFER_BIT;
 	}
+	// HUD setup deliberately clears the live scene depth after the opaque
+	// color/depth pair has been captured. The captured depth is the canonical
+	// post-processing input, so only a color clear makes that capture stale.
+	if (glclearflags & GL_COLOR_BUFFER_BIT)
+		captured_scene_draw_count_valid = false;
 
 	if (framebuffer_ok)
 	{
@@ -1597,7 +1602,20 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 	const int post_visible_width = OpenGL_state.screen_width;
 	const int post_visible_height = OpenGL_state.screen_height;
 	post_present_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
-	if (supersampling_factor >= 4)
+	const bool captured_scene_unchanged = ao_scene_valid && bloom_source_valid &&
+		captured_scene_draw_count_valid &&
+		captured_scene_draw_count == rend_GetCurrentDrawCallCount() &&
+		bloom_source_framebuffer.Width() == (uint32_t)framebuffer_logical_width &&
+		bloom_source_framebuffer.Height() == (uint32_t)framebuffer_logical_height;
+	if (captured_scene_unchanged)
+	{
+		// CaptureBloomSource already produced this exact display-resolution
+		// color/depth pair. Reusing it avoids resolving and downsampling the
+		// unchanged MSAA/SSAA scene a second time.
+		bloom_source_framebuffer.ClearAlphaToZero();
+		present_framebuffer = &bloom_source_framebuffer;
+	}
+	else if (supersampling_factor >= 4)
 	{
 		downsampleshader.Use();
 		{
@@ -1650,14 +1668,15 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 
 	if (late_post_enabled)
 	{
-		if (bloom_source_valid)
+		if (present_framebuffer != &bloom_source_framebuffer && bloom_source_valid)
 		{
 			PERF_MARKER_SCOPE("Post.PresentDepth");
 			bloom_source_framebuffer.BlitDepthTo(present_framebuffer->Handle(), 0, 0,
 				present_framebuffer->Width(), present_framebuffer->Height());
 			GL4PerfGpuDrain("GPU.PresentDepth");
 		}
-		else if (present_framebuffer != &framebuffers[framebuffer_current_draw])
+		else if (present_framebuffer != &bloom_source_framebuffer &&
+			present_framebuffer != &framebuffers[framebuffer_current_draw])
 		{
 			PERF_MARKER_SCOPE("Post.PresentDepth");
 			framebuffers[framebuffer_current_draw].BlitDepthTo(present_framebuffer->Handle(), 0, 0,
@@ -2521,6 +2540,7 @@ void GL4Renderer::CaptureBloomSource()
 
 	bloom_source_valid = false;
 	ao_scene_valid = false;
+	captured_scene_draw_count_valid = false;
 	captured_scene_projection_valid = false;
 	captured_scene_view_projection_valid = false;
 	captured_scene_inverse_modelview_valid = false;
@@ -2633,6 +2653,11 @@ void GL4Renderer::CaptureBloomSource()
 		{
 			motion_vectors_capture_locked = true;
 			UseSceneDrawBuffers();
+		}
+		if (bloom_source_valid && ao_scene_valid)
+		{
+			captured_scene_draw_count = rend_GetCurrentDrawCallCount();
+			captured_scene_draw_count_valid = true;
 		}
 	}
 

@@ -450,6 +450,7 @@ enum renderer_gpu_scene_mark
 // returns rendering statistics for the frame
 void rend_GetStatistics(tRendererStats *stats);
 void rend_RecordDrawCall(renderer_draw_call_category category);
+uint32_t rend_GetCurrentDrawCallCount();
 void rend_GetDrawCallStats(renderer_draw_call_stats *stats);
 renderer_draw_call_3d_category rend_Set3DDrawCallCategory(renderer_draw_call_3d_category category);
 renderer_draw_call_3d_category rend_Get3DDrawCallCategory();

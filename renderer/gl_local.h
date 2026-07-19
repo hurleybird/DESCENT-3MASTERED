@@ -137,6 +137,8 @@ class GL4Renderer : public IRenderer
 	int framebuffer_current_draw = 0;
 	bool bloom_source_valid = false;
 	bool ao_scene_valid = false;
+	bool captured_scene_draw_count_valid = false;
+	uint32_t captured_scene_draw_count = 0;
 	int framebuffer_logical_width = 0;
 	int framebuffer_logical_height = 0;
 	int framebuffer_logical_offset_x = 0;

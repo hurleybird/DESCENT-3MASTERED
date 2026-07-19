@@ -230,6 +230,11 @@ void rend_RecordDrawCall(renderer_draw_call_category category)
 	}
 }
 
+uint32_t rend_GetCurrentDrawCallCount()
+{
+	return Renderer_current_draw_call_stats.total;
+}
+
 void rend_GetDrawCallStats(renderer_draw_call_stats* stats)
 {
 	if (!stats)
