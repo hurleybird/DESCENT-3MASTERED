@@ -32,19 +32,39 @@
 
 
 #include "multi_external.h"	//defines and structs are in here
+#include "difficulty_external.h"
 
 extern bool Multi_bail_ui_menu;
 #if defined(DEMO)
-#define MULTI_VERSION	7
+#define MULTI_COMPATIBILITY_VERSION	7
 #elif defined(OEM)
-#define MULTI_VERSION	5
+#define MULTI_COMPATIBILITY_VERSION	5
 #else
 //#define MULTI_VERSION	4
 //Patch 1.1!
 //#define MULTI_VERSION	6
 //Patch 1.3
-#define MULTI_VERSION	10
+#define MULTI_COMPATIBILITY_VERSION	10
 #endif
+
+// Keep the official protocol lineage in its own namespace.  The enhanced
+// family deliberately does not claim version 11, which may eventually be used
+// by an official successor to 1.5/Piccu's version 10 protocol.
+#define MULTI_VERSION MULTI_COMPATIBILITY_VERSION
+#define MULTI_ENHANCED_DISCRIMINATOR 0xD301
+#define MULTI_ENHANCED_FAMILY_MAGIC 0x44335850u // Permanent "D3XP" wire family
+#define MULTI_ENHANCED_REVISION 1
+
+enum multi_protocol_mode
+{
+	MULTI_PROTOCOL_COMPATIBILITY = 0,
+	MULTI_PROTOCOL_ENHANCED = 1
+};
+
+extern multi_protocol_mode Multi_host_protocol;
+void MultiSetHostProtocol(multi_protocol_mode mode);
+ushort MultiGetHostProtocolVersion();
+bool MultiProtocolIsEnhanced(ushort version);
 
 #define MULTI_PING_INTERVAL	3
 
@@ -269,6 +289,10 @@ struct powerup_timer
 extern powerup_timer Powerup_timer[];
 extern powerup_respawn Powerup_respawn[];
 extern network_game Network_games[];
+extern ushort Network_game_protocols[];
+extern difficulty_profile Network_game_difficulty_profiles[];
+ushort MultiGetNetworkGameProtocol(const network_game *game);
+const difficulty_profile *MultiGetNetworkGameDifficulty(const network_game *game);
 extern netplayer NetPlayers[MAX_NET_PLAYERS];
 extern ubyte Multi_receive_buffer[MAX_RECEIVE_SIZE];
 extern int Ok_to_join;

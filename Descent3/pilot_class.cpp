@@ -41,10 +41,11 @@ void taunt_Enable(bool enable);
 extern float Key_ramp_speed;
 
 
-#define PLT_FILE_VERSION	0x2B	//pilot file version
+#define PLT_FILE_VERSION	0x2C	//pilot file version
 
 
 //pilot file version history
+#define PFV_DIFFICULTY_PROFILE 0x2C // four independent difficulty axes
 #define PFV_REARVIEWINFO	0x2B	// (SAMIR) save current state of rear small view.
 #define PFV_SHIPPERMISSIONS	0x2A	// (JEFF) save highest level ship permission in mission data
 #define PFV_KEYRAMPING		0x29	// (SAMIR) added save of keyboard ramping value.
@@ -96,6 +97,10 @@ void pilot::initialize(void)
 	guidebot_name = mem_strdup("GB");
 	picture_id = PPIC_INVALID_ID;
 	difficulty = DIFFICULTY_ROOKIE;
+	difficulty_axes.enemy_ai = difficulty;
+	difficulty_axes.enemy_speed = difficulty;
+	difficulty_axes.enemy_hp = difficulty;
+	difficulty_axes.resources = difficulty;
 	hud_mode = (ubyte)HUD_COCKPIT;
 	hud_stat = 0;
 	hud_graphical_stat = STAT_STANDARD;
@@ -240,6 +245,18 @@ void pilot::clean(bool reset)
 // It will correct any messed data.
 void pilot::verify(void)
 {
+	if (difficulty >= MAX_DIFFICULTY_LEVELS)
+		difficulty = DIFFICULTY_ROOKIE;
+	if (difficulty_axes.enemy_ai >= MAX_DIFFICULTY_LEVELS)
+		difficulty_axes.enemy_ai = difficulty;
+	if (difficulty_axes.enemy_speed >= MAX_DIFFICULTY_LEVELS)
+		difficulty_axes.enemy_speed = difficulty;
+	if (difficulty_axes.enemy_hp >= MAX_DIFFICULTY_LEVELS)
+		difficulty_axes.enemy_hp = difficulty;
+	if (difficulty_axes.resources >= MAX_DIFFICULTY_LEVELS)
+		difficulty_axes.resources = difficulty;
+	difficulty = difficulty_axes.enemy_hp;
+
 	// kill graphical stat for inventory and reset to text version
 	if (hud_graphical_stat & STAT_INVENTORY)
 	{
@@ -490,6 +507,9 @@ int pilot::read(bool skip_config, bool skip_mission_data)
 
 void pilot::commit_state() const
 {
+	::ingame_difficulty = difficulty;
+	DifficultySetSingleplayerProfile(difficulty_axes);
+
 	for (int wpn = 0; wpn < MAX_PRIMARY_WEAPONS; wpn++)
 		SetAutoSelectPrimaryWpnIdx(wpn, PrimarySelectList[wpn]);
 
@@ -738,7 +758,13 @@ void pilot::get_multiplayer_data(char* logo, char* audio1, char* audio2, ushort*
 
 void pilot::set_difficulty(ubyte diff)
 {
+	if (diff >= MAX_DIFFICULTY_LEVELS)
+		diff = DIFFICULTY_ROOKIE;
 	difficulty = diff;
+	difficulty_axes.enemy_ai = diff;
+	difficulty_axes.enemy_speed = diff;
+	difficulty_axes.enemy_hp = diff;
+	difficulty_axes.resources = diff;
 	write_pending = true;
 }
 
@@ -747,6 +773,23 @@ void pilot::get_difficulty(ubyte* diff)
 {
 	if (diff)
 		*diff = difficulty;
+}
+
+void pilot::set_difficulty_profile(const difficulty_profile &profile)
+{
+	difficulty_axes = profile;
+	if (difficulty_axes.enemy_ai >= MAX_DIFFICULTY_LEVELS) difficulty_axes.enemy_ai = DIFFICULTY_ROOKIE;
+	if (difficulty_axes.enemy_speed >= MAX_DIFFICULTY_LEVELS) difficulty_axes.enemy_speed = DIFFICULTY_ROOKIE;
+	if (difficulty_axes.enemy_hp >= MAX_DIFFICULTY_LEVELS) difficulty_axes.enemy_hp = DIFFICULTY_ROOKIE;
+	if (difficulty_axes.resources >= MAX_DIFFICULTY_LEVELS) difficulty_axes.resources = DIFFICULTY_ROOKIE;
+	difficulty = difficulty_axes.enemy_hp;
+	write_pending = true;
+}
+
+void pilot::get_difficulty_profile(difficulty_profile *profile) const
+{
+	if (profile)
+		*profile = difficulty_axes;
 }
 
 
@@ -1151,14 +1194,29 @@ void pilot::read_custom_multiplayer_data(CFILE* file, bool skip)
 void pilot::write_difficulty(CFILE* file)
 {
 	cf_WriteByte(file, difficulty);
+	cf_WriteByte(file, difficulty_axes.enemy_ai);
+	cf_WriteByte(file, difficulty_axes.enemy_speed);
+	cf_WriteByte(file, difficulty_axes.enemy_hp);
+	cf_WriteByte(file, difficulty_axes.resources);
 }
 
 
 void pilot::read_difficulty(CFILE* file, bool skip)
 {
 	ubyte temp = cf_ReadByte(file);
+	difficulty_profile profile = {temp, temp, temp, temp};
+	if (file_version >= PFV_DIFFICULTY_PROFILE)
+	{
+		profile.enemy_ai = cf_ReadByte(file);
+		profile.enemy_speed = cf_ReadByte(file);
+		profile.enemy_hp = cf_ReadByte(file);
+		profile.resources = cf_ReadByte(file);
+	}
 	if (!skip)
+	{
 		difficulty = temp;
+		difficulty_axes = profile;
+	}
 }
 
 

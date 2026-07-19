@@ -17,6 +17,71 @@
 */
 #include "difficulty.h"
 
+difficulty_profile Singleplayer_difficulty = {
+	DIFFICULTY_ROOKIE,
+	DIFFICULTY_ROOKIE,
+	DIFFICULTY_ROOKIE,
+	DIFFICULTY_ROOKIE
+};
+
+difficulty_profile Multiplayer_difficulty = {
+	DIFFICULTY_HOTSHOT,
+	DIFFICULTY_HOTSHOT,
+	DIFFICULTY_HOTSHOT,
+	DIFFICULTY_HOTSHOT
+};
+
+static ubyte ClampDifficulty(ubyte level)
+{
+	return level < MAX_DIFFICULTY_LEVELS ? level : DIFFICULTY_HOTSHOT;
+}
+
+void DifficultySetSingleplayer(ubyte level)
+{
+	level = ClampDifficulty(level);
+	Singleplayer_difficulty.enemy_ai = level;
+	Singleplayer_difficulty.enemy_speed = level;
+	Singleplayer_difficulty.enemy_hp = level;
+	Singleplayer_difficulty.resources = level;
+}
+
+void DifficultySetSingleplayerProfile(const difficulty_profile &profile)
+{
+	Singleplayer_difficulty.enemy_ai = ClampDifficulty(profile.enemy_ai);
+	Singleplayer_difficulty.enemy_speed = ClampDifficulty(profile.enemy_speed);
+	Singleplayer_difficulty.enemy_hp = ClampDifficulty(profile.enemy_hp);
+	Singleplayer_difficulty.resources = ClampDifficulty(profile.resources);
+}
+
+void DifficultySetMultiplayer(ubyte level)
+{
+	level = ClampDifficulty(level);
+	Multiplayer_difficulty.enemy_ai = level;
+	Multiplayer_difficulty.enemy_speed = level;
+	Multiplayer_difficulty.enemy_hp = level;
+	Multiplayer_difficulty.resources = level;
+}
+
+void DifficultySetMultiplayerProfile(const difficulty_profile &profile)
+{
+	Multiplayer_difficulty.enemy_ai = ClampDifficulty(profile.enemy_ai);
+	Multiplayer_difficulty.enemy_speed = ClampDifficulty(profile.enemy_speed);
+	Multiplayer_difficulty.enemy_hp = ClampDifficulty(profile.enemy_hp);
+	Multiplayer_difficulty.resources = ClampDifficulty(profile.resources);
+}
+
+bool DifficultyProfileIsUniform(const difficulty_profile &profile)
+{
+	return profile.enemy_ai == profile.enemy_speed &&
+		profile.enemy_ai == profile.enemy_hp &&
+		profile.enemy_ai == profile.resources;
+}
+
+ubyte DifficultyProfileLegacyLevel(const difficulty_profile &profile)
+{
+	return ClampDifficulty(profile.enemy_hp);
+}
+
 // Notes:
 //
 // 1.  Don't mess with target leading (other than algorithm type) as it will make robots

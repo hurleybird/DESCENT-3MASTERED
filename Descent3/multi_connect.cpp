@@ -32,6 +32,7 @@
 #include "multi_dll_mgr.h"
 
 #include "LoadLevel.h"
+#include "difficulty.h"
 //#define USE_DIRECTPLAY
 
 #ifdef USE_DIRECTPLAY
@@ -67,6 +68,25 @@ int AskToJoin(network_address* addr)
 	network_address from_addr;
 
 	size = START_DATA(MP_ASK_TO_JOIN, data, &count);
+	bool known_game = false;
+	bool enhanced_game = false;
+	for (int i = 0; i < Num_network_games_known; ++i)
+	{
+		if (!memcmp(addr, &Network_games[i].addr, sizeof(network_address)))
+		{
+			known_game = true;
+			enhanced_game = MultiProtocolIsEnhanced(Network_game_protocols[i]);
+			break;
+		}
+	}
+	// Known v10 games receive the exact legacy request.  Direct connections
+	// without a discovery record carry the extension so enhanced servers can
+	// still be joined; official servers safely ignore the extra payload.
+	if (!known_game || enhanced_game)
+	{
+		MultiAddUint(MULTI_ENHANCED_FAMILY_MAGIC, data, &count);
+		MultiAddUshort(MULTI_ENHANCED_REVISION, data, &count);
+	}
 	END_DATA(count, data, size);
 
 	Ok_to_join = -1;
@@ -214,15 +234,26 @@ void MultiDoConnectionAccepted(ubyte* data)
 	// Skip header
 	SKIP_HEADER(data, &count);
 
-	server_version = MultiGetShort(data, &count);
+	server_version = MultiGetUshort(data, &count);
 
-	if (server_version != MULTI_VERSION)
+	if (server_version != MULTI_COMPATIBILITY_VERSION && !MultiProtocolIsEnhanced(server_version))
 	{
 		mprintf((0, "Client and server code versions don't match.  Do an update!\n"));
 		return;
 	}
 	else
 	{
+		if (MultiProtocolIsEnhanced(server_version))
+		{
+			uint family = MultiGetUint(data, &count);
+			ushort revision = MultiGetUshort(data, &count);
+			if (family != MULTI_ENHANCED_FAMILY_MAGIC || revision != MULTI_ENHANCED_REVISION)
+			{
+				mprintf((0, "Enhanced multiplayer protocol identity does not match.\n"));
+				return;
+			}
+		}
+		Netgame.server_version = server_version;
 		// Versions match, get info about the game and then connect!
 		mprintf((0, "Client/server versions match.\n"));
 
@@ -349,7 +380,12 @@ void MultiSendConnectionAccepted(int slotnum, SOCKET sock, network_address* addr
 	size_offset = START_DATA(MP_CONNECTION_ACCEPTED, data, &count);
 
 	// Send server version
-	MultiAddShort(Netgame.server_version, data, &count);
+	MultiAddUshort(Netgame.server_version, data, &count);
+	if (MultiProtocolIsEnhanced(Netgame.server_version))
+	{
+		MultiAddUint(MULTI_ENHANCED_FAMILY_MAGIC, data, &count);
+		MultiAddUshort(MULTI_ENHANCED_REVISION, data, &count);
+	}
 
 	// Do mission name
 	int len = strlen(Netgame.mission) + 1;
@@ -560,6 +596,20 @@ void MultiDoLevelInfo(ubyte* data)
 	if ((Netgame.difficulty > 4) || (Netgame.difficulty < 0))
 		Netgame.difficulty = 2;
 
+	if (MultiProtocolIsEnhanced(Netgame.server_version))
+	{
+		difficulty_profile profile;
+		profile.enemy_ai = MultiGetByte(data, &count);
+		profile.enemy_speed = MultiGetByte(data, &count);
+		profile.enemy_hp = MultiGetByte(data, &count);
+		profile.resources = MultiGetByte(data, &count);
+		DifficultySetMultiplayerProfile(profile);
+	}
+	else
+	{
+		DifficultySetMultiplayer(Netgame.difficulty);
+	}
+
 	if (join_response != JOIN_ANSWER_OK)
 		Got_level_info = -join_response;
 	else
@@ -593,6 +643,13 @@ void MultiSendLevelInfo(int slot)
 
 	//Send the difficulty
 	MultiAddByte(Netgame.difficulty, data, &count);
+	if (MultiProtocolIsEnhanced(Netgame.server_version))
+	{
+		MultiAddByte(Multiplayer_difficulty.enemy_ai, data, &count);
+		MultiAddByte(Multiplayer_difficulty.enemy_speed, data, &count);
+		MultiAddByte(Multiplayer_difficulty.enemy_hp, data, &count);
+		MultiAddByte(Multiplayer_difficulty.resources, data, &count);
+	}
 
 	END_DATA(count, data, size_offset);
 
@@ -759,9 +816,16 @@ int SearchForLocalGamesTCP(unsigned int ask, ushort port)
 
 		size = START_DATA(MP_GET_GAME_INFO, data, &count);
 		MultiAddFloat(timer_GetTime(), data, &count);
-		MultiAddInt(MULTI_VERSION, data, &count);
+		MultiAddInt(MULTI_COMPATIBILITY_VERSION, data, &count);
 		END_DATA(count, data, size);
 
+		nw_Send(&check_addr, data, count, 0);
+
+		count = 0;
+		size = START_DATA(MP_GET_GAME_INFO, data, &count);
+		MultiAddFloat(timer_GetTime(), data, &count);
+		MultiAddInt(MULTI_ENHANCED_DISCRIMINATOR, data, &count);
+		END_DATA(count, data, size);
 		nw_Send(&check_addr, data, count, 0);
 
 		//Num_network_games_known=0;
@@ -792,9 +856,16 @@ int SearchForGamesPXO(unsigned int ask, ushort port)
 
 		size = START_DATA(MP_GET_PXO_GAME_INFO, data, &count);
 		MultiAddFloat(timer_GetTime(), data, &count);
-		MultiAddInt(MULTI_VERSION, data, &count);
+		MultiAddInt(MULTI_COMPATIBILITY_VERSION, data, &count);
 		END_DATA(count, data, size);
 
+		nw_Send(&check_addr, data, count, 0);
+
+		count = 0;
+		size = START_DATA(MP_GET_PXO_GAME_INFO, data, &count);
+		MultiAddFloat(timer_GetTime(), data, &count);
+		MultiAddInt(MULTI_ENHANCED_DISCRIMINATOR, data, &count);
+		END_DATA(count, data, size);
 		nw_Send(&check_addr, data, count, 0);
 
 		//Num_network_games_known=0;
@@ -820,9 +891,12 @@ void UpdateAndPackGameList(void)
 		//Network_games[i]
 		if ((curtime - Network_games[i].last_update) > MULTI_SERVER_TIMEOUT_TIME)
 		{
-			memcpy(&Network_games[i], &Network_games[Num_network_games_known], sizeof(network_game));
+			const int last = Num_network_games_known - 1;
+			memcpy(&Network_games[i], &Network_games[last], sizeof(network_game));
+			Network_game_protocols[i] = Network_game_protocols[last];
+			Network_game_difficulty_profiles[i] = Network_game_difficulty_profiles[last];
 			Num_network_games_known--;
-			i = 0;
+			i--;
 			Multi_Gamelist_changed = true;
 		}
 	}
@@ -844,9 +918,16 @@ int SearchForLocalGamesIPX(network_address* check_addr)
 
 		size = START_DATA(MP_GET_GAME_INFO, data, &count);
 		MultiAddFloat(timer_GetTime(), data, &count);
-		MultiAddInt(MULTI_VERSION, data, &count);
+		MultiAddInt(MULTI_COMPATIBILITY_VERSION, data, &count);
 		END_DATA(count, data, size);
 
+		nw_Send(check_addr, data, count, 0);
+
+		count = 0;
+		size = START_DATA(MP_GET_GAME_INFO, data, &count);
+		MultiAddFloat(timer_GetTime(), data, &count);
+		MultiAddInt(MULTI_ENHANCED_DISCRIMINATOR, data, &count);
+		END_DATA(count, data, size);
 		nw_Send(check_addr, data, count, 0);
 
 		//Num_network_games_known=0;

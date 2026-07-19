@@ -75,6 +75,7 @@
 #include "cockpit.h"
 #include "hud.h"
 #include "gamespy.h"
+#include "difficulty.h"
 
 
 #include <string.h>
@@ -158,6 +159,55 @@ netgame_info Netgame;
 
 int Num_network_games_known=0;
 network_game Network_games[MAX_NETWORK_GAMES];
+ushort Network_game_protocols[MAX_NETWORK_GAMES];
+difficulty_profile Network_game_difficulty_profiles[MAX_NETWORK_GAMES];
+
+multi_protocol_mode Multi_host_protocol = MULTI_PROTOCOL_COMPATIBILITY;
+
+void MultiSetHostProtocol(multi_protocol_mode mode)
+{
+	Multi_host_protocol = mode == MULTI_PROTOCOL_ENHANCED ? MULTI_PROTOCOL_ENHANCED : MULTI_PROTOCOL_COMPATIBILITY;
+}
+
+ushort MultiGetHostProtocolVersion()
+{
+	return Multi_host_protocol == MULTI_PROTOCOL_ENHANCED ? MULTI_ENHANCED_DISCRIMINATOR : MULTI_COMPATIBILITY_VERSION;
+}
+
+bool MultiProtocolIsEnhanced(ushort version)
+{
+	return version == MULTI_ENHANCED_DISCRIMINATOR;
+}
+
+ushort MultiGetNetworkGameProtocol(const network_game *game)
+{
+	if (!game)
+		return MULTI_COMPATIBILITY_VERSION;
+
+	for (int i = 0; i < Num_network_games_known; ++i)
+	{
+		if (game == &Network_games[i] || game->handle == Network_games[i].handle ||
+			!memcmp(&game->addr, &Network_games[i].addr, sizeof(network_address)))
+			return Network_game_protocols[i];
+	}
+
+	return MULTI_COMPATIBILITY_VERSION;
+}
+
+const difficulty_profile *MultiGetNetworkGameDifficulty(const network_game *game)
+{
+	if (!game)
+		return NULL;
+
+	for (int i = 0; i < Num_network_games_known; ++i)
+	{
+		if (game == &Network_games[i] || game->handle == Network_games[i].handle ||
+			!memcmp(&game->addr, &Network_games[i].addr, sizeof(network_address)))
+			return &Network_game_difficulty_profiles[i];
+	}
+
+	return NULL;
+}
 
 int Game_is_master_tracker_game=0;
 
@@ -2426,10 +2476,29 @@ void MultiDoAskToJoin (ubyte *data,network_address *from_addr)
 	int count=0;
 	int incount=0;
 	int size;
+	int header_count = 1;
+	int packet_size = MultiGetUshort(data, &header_count);
+	bool protocol_ok = true;
+
+	SKIP_HEADER(data, &incount);
+	if (MultiProtocolIsEnhanced(Netgame.server_version))
+	{
+		protocol_ok = packet_size >= incount + (int)(sizeof(uint) + sizeof(ushort));
+		if (protocol_ok)
+		{
+			uint family = MultiGetUint(data, &incount);
+			ushort revision = MultiGetUshort(data, &incount);
+			protocol_ok = family == MULTI_ENHANCED_FAMILY_MAGIC && revision == MULTI_ENHANCED_REVISION;
+		}
+	}
 			
 	size=START_DATA(MP_JOIN_RESPONSE,outdata,&count);
 	
-	if (Netgame.local_role==LR_SERVER && Multi_accept_state)
+	if (!protocol_ok)
+	{
+		MultiAddByte(JOIN_ANSWER_REJECTED, outdata, &count);
+	}
+	else if (Netgame.local_role==LR_SERVER && Multi_accept_state)
 	{
 		// First see if this guy is banned
 		if (GameDLLIsAddressBanned(from_addr,NULL))
@@ -2484,7 +2553,7 @@ void MultiDoGetGameInfo (ubyte *data,network_address *from_addr)
 	ping_time=MultiGetFloat(data,&count);
 	int version=MultiGetInt (data,&count);
 
-	if (version!=MULTI_VERSION)
+	if (version!=Netgame.server_version)
 		return;		// Versions don't match, so just return
 
 
@@ -2557,6 +2626,15 @@ void MultiDoGetGameInfo (ubyte *data,network_address *from_addr)
 		MultiAddInt(Netgame.flags,outdata,&count);
 		MultiAddByte(Dedicated_server?1:0,outdata,&count);	
 		MultiAddByte(Netgame.difficulty,outdata,&count);	
+		if (MultiProtocolIsEnhanced(Netgame.server_version))
+		{
+			MultiAddUint(MULTI_ENHANCED_FAMILY_MAGIC, outdata, &count);
+			MultiAddUshort(MULTI_ENHANCED_REVISION, outdata, &count);
+			MultiAddByte(Multiplayer_difficulty.enemy_ai, outdata, &count);
+			MultiAddByte(Multiplayer_difficulty.enemy_speed, outdata, &count);
+			MultiAddByte(Multiplayer_difficulty.enemy_hp, outdata, &count);
+			MultiAddByte(Multiplayer_difficulty.resources, outdata, &count);
+		}
 
 		END_DATA (count,outdata,size_offset);
 		nw_Send(from_addr,outdata,count,0);
@@ -2584,7 +2662,7 @@ void MultiDoGetPXOGameInfo (ubyte *data,network_address *from_addr)
 	ping_time=MultiGetFloat(data,&count);
 	int version=MultiGetInt (data,&count);
 
-	if (version!=MULTI_VERSION)
+	if (version!=Netgame.server_version)
 		return;		// Versions don't match, so just return
 
 
@@ -2652,6 +2730,15 @@ void MultiDoGetPXOGameInfo (ubyte *data,network_address *from_addr)
 		MultiAddInt(Netgame.flags,outdata,&count);		
 		MultiAddByte(Dedicated_server?1:0,outdata,&count);	
 		MultiAddByte(Netgame.difficulty,outdata,&count);	
+		if (MultiProtocolIsEnhanced(Netgame.server_version))
+		{
+			MultiAddUint(MULTI_ENHANCED_FAMILY_MAGIC, outdata, &count);
+			MultiAddUshort(MULTI_ENHANCED_REVISION, outdata, &count);
+			MultiAddByte(Multiplayer_difficulty.enemy_ai, outdata, &count);
+			MultiAddByte(Multiplayer_difficulty.enemy_speed, outdata, &count);
+			MultiAddByte(Multiplayer_difficulty.enemy_hp, outdata, &count);
+			MultiAddByte(Multiplayer_difficulty.resources, outdata, &count);
+		}
 
 		END_DATA (count,outdata,size_offset);
 		nw_Send(from_addr,outdata,count,0);
@@ -2666,6 +2753,8 @@ bool Multi_Gamelist_changed = false;
 void MultiDoGameInfo (ubyte *data,network_address *from_addr)
 {
 	int count=0;
+	int header_count = 1;
+	int packet_size = MultiGetUshort(data, &header_count);
 	
 	char name[NETGAME_NAME_LEN];
 	char mission[MSN_NAMELEN];
@@ -2696,7 +2785,7 @@ void MultiDoGameInfo (ubyte *data,network_address *from_addr)
 
 	len=MultiGetByte (data,&count);
 	
-	fixed_len = std::min(NETGAME_NAME_LEN,len);
+	fixed_len = (std::min)(NETGAME_NAME_LEN,len);
 
 	memcpy (name,&data[count],fixed_len);
 	name[fixed_len-1] = 0;
@@ -2704,7 +2793,7 @@ void MultiDoGameInfo (ubyte *data,network_address *from_addr)
 		
 	mission_len=MultiGetByte (data,&count);
 
-	fixed_len = std::min(MSN_NAMELEN,mission_len);
+	fixed_len = (std::min)(MSN_NAMELEN,mission_len);
 
 	memcpy (mission,&data[count],fixed_len);
 	mission[fixed_len-1] = 0;
@@ -2712,7 +2801,7 @@ void MultiDoGameInfo (ubyte *data,network_address *from_addr)
 
 	mission_name_len=MultiGetByte (data,&count);
 
-	fixed_len = std::min(MISSION_NAME_LEN,mission_name_len);
+	fixed_len = (std::min)(MISSION_NAME_LEN,mission_name_len);
 
 	memcpy (mission_name,&data[count],fixed_len);
 	mission_name[fixed_len-1] = 0;
@@ -2720,7 +2809,7 @@ void MultiDoGameInfo (ubyte *data,network_address *from_addr)
 	
 	script_len=MultiGetByte (data,&count);
 
-	fixed_len = std::min(NETGAME_SCRIPT_LEN,script_len);
+	fixed_len = (std::min)(NETGAME_SCRIPT_LEN,script_len);
 
 	memcpy (scriptname,&data[count],fixed_len);
 	scriptname[fixed_len-1] = 0;
@@ -2736,6 +2825,23 @@ void MultiDoGameInfo (ubyte *data,network_address *from_addr)
 	bool dedicated = MultiGetByte (data,&count)?true:false;
 
 	int diff = MultiGetByte (data,&count);
+	ushort protocol = MULTI_COMPATIBILITY_VERSION;
+	difficulty_profile profile = {(ubyte)diff, (ubyte)diff, (ubyte)diff, (ubyte)diff};
+	if (packet_size >= count + (int)(sizeof(uint) + sizeof(ushort) + 4))
+	{
+		uint family = MultiGetUint(data, &count);
+		ushort revision = MultiGetUshort(data, &count);
+		if (family == MULTI_ENHANCED_FAMILY_MAGIC)
+		{
+			if (revision != MULTI_ENHANCED_REVISION)
+				return;
+			protocol = MULTI_ENHANCED_DISCRIMINATOR;
+			profile.enemy_ai = MultiGetByte(data, &count);
+			profile.enemy_speed = MultiGetByte(data, &count);
+			profile.enemy_hp = MultiGetByte(data, &count);
+			profile.resources = MultiGetByte(data, &count);
+		}
+	}
 
 	// Now go through and see if this is game we don't already have in our list
 	for (i=0;i<Num_network_games_known;i++)
@@ -2747,6 +2853,12 @@ void MultiDoGameInfo (ubyte *data,network_address *from_addr)
 			Network_games[i].last_update = timer_GetTime();
 			Network_games[i].level_num = level;
 			Network_games[i].curr_num_players = currplayers;
+			Network_games[i].max_num_players = maxplayers;
+			Network_games[i].flags = flags;
+			Network_games[i].dedicated_server = dedicated;
+			Network_games[i].difficulty = diff;
+			Network_game_protocols[i] = protocol;
+			Network_game_difficulty_profiles[i] = profile;
 			return;
 		}
 		
@@ -2770,6 +2882,8 @@ void MultiDoGameInfo (ubyte *data,network_address *from_addr)
 		Network_games[n].flags = flags;
 		Network_games[n].dedicated_server = dedicated;
 		Network_games[n].difficulty = diff;
+		Network_game_protocols[n] = protocol;
+		Network_game_difficulty_profiles[n] = profile;
 		//This handle is used to make the game list update nicely
 		Network_games[n].handle = Netgame_curr_handle++;
 	//	mprintf ((0,"Got new game called %s!\n",name));
@@ -4693,7 +4807,7 @@ void MultiSendWeaponsLoad ()
 	for (int i=0;i<(MAX_SECONDARY_WEAPONS);i++)
 	{
 		int num=Players[Player_num].weapon_ammo[MAX_PRIMARY_WEAPONS+i];
-		num= std::min(num,255);
+			num= (std::min)(num,255);
 		
 		MultiAddUbyte (num,data,&count);
 	}

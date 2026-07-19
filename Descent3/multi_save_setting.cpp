@@ -22,6 +22,7 @@
 #include "objinfo.h"
 #include "ship.h"
 #include "multi_save_settings.h"
+#include "difficulty.h"
 
 int MultiSaveSettings(char* filename)
 {
@@ -64,6 +65,16 @@ int MultiSaveSettings(char* filename)
 	sprintf(szoutput, "MLOOK\t%s", (Netgame.flags & NF_ALLOW_MLOOK) ? "TRUE" : "FALSE");
 	cf_WriteString(cf, szoutput);
 	sprintf(szoutput, "DIFFICULTY\t%d", Netgame.difficulty);
+	cf_WriteString(cf, szoutput);
+	sprintf(szoutput, "NETWORKPROFILE\t%s", Multi_host_protocol == MULTI_PROTOCOL_ENHANCED ? "ENHANCED" : "COMPATIBILITY");
+	cf_WriteString(cf, szoutput);
+	sprintf(szoutput, "DIFFICULTY_AI\t%d", Multiplayer_difficulty.enemy_ai);
+	cf_WriteString(cf, szoutput);
+	sprintf(szoutput, "DIFFICULTY_SPEED\t%d", Multiplayer_difficulty.enemy_speed);
+	cf_WriteString(cf, szoutput);
+	sprintf(szoutput, "DIFFICULTY_HP\t%d", Multiplayer_difficulty.enemy_hp);
+	cf_WriteString(cf, szoutput);
+	sprintf(szoutput, "DIFFICULTY_RESOURCES\t%d", Multiplayer_difficulty.resources);
 	cf_WriteString(cf, szoutput);
 
 	for (i = 0; i < MAX_OBJECT_IDS; i++)
@@ -261,12 +272,55 @@ int MultiLoadSettings(char* filename)
 			Netgame.difficulty = atoi(tokval);
 			if ((Netgame.difficulty > 4) || (Netgame.difficulty < 0))
 				Netgame.difficulty = 0;
+			DifficultySetMultiplayer(Netgame.difficulty);
+		}
+		else if (strcmpi(toklabel, "NETWORKPROFILE") == 0)
+		{
+			if (strcmpi(tokval, "ENHANCED") == 0)
+				MultiSetHostProtocol(MULTI_PROTOCOL_ENHANCED);
+			else if (strcmpi(tokval, "COMPATIBILITY") == 0)
+				MultiSetHostProtocol(MULTI_PROTOCOL_COMPATIBILITY);
+			else
+			{
+				mprintf((0, "Invalid multiplayer network profile %s\n", tokval));
+				cfclose(cf);
+				return 0;
+			}
+		}
+		else if (strcmpi(toklabel, "DIFFICULTY_AI") == 0 ||
+			strcmpi(toklabel, "DIFFICULTY_SPEED") == 0 ||
+			strcmpi(toklabel, "DIFFICULTY_HP") == 0 ||
+			strcmpi(toklabel, "DIFFICULTY_RESOURCES") == 0)
+		{
+			int value = atoi(tokval);
+			if (value < 0 || value >= MAX_DIFFICULTY_LEVELS)
+			{
+				mprintf((0, "Invalid difficulty axis %s=%s\n", toklabel, tokval));
+				cfclose(cf);
+				return 0;
+			}
+			if (strcmpi(toklabel, "DIFFICULTY_AI") == 0)
+				Multiplayer_difficulty.enemy_ai = value;
+			else if (strcmpi(toklabel, "DIFFICULTY_SPEED") == 0)
+				Multiplayer_difficulty.enemy_speed = value;
+			else if (strcmpi(toklabel, "DIFFICULTY_HP") == 0)
+				Multiplayer_difficulty.enemy_hp = value;
+			else
+				Multiplayer_difficulty.resources = value;
+			Netgame.difficulty = DifficultyProfileLegacyLevel(Multiplayer_difficulty);
 		}
 		else
 		{
 			mprintf((0, "Unknown line in multiplayer config file %s\t%s\n", toklabel, tokval));
 		}
 	};
+	cfclose(cf);
+	if (Multi_host_protocol == MULTI_PROTOCOL_COMPATIBILITY &&
+		!DifficultyProfileIsUniform(Multiplayer_difficulty))
+	{
+		mprintf((0, "Compatibility multiplayer profile requires uniform difficulty axes.\n"));
+		return 0;
+	}
 	return 1;
 
 }

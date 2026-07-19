@@ -61,6 +61,7 @@
 #include "init.h"
 #include "../md5/md5.h"
 #include "gamespy.h"
+#include "difficulty.h"
 
 void MultiProcessShipChecksum(MD5* md5, int ship_index);
 
@@ -157,7 +158,8 @@ void MultiStartServer(int playing, char* scriptname, int dedicated_server_num_te
 
 	Netgame.local_role = LR_SERVER;
 	Netgame.server_sequence = 0;
-	Netgame.server_version = MULTI_VERSION;
+	ASSERT(Multi_host_protocol == MULTI_PROTOCOL_ENHANCED || DifficultyProfileIsUniform(Multiplayer_difficulty));
+	Netgame.server_version = MultiGetHostProtocolVersion();
 
 	Game_mode = GM_NETWORK;
 
@@ -2528,6 +2530,8 @@ void MultiResetSettings()
 	Netgame.flags = NF_RANDOMIZE_RESPAWN;
 	Netgame.max_players = 8;
 	Netgame.difficulty = 2;
+	DifficultySetMultiplayer(Netgame.difficulty);
+	MultiSetHostProtocol(MULTI_PROTOCOL_COMPATIBILITY);
 
 	// Clear MOTD
 	Multi_message_of_the_day[0] = 0;

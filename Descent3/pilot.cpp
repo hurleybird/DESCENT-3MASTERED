@@ -230,6 +230,7 @@ bool VerifyPilotData(pilot* Pilot)
 #define IDP_CONFIGCONT		0x57
 #define IDP_CONFIGKEYB		0x58
 #define IDP_COPYCONTROLS	0x59
+#define IDP_CUSTOMDIFFICULTY 0x5A
 
 struct pilot_select_menu
 {
@@ -270,6 +271,7 @@ struct pilot_edit_menu
 	bool* profanity;
 	bool* audiotaunts;
 	char* pilot_name;
+	char* difficulty_summary;
 
 	newuiSheet* setup(newuiMenu* menu)
 	{
@@ -293,18 +295,24 @@ struct pilot_edit_menu
 		sheet->AddLongRadioButton(TXT_HOTSHOT);
 		*difficulty = 0;
 #endif
-		sheet->NewGroup(TXT_CONTROLSCONFIG, 55, 93);
+		// Medium-menu sheets only have a narrow content column before the
+		// navigation buttons.  Keep custom difficulty in that column and move
+		// the following groups down instead of placing it beyond the sheet.
+		sheet->NewGroup(NULL, 55, 98);
+		sheet->AddLongButton("Custom difficulty...", IDP_CUSTOMDIFFICULTY);
+		difficulty_summary = sheet->AddChangeableText(64);
+		sheet->NewGroup(TXT_CONTROLSCONFIG, 55, 140);
 		sheet->AddLongButton(TXT_CPYKEYCONF, IDP_COPYCONTROLS);
 		sheet->AddLongButton(TXT_CUSTKEYB, IDP_CONFIGKEYB);
 		sheet->AddLongButton(TXT_CUSTGAMEC, IDP_CONFIGCONT);
 
-		sheet->NewGroup(TXT_MULTIPLAYERCONFIG, 55, 150);
+		sheet->NewGroup(TXT_MULTIPLAYERCONFIG, 55, 197);
 #if (!defined(OEM) && !defined(DEMO))
 		sheet->AddLongButton(TXT_SELPILOTPIC, IDP_CHOOSEPIC);
 #endif
 		sheet->AddLongButton(TXT_SHIPCUSTOMIZE, IDP_SHIPCONFIG);
 
-		sheet->NewGroup(TXT_MISCELLANEOUS, 55, 195);
+		sheet->NewGroup(TXT_MISCELLANEOUS, 55, 242);
 		profanity = sheet->AddLongCheckBox(TXT_PROFFILTER);
 		audiotaunts = sheet->AddLongCheckBox(TXT_AUDIOTAUNTS);
 
@@ -338,6 +346,71 @@ struct
 	bool all_setup;
 } PilotChooseDialogInfo;
 pilot working_pilot;
+
+static const char *PilotDifficultyName(int level)
+{
+	static const char *names[MAX_DIFFICULTY_LEVELS] = {
+		TXT_TRAINEE, TXT_ROOKIE, TXT_HOTSHOT, TXT_ACE, TXT_INSANE
+	};
+	return level >= 0 && level < MAX_DIFFICULTY_LEVELS ? names[level] : TXT_ERROR;
+}
+
+static void PilotDifficultySummary(const difficulty_profile &profile, char *buffer)
+{
+	if (DifficultyProfileIsUniform(profile))
+		sprintf(buffer, "Preset: %s", PilotDifficultyName(profile.enemy_hp));
+	else
+		sprintf(buffer, "Current: Custom");
+}
+
+static bool PilotDifficultyOptionsMenu(difficulty_profile *profile)
+{
+	newuiTiledWindow window;
+	newuiSheet *sheet;
+	newuiComboBox *axis_combos[4];
+	bool accepted = false;
+	bool exit_menu = false;
+
+	window.Create("Custom Difficulty", 0, 0, 320, 352);
+	sheet = window.GetSheet();
+	const char *axis_names[4] = {"Enemy AI", "Enemy / projectile speed", "Enemy HP", "Resources"};
+	const int axis_y[4] = {0, 52, 104, 156};
+	const ubyte values[4] = {profile->enemy_ai, profile->enemy_speed, profile->enemy_hp, profile->resources};
+
+	for (int axis = 0; axis < 4; ++axis)
+	{
+		sheet->NewGroup(axis_names[axis], 0, axis_y[axis]);
+		axis_combos[axis] = sheet->AddComboBox(110 + axis, UILB_NOSORT);
+		for (int level = 0; level < MAX_DIFFICULTY_LEVELS; ++level)
+			axis_combos[axis]->AddItem(PilotDifficultyName(level));
+		axis_combos[axis]->SetCurrentIndex(values[axis]);
+	}
+
+	sheet->NewGroup(NULL, 0, 220, NEWUI_ALIGN_HORIZ);
+	sheet->AddButton(TXT_OK, UID_OK);
+	sheet->AddButton(TXT_CANCEL, UID_CANCEL);
+
+	window.Open();
+	while (!exit_menu)
+	{
+		int result = window.DoUI();
+		if (result == UID_OK)
+		{
+			profile->enemy_ai = axis_combos[0]->GetCurrentIndex();
+			profile->enemy_speed = axis_combos[1]->GetCurrentIndex();
+			profile->enemy_hp = axis_combos[2]->GetCurrentIndex();
+			profile->resources = axis_combos[3]->GetCurrentIndex();
+			accepted = true;
+			exit_menu = true;
+		}
+		else if (result == UID_CANCEL)
+			exit_menu = true;
+	}
+
+	window.Close();
+	window.Destroy();
+	return accepted;
+}
 
 void PilotListSelectChangeCallback(int index)
 {
@@ -378,7 +451,10 @@ void PilotListSelectChangeCallback(int index)
 			audiotaunts = *PilotChooseDialogInfo.edit->audiotaunts;
 
 			Pilot->set_profanity_filter(profanity);
-			Pilot->set_difficulty(difficulty);
+			difficulty_profile profile;
+			Pilot->get_difficulty_profile(&profile);
+			if (difficulty != profile.enemy_hp)
+				Pilot->set_difficulty(difficulty);
 			Pilot->set_audiotaunts(audiotaunts);
 			PltWriteFile(&working_pilot);
 			mprintf((0, "Pilot saved\n"));
@@ -398,9 +474,12 @@ void PilotListSelectChangeCallback(int index)
 	// Setup all values
 	///////////////////////////////	
 	Pilot->get_difficulty(&difficulty);
+	difficulty_profile difficulty_axes;
+	Pilot->get_difficulty_profile(&difficulty_axes);
 	Pilot->get_profanity_filter(&profanity);
 	Pilot->get_audiotaunts(&audiotaunts);
 	*PilotChooseDialogInfo.edit->difficulty = difficulty;
+	PilotDifficultySummary(difficulty_axes, PilotChooseDialogInfo.edit->difficulty_summary);
 	*PilotChooseDialogInfo.edit->profanity = profanity;
 	*PilotChooseDialogInfo.edit->audiotaunts = audiotaunts;
 
@@ -681,6 +760,28 @@ void PilotSelect(void)
 			PltSelectShip(&working_pilot);
 		}break;
 
+		case IDP_CUSTOMDIFFICULTY:
+		{
+			if (!filecount)
+				break;
+			PilotChooseDialogInfo.edit->sheet->UpdateReturnValues();
+			difficulty_profile profile;
+			working_pilot.get_difficulty_profile(&profile);
+			const int selected = *PilotChooseDialogInfo.edit->difficulty;
+			if (selected != profile.enemy_hp)
+			{
+				working_pilot.set_difficulty(selected);
+				working_pilot.get_difficulty_profile(&profile);
+			}
+			if (PilotDifficultyOptionsMenu(&profile))
+			{
+				working_pilot.set_difficulty_profile(profile);
+				*PilotChooseDialogInfo.edit->difficulty = profile.enemy_hp;
+				PilotDifficultySummary(profile, PilotChooseDialogInfo.edit->difficulty_summary);
+				PilotChooseDialogInfo.edit->sheet->UpdateChanges();
+			}
+		}break;
+
 		case IDP_CHOOSEPIC:
 		{
 			char pname[PILOT_STRING_SIZE];
@@ -778,6 +879,9 @@ void PilotSelect(void)
 	PltClearList();
 	PltGetPilotsFree();
 	Current_pilot.get_difficulty(&ingame_difficulty);
+	difficulty_profile active_difficulty;
+	Current_pilot.get_difficulty_profile(&active_difficulty);
+	DifficultySetSingleplayerProfile(active_difficulty);
 
 	// get settings
 	select.finish();

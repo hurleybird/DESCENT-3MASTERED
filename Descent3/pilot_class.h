@@ -25,6 +25,7 @@
 #include "CFILE.H"
 #include "weapon.h"
 #include "config.h"
+#include "difficulty_external.h"
 
 //YUCK!
 #include "descent.h"	//just for MSN_NAMELEN
@@ -157,6 +158,8 @@ public:
 
 	void set_difficulty(ubyte diff);
 	void get_difficulty(ubyte *diff);
+	void set_difficulty_profile(const difficulty_profile &profile);
+	void get_difficulty_profile(difficulty_profile *profile) const;
 
 	void set_hud_data(ubyte *hmode=NULL,ushort *hstat=NULL,ushort *hgraphicalstat=NULL,int *gw_w=NULL,int *gw_h=NULL);
 	void get_hud_data(ubyte *hmode=NULL,ushort *hstat=NULL,ushort *hgraphicalstat=NULL,int *gw_w=NULL,int *gw_h=NULL);
@@ -226,6 +229,7 @@ private:
 
 	ushort picture_id;	//pilot picture image id
 	ubyte difficulty;	//difficulty setting for this pilot (DIFFICULTY_*)
+	difficulty_profile difficulty_axes;
 	ubyte hud_mode;		// hud display mode
 	bool profanity_filter_on,audiotaunts;
 

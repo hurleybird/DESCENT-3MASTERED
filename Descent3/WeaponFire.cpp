@@ -467,7 +467,7 @@ int CreateAndFireWeapon(vector* pos, vector* dir, object* parent, int weapon_num
 
 	float scalar = 1.0f;
 	if (!ObjGet(obj->parent_handle) || ObjGet(obj->parent_handle)->type != OBJ_PLAYER)
-		scalar = (ObjGet(obj->parent_handle)->control_type == CT_AI && ((ObjGet(obj->parent_handle)->ai_info->flags & AIF_TEAM_MASK) == AIF_TEAM_REBEL)) ? 1.0f : Diff_ai_weapon_speed[DIFF_LEVEL];
+		scalar = (ObjGet(obj->parent_handle)->control_type == CT_AI && ((ObjGet(obj->parent_handle)->ai_info->flags & AIF_TEAM_MASK) == AIF_TEAM_REBEL)) ? 1.0f : Diff_ai_weapon_speed[DIFF_SPEED_LEVEL];
 
 	//	Set thrust 
 	if (obj->mtype.phys_info.flags & PF_USES_THRUST)
@@ -611,7 +611,7 @@ void HomingTurnTowardObj(object* weapon, object* target)
 		weapon->mtype.phys_info.rotthrust.z = 0.0;
 
 		if (!ObjGet(weapon->parent_handle) || ObjGet(weapon->parent_handle)->type != OBJ_PLAYER)
-			weapon->mtype.phys_info.rotthrust *= Diff_homing_strength[DIFF_LEVEL];
+			weapon->mtype.phys_info.rotthrust *= Diff_homing_strength[DIFF_SPEED_LEVEL];
 	}
 	else
 	{
@@ -619,7 +619,7 @@ void HomingTurnTowardObj(object* weapon, object* target)
 		vm_NormalizeVector(&dir_to_target);
 
 		if (!ObjGet(weapon->parent_handle) || ObjGet(weapon->parent_handle)->type != OBJ_PLAYER)
-			scalar = Diff_homing_strength[DIFF_LEVEL];
+			scalar = Diff_homing_strength[DIFF_SPEED_LEVEL];
 		else
 			scalar = 1.0f;
 
@@ -1196,19 +1196,19 @@ int FireWeaponFromObject(object* obj, int weapon_num, int gun_num, bool f_force_
 		}
 	}
 
-	if ((obj->control_type == CT_AI) && (obj->ai_info->fire_spread || (Diff_ai_min_fire_spread[DIFF_LEVEL])))
+	if ((obj->control_type == CT_AI) && (obj->ai_info->fire_spread || (Diff_ai_min_fire_spread[DIFF_AI_LEVEL])))
 	{
 		matrix rot_mat;
 		angle p, h, b;
 
-		float diff_scale = DIFF_LEVEL / (MAX_DIFFICULTY_LEVELS - 1);
+		float diff_scale = DIFF_AI_LEVEL / (MAX_DIFFICULTY_LEVELS - 1);
 		float fs = (MAX_FIRE_SPREAD * (1.0f - diff_scale)) + (MIN_FIRE_SPREAD * diff_scale);
 
 		short fire_spread = obj->ai_info->fire_spread * fs;
 
-		if ((obj->control_type == CT_AI && ((obj->ai_info->flags & AIF_TEAM_MASK) != AIF_TEAM_REBEL)) && fire_spread < Diff_ai_min_fire_spread[DIFF_LEVEL] * fs)
+		if ((obj->control_type == CT_AI && ((obj->ai_info->flags & AIF_TEAM_MASK) != AIF_TEAM_REBEL)) && fire_spread < Diff_ai_min_fire_spread[DIFF_AI_LEVEL] * fs)
 		{
-			fire_spread = Diff_ai_min_fire_spread[DIFF_LEVEL] * fs;
+			fire_spread = Diff_ai_min_fire_spread[DIFF_AI_LEVEL] * fs;
 		}
 
 		short half_fire_spread = fire_spread >> 1;

@@ -854,7 +854,7 @@ bool ApplyDamageToGeneric(object *hit_obj, object *killer, int damage_type, floa
 	object *weapon_obj=killer;
 
 	if (damage_type != GD_SCRIPTED && !(IS_GENERIC(hit_obj->type) && (Object_info[hit_obj->id].flags & OIF_NO_DIFF_SCALE_DAMAGE)))
-		damage *= Diff_robot_damage[DIFF_LEVEL];
+		damage *= Diff_robot_damage[DIFF_HP_LEVEL];
 
 	if (killer!=NULL && killer->type==OBJ_WEAPON)
 	{

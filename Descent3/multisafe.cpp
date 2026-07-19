@@ -2087,7 +2087,7 @@ bool AddPowerupEnergyToPlayer(int id)
 	float curr_energy = Players[Player_num].energy;
 	if (Players[id].energy >= MAX_ENERGY)
 		return false;
-	float amount = 10.0f * Diff_general_scalar[DIFF_LEVEL];
+	float amount = 10.0f * Diff_general_scalar[DIFF_RESOURCES_LEVEL];
 	curr_energy = min(MAX_ENERGY, curr_energy + amount);
 	Players[id].energy = curr_energy;
 	return true;
@@ -2389,7 +2389,7 @@ bool HandleCommonPowerups(char* pname, msafe_struct* mstruct, ubyte* pickup)
 		{
 			// Pick it up
 			*pickup = 1;
-			float addval = SHIELD_BONUS * Diff_shield_energy_scalar[DIFF_LEVEL];
+			float addval = SHIELD_BONUS * Diff_shield_energy_scalar[DIFF_RESOURCES_LEVEL];
 			if (IOBJ->shields + addval > MAX_SHIELDS)
 				addval = MAX_SHIELDS - IOBJ->shields;
 
@@ -2402,7 +2402,7 @@ bool HandleCommonPowerups(char* pname, msafe_struct* mstruct, ubyte* pickup)
 	else if (!stricmp("Energy", pname))
 	{
 		handled = true;
-		float addval = ENERGY_BONUS * Diff_shield_energy_scalar[DIFF_LEVEL];
+		float addval = ENERGY_BONUS * Diff_shield_energy_scalar[DIFF_RESOURCES_LEVEL];
 		addval = min(addval, MAX_ENERGY - Players[pnum].energy);
 		Players[pnum].energy += addval;
 

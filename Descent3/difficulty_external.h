@@ -18,6 +18,8 @@
 #ifndef DIFFICULTY_EXTERNAL_H_
 #define DIFFICULTY_EXTERNAL_H_
 
+#include "pstypes.h"
+
 #define	MAX_DIFFICULTY_LEVELS		5			//	Number of difficulty levels.
 
 //skill difficulties
@@ -26,5 +28,16 @@
 #define DIFFICULTY_HOTSHOT		2
 #define DIFFICULTY_ACE			3
 #define DIFFICULTY_INSANE		4
+
+// A uniform profile is exactly equivalent to the original monolithic
+// difficulty setting.  Multiplayer enhanced sessions may select the four
+// existing dimensions independently; no new scaling curves are introduced.
+struct difficulty_profile
+{
+	ubyte enemy_ai;
+	ubyte enemy_speed;
+	ubyte enemy_hp;
+	ubyte resources;
+};
 
 #endif

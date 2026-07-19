@@ -24,9 +24,28 @@
 
 extern ubyte ingame_difficulty;
 
-//DAJ static global instead of subroutine call for speed
-#define DIFF_LEVEL (((Game_mode & GM_MULTI))?Netgame.difficulty:ingame_difficulty)
-//#define DIFF_LEVEL (((Game_mode & GM_MULTI))?Netgame.difficulty:dCurrentPilotDifficulty())
+extern difficulty_profile Singleplayer_difficulty;
+extern difficulty_profile Multiplayer_difficulty;
+
+void DifficultySetSingleplayer(ubyte level);
+void DifficultySetSingleplayerProfile(const difficulty_profile &profile);
+void DifficultySetMultiplayer(ubyte level);
+void DifficultySetMultiplayerProfile(const difficulty_profile &profile);
+bool DifficultyProfileIsUniform(const difficulty_profile &profile);
+ubyte DifficultyProfileLegacyLevel(const difficulty_profile &profile);
+
+// Single-player continues to use the pilot's monolithic setting.  A uniform
+// multiplayer profile therefore executes precisely the same table lookups as
+// before, while enhanced games can select the established dimensions
+// independently.
+#define DIFF_AI_LEVEL (((Game_mode & GM_MULTI)) ? Multiplayer_difficulty.enemy_ai : Singleplayer_difficulty.enemy_ai)
+#define DIFF_SPEED_LEVEL (((Game_mode & GM_MULTI)) ? Multiplayer_difficulty.enemy_speed : Singleplayer_difficulty.enemy_speed)
+#define DIFF_HP_LEVEL (((Game_mode & GM_MULTI)) ? Multiplayer_difficulty.enemy_hp : Singleplayer_difficulty.enemy_hp)
+#define DIFF_RESOURCES_LEVEL (((Game_mode & GM_MULTI)) ? Multiplayer_difficulty.resources : Singleplayer_difficulty.resources)
+
+// The scripting API has only one legacy difficulty value.  Enemy toughness is
+// the least surprising representative for custom profiles (notably for bosses).
+#define DIFF_LEVEL DIFF_HP_LEVEL
 
 extern float Diff_ai_dodge_percent[5]; //
 extern float Diff_ai_dodge_speed[5]; //

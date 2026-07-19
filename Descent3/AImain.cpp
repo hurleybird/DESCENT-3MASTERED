@@ -1123,7 +1123,7 @@ void do_melee_attack(object *obj)
 						if(Demo_flags == DF_RECORDING)
 							DemoWrite3DSound(SOUND_ENERGY_DRAIN, OBJNUM(objptr), SND_PRIORITY_HIGHEST);
 
-					energy = (14 + ps_rand()%5) * Diff_general_inv_scalar[DIFF_LEVEL];
+					energy = (14 + ps_rand()%5) * Diff_general_inv_scalar[DIFF_RESOURCES_LEVEL];
 
 					if(objptr->type == OBJ_PLAYER)
 					{
@@ -1473,7 +1473,7 @@ inline void ApplyConstantForce(object *objp, vector *new_pos, vector *force, flo
 
 bool AIDetermineAimPoint(object *robot, object *target, vector *aim_pt, float weapon_speed = 0.0f)
 {
-	if(DIFF_LEVEL == DIFFICULTY_TRAINEE && ((robot->ai_info->flags & AIF_TEAM_MASK) != AIF_TEAM_REBEL))
+	if(DIFF_AI_LEVEL == DIFFICULTY_TRAINEE && ((robot->ai_info->flags & AIF_TEAM_MASK) != AIF_TEAM_REBEL))
 	{
 		*aim_pt = target->pos;
 		return true;
@@ -1513,7 +1513,7 @@ bool AIDetermineAimPoint(object *robot, object *target, vector *aim_pt, float we
 
 	// chrishack -- add stuff so that rebels get better as DIFF lowers and 
 	// ptmc gets better as DIFF increases
-	if(target->type != OBJ_PLAYER || (DIFF_LEVEL < DIFFICULTY_HOTSHOT && ((robot->ai_info->flags & AIF_TEAM_MASK) != AIF_TEAM_REBEL)) || scale < 0.4f || vl <= AIVIS_MOSTLY)
+	if(target->type != OBJ_PLAYER || (DIFF_AI_LEVEL < DIFFICULTY_HOTSHOT && ((robot->ai_info->flags & AIF_TEAM_MASK) != AIF_TEAM_REBEL)) || scale < 0.4f || vl <= AIVIS_MOSTLY)
 		*aim_pt = target->pos + (target->mtype.phys_info.velocity * dt) * scale;
 	else
 		ApplyConstantForce(target, aim_pt, &target->mtype.phys_info.thrust, dt * scale);
@@ -2624,11 +2624,11 @@ bool AIInit(object *obj, ubyte ai_class, ubyte ai_type, ubyte ai_movement)
 	ai_info->awareness = AWARE_NONE;
 
 	// Apply difficulty settings
-	ai_info->dodge_percent *= (f_no_scale)?1.0f:Diff_ai_dodge_percent[DIFF_LEVEL];
-	ai_info->dodge_vel_percent *= (f_no_scale)?1.0f:Diff_ai_dodge_speed[DIFF_LEVEL];
-	ai_info->max_velocity *= (f_no_scale || obj->movement_type == MT_WALKING)?1.0f:Diff_ai_speed[DIFF_LEVEL];
-	ai_info->max_turn_rate *= (f_no_scale || obj->movement_type == MT_WALKING)?1.0f:Diff_ai_rotspeed[DIFF_LEVEL];
-	ai_info->circle_distance *= (f_no_scale)?1.0f:Diff_ai_circle_dist[DIFF_LEVEL];
+	ai_info->dodge_percent *= (f_no_scale)?1.0f:Diff_ai_dodge_percent[DIFF_AI_LEVEL];
+	ai_info->dodge_vel_percent *= (f_no_scale)?1.0f:Diff_ai_dodge_speed[DIFF_SPEED_LEVEL];
+	ai_info->max_velocity *= (f_no_scale || obj->movement_type == MT_WALKING)?1.0f:Diff_ai_speed[DIFF_SPEED_LEVEL];
+	ai_info->max_turn_rate *= (f_no_scale || obj->movement_type == MT_WALKING)?1.0f:Diff_ai_rotspeed[DIFF_SPEED_LEVEL];
+	ai_info->circle_distance *= (f_no_scale)?1.0f:Diff_ai_circle_dist[DIFF_AI_LEVEL];
 
 	ai_info->last_see_target_pos = obj->pos;
 
@@ -2796,7 +2796,7 @@ void AICheckTargetVis(object *obj)
 	}
 	#endif
 
-	if(ai_info->dist_to_target_actual > MAX_TRACK_TARGET_DIST * Diff_ai_vis_dist[DIFF_LEVEL] && (!ObjGet(ai_info->target_handle) || (obj->roomnum != ObjGet(ai_info->target_handle)->roomnum)))
+	if(ai_info->dist_to_target_actual > MAX_TRACK_TARGET_DIST * Diff_ai_vis_dist[DIFF_AI_LEVEL] && (!ObjGet(ai_info->target_handle) || (obj->roomnum != ObjGet(ai_info->target_handle)->roomnum)))
 	{
 		ai_info->status_reg &= ~AISR_SEES_GOAL;
 		return;
@@ -2809,7 +2809,7 @@ void AICheckTargetVis(object *obj)
 	}
 	#endif
 
-	if(ai_info->awareness == AWARE_NONE && (target->roomnum != obj->roomnum) && ai_info->dist_to_target_actual > MAX_SEE_TARGET_DIST * Diff_ai_vis_dist[DIFF_LEVEL]) 
+	if(ai_info->awareness == AWARE_NONE && (target->roomnum != obj->roomnum) && ai_info->dist_to_target_actual > MAX_SEE_TARGET_DIST * Diff_ai_vis_dist[DIFF_AI_LEVEL])
 	{
 		ai_info->status_reg &= ~AISR_SEES_GOAL;
 		return;
@@ -2822,7 +2822,7 @@ void AICheckTargetVis(object *obj)
 	}
 	#endif
 
-	if((ai_info->dist_to_target_actual > MAX_SEE_TARGET_DIST * Diff_ai_vis_dist[DIFF_LEVEL] && ai_info->awareness <= AWARE_BARELY && (target->roomnum != obj->roomnum)) || 
+	if((ai_info->dist_to_target_actual > MAX_SEE_TARGET_DIST * Diff_ai_vis_dist[DIFF_AI_LEVEL] && ai_info->awareness <= AWARE_BARELY && (target->roomnum != obj->roomnum)) ||
 		(target->type == OBJ_PLAYER && (Players[target->id].flags & (PLAYER_FLAGS_DEAD | PLAYER_FLAGS_DYING)))  || target->type == OBJ_GHOST ||
 			!AIDetermineObjVisLevel(obj, target)) 
 	{
@@ -4377,7 +4377,7 @@ void ai_fire(object *obj)
 			float max_invalid_ang;
 			bool f_constrain = true;
 
-			 float s_scale = (((obj->ai_info->flags & AIF_TEAM_MASK) != AIF_TEAM_REBEL))?Diff_ai_turret_speed[DIFF_LEVEL]:1.0f;
+			 float s_scale = (((obj->ai_info->flags & AIF_TEAM_MASK) != AIF_TEAM_REBEL))?Diff_ai_turret_speed[DIFF_SPEED_LEVEL]:1.0f;
 			const float rps = pm->submodel[pm->poly_wb[i].turret_index[j]].rps * s_scale;
 
 			if(pm->submodel[pm->poly_wb[i].turret_index[j]].fov > 0.0f)//Gametime >= obj->dynamic_wb[i].turret_next_think_time[j]) 

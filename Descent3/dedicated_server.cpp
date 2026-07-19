@@ -51,6 +51,7 @@ typedef int socklen_t;
 #include "init.h"
 #include "ship.h"
 #include "hud.h"
+#include "difficulty.h"
 
 #ifdef MACINTOSH
 #include "macsock.h"
@@ -117,6 +118,11 @@ cvar_entry CVars[] =
 {"SetLevel",CVAR_TYPE_INT,NULL,-1,-1,CVAR_GAMEINIT | CVAR_GAMEPLAY},//33
 {"SetDifficulty",CVAR_TYPE_INT,NULL,0,4,CVAR_GAMEINIT},//34
 {"MOTD",CVAR_TYPE_STRING,&Multi_message_of_the_day,-1,HUD_MESSAGE_LENGTH * 2,CVAR_GAMEINIT},//35 
+{"NetworkProfile",CVAR_TYPE_INT,NULL,0,1,CVAR_GAMEINIT},//36
+{"DifficultyAI",CVAR_TYPE_INT,NULL,0,4,CVAR_GAMEINIT},//37
+{"DifficultySpeed",CVAR_TYPE_INT,NULL,0,4,CVAR_GAMEINIT},//38
+{"DifficultyHP",CVAR_TYPE_INT,NULL,0,4,CVAR_GAMEINIT},//39
+{"DifficultyResources",CVAR_TYPE_INT,NULL,0,4,CVAR_GAMEINIT},//40
 };
 
 #define CVAR_TIMELIMIT	1
@@ -142,6 +148,11 @@ cvar_entry CVars[] =
 #define CVAR_SETLEVEL		33
 #define CVAR_SETDIFF			34
 #define CVAR_MOTD			35
+#define CVAR_NETWORKPROFILE	36
+#define CVAR_DIFF_AI		37
+#define CVAR_DIFF_SPEED		38
+#define CVAR_DIFF_HP		39
+#define CVAR_DIFF_RESOURCES	40
 
 #define MAX_CVARS	(sizeof(CVars)/sizeof(cvar_entry))
 
@@ -215,6 +226,12 @@ int RunServerConfigs()
 	// Start the actual server
 
 	int teams = CheckMissionForScript(Netgame.mission, Netgame.scriptname, Dedicated_num_teams);
+	if (Multi_host_protocol == MULTI_PROTOCOL_COMPATIBILITY &&
+		!DifficultyProfileIsUniform(Multiplayer_difficulty))
+	{
+		PrintDedicatedMessage("Compatibility hosting requires all four difficulty axes to match.\n");
+		return 0;
+	}
 
 	if (teams == -1)
 	{
@@ -490,8 +507,28 @@ void SetCVarInt(int index, int val)
 	case CVAR_SETDIFF:
 	{
 		Netgame.difficulty = val;
+		DifficultySetMultiplayer(val);
 	}
 	break;
+	case CVAR_NETWORKPROFILE:
+		MultiSetHostProtocol(val ? MULTI_PROTOCOL_ENHANCED : MULTI_PROTOCOL_COMPATIBILITY);
+		break;
+	case CVAR_DIFF_AI:
+		Multiplayer_difficulty.enemy_ai = val;
+		Netgame.difficulty = DifficultyProfileLegacyLevel(Multiplayer_difficulty);
+		break;
+	case CVAR_DIFF_SPEED:
+		Multiplayer_difficulty.enemy_speed = val;
+		Netgame.difficulty = DifficultyProfileLegacyLevel(Multiplayer_difficulty);
+		break;
+	case CVAR_DIFF_HP:
+		Multiplayer_difficulty.enemy_hp = val;
+		Netgame.difficulty = DifficultyProfileLegacyLevel(Multiplayer_difficulty);
+		break;
+	case CVAR_DIFF_RESOURCES:
+		Multiplayer_difficulty.resources = val;
+		Netgame.difficulty = DifficultyProfileLegacyLevel(Multiplayer_difficulty);
+		break;
 	}
 
 

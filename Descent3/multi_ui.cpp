@@ -50,6 +50,7 @@
 #include "menu.h"
 
 #include "multi_save_settings.h"
+#include "difficulty.h"
 
 #define MAIN_MULTI_MENU_W		384
 #define MAIN_MULTI_MENU_H		256
@@ -838,7 +839,124 @@ void MultiDoConfigLoad(void)
 #define PS_MODE_HS_ID		27
 #define MLOOK_HS_ID			28
 #define DIFF_LIST_ID			30
+#define DIFF_OPTIONS_HS_ID	31
 #define SHIP_ALLOW_HS_ID	0xdd
+
+static newuiComboBox *Multi_diff_protocol_combo = NULL;
+static newuiComboBox *Multi_diff_axis_combos[4] = {NULL, NULL, NULL, NULL};
+static bool Multi_diff_syncing = false;
+
+static const char *MultiDifficultyName(int level)
+{
+	static const char *names[MAX_DIFFICULTY_LEVELS] = {
+		TXT_TRAINEE, TXT_ROOKIE, TXT_HOTSHOT, TXT_ACE, TXT_INSANE
+	};
+	return level >= 0 && level < MAX_DIFFICULTY_LEVELS ? names[level] : TXT_ERROR;
+}
+
+static void MultiDifficultySummary(char *buffer)
+{
+	const bool custom = !DifficultyProfileIsUniform(Multiplayer_difficulty);
+	if (Multi_host_protocol == MULTI_PROTOCOL_ENHANCED)
+		sprintf(buffer, "Enhanced - %s (configure...)", custom ? "Custom difficulty" : MultiDifficultyName(Netgame.difficulty));
+	else
+		sprintf(buffer, "D3 1.5 / Piccu compatibility - %s (configure...)", MultiDifficultyName(Netgame.difficulty));
+}
+
+static void MultiDifficultyAxisChanged(int index)
+{
+	if (Multi_diff_syncing || !Multi_diff_protocol_combo ||
+		Multi_diff_protocol_combo->GetCurrentIndex() != MULTI_PROTOCOL_COMPATIBILITY)
+		return;
+
+	Multi_diff_syncing = true;
+	for (int i = 0; i < 4; ++i)
+		if (Multi_diff_axis_combos[i] && Multi_diff_axis_combos[i]->GetCurrentIndex() != index)
+			Multi_diff_axis_combos[i]->SetCurrentIndex(index);
+	Multi_diff_syncing = false;
+}
+
+static void MultiDifficultyProtocolChanged(int index)
+{
+	if (index == MULTI_PROTOCOL_COMPATIBILITY && Multi_diff_axis_combos[0])
+		MultiDifficultyAxisChanged(Multi_diff_axis_combos[0]->GetCurrentIndex());
+}
+
+static void MultiDifficultyOptionsMenu()
+{
+	newuiTiledWindow window;
+	newuiSheet *sheet;
+	bool exit_menu = false;
+
+	window.Create("Difficulty and Compatibility", 0, 0, 384, 416);
+	sheet = window.GetSheet();
+
+	sheet->NewGroup("Hosting profile", 0, 0);
+	Multi_diff_protocol_combo = sheet->AddComboBox(100, UILB_NOSORT);
+	Multi_diff_protocol_combo->AddItem("Compatibility (D3 1.5 / Piccu)");
+	Multi_diff_protocol_combo->AddItem("Enhanced");
+	Multi_diff_protocol_combo->SetCurrentIndex(Multi_host_protocol);
+
+	const char *axis_names[4] = {"Enemy AI", "Enemy / projectile speed", "Enemy HP", "Resources"};
+	const int axis_y[4] = {54, 106, 158, 210};
+	const ubyte axis_values[4] = {
+		Multiplayer_difficulty.enemy_ai,
+		Multiplayer_difficulty.enemy_speed,
+		Multiplayer_difficulty.enemy_hp,
+		Multiplayer_difficulty.resources
+	};
+
+	for (int axis = 0; axis < 4; ++axis)
+	{
+		sheet->NewGroup(axis_names[axis], 0, axis_y[axis]);
+		Multi_diff_axis_combos[axis] = sheet->AddComboBox(101 + axis, UILB_NOSORT);
+		for (int level = 0; level < MAX_DIFFICULTY_LEVELS; ++level)
+			Multi_diff_axis_combos[axis]->AddItem(MultiDifficultyName(level));
+		Multi_diff_axis_combos[axis]->SetCurrentIndex(axis_values[axis]);
+		Multi_diff_axis_combos[axis]->SetSelectChangeCallback(MultiDifficultyAxisChanged);
+	}
+	Multi_diff_protocol_combo->SetSelectChangeCallback(MultiDifficultyProtocolChanged);
+
+	sheet->NewGroup(NULL, 0, 274, NEWUI_ALIGN_HORIZ);
+	sheet->AddButton(TXT_OK, UID_OK);
+	sheet->AddButton(TXT_CANCEL, UID_CANCEL);
+
+	window.Open();
+	while (!exit_menu)
+	{
+		int result = window.DoUI();
+		if (result == UID_OK)
+		{
+			difficulty_profile profile;
+			profile.enemy_ai = Multi_diff_axis_combos[0]->GetCurrentIndex();
+			profile.enemy_speed = Multi_diff_axis_combos[1]->GetCurrentIndex();
+			profile.enemy_hp = Multi_diff_axis_combos[2]->GetCurrentIndex();
+			profile.resources = Multi_diff_axis_combos[3]->GetCurrentIndex();
+
+			multi_protocol_mode mode = (multi_protocol_mode)Multi_diff_protocol_combo->GetCurrentIndex();
+			if (mode == MULTI_PROTOCOL_COMPATIBILITY && !DifficultyProfileIsUniform(profile))
+			{
+				DoMessageBox(TXT_ERROR, "Compatibility games require one uniform difficulty.", MSGBOX_OK);
+				continue;
+			}
+
+			DifficultySetMultiplayerProfile(profile);
+			Netgame.difficulty = DifficultyProfileLegacyLevel(Multiplayer_difficulty);
+			MultiSetHostProtocol(mode);
+			exit_menu = true;
+		}
+		else if (result == UID_CANCEL)
+		{
+			exit_menu = true;
+		}
+	}
+
+	window.Close();
+	window.Destroy();
+	Multi_diff_protocol_combo = NULL;
+	for (int i = 0; i < 4; ++i)
+		Multi_diff_axis_combos[i] = NULL;
+}
 
 void MultiGameOptionsMenu(int alloptions)
 {
@@ -1128,47 +1246,18 @@ void MultiGameOptionsMenu(int alloptions)
 	mlook_y = cury;
 	cury += 20;
 
-	//Difficulty Listbox & title
+	// Difficulty and network-compatibility settings live in a focused dialog;
+	// five selectors do not fit legibly in this already dense options page.
 	UITextItem diff_title_text(TXT_PLTDIFFICULT, UICOL_WINDOW_TITLE);
-	UITextItem trainee(TXT_TRAINEE, GR_LIGHTGRAY);
-	UITextItem rookie(TXT_ROOKIE, GR_LIGHTGRAY);
-	UITextItem hotshot(TXT_HOTSHOT, GR_LIGHTGRAY);
-	UITextItem ace(TXT_ACE, GR_LIGHTGRAY);
-	UITextItem insane(TXT_INSANE, GR_LIGHTGRAY);
-
 	UIText diff_title;
-
 	diff_title.Create(&main_wnd, &diff_title_text, MULTI_OPT_TOGGLES_X, diff_y, 0); diff_y += 15;
-	NewUIListBox diff_list;
-
-	diff_list.SetSelectedColor(UICOL_LISTBOX_HI);
-	diff_list.SetHiliteColor(UICOL_LISTBOX_HI);
-	diff_list.Create(&main_wnd, DIFF_LIST_ID, MULTI_OPT_TOGGLES_X, diff_y, 160, 96, UILB_NOSORT);
-
-	diff_list.AddItem(&trainee);
-	diff_list.AddItem(&rookie);
-	diff_list.AddItem(&hotshot);
-	diff_list.AddItem(&ace);
-	diff_list.AddItem(&insane);
-
-	switch (Netgame.difficulty)
-	{
-	case 0:
-		diff_list.SelectItem(&trainee);
-		break;
-	case 1:
-		diff_list.SelectItem(&rookie);
-		break;
-	case 2:
-		diff_list.SelectItem(&hotshot);
-		break;
-	case 3:
-		diff_list.SelectItem(&ace);
-		break;
-	case 4:
-		diff_list.SelectItem(&insane);
-		break;
-	}
+	char diff_summary[160];
+	MultiDifficultySummary(diff_summary);
+	UITextItem diff_options_off(diff_summary, UICOL_HOTSPOT_LO);
+	UITextItem diff_options_on(diff_summary, UICOL_HOTSPOT_HI);
+	UIHotspot diff_options_hs;
+	diff_options_hs.Create(&main_wnd, DIFF_OPTIONS_HS_ID, 0, &diff_options_off, &diff_options_on,
+		MULTI_OPT_TOGGLES_X, diff_y, 240, 30, UIF_FIT);
 
 
 
@@ -1292,6 +1381,16 @@ void MultiGameOptionsMenu(int alloptions)
 			//Ships allowed
 			main_wnd.Close();
 			DoMultiAllowed();
+			main_wnd.Open();
+		}
+		else if (res == DIFF_OPTIONS_HS_ID)
+		{
+			main_wnd.Close();
+			MultiDifficultyOptionsMenu();
+			MultiDifficultySummary(diff_summary);
+			UITextItem new_diff_options_off(diff_summary, UICOL_HOTSPOT_LO);
+			UITextItem new_diff_options_on(diff_summary, UICOL_HOTSPOT_HI);
+			diff_options_hs.SetStates(&new_diff_options_off, &new_diff_options_on);
 			main_wnd.Open();
 		}
 		else if (res == ACC_WEAP_HS_ID)
@@ -1428,10 +1527,6 @@ void MultiGameOptionsMenu(int alloptions)
 
 			Netgame.respawn_time = val;
 
-			int difficulty = diff_list.GetSelectedIndex();
-
-			Netgame.difficulty = difficulty;
-
 			exit_menu = 1;
 		}
 
@@ -1527,6 +1622,8 @@ void ShowNetgameInfo(network_game* game)
 	sheet->NewGroup(str, GAME_INFO_COL1, cury); GAME_INFO_GOTO_NEXT_LINE;
 
 	char* szdiff = TXT_ERROR;
+	ushort protocol = MultiGetNetworkGameProtocol(game);
+	const difficulty_profile *profile = MultiGetNetworkGameDifficulty(game);
 
 	switch (game->difficulty)
 	{
@@ -1549,8 +1646,22 @@ void ShowNetgameInfo(network_game* game)
 		szdiff = TXT_ERROR;
 	}
 
-	sprintf(str, "%s: %s", TXT_PLTDIFFICULT, szdiff);
+	if (MultiProtocolIsEnhanced(protocol) && profile && !DifficultyProfileIsUniform(*profile))
+		sprintf(str, "%s: Custom", TXT_PLTDIFFICULT);
+	else
+		sprintf(str, "%s: %s", TXT_PLTDIFFICULT, szdiff);
 	sheet->NewGroup(str, GAME_INFO_COL1, cury); GAME_INFO_GOTO_NEXT_LINE;
+
+	sprintf(str, "Network profile: %s", MultiProtocolIsEnhanced(protocol) ? "Enhanced" : "D3 1.5 / Piccu compatibility");
+	sheet->NewGroup(str, GAME_INFO_COL1, cury); GAME_INFO_GOTO_NEXT_LINE;
+
+	if (MultiProtocolIsEnhanced(protocol) && profile && !DifficultyProfileIsUniform(*profile))
+	{
+		sprintf(str, "AI %s, Speed %s", MultiDifficultyName(profile->enemy_ai), MultiDifficultyName(profile->enemy_speed));
+		sheet->NewGroup(str, GAME_INFO_COL1, cury); GAME_INFO_GOTO_NEXT_LINE;
+		sprintf(str, "HP %s, Resources %s", MultiDifficultyName(profile->enemy_hp), MultiDifficultyName(profile->resources));
+		sheet->NewGroup(str, GAME_INFO_COL1, cury); GAME_INFO_GOTO_NEXT_LINE;
+	}
 
 	char* mode;
 	if ((game->flags & NF_PEER_PEER))
