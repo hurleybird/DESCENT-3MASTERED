@@ -113,6 +113,25 @@ void PolymodelMotionBeginObject(int object_handle, vector *pos, matrix *orient)
 	Polymodel_motion_active = history.has_previous;
 }
 
+bool PolymodelMotionBeginTransientTransform(vector *pos, matrix *orient)
+{
+	if (Polymodel_motion_active_history || !pos || !orient)
+		return false;
+
+	// Some model families call DrawPolygonModel directly instead of entering
+	// through RenderObject_DrawPolymodel.  Retained rendering still needs their
+	// object-to-world transform for room fog, lighting payloads, and other
+	// world-space material work, even though they have no persistent motion ID.
+	static PolymodelMotionHistory transient_history;
+	transient_history = {};
+	transient_history.current.pos = *pos;
+	transient_history.current.orient = *orient;
+	transient_history.has_current = true;
+	Polymodel_motion_active_history = &transient_history;
+	Polymodel_motion_active = false;
+	return true;
+}
+
 void PolymodelMotionCaptureCurrent(poly_model *pm, vector *pos, matrix *orient)
 {
 	if (!Polymodel_motion_active_history || !pm || !pos || !orient)
@@ -2913,6 +2932,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	
 	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
 	ApplyPolymodelSubmodelOffsetAdjustments(po);
+	const bool transient_motion_transform = PolymodelMotionBeginTransientTransform(pos, orient);
 	PolymodelMotionCaptureCurrent(po, pos, orient);
 	PolymodelPerfAddDrawModelSetup(draw_model_start_time);
 
@@ -2963,6 +2983,8 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 
 	DoneLightInstance();
 	g3_DoneInstance();
+	if (transient_motion_transform)
+		PolymodelMotionEndObject();
 	PolymodelPerfAddDrawModel(draw_model_start_time);
 }
 
@@ -3009,6 +3031,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	po=&Poly_models[model_num];
 	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
 	ApplyPolymodelSubmodelOffsetAdjustments(po);
+	const bool transient_motion_transform = PolymodelMotionBeginTransientTransform(pos, orient);
 	PolymodelMotionCaptureCurrent(po, pos, orient);
 	PolymodelPerfAddDrawModelSetup(draw_model_start_time);
 
@@ -3055,6 +3078,8 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	
 	g3_DoneInstance();
 	DoneLightInstance();
+	if (transient_motion_transform)
+		PolymodelMotionEndObject();
 	PolymodelPerfAddDrawModel(draw_model_start_time);
 }
 
@@ -3093,6 +3118,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	po=&Poly_models[model_num];
 	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
 	ApplyPolymodelSubmodelOffsetAdjustments(po);
+	const bool transient_motion_transform = PolymodelMotionBeginTransientTransform(pos, orient);
 	PolymodelMotionCaptureCurrent(po, pos, orient);
 	PolymodelPerfAddDrawModelSetup(draw_model_start_time);
 
@@ -3141,6 +3167,8 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	
 	g3_DoneInstance();
 	DoneLightInstance();
+	if (transient_motion_transform)
+		PolymodelMotionEndObject();
 	rend_SetOverlayType (OT_NONE);
 	PolymodelPerfAddDrawModel(draw_model_start_time);
 }

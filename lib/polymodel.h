@@ -137,6 +137,7 @@ void DonePolyModelPosInstance ();
 
 void PolymodelMotionStartFrame();
 void PolymodelMotionBeginObject(int object_handle, vector *pos, matrix *orient);
+bool PolymodelMotionBeginTransientTransform(vector *pos, matrix *orient);
 void PolymodelMotionCaptureCurrent(poly_model *pm, vector *pos, matrix *orient);
 bool PolymodelMotionGetObjectPrevious(int object_handle, vector *pos, matrix *orient);
 bool PolymodelMotionHasActiveObject();

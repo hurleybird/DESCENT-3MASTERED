@@ -1955,9 +1955,13 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 	if (use_effect)
 		SetPolymodelEffect(&pe);
 
+	// Retained geometry needs the current object/submodel world transform even
+	// when this is the transparent replay and motion-vector output is disabled.
+	// Beginning the transform history twice in one frame is intentionally
+	// idempotent; only the renderer motion target remains gated here.
+	PolymodelMotionBeginObject(OBJNUM(obj), &obj_pos, &obj->orient);
 	if (!RenderObject_disable_motion_capture)
 	{
-		PolymodelMotionBeginObject(OBJNUM(obj), &obj_pos, &obj->orient);
 		rend_BeginMotionObject(OBJNUM(obj), RenderObject_MotionObjectFlags(obj));
 	}
 	rend_SetAOClass(RENDERER_AO_CLASS_POLYOBJECT);
@@ -2000,8 +2004,8 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 	if (!RenderObject_disable_motion_capture)
 	{
 		rend_EndMotionObject();
-		PolymodelMotionEndObject();
 	}
+	PolymodelMotionEndObject();
 	Polymodel_render_pass = saved_render_pass;
 }
 
