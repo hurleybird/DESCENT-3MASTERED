@@ -1696,6 +1696,11 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 
 	if (ao_enabled)
 	{
+		//The current path consumes the already-resolved scene capture directly;
+		//there are no AO-local scene copies. Anchor those zero-length stages here
+		//so the depth reduction receives its own GPU timing range.
+		GL4PerfGpuAOMark(GL4_GPU_AO_AFTER_SCENE_COLOR_COPY);
+		GL4PerfGpuAOMark(GL4_GPU_AO_AFTER_SCENE_DEPTH_COPY);
 		const float* ao_projection = captured_scene_projection_valid ?
 			captured_scene_projection : last_projection;
 		GLuint ao_weight_texture = ao_class_texture;
@@ -2991,6 +2996,7 @@ void GL4Renderer::SetOverlayType(ubyte type)
 // Clears the display to a specified color
 void GL4Renderer::ClearScreen(ddgr_color color)
 {
+	captured_scene_draw_count_valid = false;
 	FlushFontBatch();
 
 	int r = (color >> 16 & 0xFF);

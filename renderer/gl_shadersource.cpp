@@ -258,14 +258,12 @@ const char* fontFragmentSrc =
 "\n"
 "layout(location = 0) out vec4 color;\n"
 "layout(location = 2) out vec4 post_mask;\n"
-"layout(location = 3) out float ao_class;\n"
 "\n"
 "void main()\n"
 "{\n"
 "	color = texture(fonttexture, vec3(outuv, float(outlayer))) * outcolor;\n"
 "	float suppression = clamp(1.0 - pow(1.0 - clamp(color.a, 0.0, 1.0), 3.0), 0.0, 1.0);\n"
 "	post_mask = vec4(suppression, suppression, 0.0, 1.0);\n"
-"	ao_class = 1.0;\n"
 "}\n"
 "";
 
@@ -717,7 +715,7 @@ const char* aoDepthFragmentSrc =
 "    if (has_ao_class != 0)\n"
 "    {\n"
 "        vec2 uv = (vec2(pixel) + vec2(0.5)) / input_screen_size;\n"
-"        float stored_value = texture(ao_class_tex, uv).r;\n"
+"        float stored_value = texture(ao_class_tex, uv).a;\n"
 "        value.ao_weight = (ao_weight_is_direct != 0) ? clamp(stored_value, 0.0, 1.0) : AOClassWeight(stored_value);\n"
 "    }\n"
 "    return value;\n"

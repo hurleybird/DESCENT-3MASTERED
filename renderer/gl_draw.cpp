@@ -138,6 +138,7 @@ static void GL4UseSceneDrawBuffersWithoutAOClass(bool include_motion_vectors, bo
 	};
 	glDrawBuffers(include_motion_object_ids ? 5 : 4, draw_buffers);
 	GL_ConfigurePostMaskBlend();
+	glColorMaski(2, GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
 }
 
 static void GL4UseSceneDrawBuffersForCurrentDraw(bool include_motion_vectors, bool include_ao_class,
@@ -148,11 +149,12 @@ static void GL4UseSceneDrawBuffersForCurrentDraw(bool include_motion_vectors, bo
 		GL_COLOR_ATTACHMENT0,
 		static_cast<GLenum>(include_motion_vectors ? GL_COLOR_ATTACHMENT1 : GL_NONE),
 		GL_COLOR_ATTACHMENT2,
-		static_cast<GLenum>(include_ao_class ? GL_COLOR_ATTACHMENT3 : GL_NONE),
+		GL_NONE,
 		static_cast<GLenum>(include_motion_object_ids ? GL_COLOR_ATTACHMENT4 : GL_NONE)
 	};
 	glDrawBuffers(include_motion_object_ids ? 5 : 4, draw_buffers);
 	GL_ConfigurePostMaskBlend();
+	glColorMaski(2, GL_TRUE, GL_TRUE, GL_TRUE, include_ao_class ? GL_TRUE : GL_FALSE);
 }
 
 static void GL4UseSceneColorDrawBuffer()

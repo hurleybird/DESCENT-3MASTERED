@@ -257,13 +257,11 @@ struct PostProtectionMaskResources
 	GLuint mask_texture = 0;
 	GLuint resolved_texture = 0;
 	GLuint resolve_framebuffer = 0;
-	GLuint ao_class_texture = 0;
-	GLuint ao_class_resolved_texture = 0;
-	GLuint ao_class_resolve_framebuffer = 0;
 	uint32_t width = 0;
 	uint32_t height = 0;
 	uint32_t samples = 0;
 	bool msaa_renderbuffer_storage = false;
+	bool resolve_valid = false;
 
 	void Update(uint32_t width, uint32_t height, uint32_t msaa_samples);
 	void Destroy();

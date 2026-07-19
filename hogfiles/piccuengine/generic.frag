@@ -104,7 +104,6 @@ in vec3 outpt;
 layout(location = 0) out vec4 color;
 layout(location = 1) out vec2 velocity;
 layout(location = 2) out vec4 post_mask;
-layout(location = 3) out float ao_class;
 layout(location = 4) out uint motion_object_id;
 
 #if defined(USE_SPECULAR)
@@ -354,8 +353,7 @@ void main()
 		if (ao_weight <= 0.0)
 			discard;
 		color = vec4(ao_weight, ao_weight, ao_weight, 1.0);
-		post_mask = vec4(0.0, 0.0, 0.0, 1.0);
-		ao_class = ao_weight;
+		post_mask = vec4(0.0, 0.0, 0.0, ao_weight);
 		return;
 	}
 
@@ -481,6 +479,5 @@ void main()
 		velocity = vec2(0.0);
 		motion_object_id = 0u;
 	}
-	post_mask = vec4(ao_mask, bloom_mask, 0.0, 1.0);
-	ao_class = float(clamp(ao_class_value, 0, 255)) / 255.0;
+	post_mask = vec4(ao_mask, bloom_mask, 0.0, float(clamp(ao_class_value, 0, 255)) / 255.0);
 }
