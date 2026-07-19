@@ -628,6 +628,28 @@ static RetainedRoomCache* GetRetainedRoom(room* rp)
 	return &cache;
 }
 
+void RetainedRoomPrecacheAll(bool include_specular)
+{
+	if (!UseHardware || StateLimited || !rend_CanUseNewrender() || NoLightmaps)
+		return;
+
+	RegisterRetainedRoomReleaseCallback();
+	for (int roomnum = 0; roomnum <= Highest_room_index; roomnum++)
+	{
+		room* rp = &Rooms[roomnum];
+		if (!rp->used)
+			continue;
+
+		RetainedRoomCache* cache = GetRetainedRoom(rp);
+		if (include_specular && cache)
+			GetRetainedRoomSpecularVertices(rp, *cache);
+	}
+
+	// The last upload leaves its VAO and index buffer bound. Restore the
+	// renderer's streaming vertex state before level startup continues.
+	rendTEMP_UnbindVertexBuffer();
+}
+
 bool RetainedRoomCanDrawBaseFace(room* rp, int facenum)
 {
 	if (!UseHardware || StateLimited || !rend_CanUseNewrender() || NoLightmaps ||

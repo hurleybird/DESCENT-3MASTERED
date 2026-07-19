@@ -19,3 +19,4 @@ void RetainedRoomClearDeformation(room* rp);
 void RetainedRoomSetTransform(room* rp, const float transform[16]);
 void RetainedRoomClearTransform(room* rp);
 void RetainedRoomInvalidateAll();
+void RetainedRoomPrecacheAll(bool include_specular);

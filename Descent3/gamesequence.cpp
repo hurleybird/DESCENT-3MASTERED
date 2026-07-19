@@ -54,6 +54,7 @@
 #include "TelCom.h"
 #include "scorch.h"
 #include "render.h"
+#include "retained_room.h"
 #include "renderer.h"
 #include "stringtable.h"
 #include "ddio_common.h"
@@ -85,6 +86,7 @@
 #include "vclip.h"
 #include "bsp.h"
 #include "vibeinterface.h"
+#include "../model/retained_polymodel.h"
 
 #include "args.h"
 void ResetHudMessages(void);
@@ -516,6 +518,16 @@ void StartLevel()
 
 	//Get the data for this level
 	PageInAllData();
+	if (!Dedicated_server)
+	{
+		for (int model_num = 0; model_num < MAX_POLY_MODELS; model_num++)
+		{
+			if (Models_to_free[model_num])
+				RetainedPolymodelPrecache(model_num);
+		}
+		RetainedRoomPrecacheAll(Render_preferred_state.per_pixel_lighting);
+		TerrainRenderer_PrecacheLevel();
+	}
 
 	// TEMP HACK 
 	if (rend_SupportsBumpmapping())
@@ -1780,20 +1792,17 @@ void PageInAllData()
 
 	LoadLevelProgress(LOAD_PROGRESS_PAGING_DATA, PAGED_IN_CALC);
 
-	if (PreferredRenderer == RENDERER_DIRECT3D)
+	if (!Dedicated_server && UseHardware && !NoLightmaps)
 	{
-		if (LightmapInfo && !Dedicated_server)
+		if (LightmapInfo)
 		{
-			if (!NoLightmaps)
+			for (i = 0; i < MAX_LIGHTMAP_INFOS; i++)
 			{
-				for (i = 0; i < MAX_LIGHTMAP_INFOS; i++)
+				if (LightmapInfo[i].used && LightmapInfo[i].type != LMI_DYNAMIC)
 				{
-					if (LightmapInfo[i].used && LightmapInfo[i].type != LMI_DYNAMIC)
+					if (GameLightmaps[LightmapInfo[i].lm_handle].cache_slot == -1)
 					{
-						if (!Dedicated_server && GameLightmaps[LightmapInfo[i].lm_handle].cache_slot == -1)
-						{
-							rend_PreUploadTextureToCard(LightmapInfo[i].lm_handle, MAP_TYPE_LIGHTMAP);
-						}
+						rend_PreUploadTextureToCard(LightmapInfo[i].lm_handle, MAP_TYPE_LIGHTMAP);
 					}
 				}
 			}

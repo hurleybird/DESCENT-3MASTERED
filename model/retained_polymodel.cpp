@@ -253,6 +253,15 @@ static RetainedPolymodelCache *GetRetainedPolymodel(poly_model *pm)
 	return &cache;
 }
 
+void RetainedPolymodelPrecache(int model_num)
+{
+	if (!RetainedPolymodelEnabled() || model_num < 0 || model_num >= MAX_POLY_MODELS)
+		return;
+
+	GetRetainedPolymodel(&Poly_models[model_num]);
+	rendTEMP_UnbindVertexBuffer();
+}
+
 bool RetainedPolymodelCanDrawBaseFace(poly_model *pm, bsp_info *sm, int facenum)
 {
 	if (!RetainedPolymodelEnabled() || !pm || !sm || facenum < 0 || facenum >= sm->num_faces)

@@ -3,6 +3,7 @@
 #include "polymodel.h"
 
 bool RetainedPolymodelEnabled();
+void RetainedPolymodelPrecache(int model_num);
 bool RetainedPolymodelCanDrawBaseFace(poly_model *pm, bsp_info *sm, int facenum);
 bool RetainedPolymodelCanSkipPointRotation(poly_model *pm, bsp_info *sm);
 void RetainedPolymodelPrepareSubmodel(poly_model *pm, bsp_info *sm, bool advance_visual_random);

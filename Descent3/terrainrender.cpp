@@ -2470,6 +2470,36 @@ void TerrainRenderer_ResetLevelState()
 	memset(rooms_to_render, 0, sizeof(rooms_to_render));
 }
 
+void TerrainRenderer_PrecacheLevel()
+{
+	EnsureTerrainComputeRendererGeneration();
+	if (!TerrainComputeCanRender(false, true) || !CompileTerrainComputeProgram())
+		return;
+
+	// None of this work depends on the current camera. Doing it while the level
+	// is still starting avoids compiling the compute shader, rebuilding the
+	// complete 256x256-cell stream, converting/uploading both texture arrays,
+	// and allocating the worst-case output buffer on the first outdoor frame.
+	EnsureTerrainComputeFullDrawWork();
+	if (Terrain_compute_cell_inputs.empty())
+		return;
+	if (!EnsureTerrainComputeLightmapArray() ||
+		!EnsureTerrainComputeBaseTextureArray())
+	{
+		return;
+	}
+
+	EnsureTerrainComputeVertexCapacity(
+		Terrain_compute_cell_inputs.size() * TERRAIN_COMPUTE_VERTS_PER_CELL);
+	BindTerrainComputeInputBuffer();
+	EnsureTerrainPipelinesReady();
+
+	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+	glActiveTexture(GL_TEXTURE0);
+	rend_ClearBoundTextures();
+	rendTEMP_UnbindVertexBuffer();
+}
+
 // Checks to see if this object can even be seen from our current viewpoint
 // By shooting rays to it
 // Returns true if any of the rays hit

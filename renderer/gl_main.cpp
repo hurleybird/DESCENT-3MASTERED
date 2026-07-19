@@ -3443,6 +3443,15 @@ void GL4Renderer::SetCoplanarPolygonOffset(float factor)
 // Preuploads a texture to the video card
 void GL4Renderer::PreUploadTextureToCard(int handle, int map_type)
 {
+	if (!OpenGL_cache_initted)
+		return;
+	if (map_type != MAP_TYPE_BITMAP && map_type != MAP_TYPE_LIGHTMAP)
+		return;
+
+	const int texture_unit = map_type == MAP_TYPE_LIGHTMAP ? 1 : 0;
+	MakeBitmapCurrent(handle, map_type, texture_unit);
+	MakeWrapTypeCurrent(handle, map_type, texture_unit);
+	MakeFilterTypeCurrent(handle, map_type, texture_unit);
 }
 
 // Frees an uploaded texture from the video card

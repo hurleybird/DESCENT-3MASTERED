@@ -226,6 +226,7 @@ extern char Terrain_compute_debug_label[160];
 extern char Terrain_compute_debug_last_label[160];
 extern int Terrain_compute_debug_last_frame;
 void TerrainRenderer_ResetLevelState();
+void TerrainRenderer_PrecacheLevel();
 
 extern float Last_terrain_render_time;
 
