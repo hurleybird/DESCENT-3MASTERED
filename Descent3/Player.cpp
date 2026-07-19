@@ -994,8 +994,20 @@ void DoPlayerFrameForOne(int slot)
 	{
 		Render_afterburner_visual_factor = Players[slot].afterburner_mag;
 		const bool zoomed = (Players[slot].flags & PLAYER_FLAGS_ZOOMED) != 0;
+		const ship& player_ship = Ships[Players[slot].ship_index];
+		bool zoom_weapon_charging = false;
+		for (int weapon_type = PW_PRIMARY; weapon_type <= PW_SECONDARY; ++weapon_type)
+		{
+			const player_weapon& weapon = Players[slot].weapon[weapon_type];
+			if (weapon.firing_time > 0.0f &&
+				(player_ship.fire_flags[weapon.index] & SFF_ZOOM))
+			{
+				zoom_weapon_charging = true;
+				break;
+			}
+		}
 		const bool liquid_fov = obj->effect_info && (obj->effect_info->type_flags & EF_LIQUID);
-		if (!zoomed && !liquid_fov)
+		if (!zoomed && !zoom_weapon_charging && !liquid_fov)
 		{
 			float fov_multiplier = Render_preferred_state.afterburner_fov_multiplier;
 			if (fov_multiplier < 0.0f)
