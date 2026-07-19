@@ -2294,8 +2294,11 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 	if (!Terrain_compute_batches.empty())
 	{
 		PERF_MARKER_SCOPE("Compute.MultiDrawIndirect");
+		bool terrain_surface = rend_BeginTerrainSurface(fog_enabled);
 		glMultiDrawArraysIndirect(GL_TRIANGLES, nullptr, (GLsizei)Terrain_compute_batches.size(),
 			sizeof(TerrainGpuDrawCommand));
+		if (terrain_surface)
+			rend_EndTerrainSurface();
 	}
 	EndTerrainGpuTimer(gpu_timer_query);
 	EndTerrainComputeVisibilityQuery(visibility_query_active);

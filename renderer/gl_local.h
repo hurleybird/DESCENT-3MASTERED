@@ -389,6 +389,11 @@ class GL4Renderer : public IRenderer
 	bool post_mask_only_draw = false;
 	bool post_protection_mask_dirty = false;
 	bool post_protection_mask_cleared_this_frame = false;
+	bool terrain_surface_active = false;
+	bool terrain_post_mask_default_initialized = false;
+	bool terrain_fog_reconstruction_enabled = false;
+	float terrain_fog_reconstruction_start = 0.0f;
+	float terrain_fog_reconstruction_end = 1.0f;
 	renderer_draw_call_category draw_call_category = RENDERER_DRAW_CALL_3D;
 	bool depth_write_enabled = true;
 	bool depth_snapshot_invalidation_enabled = true;
@@ -774,6 +779,8 @@ public:
 	void SetAOSuppression(float value) override;
 	void SetBloomSuppression(float value) override;
 	void SetAOClass(int value) override;
+	bool BeginTerrainSurface(bool fog_enabled) override;
+	void EndTerrainSurface() override;
 	void SetPostMaskOnly(int state) override;
 	void SetSoftParticleState(int state) override;
 	void NotifyDepthBufferWrite() override;

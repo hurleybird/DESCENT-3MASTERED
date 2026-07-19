@@ -458,7 +458,16 @@ void main()
 		suppression_alpha *= clamp(visible, 0.0, 1.0);
 	}
 	ao_mask = clamp(ao_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
-	ao_mask = max(ao_mask, room_fog_amount);
+	// Fog only replaces destination color for the base-material and portal-cap
+	// composites.  Additive lights are merely attenuated by fog, while
+	// multiplicative overlays converge toward their neutral multiplier; neither
+	// operation covers the destination for the deferred AO composite.  Weight
+	// alpha-blended base materials by their actual coverage so transparent texels
+	// cannot stamp a rectangular fog mask into the scene.
+	if (fog_composite_mode == 0)
+		ao_mask = max(ao_mask, room_fog_amount * suppression_alpha);
+	else if (fog_composite_mode == 2)
+		ao_mask = max(ao_mask, room_fog_amount);
 	bloom_mask = clamp(bloom_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
 	
 	#if defined(USE_FOG)

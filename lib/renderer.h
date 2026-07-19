@@ -576,6 +576,8 @@ bool rend_GetMotionVectorSample(const vector *current_world, const vector *previ
 void rend_SetAOSuppression(float value);
 void rend_SetBloomSuppression(float value);
 void rend_SetAOClass(int value);
+bool rend_BeginTerrainSurface(bool fog_enabled);
+void rend_EndTerrainSurface();
 void rend_SetPostMaskOnly(int state);
 void rend_SetSoftParticleState(int state);
 void rend_NotifyDepthBufferWrite();

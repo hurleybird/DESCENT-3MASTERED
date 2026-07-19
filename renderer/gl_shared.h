@@ -297,6 +297,8 @@ struct BloomResources
 	GLint threshold_use_depth_mask = -1;
 	GLint threshold_use_protection_mask = -1;
 	GLint threshold_use_alpha_occlusion_mask = -1;
+	GLint threshold_use_terrain_fog_protection = -1;
+	GLint threshold_terrain_fog_depth_range = -1;
 	GLint threshold_alpha_occlusion_mask_uv_origin = -1;
 	GLint threshold_alpha_occlusion_mask_uv_scale = -1;
 	GLint merge_spread = -1;
@@ -304,6 +306,9 @@ struct BloomResources
 	GLint composite_intensity = -1;
 	GLint composite_use_alpha_mask = -1;
 	GLint composite_use_protection_mask = -1;
+	GLint composite_depth_source = -1;
+	GLint composite_use_terrain_fog_protection = -1;
+	GLint composite_terrain_fog_depth_range = -1;
 	GLint composite_uv_origin = -1;
 	GLint composite_uv_scale = -1;
 	GLint composite_scene_uv_origin = -1;
@@ -314,6 +319,7 @@ struct BloomResources
 	void DestroyFramebuffers();
 	ColorFramebuffer* Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
 		const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture,
+		bool terrain_fog_protection = false, float terrain_fog_start = 0.0f, float terrain_fog_end = 1.0f,
 		GLuint alpha_occlusion_mask_texture = 0, float alpha_occlusion_mask_uv_origin_x = 0.0f,
 		float alpha_occlusion_mask_uv_origin_y = 0.0f, float alpha_occlusion_mask_uv_scale_x = 1.0f,
 		float alpha_occlusion_mask_uv_scale_y = 1.0f);

@@ -409,6 +409,22 @@ void rend_SetAOClass(int value)
 	renderer_inst->SetAOClass(value);
 }
 
+bool rend_BeginTerrainSurface(bool fog_enabled)
+{
+	if (!Renderer_initted)
+		return false;
+
+	return renderer_inst->BeginTerrainSurface(fog_enabled);
+}
+
+void rend_EndTerrainSurface()
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->EndTerrainSurface();
+}
+
 void rend_SetPostMaskOnly(int state)
 {
 	if (!Renderer_initted)

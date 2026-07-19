@@ -202,6 +202,8 @@ public:
 	virtual void SetAOSuppression(float value) {}
 	virtual void SetBloomSuppression(float value) {}
 	virtual void SetAOClass(int value) {}
+	virtual bool BeginTerrainSurface(bool fog_enabled) { return false; }
+	virtual void EndTerrainSurface() {}
 	virtual void SetPostMaskOnly(int state) {}
 	virtual void SetSoftParticleState(int state) {}
 	virtual void NotifyDepthBufferWrite() {}

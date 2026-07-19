@@ -1270,10 +1270,13 @@ void BloomResources::InitShaders()
 	threshold_use_depth_mask = thresholdshader.FindUniform("use_depth_mask");
 	threshold_use_protection_mask = thresholdshader.FindUniform("use_protection_mask");
 	threshold_use_alpha_occlusion_mask = thresholdshader.FindUniform("use_alpha_occlusion_mask");
+	threshold_use_terrain_fog_protection = thresholdshader.FindUniform("use_terrain_fog_protection");
+	threshold_terrain_fog_depth_range = thresholdshader.FindUniform("terrain_fog_depth_range");
 	threshold_alpha_occlusion_mask_uv_origin = thresholdshader.FindUniform("alpha_occlusion_mask_uv_origin");
 	threshold_alpha_occlusion_mask_uv_scale = thresholdshader.FindUniform("alpha_occlusion_mask_uv_scale");
 	if (threshold_gamma == -1 || threshold_value == -1 || threshold_use_depth_mask == -1 ||
 		threshold_use_protection_mask == -1 || threshold_use_alpha_occlusion_mask == -1 ||
+		threshold_use_terrain_fog_protection == -1 || threshold_terrain_fog_depth_range == -1 ||
 		threshold_alpha_occlusion_mask_uv_origin == -1 || threshold_alpha_occlusion_mask_uv_scale == -1)
 		Error("BloomResources::InitShaders: Failed to find threshold uniforms!");
 
@@ -1301,6 +1304,7 @@ void BloomResources::InitShaders()
 	GLint composite_bloom = compositeshader.FindUniform("bloom");
 	GLint composite_scene_source = compositeshader.FindUniform("scene_source");
 	GLint composite_protection_mask = compositeshader.FindUniform("protection_mask");
+	composite_depth_source = compositeshader.FindUniform("depth_source");
 	if (composite_source != -1)
 		glUniform1i(composite_source, 0);
 	if (composite_bloom != -1)
@@ -1309,10 +1313,14 @@ void BloomResources::InitShaders()
 		glUniform1i(composite_scene_source, 2);
 	if (composite_protection_mask != -1)
 		glUniform1i(composite_protection_mask, 3);
+	if (composite_depth_source != -1)
+		glUniform1i(composite_depth_source, 4);
 	composite_gamma = compositeshader.FindUniform("gamma");
 	composite_intensity = compositeshader.FindUniform("bloom_intensity");
 	composite_use_alpha_mask = compositeshader.FindUniform("use_alpha_mask");
 	composite_use_protection_mask = compositeshader.FindUniform("use_protection_mask");
+	composite_use_terrain_fog_protection = compositeshader.FindUniform("use_terrain_fog_protection");
+	composite_terrain_fog_depth_range = compositeshader.FindUniform("terrain_fog_depth_range");
 	composite_uv_origin = compositeshader.FindUniform("uv_origin");
 	composite_uv_scale = compositeshader.FindUniform("uv_scale");
 	composite_scene_uv_origin = compositeshader.FindUniform("scene_uv_origin");
@@ -1326,7 +1334,9 @@ void BloomResources::InitShaders()
 	if (composite_scene_uv_scale != -1)
 		glUniform2f(composite_scene_uv_scale, 1.0f, 1.0f);
 	if (composite_gamma == -1 || composite_intensity == -1 || composite_use_alpha_mask == -1 ||
-		composite_use_protection_mask == -1 || composite_scene_uv_origin == -1 || composite_scene_uv_scale == -1)
+		composite_use_protection_mask == -1 || composite_depth_source == -1 ||
+		composite_use_terrain_fog_protection == -1 || composite_terrain_fog_depth_range == -1 ||
+		composite_scene_uv_origin == -1 || composite_scene_uv_scale == -1)
 		Error("BloomResources::InitShaders: Failed to find composite uniforms!");
 
 	ShaderProgram::ClearBinding();
@@ -1348,6 +1358,7 @@ void BloomResources::DestroyFramebuffers()
 
 ColorFramebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
 	const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture,
+	bool terrain_fog_protection, float terrain_fog_start, float terrain_fog_end,
 	GLuint alpha_occlusion_mask_texture, float alpha_occlusion_mask_uv_origin_x,
 	float alpha_occlusion_mask_uv_origin_y, float alpha_occlusion_mask_uv_scale_x,
 	float alpha_occlusion_mask_uv_scale_y)
@@ -1415,6 +1426,9 @@ ColorFramebuffer* BloomResources::Apply(Framebuffer* source, const renderer_pref
 	glUniform1i(threshold_use_depth_mask, depth_texture != 0);
 	glUniform1i(threshold_use_protection_mask, protection_mask_texture != 0);
 	glUniform1i(threshold_use_alpha_occlusion_mask, alpha_occlusion_mask_texture != 0);
+	glUniform1i(threshold_use_terrain_fog_protection,
+		terrain_fog_protection && depth_texture != 0 && protection_mask_texture != 0 ? 1 : 0);
+	glUniform2f(threshold_terrain_fog_depth_range, terrain_fog_start, terrain_fog_end);
 	glUniform2f(threshold_alpha_occlusion_mask_uv_origin,
 		alpha_occlusion_mask_uv_origin_x, alpha_occlusion_mask_uv_origin_y);
 	glUniform2f(threshold_alpha_occlusion_mask_uv_scale,
