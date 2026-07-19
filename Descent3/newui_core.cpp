@@ -1480,8 +1480,13 @@ void newuiSheet::Realize()
 		case GADGET_CHANGEABLE_TXT:
 			text = new UIText;
 			text->Create(m_parent, &UITextItem(MONITOR9_NEWUI_FONT, (const char*)desc->parm.p, NEWUI_MONITORFONT_COLOR), gx, gy);
-			if (horizontal_align) gx += text->W() + 2;
-			else gy += text->H();
+			desc->realized_x = gx;
+			desc->realized_y = gy;
+			if (desc->text_alignment == NEWUI_TEXT_ALIGN_RIGHT)
+				text->Move(gx + desc->text_width - text->GetItem()->width() - desc->text_padding, gy,
+					text->GetItem()->width(), text->GetItem()->height());
+			if (horizontal_align) gx += (desc->text_width ? desc->text_width : text->GetItem()->width()) + 2;
+			else gy += text->GetItem()->height();
 			desc->obj.text = text;
 			break;
 
@@ -1496,6 +1501,7 @@ void newuiSheet::Realize()
 		case GADGET_BUTTON:
 			btn = new newuiButton;
 			btn->Create(m_parent, desc->id, desc->title, gx, gy, desc->parm.i);
+			btn->SetTextAlignment(desc->text_alignment, desc->text_padding);
 			if (horizontal_align) gx += btn->W() + 2;
 			else gy += btn->H();
 			desc->obj.button = btn;
@@ -1520,6 +1526,7 @@ void newuiSheet::Realize()
 			if (first_radio_index == -1) first_radio_index = i;
 			radio = new newuiRadioButton;
 			radio->Create(m_parent, prev_radio, desc->id, desc->title, gx, gy, false);
+			radio->SetTextAlignment(desc->text_alignment, desc->text_padding);
 			if (m_gadgetlist[first_radio_index].parm.i == (i - first_radio_index))
 				radio->Activate();
 			
@@ -1532,6 +1539,7 @@ void newuiSheet::Realize()
 		case GADGET_LBUTTON:
 			btn = new newuiButton;
 			btn->Create(m_parent, desc->id, desc->title, gx, gy, desc->parm.i | NEWUI_BTNF_LONG);
+			btn->SetTextAlignment(desc->text_alignment, desc->text_padding);
 			if (horizontal_align) gx += btn->W() + 2;
 			else gy += btn->H();
 			desc->obj.button = btn;
@@ -1556,6 +1564,7 @@ void newuiSheet::Realize()
 			if (first_radio_index == -1) first_radio_index = i;
 			radio = new newuiRadioButton;
 			radio->Create(m_parent, prev_radio, desc->id, desc->title, gx, gy, true);
+			radio->SetTextAlignment(desc->text_alignment, desc->text_padding);
 			if (m_gadgetlist[first_radio_index].parm.i == (i - first_radio_index))
 				radio->Activate();
 			
@@ -1833,6 +1842,9 @@ void newuiSheet::UpdateChanges()
 
 		case GADGET_CHANGEABLE_TXT:
 			desc->obj.text->SetTitle(&UITextItem(MONITOR9_NEWUI_FONT, (const char*)desc->parm.p, NEWUI_MONITORFONT_COLOR));
+			if (desc->text_alignment == NEWUI_TEXT_ALIGN_RIGHT)
+				desc->obj.text->Move(desc->realized_x + desc->text_width - desc->obj.text->GetItem()->width() - desc->text_padding,
+					desc->realized_y, desc->obj.text->GetItem()->width(), desc->obj.text->GetItem()->height());
 			break;
 		}
 		desc->changed = false;
@@ -2149,6 +2161,50 @@ bool newuiSheet::SetGadgetVisible(short id, bool visible)
 	return false;
 }
 
+bool newuiSheet::SetGadgetTextAlignment(short id, tNewuiTextAlignment alignment, short padding)
+{
+	for (int i = 0; i < m_ngadgets; ++i)
+	{
+		newuiSheet::t_gadget_desc* desc = &m_gadgetlist[i];
+		if (desc->id != id)
+			continue;
+
+		desc->text_alignment = alignment;
+		desc->text_padding = padding;
+		if (m_realized)
+		{
+			if (desc->type == GADGET_BUTTON || desc->type == GADGET_LBUTTON)
+				desc->obj.button->SetTextAlignment(alignment, padding);
+			else if (desc->type == GADGET_RADIO || desc->type == GADGET_LRADIO)
+				desc->obj.radio->SetTextAlignment(alignment, padding);
+		}
+		return true;
+	}
+	return false;
+}
+
+bool newuiSheet::ReleaseGadgetFocusLock(short id)
+{
+	if (!m_realized)
+		return false;
+
+	for (int i = 0; i < m_ngadgets; ++i)
+	{
+		newuiSheet::t_gadget_desc* desc = &m_gadgetlist[i];
+		if (desc->id != id)
+			continue;
+
+		if (desc->type == GADGET_BUTTON || desc->type == GADGET_LBUTTON)
+			desc->obj.button->ReleaseFocusLock();
+		else if (desc->type == GADGET_RADIO || desc->type == GADGET_LRADIO)
+			desc->obj.radio->ReleaseFocusLock();
+		else
+			return false;
+		return true;
+	}
+	return false;
+}
+
 
 newuiSheet::t_gadget_desc* newuiSheet::AddGadget(short id, sbyte type, const char* title)
 {
@@ -2170,6 +2226,11 @@ newuiSheet::t_gadget_desc* newuiSheet::AddGadget(short id, sbyte type, const cha
 	m_gadgetlist[i].changed = false;
 	m_gadgetlist[i].visible = true;
 	m_gadgetlist[i].internal = NULL;
+	m_gadgetlist[i].text_alignment = NEWUI_TEXT_ALIGN_CENTER;
+	m_gadgetlist[i].text_padding = 0;
+	m_gadgetlist[i].text_width = 0;
+	m_gadgetlist[i].realized_x = 0;
+	m_gadgetlist[i].realized_y = 0;
 
 	m_ngadgets++;
 
@@ -2311,6 +2372,18 @@ char* newuiSheet::AddChangeableText(int buflen)
 }
 
 
+char* newuiSheet::AddRightAlignedChangeableText(int buflen, short width, short padding)
+{
+	newuiSheet::t_gadget_desc* gadget = AddGadget(-1, GADGET_CHANGEABLE_TXT, NULL);
+	gadget->internal = (void*)buflen;
+	gadget->parm.p = mem_malloc(buflen);
+	gadget->text_alignment = NEWUI_TEXT_ALIGN_RIGHT;
+	gadget->text_width = width;
+	gadget->text_padding = padding;
+	return (char*)gadget->parm.p;
+}
+
+
 // adds a hotspot :(, should word wrap too.
 void newuiSheet::AddHotspot(const char* title, short w, short h, short id, bool group)
 {
@@ -2381,6 +2454,15 @@ newuiButton::newuiButton()
 	m_bkg = NULL;
 	m_litbkg = NULL;
 	m_text = NULL;
+	m_text_alignment = NEWUI_TEXT_ALIGN_CENTER;
+	m_text_padding = 0;
+}
+
+
+void newuiButton::SetTextAlignment(tNewuiTextAlignment alignment, short padding)
+{
+	m_text_alignment = alignment;
+	m_text_padding = padding;
 }
 
 
@@ -2474,7 +2556,12 @@ void newuiButton::OnDraw()
 	if (m_text)
 	{
 		m_text->set_alpha(alpha);
-		m_text->draw((m_W - m_text->width()) / 2, (m_H - m_text->height()) / 2);
+		int x = (m_W - m_text->width()) / 2;
+		if (m_text_alignment == NEWUI_TEXT_ALIGN_LEFT)
+			x = m_text_padding;
+		else if (m_text_alignment == NEWUI_TEXT_ALIGN_RIGHT)
+			x = m_W - m_text->width() - m_text_padding;
+		m_text->draw(x, (m_H - m_text->height()) / 2);
 	}
 }
 

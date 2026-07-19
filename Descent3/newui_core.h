@@ -122,6 +122,13 @@ enum tAlignment
 	NEWUI_ALIGN_HORIZ
 };
 
+enum tNewuiTextAlignment
+{
+	NEWUI_TEXT_ALIGN_LEFT,
+	NEWUI_TEXT_ALIGN_CENTER,
+	NEWUI_TEXT_ALIGN_RIGHT
+};
+
 #define SLIDER_UNITS_INT		0
 #define SLIDER_UNITS_PERCENT	1
 #define SLIDER_UNITS_FLOAT		2
@@ -194,6 +201,8 @@ public:
 	UIGadget *GetGadget(short id);
 	bool SetGadgetTitle(short id, const char *title);
 	bool SetGadgetVisible(short id, bool visible);
+	bool SetGadgetTextAlignment(short id, tNewuiTextAlignment alignment, short padding=0);
+	bool ReleaseGadgetFocusLock(short id);
 
 //	set focus on this gadget specified by id upon realization.
 	void SetInitialFocusedGadget(short id);
@@ -237,6 +246,7 @@ public:
 
 //	adds a static text item
 	char *AddChangeableText(int buflen);
+	char *AddRightAlignedChangeableText(int buflen, short width, short padding=0);
 
 // adds a listbox
 	newuiListBox *AddListBox(short w, short h, short id, ushort flags = 0);
@@ -294,6 +304,10 @@ private:
 		}
 		obj;
 		void *internal;							// internal info.
+		tNewuiTextAlignment text_alignment;
+		short text_padding;
+		short text_width;
+		short realized_x, realized_y;
 	}
 	*m_gadgetlist;
 
@@ -321,6 +335,8 @@ public:
 
 // see (NEWUI_BTNF_xxx) flags
 	void Create(UIWindow *wnd, short id, const char *name, short x, short y, short flags=0);
+	void SetTextAlignment(tNewuiTextAlignment alignment, short padding=0);
+	void ReleaseFocusLock() { UnlockFocus(); };
 
 protected:
 	virtual void OnDraw();							// overridable draws the background first
@@ -331,6 +347,8 @@ protected:
 
 	UIBitmapItem *m_bkg, *m_litbkg;				// used to define visual characteristics of button
 	UISnazzyTextItem *m_text;
+	tNewuiTextAlignment m_text_alignment;
+	short m_text_padding;
 
 // this is used in multiple inheritance cases.(flags are additional attributes usually passed when creating gadget)
 	void InitStates(const char *name, bool is_long, short flags=0);
