@@ -33,6 +33,7 @@
 
 #include "LoadLevel.h"
 #include "difficulty.h"
+#include "gameloop.h"
 //#define USE_DIRECTPLAY
 
 #ifdef USE_DIRECTPLAY
@@ -88,6 +89,8 @@ int AskToJoin(network_address* addr)
 		MultiAddUshort(MULTI_ENHANCED_REVISION, data, &count);
 	}
 	END_DATA(count, data, size);
+	AutomatedCaptureLog("network ask-to-join known=%d enhanced=%d bytes=%d", known_game ? 1 : 0,
+		enhanced_game ? 1 : 0, count);
 
 	Ok_to_join = -1;
 
@@ -110,9 +113,13 @@ int AskToJoin(network_address* addr)
 	}
 
 	if (tries >= 5 || Ok_to_join != JOIN_ANSWER_OK)
+	{
+		AutomatedCaptureLog("network ask-to-join failed tries=%d response=%d", tries, Ok_to_join);
 		return 0;
+	}
 
 	// Ok to join!
+	AutomatedCaptureLog("network ask-to-join accepted tries=%d", tries);
 	return 1;
 }
 
@@ -193,6 +200,7 @@ int TryToJoinServer(network_address* addr)
 	}
 	if (connected)
 	{
+		AutomatedCaptureLog("network reliable transport connected");
 #ifdef USE_DIRECTPLAY
 		if (!Use_DirectPlay)
 #endif
@@ -204,7 +212,11 @@ int TryToJoinServer(network_address* addr)
 		MultiPollForConnectionAccepted();
 
 		if (NetPlayers[Player_num].flags & NPF_CONNECTED)
+		{
+			AutomatedCaptureLog("network connection accepted player=%d protocol=0x%04x", Player_num,
+				(unsigned int)Netgame.server_version);
 			return 1;
+		}
 		else
 		{
 			mprintf((0, "Couldn't join game for some reason!\n"));
@@ -235,6 +247,7 @@ void MultiDoConnectionAccepted(ubyte* data)
 	SKIP_HEADER(data, &count);
 
 	server_version = MultiGetUshort(data, &count);
+	AutomatedCaptureLog("network received connection-accepted protocol=0x%04x", (unsigned int)server_version);
 
 	if (server_version != MULTI_COMPATIBILITY_VERSION && !MultiProtocolIsEnhanced(server_version))
 	{
@@ -249,6 +262,8 @@ void MultiDoConnectionAccepted(ubyte* data)
 			ushort revision = MultiGetUshort(data, &count);
 			if (family != MULTI_ENHANCED_FAMILY_MAGIC || revision != MULTI_ENHANCED_REVISION)
 			{
+				AutomatedCaptureLog("network enhanced identity rejected family=0x%08x revision=%u",
+					(unsigned int)family, (unsigned int)revision);
 				mprintf((0, "Enhanced multiplayer protocol identity does not match.\n"));
 				return;
 			}
@@ -362,6 +377,8 @@ void MultiSendConnectionAccepted(int slotnum, SOCKET sock, network_address* addr
 	int size_offset;
 
 	mprintf((0, "Sending connection accepted packet to slot %d!\n", slotnum));
+	AutomatedCaptureLog("network server sending connection-accepted slot=%d protocol=0x%04x", slotnum,
+		(unsigned int)Netgame.server_version);
 
 	NetPlayers[slotnum].reliable_socket = sock;
 	memcpy(&NetPlayers[slotnum].addr, addr, sizeof(network_address));
@@ -604,10 +621,14 @@ void MultiDoLevelInfo(ubyte* data)
 		profile.enemy_hp = MultiGetByte(data, &count);
 		profile.resources = MultiGetByte(data, &count);
 		DifficultySetMultiplayerProfile(profile);
+		AutomatedCaptureLog("network level-info protocol=enhanced difficulty=%u,%u,%u,%u",
+			(unsigned int)profile.enemy_ai, (unsigned int)profile.enemy_speed,
+			(unsigned int)profile.enemy_hp, (unsigned int)profile.resources);
 	}
 	else
 	{
 		DifficultySetMultiplayer(Netgame.difficulty);
+		AutomatedCaptureLog("network level-info protocol=v10 difficulty=%u", (unsigned int)Netgame.difficulty);
 	}
 
 	if (join_response != JOIN_ANSWER_OK)
@@ -650,6 +671,10 @@ void MultiSendLevelInfo(int slot)
 		MultiAddByte(Multiplayer_difficulty.enemy_hp, data, &count);
 		MultiAddByte(Multiplayer_difficulty.resources, data, &count);
 	}
+	AutomatedCaptureLog("network server sending level-info slot=%d protocol=0x%04x difficulty=%u,%u,%u,%u",
+		slot, (unsigned int)Netgame.server_version, (unsigned int)Multiplayer_difficulty.enemy_ai,
+		(unsigned int)Multiplayer_difficulty.enemy_speed, (unsigned int)Multiplayer_difficulty.enemy_hp,
+		(unsigned int)Multiplayer_difficulty.resources);
 
 	END_DATA(count, data, size_offset);
 
@@ -684,6 +709,8 @@ void MultiDoReadyForLevel(ubyte* data)
 
 	MultiSendLevelInfo(slot);
 	NetPlayers[slot].sequence = NETSEQ_LEVEL_START;
+	AutomatedCaptureLog("network client ready-for-level slot=%u ship=%s mission=%s script=%s",
+		(unsigned int)slot, Ships[ship_index].name, Netgame.mission, Netgame.scriptname);
 }
 
 // Client is telling the server that he is ready for a level 

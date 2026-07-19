@@ -262,6 +262,32 @@ void SetGamemodeScript(const char* scrfilename, int num_teams)
 }
 
 void RenderBlankScreen(void);
+
+static const char* ResolveCompatibleGameModule(const char* advertised_name)
+{
+	// Official 1.5 advertises the modern filenames below, while Piccu's compatible
+	// implementations retain the historical package names.  Keep the advertised
+	// name in Netgame and translate only the module loaded by this process.
+	struct game_module_alias
+	{
+		const char* advertised;
+		const char* local;
+	};
+	static const game_module_alias aliases[] = {
+		{ "coop", "Co-op" },
+		{ "tanarchy", "Team Anarchy" },
+		{ "hyperanarchy", "Hyper-Anarchy" },
+		{ "roboanarchy", "Robo-Anarchy" },
+	};
+
+	for (const game_module_alias& alias : aliases)
+	{
+		if (!stricmp(advertised_name, alias.advertised))
+			return alias.local;
+	}
+	return advertised_name;
+}
+
 bool InitGameScript()
 {
 	//	initialize gamemode script here.
@@ -270,7 +296,11 @@ bool InitGameScript()
 		//@@		char d3xname[255];
 		char dllname[255];
 
-		sprintf(dllname, "%s", Gamemode_info.scriptname);
+		const char* module_name = ResolveCompatibleGameModule(Gamemode_info.scriptname);
+		sprintf(dllname, "%s", module_name);
+		if (stricmp(module_name, Gamemode_info.scriptname))
+			mprintf((0, "Mapping advertised game module '%s' to local module '%s'.\n",
+				Gamemode_info.scriptname, module_name));
 
 		if (!LoadGameDLL(dllname, Gamemode_info.requested_num_teams))
 		{

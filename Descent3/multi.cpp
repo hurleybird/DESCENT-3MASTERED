@@ -76,6 +76,7 @@
 #include "hud.h"
 #include "gamespy.h"
 #include "difficulty.h"
+#include "gameloop.h"
 
 
 #include <string.h>
@@ -1262,6 +1263,9 @@ void MultiDoPlayerEnteredGame (ubyte *data)
 	NetPlayers[slot].total_bytes_sent = 0;
 	NetPlayers[slot].total_bytes_rcvd = 0;
 	NetPlayers[slot].sequence=NETSEQ_PLAYING;
+	AutomatedCaptureLog("network player entered game slot=%u callsign=%s role=%d mission=%s script=%s",
+		(unsigned int)slot, Players[slot].callsign, (int)Netgame.local_role,
+		Netgame.mission, Netgame.scriptname);
 }
 
 // Sends a new player to existing players 
@@ -2533,6 +2537,11 @@ void MultiDoAskToJoin (ubyte *data,network_address *from_addr)
 		MultiAddByte (JOIN_ANSWER_NOT_SERVER,outdata,&count);
 
 	END_DATA (count,outdata,size);
+	int response_count = 0;
+	SKIP_HEADER(outdata, &response_count);
+	const ubyte join_response = MultiGetByte(outdata, &response_count);
+	AutomatedCaptureLog("network server join-request protocol=0x%04x valid=%d response=%u",
+		(unsigned int)Netgame.server_version, protocol_ok ? 1 : 0, (unsigned int)join_response);
 
 	nw_Send(from_addr,outdata,count,0);
 }

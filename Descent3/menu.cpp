@@ -448,6 +448,8 @@ bool ProcessCommandLine()
 		}
 		strcpy(Auto_login_addr, connhost);
 		int trackedarg = FindArg("+cl_pxotrack");
+		AutomatedCaptureLog("network command-line connect host=%s port=%s tracking_arg=%d",
+			Auto_login_addr, Auto_login_port, trackedarg);
 		if (trackedarg)
 		{
 			if (strcmp("1", GameArgs[trackedarg + 1]) == 0)
@@ -457,9 +459,14 @@ bool ProcessCommandLine()
 			}
 			else if (AutoConnectLANIP())
 			{
+				AutomatedCaptureLog("network command-line connect succeeded");
 				exit_menu = 1;
 			}
+			else
+				AutomatedCaptureLog("network command-line connect failed");
 		}
+		else
+			AutomatedCaptureLog("network command-line connect skipped: missing +cl_pxotrack");
 	}
 #endif
 	else if ((!Auto_connected) && (Directplay_lobby_launched_game))

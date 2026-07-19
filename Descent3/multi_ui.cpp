@@ -51,6 +51,7 @@
 
 #include "multi_save_settings.h"
 #include "difficulty.h"
+#include "gameloop.h"
 
 #define MAIN_MULTI_MENU_W		384
 #define MAIN_MULTI_MENU_H		256
@@ -461,20 +462,22 @@ int AutoConnectLANIP()
 	if (!iparg)
 	{
 		int connarg = FindArg("-directip");
-		if (!connarg)
-			return 0;
-
-		strcpy(Auto_login_addr, GameArgs[connarg + 1]);
-		char* port = strchr(Auto_login_addr, ':');
-		if (port)
+		if (connarg)
 		{
-			//terminate the hostname
-			*port = NULL;
-			//Increment to the first character of the port name
-			port++;
-			//get the port number
-			strcpy(Auto_login_port, port);
+			strcpy(Auto_login_addr, GameArgs[connarg + 1]);
+			char* port = strchr(Auto_login_addr, ':');
+			if (port)
+			{
+				//terminate the hostname
+				*port = NULL;
+				//Increment to the first character of the port name
+				port++;
+				//get the port number
+				strcpy(Auto_login_port, port);
+			}
 		}
+		else if (!Auto_login_addr[0])
+			return 0;
 	}
 	else
 	{
@@ -486,9 +489,15 @@ int AutoConnectLANIP()
 		else
 			Auto_login_port[0] = NULL;
 	}
-	//ddio_MakePath(seldll,Base_directory,"online","Direct TCP~IP Game.d3c",NULL);
-	if (LoadMultiDLL("TCP-IP"))
+	AutomatedCaptureLog("network LAN auto-connect connector host=%s port=%s", Auto_login_addr,
+		Auto_login_port[0] ? Auto_login_port : "<default>");
+	if (LoadMultiDLL("Direct TCP~IP"))
+	{
+		AutomatedCaptureLog("network LAN connector loaded");
 		CallMultiDLL(MT_AUTO_LOGIN);
+	}
+	else
+		AutomatedCaptureLog("network LAN connector failed to load");
 	
 	return MultiDLLGameStarting;
 }

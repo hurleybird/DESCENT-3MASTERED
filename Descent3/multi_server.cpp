@@ -62,6 +62,7 @@
 #include "../md5/md5.h"
 #include "gamespy.h"
 #include "difficulty.h"
+#include "gameloop.h"
 
 void MultiProcessShipChecksum(MD5* md5, int ship_index);
 
@@ -160,6 +161,11 @@ void MultiStartServer(int playing, char* scriptname, int dedicated_server_num_te
 	Netgame.server_sequence = 0;
 	ASSERT(Multi_host_protocol == MULTI_PROTOCOL_ENHANCED || DifficultyProfileIsUniform(Multiplayer_difficulty));
 	Netgame.server_version = MultiGetHostProtocolVersion();
+	AutomatedCaptureLog("network server started protocol=0x%04x difficulty=%u,%u,%u,%u mission=%s script=%s teams=%d",
+		(unsigned int)Netgame.server_version, (unsigned int)Multiplayer_difficulty.enemy_ai,
+		(unsigned int)Multiplayer_difficulty.enemy_speed, (unsigned int)Multiplayer_difficulty.enemy_hp,
+		(unsigned int)Multiplayer_difficulty.resources, Netgame.mission, Netgame.scriptname,
+		dedicated_server_num_teams);
 
 	Game_mode = GM_NETWORK;
 
