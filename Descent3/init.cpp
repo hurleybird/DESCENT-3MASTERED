@@ -1505,16 +1505,9 @@ void InitIOSystems(bool editor)
 	}
 
 	//Init hogfiles
-	int d3_hid=-1,extra_hid=-1,extra1_hid=-1,merc_hid=-1,sys_hid=-1,extra13_hid=-1;
+	int d3_hid=-1,extra_hid=-1,extra1_hid=-1,merc_hid=-1,sys_hid=-1,extra13_hid=-1,piccu_hid=-1;
 	char fullname[_MAX_PATH];
 
-	ddio_MakePath(fullname, Working_directory, "piccuengine.hog", nullptr);
-	int piccu_hid = cf_OpenLibrary(fullname);
-	if (piccu_hid == 0)
-	{
-		Error("Cannot find piccuengine.hog file!");
-	}
-	
 	#ifdef DEMO
 //DAJ	d3_hid = cf_OpenLibrary("d3demo.hog");
 	ddio_MakePath(fullname, LocalD3Dir, "d3demo.hog", NULL);
@@ -1550,6 +1543,17 @@ void InitIOSystems(bool editor)
 	//BUG: Should this actually be mounted after merc.hog?
 	ddio_MakePath(fullname, LocalD3Dir, "extra13.hog", NULL);
 	extra13_hid = cf_OpenLibrary(fullname);
+
+	// Library lookup is last-opened-first.  Mount engine-owned resources after
+	// the retail archives so fixes and upgraded assets in piccuengine.hog can
+	// intentionally replace their original counterparts.  Missions remain
+	// later so mission-local content keeps the highest priority.
+	ddio_MakePath(fullname, Working_directory, "piccuengine.hog", nullptr);
+	piccu_hid = cf_OpenLibrary(fullname);
+	if (piccu_hid == 0)
+	{
+		Error("Cannot find piccuengine.hog file!");
+	}
 
 	//Try opening a couple of known Mercenary only files
 	if (cfexist("BP_hud.inf")
