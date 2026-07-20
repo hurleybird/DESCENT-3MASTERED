@@ -334,6 +334,7 @@ struct renderer_preferred_state
 	ubyte pixel_motion_blur_samples;
 	float afterburner_fov_multiplier;
 	float afterburner_pixel_blur_multiplier;
+	ubyte anisotropy; //1 (off), 2, 4, 8, or 16. Effective only with filtered mipmaps.
 };
 
 enum renderer_ao_class
@@ -772,6 +773,9 @@ void rend_DrawSpecialLineBatch(const renderer_line_batch_item *items,int count);
 // Sets some global preferences for the renderer
 // Returns -1 if it had to use the default resolution/bitdepth
 int rend_SetPreferredState (renderer_preferred_state *pref_state);
+
+// Returns the largest supported anisotropic filtering factor (at least 1).
+int rend_GetMaxAnisotropy();
 
 // Sets the gamma value 
 void rend_SetGammaValue (float val);

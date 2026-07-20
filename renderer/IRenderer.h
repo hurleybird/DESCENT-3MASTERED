@@ -92,6 +92,9 @@ public:
 	// Returns -1 if it had to use the default resolution/bitdepth
 	virtual int SetPreferredState(renderer_preferred_state* pref_state) = 0;
 
+	// Returns the largest supported anisotropic filtering factor (at least 1).
+	virtual int GetMaxAnisotropy() const = 0;
+
 	// Sets the hardware bias level for coplanar polygons
 	// This helps reduce z buffer artifaces
 	virtual void SetCoplanarPolygonOffset(float factor) = 0;

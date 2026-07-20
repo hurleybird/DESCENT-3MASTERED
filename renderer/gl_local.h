@@ -28,6 +28,12 @@
 #include <algorithm>
 #include <vector>
 #include <glad/gl.h>
+#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+#endif
+#ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
+#endif
 #if defined(WIN32) && !defined(SDL3)
 #include "wglext.h"
 #endif
@@ -498,6 +504,7 @@ class GL4Renderer : public IRenderer
 
 	bool OpenGL_debugging_enabled = false;
 	bool OpenGL_buffer_storage_enabled = false;
+	float OpenGL_max_anisotropy = 1.0f;
 
 #if defined(SDL3)
 	SDL_GLContext GLContext = nullptr;
@@ -679,6 +686,7 @@ public:
 	// Sets some global preferences for the renderer
 	// Returns -1 if it had to use the default resolution/bitdepth
 	int SetPreferredState(renderer_preferred_state* pref_state) override;
+	int GetMaxAnisotropy() const override;
 
 	// Sets the hardware bias level for coplanar polygons
 	// This helps reduce z buffer artifaces
@@ -902,7 +910,9 @@ public:
 #define GET_WRAP_STATE(x)	((x>>2) & 0x03)
 #define GET_MIP_STATE(x)	((x>>1) & 0x01);
 #define GET_FILTER_STATE(x)	(x & 0x01)
+#define GET_ANISOTROPY_STATE(x) ((x>>4) & 0x07)
 
 #define SET_WRAP_STATE(x,s) {x&=0xF3; x|=(s<<2);}
 #define SET_MIP_STATE(x,s) {x&=0xFD; x|=(s<<1);}
 #define SET_FILTER_STATE(x,s) {x&=0xFE; x|=(s);}
+#define SET_ANISOTROPY_STATE(x,s) {x&=0x8F; x|=((s)<<4);}

@@ -685,6 +685,11 @@ void config_gamma()
 #define IDV_FILTERING 18
 #define IDV_DRAW_CALL_STATS 19
 #define IDV_AO_OVERSCAN 20
+#define IDV_ANISOTROPY_OFF 21
+#define IDV_ANISOTROPY_2X 22
+#define IDV_ANISOTROPY_4X 23
+#define IDV_ANISOTROPY_8X 24
+#define IDV_ANISOTROPY_16X 25
 #define UID_RESOLUTION 110
 #define UID_ASPECT 111
 
@@ -694,6 +699,22 @@ static constexpr ushort AO_OVERSCAN_ENABLED_PERCENT = 107;
 static const char* ConfigFilteringCheckboxTitle(bool mipmapping)
 {
 	return mipmapping ? "Trilinear Filtering" : TXT_BILINEAR;
+}
+
+static int AnisotropyFactorToIndex(int factor)
+{
+	if (factor >= 16) return 4;
+	if (factor >= 8) return 3;
+	if (factor >= 4) return 2;
+	if (factor >= 2) return 1;
+	return 0;
+}
+
+static int AnisotropyIndexToFactor(int index)
+{
+	if (index < 0) index = 0;
+	if (index > 4) index = 4;
+	return 1 << index;
 }
 
 static int ConfigRoundAspectWidth(int height, int aspect)
@@ -1295,7 +1316,7 @@ struct video_menu
 	int* antialiasing;
 	int* supersampling;
 	int* ao;
-	int* backend;
+	int* anisotropy;
 
 	int window_width, window_height;
 	int window_aspect;
@@ -1314,6 +1335,25 @@ struct video_menu
 		if (sheet)
 			sheet->SetGadgetTitle(IDV_FILTERING,
 				ConfigFilteringCheckboxTitle(Render_preferred_state.mipping != 0));
+	}
+
+	void update_anisotropy_visibility()
+	{
+		if (!sheet || !anisotropy)
+			return;
+
+		const int maximum = rend_GetMaxAnisotropy();
+		const bool usable = filtering && mipmapping && *filtering && *mipmapping && maximum >= 2;
+		sheet->SetGadgetVisible(IDV_ANISOTROPY_OFF, true);
+		sheet->SetGadgetVisible(IDV_ANISOTROPY_2X, maximum >= 2);
+		sheet->SetGadgetVisible(IDV_ANISOTROPY_4X, maximum >= 4);
+		sheet->SetGadgetVisible(IDV_ANISOTROPY_8X, maximum >= 8);
+		sheet->SetGadgetVisible(IDV_ANISOTROPY_16X, maximum >= 16);
+		sheet->SetGadgetEnabled(IDV_ANISOTROPY_OFF, usable);
+		sheet->SetGadgetEnabled(IDV_ANISOTROPY_2X, usable);
+		sheet->SetGadgetEnabled(IDV_ANISOTROPY_4X, usable);
+		sheet->SetGadgetEnabled(IDV_ANISOTROPY_8X, usable);
+		sheet->SetGadgetEnabled(IDV_ANISOTROPY_16X, usable);
 	}
 
 	void update_draw_call_title()
@@ -1416,16 +1456,26 @@ struct video_menu
 		bool display_changed = fullscreen && sheet->HasChanged(fullscreen);
 		bool fov_changed = false;
 		bool ui_changed = false;
+		bool filtering_prerequisites_changed = false;
 
 		if (filtering && sheet->HasChanged(filtering))
 		{
 			Render_preferred_state.filtering = (*filtering) ? 1 : 0;
+			filtering_prerequisites_changed = true;
 			changed = true;
 		}
 		if (mipmapping && sheet->HasChanged(mipmapping))
 		{
 			Render_preferred_state.mipping = (*mipmapping) ? 1 : 0;
 			update_filtering_title();
+			filtering_prerequisites_changed = true;
+			changed = true;
+		}
+		if (filtering_prerequisites_changed)
+			update_anisotropy_visibility();
+		if (anisotropy && sheet->HasChanged(anisotropy))
+		{
+			Render_preferred_state.anisotropy = (ubyte)AnisotropyIndexToFactor(*anisotropy);
 			changed = true;
 		}
 		if (per_pixel_lighting && sheet->HasChanged(per_pixel_lighting))
@@ -1583,7 +1633,7 @@ struct video_menu
 		antialiasing = NULL;
 		supersampling = NULL;
 		ao = NULL;
-		backend = NULL;
+		anisotropy = NULL;
 		window_width = window_height = 0;
 		window_aspect = CONFIG_ASPECT_16_9;
 		display_width = display_height = 0;
@@ -1626,13 +1676,8 @@ struct video_menu
 		frame_limit = sheet->AddSlider("Frame Limit", (short)(frame_limit_max - 30),
 			(short)(Game_frame_limit_fps - 30), &frame_limit_settings);
 
-		sheet->NewGroup("OpenGL profile", 0, 134);
-		backend = sheet->AddFirstLongRadioButton("Compat (for NV)");
-		sheet->AddLongRadioButton("Core (for AMD)");
-		*backend = DesiredOpenGLProfile;
-
 		// video settings
-		sheet->NewGroup(TXT_TOGGLES, 0, 170);
+		sheet->NewGroup(TXT_TOGGLES, 0, 134);
 		Render_preferred_state.filtering = Render_preferred_state.filtering ? 1 : 0;
 		filtering = sheet->AddLongCheckBox(
 			ConfigFilteringCheckboxTitle(Render_preferred_state.mipping != 0),
@@ -1642,7 +1687,16 @@ struct video_menu
 			ConfigCanUsePerPixelLighting() && Render_preferred_state.per_pixel_lighting);
 		bloom_enabled = sheet->AddLongCheckBox("Bloom", Render_preferred_state.bloom_enabled);
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
+
+		sheet->NewGroup("Debug", 0, 211);
 		motion_vector_debug = sheet->AddLongCheckBox("Vector debug", Render_preferred_state.motion_vector_debug_preview);
+		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
+		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
+		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats, IDV_DRAW_CALL_STATS);
+		update_draw_call_title();
+		face_probe = sheet->AddLongCheckBox("Face probe", Render_face_probe);
+		frame_pacing = sheet->AddLongCheckBox("Frame pacing",
+			IsAdaptiveFramePacingEnabled());
 
 		sheet->NewGroup("MSAA", 184, 0);
 		int iTemp = MsaaSamplesToIndex(Render_preferred_state.msaa_samples);
@@ -1671,14 +1725,19 @@ struct video_menu
 			IDV_AO_OVERSCAN);
 		sheet->SetGadgetVisible(IDV_AO_OVERSCAN, *ao != 0);
 
-		sheet->NewGroup(NULL, 0, 254);
-		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
-		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
-		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats, IDV_DRAW_CALL_STATS);
-		update_draw_call_title();
-		face_probe = sheet->AddLongCheckBox("Face probe", Render_face_probe);
-		frame_pacing = sheet->AddLongCheckBox("Frame pacing",
-			IsAdaptiveFramePacingEnabled());
+		sheet->NewGroup("Aniso", 184, 237);
+		const int maximum_anisotropy = rend_GetMaxAnisotropy();
+		int selected_anisotropy = Render_preferred_state.anisotropy;
+		if (selected_anisotropy < 1) selected_anisotropy = 1;
+		if (selected_anisotropy > maximum_anisotropy) selected_anisotropy = maximum_anisotropy;
+		Render_preferred_state.anisotropy = (ubyte)selected_anisotropy;
+		anisotropy = sheet->AddFirstRadioButton(TXT_OFF, IDV_ANISOTROPY_OFF);
+		sheet->AddRadioButton("2x", IDV_ANISOTROPY_2X);
+		sheet->AddRadioButton("4x", IDV_ANISOTROPY_4X);
+		sheet->AddRadioButton("8x", IDV_ANISOTROPY_8X);
+		sheet->AddRadioButton("16x", IDV_ANISOTROPY_16X);
+		*anisotropy = AnisotropyFactorToIndex(Render_preferred_state.anisotropy);
+		update_anisotropy_visibility();
 
 		return sheet;
 	};
@@ -1690,6 +1749,8 @@ struct video_menu
 			Render_preferred_state.filtering = (*filtering) ? 1 : 0;
 		if (mipmapping)
 			Render_preferred_state.mipping = (*mipmapping) ? 1 : 0;
+		if (anisotropy)
+			Render_preferred_state.anisotropy = (ubyte)AnisotropyIndexToFactor(*anisotropy);
 		if (per_pixel_lighting)
 			Render_preferred_state.per_pixel_lighting = ConfigCanUsePerPixelLighting() && *per_pixel_lighting;
 		if (bloom_enabled)
@@ -1749,25 +1810,6 @@ struct video_menu
 		{
 			//Hopefully this doesn't do anything cursed..
 			rend_SetPreferredState(&Render_preferred_state);
-		}
-
-		if (backend)
-		{
-			int olddesired = DesiredOpenGLProfile;
-			DesiredOpenGLProfile = (opengl_profile)*backend;
-			if (olddesired != DesiredOpenGLProfile)
-				DesiredOpenGLProfileExplicit = true;
-			if (olddesired != DesiredOpenGLProfile && DesiredOpenGLProfile != OpenGLProfile)
-			{
-				DoMessageBox(TXT_WARNING, "Changing the OpenGL profile will apply the next time you start Piccu Engine.", MSGBOX_OK);
-			}
-			if (DesiredOpenGLProfile != GLPROFILE_CORE)
-				Render_preferred_state.per_pixel_lighting = false;
-			if (DesiredOpenGLProfile != GLPROFILE_CORE)
-			{
-				ApplyAOPresetFromIndex(0);
-				ConfigFinalizeMotionVectorUse();
-			}
 		}
 
 		sheet = NULL;

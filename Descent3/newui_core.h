@@ -201,6 +201,7 @@ public:
 	UIGadget *GetGadget(short id);
 	bool SetGadgetTitle(short id, const char *title);
 	bool SetGadgetVisible(short id, bool visible);
+	bool SetGadgetEnabled(short id, bool enabled);
 	bool SetGadgetTextAlignment(short id, tNewuiTextAlignment alignment, short padding=0);
 	bool ReleaseGadgetFocusLock(short id);
 
@@ -279,6 +280,7 @@ private:
 		sbyte type;									// enumerated ui gadget type
 		bool changed;								// parameters are different than defaults?
 		bool visible;								// attached to the parent window when realized?
+		bool enabled;								// accepts input when realized?
 		short id;									// id value
 		char *title;								// title of gadget
 		union 

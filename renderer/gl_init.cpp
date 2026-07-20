@@ -640,6 +640,14 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 #endif
 	// Get some info
 	GetInformation();
+	OpenGL_max_anisotropy = 1.0f;
+	if (CheckExtension("GL_EXT_texture_filter_anisotropic") ||
+		CheckExtension("GL_ARB_texture_filter_anisotropic"))
+	{
+		glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &OpenGL_max_anisotropy);
+		OpenGL_max_anisotropy = std::max(1.0f, OpenGL_max_anisotropy);
+	}
+	mprintf((0, "OpenGL maximum anisotropy: %.0fx\n", OpenGL_max_anisotropy));
 	GLfloat line_width_range[2] = {1.0f, 1.0f};
 	GLfloat point_size_range[2] = {1.0f, 1.0f};
 	glGetFloatv(GL_ALIASED_LINE_WIDTH_RANGE, line_width_range);

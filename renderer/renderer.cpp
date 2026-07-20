@@ -1058,6 +1058,14 @@ int rend_SetPreferredState(renderer_preferred_state* pref_state)
 	return retval;
 }
 
+int rend_GetMaxAnisotropy()
+{
+	if (!Renderer_initted || !renderer_inst)
+		return 1;
+
+	return renderer_inst->GetMaxAnisotropy();
+}
+
 // Sets the gamma value 
 void rend_SetGammaValue(float val)
 {

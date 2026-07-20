@@ -348,6 +348,14 @@ int GLCompatibilityRenderer::SetPreferredState(renderer_preferred_state* pref_st
 	return retval;
 }
 
+int GLCompatibilityRenderer::GetMaxAnisotropy() const
+{
+	int factor = 1;
+	while (factor < 16 && (float)(factor * 2) <= OpenGL_max_anisotropy)
+		factor *= 2;
+	return factor;
+}
+
 void GLCompatibilityRenderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 {
 	if (msaa_deferred_apply_pending && framebuffer_ok)

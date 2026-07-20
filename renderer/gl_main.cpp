@@ -1255,6 +1255,14 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 	return retval;
 }
 
+int GL4Renderer::GetMaxAnisotropy() const
+{
+	int factor = 1;
+	while (factor < 16 && (float)(factor * 2) <= OpenGL_max_anisotropy)
+		factor *= 2;
+	return factor;
+}
+
 static void GL4ClearBuffers(GLbitfield clear_flags)
 {
 	if (clear_flags == 0)

@@ -448,8 +448,6 @@ void SaveGameSettings()
 	Database->write("FastHeadlight",Detail_settings.Fast_headlight_on);
 	Database->write("MirrorSurfaces",Detail_settings.Mirrored_surfaces);
 	Database->write("MissileView",Missile_camera_window);
-	Database->write("OpenGLProfile", DesiredOpenGLProfile);
-	Database->write("OpenGLProfileExplicit", DesiredOpenGLProfileExplicit);
 	Database->write("DetailScorchMarks",Detail_settings.Scorches_enabled);
 	Database->write("DetailWeaponCoronas",Detail_settings.Weapon_coronas_enabled);
 	Database->write("DetailFog",Detail_settings.Fog_enabled);
@@ -471,6 +469,7 @@ void SaveGameSettings()
 	Database->write("RS_bitdepth",Render_preferred_bitdepth);
 	Database->write("RS_bilear",Render_preferred_state.filtering);
 	Database->write("RS_mipping",Render_preferred_state.mipping);
+	Database->write("RS_anisotropy",Render_preferred_state.anisotropy);
 	Database->write("RS_color_model",Render_state.cur_color_model);
 	Database->write("RS_light",Render_state.cur_light_state);
 	Database->write("RS_texture_quality",Render_state.cur_texture_quality);
@@ -581,6 +580,7 @@ void LoadGameSettings()
 	Detail_settings.Weapon_coronas_enabled = true;
 	Render_preferred_state.mipping = true;
 	Render_preferred_state.filtering = true;
+	Render_preferred_state.anisotropy = 1;
 	Render_preferred_state.bit_depth = 16;
 	Render_preferred_bitdepth = 16;
 	Default_player_terrain_leveling = 2;
@@ -778,6 +778,18 @@ void LoadGameSettings()
 	Database->read_int("RS_bilear",&Render_preferred_state.filtering);
 	Render_preferred_state.filtering = Render_preferred_state.filtering ? 1 : 0;
 	Database->read_int("RS_mipping",&Render_preferred_state.mipping);
+	tempint = Render_preferred_state.anisotropy;
+	Database->read_int("RS_anisotropy", &tempint);
+	if (tempint >= 16)
+		Render_preferred_state.anisotropy = 16;
+	else if (tempint >= 8)
+		Render_preferred_state.anisotropy = 8;
+	else if (tempint >= 4)
+		Render_preferred_state.anisotropy = 4;
+	else if (tempint >= 2)
+		Render_preferred_state.anisotropy = 2;
+	else
+		Render_preferred_state.anisotropy = 1;
 	const int texture_filter_arg = FindArg("-texturefilter");
 	const char* texture_filter_value = texture_filter_arg ?
 		GetArg(texture_filter_arg + 1) : nullptr;
@@ -795,6 +807,24 @@ void LoadGameSettings()
 	{
 		Render_preferred_state.filtering = 1;
 		Render_preferred_state.mipping = 1;
+	}
+	int anisotropy_arg = FindArg("-anisotropy");
+	if (!anisotropy_arg)
+		anisotropy_arg = FindArg("-aniso");
+	if (anisotropy_arg)
+	{
+		const char* anisotropy_value = GetArg(anisotropy_arg + 1);
+		const int requested_anisotropy = anisotropy_value ? atoi(anisotropy_value) : 1;
+		if (requested_anisotropy >= 16)
+			Render_preferred_state.anisotropy = 16;
+		else if (requested_anisotropy >= 8)
+			Render_preferred_state.anisotropy = 8;
+		else if (requested_anisotropy >= 4)
+			Render_preferred_state.anisotropy = 4;
+		else if (requested_anisotropy >= 2)
+			Render_preferred_state.anisotropy = 2;
+		else
+			Render_preferred_state.anisotropy = 1;
 	}
 	Database->read_int("RS_color_model",&Render_state.cur_color_model);
 	Database->read_int("RS_light",&Render_state.cur_light_state);
@@ -1018,16 +1048,20 @@ void LoadGameSettings()
 	Database->read_int("MissileView",&Missile_camera_window);
 	Database->read("FastHeadlight",&Detail_settings.Fast_headlight_on);
 	Database->read("MirrorSurfaces",&Detail_settings.Mirrored_surfaces);
-	Database->read("OpenGLProfileExplicit", &DesiredOpenGLProfileExplicit);
-	Database->read_int("OpenGLProfile", &DesiredOpenGLProfile);
-	if (DesiredOpenGLProfile != GLPROFILE_CORE && DesiredOpenGLProfile != GLPROFILE_COMPAT)
-		DesiredOpenGLProfile = GLPROFILE_COMPAT;
-	if (!DesiredOpenGLProfileExplicit)
-		DesiredOpenGLProfile = GLPROFILE_CORE;
+	// GL4 is always the normal renderer. GL1 compatibility is intentionally
+	// available only as an explicit command-line troubleshooting path.
+	DesiredOpenGLProfile = GLPROFILE_CORE;
+	DesiredOpenGLProfileExplicit = false;
 	if (FindArg("-glcompat") || FindArg("-gl1") || FindArg("-openglcompat"))
+	{
 		DesiredOpenGLProfile = GLPROFILE_COMPAT;
+		DesiredOpenGLProfileExplicit = true;
+	}
 	if (FindArg("-glcore") || FindArg("-gl4") || FindArg("-gl45") || FindArg("-openglcore"))
+	{
 		DesiredOpenGLProfile = GLPROFILE_CORE;
+		DesiredOpenGLProfileExplicit = true;
+	}
 	Terrain_renderer_mode = DesiredOpenGLProfile == GLPROFILE_CORE ? TERRAIN_RENDERER_COMPUTE : TERRAIN_RENDERER_LEGACY;
 	if (DesiredOpenGLProfile != GLPROFILE_CORE)
 	{
@@ -1169,13 +1203,14 @@ void LoadGameSettings()
 	}
 
 	AutomatedCaptureLog(
-		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d msaa=%u ssaa=%u filtering=%d mipping=%d per_pixel=%d bloom=%d ao=%d ao_resolution=%u ao_overscan=%u motion_blur=%d combined_blur=%d soft_particles=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
+		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d msaa=%u ssaa=%u filtering=%d mipping=%d anisotropy=%u per_pixel=%d bloom=%d ao=%d ao_resolution=%u ao_overscan=%u motion_blur=%d combined_blur=%d soft_particles=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
 		Game_window_res_width, Game_window_res_height, Game_fullscreen ? 1 : 0,
 		DesiredOpenGLProfile, GetFrameLimitFps(),
 		(unsigned)Render_preferred_state.msaa_samples,
 		(unsigned)Render_preferred_state.supersampling_factor,
 		(int)Render_preferred_state.filtering,
 		(int)Render_preferred_state.mipping,
+		(unsigned)Render_preferred_state.anisotropy,
 		Render_preferred_state.per_pixel_lighting ? 1 : 0,
 		Render_preferred_state.bloom_enabled ? 1 : 0,
 		Render_preferred_state.ao_enabled ? 1 : 0,

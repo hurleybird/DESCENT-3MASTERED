@@ -1652,6 +1652,8 @@ void newuiSheet::Realize()
 		desc->changed = false;
 
 		UIGadget* realized_gadget = GadgetForDesc(desc);
+		if (realized_gadget && !desc->enabled)
+			realized_gadget->Disable();
 		if (realized_gadget && !desc->visible && realized_gadget->GetWindow())
 			m_parent->RemoveGadget(realized_gadget);
 
@@ -2161,6 +2163,31 @@ bool newuiSheet::SetGadgetVisible(short id, bool visible)
 	return false;
 }
 
+bool newuiSheet::SetGadgetEnabled(short id, bool enabled)
+{
+	for (int i = 0; i < m_ngadgets; i++)
+	{
+		newuiSheet::t_gadget_desc* desc = &m_gadgetlist[i];
+		if (desc->id != id)
+			continue;
+
+		desc->enabled = enabled;
+		if (!m_realized)
+			return true;
+
+		UIGadget* gadget = GadgetForDesc(desc);
+		if (!gadget)
+			return true;
+		if (enabled)
+			gadget->Enable();
+		else
+			gadget->Disable();
+		return true;
+	}
+
+	return false;
+}
+
 bool newuiSheet::SetGadgetTextAlignment(short id, tNewuiTextAlignment alignment, short padding)
 {
 	for (int i = 0; i < m_ngadgets; ++i)
@@ -2225,6 +2252,7 @@ newuiSheet::t_gadget_desc* newuiSheet::AddGadget(short id, sbyte type, const cha
 	m_gadgetlist[i].parm.i = 0;
 	m_gadgetlist[i].changed = false;
 	m_gadgetlist[i].visible = true;
+	m_gadgetlist[i].enabled = true;
 	m_gadgetlist[i].internal = NULL;
 	m_gadgetlist[i].text_alignment = NEWUI_TEXT_ALIGN_CENTER;
 	m_gadgetlist[i].text_padding = 0;

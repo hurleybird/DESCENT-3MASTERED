@@ -61,6 +61,9 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain, b
 #include "psrand.h"
 #include "player.h"
 #include <glad/gl.h>
+#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+#endif
 #include "../renderer/HardwareInternal.h"
 #include "../renderer/gl_mesh.h"
 
@@ -223,6 +226,7 @@ static int Terrain_compute_base_texture_array_height = 0;
 static int Terrain_compute_max_texture_array_layers = 0;
 static int Terrain_compute_base_texture_filtering = -1;
 static int Terrain_compute_base_texture_mipping = -1;
+static int Terrain_compute_base_texture_anisotropy = -1;
 static std::vector<int> Terrain_compute_base_texture_handles;
 static std::vector<std::vector<ushort>> Terrain_compute_base_texture_snapshots;
 static std::vector<uint32_t> Terrain_compute_base_texture_opaque_counts;
@@ -241,8 +245,13 @@ static void SetTerrainComputeBaseTextureFilter(bool force)
 {
 	const int filtering = Render_preferred_state.filtering;
 	const bool mipmapped = Render_preferred_state.mipping != 0;
+	const int maximum_anisotropy = rend_GetMaxAnisotropy();
+	int anisotropy = filtering && mipmapped ? (int)Render_preferred_state.anisotropy : 1;
+	if (anisotropy < 1) anisotropy = 1;
+	if (anisotropy > maximum_anisotropy) anisotropy = maximum_anisotropy;
 	if (!force && Terrain_compute_base_texture_filtering == filtering &&
-		Terrain_compute_base_texture_mipping == (mipmapped ? 1 : 0))
+		Terrain_compute_base_texture_mipping == (mipmapped ? 1 : 0) &&
+		Terrain_compute_base_texture_anisotropy == anisotropy)
 	{
 		return;
 	}
@@ -252,8 +261,11 @@ static void SetTerrainComputeBaseTextureFilter(bool force)
 		min_filter = filtering ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST;
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, min_filter);
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, mag_filter);
+	if (maximum_anisotropy > 1)
+		glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_ANISOTROPY_EXT, (float)anisotropy);
 	Terrain_compute_base_texture_filtering = filtering;
 	Terrain_compute_base_texture_mipping = mipmapped ? 1 : 0;
+	Terrain_compute_base_texture_anisotropy = anisotropy;
 }
 
 static void InvalidateTerrainComputeRendererCache()

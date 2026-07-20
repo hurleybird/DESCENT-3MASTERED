@@ -222,13 +222,15 @@ void GLCompatibilityRenderer::MakeWrapTypeCurrent(int handle, int map_type, int 
 // Chooses the correct filter type for the currently bound texture
 void GLCompatibilityRenderer::MakeFilterTypeCurrent(int handle, int map_type, int tn)
 {
-	int magf, mmip;
+	int magf, mmip, anisotropy_state;
 	sbyte dest_filter, dest_mip;
+	int dest_anisotropy_state = 0;
 
 	if (map_type == MAP_TYPE_LIGHTMAP)
 	{
 		magf = GET_FILTER_STATE(OpenGL_lightmap_states[handle]);
 		mmip = GET_MIP_STATE(OpenGL_lightmap_states[handle]);
+		anisotropy_state = GET_ANISOTROPY_STATE(OpenGL_lightmap_states[handle]);
 		dest_filter = 1;
 		dest_mip = 0;
 	}
@@ -236,12 +238,20 @@ void GLCompatibilityRenderer::MakeFilterTypeCurrent(int handle, int map_type, in
 	{
 		magf = GET_FILTER_STATE(OpenGL_bitmap_states[handle]);
 		mmip = GET_MIP_STATE(OpenGL_bitmap_states[handle]);
+		anisotropy_state = GET_ANISOTROPY_STATE(OpenGL_bitmap_states[handle]);
 		dest_filter = OpenGL_preferred_state.filtering;
 		if (!OpenGL_state.cur_bilinear_state)
 			dest_filter = 0;
 		dest_mip = OpenGL_preferred_state.mipping;
 		if (!OpenGL_state.cur_mip_state || !bm_mipped(handle))
 			dest_mip = 0;
+		if (dest_filter && dest_mip)
+		{
+			const int requested = std::max(1, (int)OpenGL_preferred_state.anisotropy);
+			const int effective = std::min(requested, GetMaxAnisotropy());
+			while ((1 << dest_anisotropy_state) < effective)
+				dest_anisotropy_state++;
+		}
 	}
 
 	if (UseMultitexture && Last_texel_unit_set != tn)
@@ -250,7 +260,7 @@ void GLCompatibilityRenderer::MakeFilterTypeCurrent(int handle, int map_type, in
 		Last_texel_unit_set = tn;
 	}
 
-	if (magf == dest_filter && mmip == dest_mip)
+	if (magf == dest_filter && mmip == dest_mip && anisotropy_state == dest_anisotropy_state)
 		return;
 
 	GLenum mag_filter = dest_filter ? GL_LINEAR : GL_NEAREST;
@@ -268,6 +278,9 @@ void GLCompatibilityRenderer::MakeFilterTypeCurrent(int handle, int map_type, in
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
+	if (OpenGL_max_anisotropy > 1.0f)
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+			(float)(1 << dest_anisotropy_state));
 
 	OpenGL_sets_this_frame[2]++;
 
@@ -275,11 +288,13 @@ void GLCompatibilityRenderer::MakeFilterTypeCurrent(int handle, int map_type, in
 	{
 		SET_FILTER_STATE(OpenGL_lightmap_states[handle], dest_filter);
 		SET_MIP_STATE(OpenGL_lightmap_states[handle], dest_mip);
+		SET_ANISOTROPY_STATE(OpenGL_lightmap_states[handle], dest_anisotropy_state);
 	}
 	else
 	{
 		SET_FILTER_STATE(OpenGL_bitmap_states[handle], dest_filter);
 		SET_MIP_STATE(OpenGL_bitmap_states[handle], dest_mip);
+		SET_ANISOTROPY_STATE(OpenGL_bitmap_states[handle], dest_anisotropy_state);
 	}
 
 	CHECK_ERROR(9);
