@@ -176,6 +176,7 @@ struct netgame_info
 	int	killgoal;						// kill goal for this level
 	int	respawn_time;
 	int	max_players;
+	int pad_1_4_compat;					// Former level checksum; preserve the 1.4 game-module ABI.
 	ubyte difficulty;						// Game difficulty level
     u_char digest[16];
 };

@@ -100,11 +100,12 @@ bool joy_Init(bool emulation)
 		SDL_Joystick* stick = SDL_OpenJoystick(cursticks[i]);
 		if (stick)
 		{
-			joysticksSDL[numjoysticksSDL] = stick;
+			const int joystick_slot = numjoysticksSDL;
+			joysticksSDL[joystick_slot] = stick;
+			joy_GetSDLStickCaps(joystick_slot, stick, stickinfoSDL[joystick_slot]);
+
 			if (++numjoysticksSDL == MAX_JOYSTICKS)
 				break;
-
-			joy_GetSDLStickCaps(numjoysticksSDL, stick, stickinfoSDL[i]);
 		}
 		else
 		{
