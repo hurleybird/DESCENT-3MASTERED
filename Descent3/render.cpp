@@ -1756,6 +1756,15 @@ static bool SpecularShouldQueueFace(room* rp, face* fp)
 {
 	if (!Detail_settings.Specular_lighting)
 		return false;
+	// GL4's retained room depth cannot be replayed reliably by the legacy
+	// projected-vertex specular pass.  Per-pixel lighting has a coherent retained
+	// material pass; with it disabled, omit specular rather than intermittently
+	// exposing coplanar legacy triangles.  GL1 retains the original path.
+	if (UseHardware && rend_CanUseNewrender() &&
+		!Render_preferred_state.per_pixel_lighting)
+	{
+		return false;
+	}
 	if (SpecularCanUseFieldStaticFace(rp, fp))
 		return true;
 	if ((GameTextures[fp->tmap].flags & TF_SPECULAR) && SpecularFaceHasAuthoredPath(rp, fp))
