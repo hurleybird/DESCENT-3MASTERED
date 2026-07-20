@@ -3149,7 +3149,10 @@ void GL4Renderer::SetAlphaType(sbyte atype)
 	case AT_LIGHTMAP_BLEND:
 	case AT_LIGHTMAP_BLEND_VERTEX:
 		SetAlwaysAlpha(false);
-		glBlendFuncSeparate(GL_DST_COLOR, GL_ZERO, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+		// Destination multiplication scales existing scene color; it does not
+		// add translucent coverage.  Preserve late-frame alpha so deferred AO
+		// can apply the corresponding multiplier correction exactly once.
+		glBlendFuncSeparate(GL_DST_COLOR, GL_ZERO, GL_ZERO, GL_ONE);
 		break;
 	case AT_SATURATE_TEXTURE:
 	case AT_LIGHTMAP_BLEND_SATURATE:

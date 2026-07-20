@@ -1416,7 +1416,7 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_ao_class_uniforms[i] = drawshaders[i].FindUniform("ao_class_value");
 		drawshader_ao_weight_uniforms[i] = drawshaders[i].FindUniform("ao_weight_value");
 		drawshader_ao_capture_weight_mode_uniforms[i] = drawshaders[i].FindUniform("ao_capture_weight_mode");
-		drawshader_post_mask_luminance_uniforms[i] = drawshaders[i].FindUniform("post_mask_use_luminance");
+		drawshader_post_mask_blend_mode_uniforms[i] = drawshaders[i].FindUniform("post_mask_blend_mode");
 		drawshader_cockpit_backing_enabled_uniforms[i] = drawshaders[i].FindUniform("cockpit_backing_enabled");
 		drawshader_cockpit_backing_alpha_uniforms[i] = drawshaders[i].FindUniform("cockpit_backing_alpha");
 		drawshader_cockpit_backing_darkness_uniforms[i] = drawshaders[i].FindUniform("cockpit_backing_darkness");
@@ -1634,15 +1634,23 @@ void GL4Renderer::SelectDrawShader()
 		glUniform1f(drawshader_ao_weight_uniforms[shader_index], ao_weight_draw_value);
 	if (drawshader_ao_capture_weight_mode_uniforms[shader_index] != -1)
 		glUniform1i(drawshader_ao_capture_weight_mode_uniforms[shader_index], 0);
-	if (drawshader_post_mask_luminance_uniforms[shader_index] != -1)
+	if (drawshader_post_mask_blend_mode_uniforms[shader_index] != -1)
 	{
-		bool use_luminance =
-			OpenGL_state.cur_alpha_type == AT_SATURATE_TEXTURE ||
+		int post_mask_blend_mode = 0;
+		if (OpenGL_state.cur_alpha_type == AT_LIGHTMAP_BLEND ||
+			OpenGL_state.cur_alpha_type == AT_LIGHTMAP_BLEND_VERTEX)
+		{
+			post_mask_blend_mode = 2;
+		}
+		else if (OpenGL_state.cur_alpha_type == AT_SATURATE_TEXTURE ||
 			OpenGL_state.cur_alpha_type == AT_SATURATE_VERTEX ||
 			OpenGL_state.cur_alpha_type == AT_SATURATE_CONSTANT_VERTEX ||
 			OpenGL_state.cur_alpha_type == AT_SATURATE_TEXTURE_VERTEX ||
-			OpenGL_state.cur_alpha_type == AT_LIGHTMAP_BLEND_SATURATE;
-		glUniform1i(drawshader_post_mask_luminance_uniforms[shader_index], use_luminance ? 1 : 0);
+			OpenGL_state.cur_alpha_type == AT_LIGHTMAP_BLEND_SATURATE)
+		{
+			post_mask_blend_mode = 1;
+		}
+		glUniform1i(drawshader_post_mask_blend_mode_uniforms[shader_index], post_mask_blend_mode);
 	}
 	if (drawshader_cockpit_backing_enabled_uniforms[shader_index] != -1)
 		glUniform1i(drawshader_cockpit_backing_enabled_uniforms[shader_index], cockpit_backing_effect.enabled);

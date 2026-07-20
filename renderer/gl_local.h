@@ -308,7 +308,7 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_ao_class_uniforms[8] = {};
 	GLint drawshader_ao_weight_uniforms[8] = {};
 	GLint drawshader_ao_capture_weight_mode_uniforms[8] = {};
-	GLint drawshader_post_mask_luminance_uniforms[8] = {};
+	GLint drawshader_post_mask_blend_mode_uniforms[8] = {};
 	GLint drawshader_cockpit_backing_enabled_uniforms[8] = {};
 	GLint drawshader_cockpit_backing_alpha_uniforms[8] = {};
 	GLint drawshader_cockpit_backing_darkness_uniforms[8] = {};

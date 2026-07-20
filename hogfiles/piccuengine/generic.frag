@@ -36,7 +36,9 @@ uniform float bloom_suppression;
 uniform int ao_class_value;
 uniform float ao_weight_value;
 uniform int ao_capture_weight_mode;
-uniform int post_mask_use_luminance;
+// 0: ordinary alpha coverage, 1: additive visible contribution,
+// 2: destination-multiplying material.
+uniform int post_mask_blend_mode;
 uniform int cockpit_backing_enabled;
 uniform float cockpit_backing_alpha;
 uniform float cockpit_backing_darkness;
@@ -452,12 +454,27 @@ void main()
 			color.rgb = mix(color.rgb, room_fog_color, room_fog_amount);
 	}
 	float suppression_alpha = clamp(color.a, 0.0, 1.0);
-	if (post_mask_use_luminance != 0)
+	if (post_mask_blend_mode == 1)
 	{
 		float visible = max(max(color.r, color.g), color.b);
 		suppression_alpha *= clamp(visible, 0.0, 1.0);
 	}
-	ao_mask = clamp(ao_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
+	// AO is composited against the opaque scene captured before translucent
+	// effects.  The amount protected here must therefore be the fragment's
+	// actual coverage.  Amplifying low alpha values makes nearly transparent
+	// bitmap borders suppress AO in the shape of their backing quad.
+	if (post_mask_blend_mode == 2)
+	{
+		// Destination-multiplying draws do not cover the opaque scene; they
+		// scale it.  Encode the inverse multiplier so the deferred AO delta
+		// is scaled by the same material instead of being cut out by a
+		// meaningless source alpha channel.  These materials are normally
+		// grayscale; luminance is the least-biased scalar for colored data.
+		float multiplier = clamp(dot(color.rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+		ao_mask = clamp(ao_suppression * (1.0 - multiplier), 0.0, 1.0);
+	}
+	else
+		ao_mask = clamp(ao_suppression * suppression_alpha, 0.0, 1.0);
 	// Fog only replaces destination color for the base-material and portal-cap
 	// composites.  Additive lights are merely attenuated by fog, while
 	// multiplicative overlays converge toward their neutral multiplier; neither
