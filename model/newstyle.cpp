@@ -748,6 +748,18 @@ private:
 
 static PolymodelBaseFaceBatcher *Polymodel_active_opaque_batcher = nullptr;
 static PolymodelBaseFaceBatcher *Polymodel_active_alpha_batcher = nullptr;
+static bool Polymodel_points_rotated = false;
+
+static bool PolymodelFaceNeedsLegacyClip(bsp_info *sm, const polyface *face)
+{
+	if (!Polymodel_points_rotated || !sm || !face)
+		return false;
+
+	ubyte clip_or = 0;
+	for (int corner = 0; corner < face->nverts; corner++)
+		clip_or |= Robot_points[face->vertnums[corner]].p3_codes;
+	return clip_or != 0;
+}
 
 static void CopyPolymodelBatchPoints(PolymodelBatchedFace& batched_face, g3Point **pointlist, int nv)
 {
@@ -993,7 +1005,9 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 	key.v_offset = vchange;
 	PolymodelPerfAdd(Polymodel_perf_face_base_key_time, key_setup_start_time);
 
-	if (RetainedPolymodelCanDrawBaseFace(pm, sm, facenum))
+	const bool retained_face_needs_clip = PolymodelFaceNeedsLegacyClip(sm, fp);
+
+	if (!retained_face_needs_clip && RetainedPolymodelCanDrawBaseFace(pm, sm, facenum))
 	{
 		double batch_add_start_time = PolymodelPerfNow();
 		batcher.AddRetained(key, pm, sm, facenum, allow_alpha);
@@ -2042,7 +2056,8 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 				continue;
 			}
 
-			if (RetainedPolymodelCanDrawBaseFace(pm, sm, i))
+			if (!PolymodelFaceNeedsLegacyClip(sm, fp) &&
+				RetainedPolymodelCanDrawBaseFace(pm, sm, i))
 			{
 				bool smooth = false;
 				if (sm->vertnorms != nullptr)
@@ -2107,7 +2122,8 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 			if (!g3_CheckNormalFacing(&sm->verts[fp->vertnums[0]],&fp->normal))	
 				continue;
 
-			if (batch_fog && RetainedPolymodelCanDrawBaseFace(pm, sm, i))
+			const bool face_needs_clip = PolymodelFaceNeedsLegacyClip(sm, fp);
+			if (batch_fog && !face_needs_clip && RetainedPolymodelCanDrawBaseFace(pm, sm, i))
 			{
 				fog_face_batcher.AddRetained(pm, sm, i);
 				if (Perf_markers_enabled)
@@ -2115,7 +2131,8 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 				continue;
 			}
 
-			if (batch_fog && TryBatchSubmodelFaceFogged(pm, sm, i, fog_face_batcher))
+			if (batch_fog && !face_needs_clip &&
+				TryBatchSubmodelFaceFogged(pm, sm, i, fog_face_batcher))
 				continue;
 
 			fog_face_batcher.Flush();
@@ -2373,10 +2390,12 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 		if (Perf_markers_enabled)
 			Polymodel_perf_submodel_draw_count++;
 		double rotate_start_time = PolymodelPerfNow();
-		const bool skip_point_rotation = RetainedPolymodelCanSkipPointRotation(pm, sm);
+		const bool skip_point_rotation = RetainedPolymodelCanSkipPointRotation(pm, sm) &&
+			!RetainedPolymodelStraddlesEyePlane(sm);
 		RetainedPolymodelPrepareSubmodel(pm, sm, skip_point_rotation);
 		if (!skip_point_rotation)
 			RotateModelPoints (pm,sm);
+		Polymodel_points_rotated = !skip_point_rotation;
 		PolymodelPerfAdd(Polymodel_perf_submodel_rotate_time, rotate_start_time);
 			
 		double faces_start_time = PolymodelPerfNow();

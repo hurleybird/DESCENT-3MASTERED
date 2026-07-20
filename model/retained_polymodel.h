@@ -6,6 +6,7 @@ bool RetainedPolymodelEnabled();
 void RetainedPolymodelPrecache(int model_num);
 bool RetainedPolymodelCanDrawBaseFace(poly_model *pm, bsp_info *sm, int facenum);
 bool RetainedPolymodelCanSkipPointRotation(poly_model *pm, bsp_info *sm);
+bool RetainedPolymodelStraddlesEyePlane(bsp_info *sm);
 void RetainedPolymodelPrepareSubmodel(poly_model *pm, bsp_info *sm, bool advance_visual_random);
 bool RetainedPolymodelDrawFaces(poly_model *pm, bsp_info *sm, const int *facenums, int count,
 	float u_offset, float v_offset, const vector *base_color);

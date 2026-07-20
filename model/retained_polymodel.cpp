@@ -315,6 +315,41 @@ bool RetainedPolymodelCanSkipPointRotation(poly_model *pm, bsp_info *sm)
 	return true;
 }
 
+bool RetainedPolymodelStraddlesEyePlane(bsp_info *sm)
+{
+	if (!sm || !sm->verts || sm->nverts <= 0)
+		return false;
+
+	// Most submodels are nowhere near the eye plane. Reject them with the
+	// existing origin-centred model radius before inspecting individual points.
+	const float center_eye_z = -gTransformModelView[14] + Z_bias;
+	const float eye_z_axis_length_sq =
+		gTransformModelView[2] * gTransformModelView[2] +
+		gTransformModelView[6] * gTransformModelView[6] +
+		gTransformModelView[10] * gTransformModelView[10];
+	const float eye_extent_sq = sm->rad * sm->rad * eye_z_axis_length_sq;
+	if (center_eye_z * center_eye_z > eye_extent_sq)
+		return false;
+
+	bool has_front_vertex = false;
+	bool has_behind_vertex = false;
+	for (int i = 0; i < sm->nverts; i++)
+	{
+		const vector& vertex = sm->verts[i];
+		// gTransformModelView contains the current object/submodel instance and
+		// OpenGL's negative-forward convention. Remove the renderer Z bias to
+		// reproduce the p3_z value on which g3's CC_BEHIND test operates.
+		const float eye_z = -(gTransformModelView[2] * vertex.x +
+			gTransformModelView[6] * vertex.y +
+			gTransformModelView[10] * vertex.z + gTransformModelView[14]) + Z_bias;
+		has_behind_vertex |= eye_z < 0.0f;
+		has_front_vertex |= eye_z >= 0.0f;
+		if (has_front_vertex && has_behind_vertex)
+			return true;
+	}
+	return false;
+}
+
 void RetainedPolymodelPrepareSubmodel(poly_model *pm, bsp_info *sm, bool advance_visual_random)
 {
 	Retained_polymodel_deformation = {};
