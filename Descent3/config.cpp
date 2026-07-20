@@ -1343,7 +1343,7 @@ struct video_menu
 			return;
 
 		const int maximum = rend_GetMaxAnisotropy();
-		const bool usable = filtering && mipmapping && *filtering && *mipmapping && maximum >= 2;
+		const bool usable = mipmapping && *mipmapping && maximum >= 2;
 		sheet->SetGadgetVisible(IDV_ANISOTROPY_OFF, true);
 		sheet->SetGadgetVisible(IDV_ANISOTROPY_2X, maximum >= 2);
 		sheet->SetGadgetVisible(IDV_ANISOTROPY_4X, maximum >= 4);

@@ -272,7 +272,7 @@ void GL4Renderer::MakeFilterTypeCurrent(int handle, int map_type, int tn)
 		dest_mip = OpenGL_preferred_state.mipping;
 		if (!OpenGL_state.cur_mip_state || !bm_mipped(handle))
 			dest_mip = 0;
-		if (dest_filter && dest_mip)
+		if (dest_mip)
 		{
 			const int requested = std::max(1, (int)OpenGL_preferred_state.anisotropy);
 			const int effective = std::min(requested, GetMaxAnisotropy());

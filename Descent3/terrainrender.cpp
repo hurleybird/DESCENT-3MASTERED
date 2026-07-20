@@ -246,7 +246,7 @@ static void SetTerrainComputeBaseTextureFilter(bool force)
 	const int filtering = Render_preferred_state.filtering;
 	const bool mipmapped = Render_preferred_state.mipping != 0;
 	const int maximum_anisotropy = rend_GetMaxAnisotropy();
-	int anisotropy = filtering && mipmapped ? (int)Render_preferred_state.anisotropy : 1;
+	int anisotropy = mipmapped ? (int)Render_preferred_state.anisotropy : 1;
 	if (anisotropy < 1) anisotropy = 1;
 	if (anisotropy > maximum_anisotropy) anisotropy = maximum_anisotropy;
 	if (!force && Terrain_compute_base_texture_filtering == filtering &&

@@ -334,7 +334,7 @@ struct renderer_preferred_state
 	ubyte pixel_motion_blur_samples;
 	float afterburner_fov_multiplier;
 	float afterburner_pixel_blur_multiplier;
-	ubyte anisotropy; //1 (off), 2, 4, 8, or 16. Effective only with filtered mipmaps.
+	ubyte anisotropy; //1 (off), 2, 4, 8, or 16. Effective only with mipmaps.
 };
 
 enum renderer_ao_class
