@@ -311,8 +311,11 @@ int pilot::flush(bool new_file)
 			return PLTW_FILE_CANTOPEN;
 		}
 
-		// Write out our fileversion
-		file_version = PLT_FILE_VERSION;
+		// Keep pilots readable by 1.5/Piccu builds whenever the extended
+		// difficulty profile is not actually needed.  PFV_DIFFICULTY_PROFILE
+		// adds only the four independent difficulty axes, so a uniform profile
+		// can be represented exactly by the preceding format.
+		file_version = DifficultyProfileIsUniform(difficulty_axes) ? PFV_REARVIEWINFO : PLT_FILE_VERSION;
 		cf_WriteInt(file, file_version);
 
 		write_name(file);
@@ -1194,10 +1197,13 @@ void pilot::read_custom_multiplayer_data(CFILE* file, bool skip)
 void pilot::write_difficulty(CFILE* file)
 {
 	cf_WriteByte(file, difficulty);
-	cf_WriteByte(file, difficulty_axes.enemy_ai);
-	cf_WriteByte(file, difficulty_axes.enemy_speed);
-	cf_WriteByte(file, difficulty_axes.enemy_hp);
-	cf_WriteByte(file, difficulty_axes.resources);
+	if (file_version >= PFV_DIFFICULTY_PROFILE)
+	{
+		cf_WriteByte(file, difficulty_axes.enemy_ai);
+		cf_WriteByte(file, difficulty_axes.enemy_speed);
+		cf_WriteByte(file, difficulty_axes.enemy_hp);
+		cf_WriteByte(file, difficulty_axes.resources);
+	}
 }
 
 

@@ -344,6 +344,18 @@ static void ApplyPolymodelSubmodelOffsetAdjustments(poly_model *pm)
 		pm->submodel[i].mod_pos += Polymodel_submodel_adjustments[i];
 }
 
+static void SetModelAnglesAndAdjustedPos(poly_model *pm, float *normalized_time, uint subobj_flags)
+{
+	// Explicit submodel offsets can affect ancestors excluded by a masked draw.
+	// Rebuild the complete hierarchy so a preceding point query or partial draw
+	// cannot leave an old additive adjustment behind for those ancestors.
+	if (pm && pm->id == Polymodel_submodel_adjust_model)
+		SetModelAnglesAndPos(pm, normalized_time);
+	else
+		SetModelAnglesAndPos(pm, normalized_time, subobj_flags);
+	ApplyPolymodelSubmodelOffsetAdjustments(pm);
+}
+
 #ifdef _DEBUG
 //Flag to draw an outline around the faces
 bool Polymodel_outline_mode = 0;
@@ -2930,8 +2942,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 
 	StartLightInstance(pos,orient);
 	
-	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
-	ApplyPolymodelSubmodelOffsetAdjustments(po);
+	SetModelAnglesAndAdjustedPos(po, normalized_time, f_render_sub);
 	const bool transient_motion_transform = PolymodelMotionBeginTransientTransform(pos, orient);
 	PolymodelMotionCaptureCurrent(po, pos, orient);
 	PolymodelPerfAddDrawModelSetup(draw_model_start_time);
@@ -3029,8 +3040,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	StartLightInstance(pos,orient);
 
 	po=&Poly_models[model_num];
-	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
-	ApplyPolymodelSubmodelOffsetAdjustments(po);
+	SetModelAnglesAndAdjustedPos(po, normalized_time, f_render_sub);
 	const bool transient_motion_transform = PolymodelMotionBeginTransientTransform(pos, orient);
 	PolymodelMotionCaptureCurrent(po, pos, orient);
 	PolymodelPerfAddDrawModelSetup(draw_model_start_time);
@@ -3116,8 +3126,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	StartLightInstance (pos,orient);
 	
 	po=&Poly_models[model_num];
-	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
-	ApplyPolymodelSubmodelOffsetAdjustments(po);
+	SetModelAnglesAndAdjustedPos(po, normalized_time, f_render_sub);
 	const bool transient_motion_transform = PolymodelMotionBeginTransientTransform(pos, orient);
 	PolymodelMotionCaptureCurrent(po, pos, orient);
 	PolymodelPerfAddDrawModelSetup(draw_model_start_time);
