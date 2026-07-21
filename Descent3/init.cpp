@@ -1201,6 +1201,8 @@ void LoadGameSettings()
 		Render_preferred_state.ao_resolution = AO_RESOLUTION_FULL;
 		Render_soft_vis_effects = true;
 	}
+	if (FindArg("-hires-skies"))
+		Render_hires_skies = true;
 
 	AutomatedCaptureLog(
 		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d msaa=%u ssaa=%u filtering=%d mipping=%d anisotropy=%u per_pixel=%d bloom=%d ao=%d ao_resolution=%u ao_overscan=%u motion_blur=%d combined_blur=%d soft_particles=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",

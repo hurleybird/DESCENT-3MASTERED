@@ -73,6 +73,7 @@ extern float Hud_text_scale;
 extern bool Render_draw_call_stats;
 extern bool Render_face_probe;
 extern bool Render_soft_vis_effects;
+extern bool Render_hires_skies;
 extern bool Render_split_specular_textures;
 extern float Render_per_pixel_specular_strength;
 extern float Render_per_pixel_static_specular_strength;

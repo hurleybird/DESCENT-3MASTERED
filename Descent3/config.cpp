@@ -109,6 +109,7 @@ float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
 bool Render_face_probe = false;
 bool Render_soft_vis_effects = false;
+bool Render_hires_skies = false;
 // bool Render_split_specular_textures = false;
 bool Render_split_specular_textures = true;
 float Render_per_pixel_specular_strength = 1.0f;
@@ -1305,6 +1306,7 @@ struct video_menu
 	bool* face_probe;
 	bool* frame_pacing;
 	bool* soft_vis_effects;
+	bool* hires_skies;
 	bool* motion_vector_debug;
 	bool* ao_overscan;
 
@@ -1559,6 +1561,11 @@ struct video_menu
 			Render_soft_vis_effects = *soft_vis_effects;
 			ui_changed = true;
 		}
+		if (hires_skies && sheet->HasChanged(hires_skies))
+		{
+			Render_hires_skies = *hires_skies;
+			ui_changed = true;
+		}
 		if (antialiasing && sheet->HasChanged(antialiasing))
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1623,6 +1630,7 @@ struct video_menu
 		face_probe = NULL;
 		frame_pacing = NULL;
 		soft_vis_effects = NULL;
+		hires_skies = NULL;
 		motion_vector_debug = NULL;
 		ao_overscan = NULL;
 		fov = NULL;
@@ -1689,6 +1697,7 @@ struct video_menu
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
 
 		sheet->NewGroup("Debug", 0, 211);
+		hires_skies = sheet->AddLongCheckBox("Hi-res skies", Render_hires_skies);
 		motion_vector_debug = sheet->AddLongCheckBox("Vector debug", Render_preferred_state.motion_vector_debug_preview);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
@@ -1790,6 +1799,8 @@ struct video_menu
 			SetAdaptiveFramePacingEnabled(*frame_pacing);
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
+		if (hires_skies)
+			Render_hires_skies = *hires_skies;
 		if (antialiasing)
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);

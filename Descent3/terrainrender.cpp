@@ -3375,6 +3375,19 @@ void DrawTexturedSky(void)
 
 	// Change terrain sky if needed
 	int dome_bm = GetTextureBitmap(Terrain_sky.dome_texture, 0);
+	if (Render_hires_skies &&
+		strcmpi(GameTextures[Terrain_sky.dome_texture].name, "Crazy Sci-Fi") == 0)
+	{
+		static int hires_crazy_scifi_bm = BAD_BITMAP_HANDLE;
+		static bool attempted_hires_crazy_scifi_load = false;
+		if (!attempted_hires_crazy_scifi_load)
+		{
+			attempted_hires_crazy_scifi_load = true;
+			hires_crazy_scifi_bm = bm_AllocLoadFileBitmap("CrazySciFi_512.tga", 1);
+		}
+		if (hires_crazy_scifi_bm != BAD_BITMAP_HANDLE)
+			dome_bm = hires_crazy_scifi_bm;
+	}
 
 	g3Point pnt[6], * pntlist[6];
 	g3UVL	uvls[10];
