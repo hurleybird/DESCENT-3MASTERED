@@ -100,6 +100,59 @@ int Check_terrain_portal = 0;
 static vector Temp_sky_vectors[MAX_HORIZON_PIECES][6];
 static vector Temp_sky_vectors_unrotated[MAX_HORIZON_PIECES][6];
 
+struct high_resolution_sky
+{
+	const char* texture_name;
+	const char* bitmap_filename;
+	int bitmap_handle;
+	bool attempted_load;
+};
+
+static high_resolution_sky High_resolution_skies[] = {
+	{"Arora", "SkyHi_Arora.tga", BAD_BITMAP_HANDLE, false},
+	{"CC_Sky", "SkyHi_CC_Sky.tga", BAD_BITMAP_HANDLE, false},
+	{"CloudMess05", "SkyHi_CloudMess05.tga", BAD_BITMAP_HANDLE, false},
+	{"CloudySky", "SkyHi_CloudySky.tga", BAD_BITMAP_HANDLE, false},
+	{"Crazy Sci-Fi", "CrazySciFi_512.tga", BAD_BITMAP_HANDLE, false},
+	{"EarthKoreaSky", "SkyHi_EarthKorea.tga", BAD_BITMAP_HANDLE, false},
+	{"EXP_256_Sky", "SkyHi_EXP256.tga", BAD_BITMAP_HANDLE, false},
+	{"M02Sky", "SkyHi_M02Sky.tga", BAD_BITMAP_HANDLE, false},
+	{"M_Sky3", "SkyHi_MSky3.tga", BAD_BITMAP_HANDLE, false},
+	{"MarsClif9", "SkyHi_MarsClif9.tga", BAD_BITMAP_HANDLE, false},
+	{"MarsSkyDome", "SkyHi_MarsSkyDome.tga", BAD_BITMAP_HANDLE, false},
+	{"Milky_Way", "SkyHi_MilkyWay.tga", BAD_BITMAP_HANDLE, false},
+	{"Overcast3", "SkyHi_Overcast3.tga", BAD_BITMAP_HANDLE, false},
+	{"PhobosSky", "SkyHi_PhobosSky.tga", BAD_BITMAP_HANDLE, false},
+	{"RedAcropolisSky", "SkyHi_RedAcropolis.tga", BAD_BITMAP_HANDLE, false},
+	{"Sol_sky4", "SkyHi_SolSky4.tga", BAD_BITMAP_HANDLE, false},
+	{"Titan Sky", "SkyHi_TitanSky.tga", BAD_BITMAP_HANDLE, false},
+	{"Vergence_Neb", "SkyHi_VergenceNeb.tga", BAD_BITMAP_HANDLE, false},
+	{"Volcanic2", "SkyHi_Volcanic2.tga", BAD_BITMAP_HANDLE, false},
+};
+
+static int GetHighResolutionSkyBitmap(short texture_handle, int fallback_bitmap)
+{
+	if (!Render_hires_skies)
+		return fallback_bitmap;
+
+	const char* texture_name = GameTextures[texture_handle].name;
+	for (auto& sky : High_resolution_skies)
+	{
+		if (strcmpi(texture_name, sky.texture_name) != 0)
+			continue;
+
+		if (!sky.attempted_load)
+		{
+			sky.attempted_load = true;
+			sky.bitmap_handle = bm_AllocLoadFileBitmap(sky.bitmap_filename, 1);
+		}
+
+		return sky.bitmap_handle != BAD_BITMAP_HANDLE ? sky.bitmap_handle : fallback_bitmap;
+	}
+
+	return fallback_bitmap;
+}
+
 // Last time terrain was rendered
 float Last_terrain_render_time = -1;
 // Sets UV's based on 90 degree rotations
@@ -3375,19 +3428,7 @@ void DrawTexturedSky(void)
 
 	// Change terrain sky if needed
 	int dome_bm = GetTextureBitmap(Terrain_sky.dome_texture, 0);
-	if (Render_hires_skies &&
-		strcmpi(GameTextures[Terrain_sky.dome_texture].name, "Crazy Sci-Fi") == 0)
-	{
-		static int hires_crazy_scifi_bm = BAD_BITMAP_HANDLE;
-		static bool attempted_hires_crazy_scifi_load = false;
-		if (!attempted_hires_crazy_scifi_load)
-		{
-			attempted_hires_crazy_scifi_load = true;
-			hires_crazy_scifi_bm = bm_AllocLoadFileBitmap("CrazySciFi_512.tga", 1);
-		}
-		if (hires_crazy_scifi_bm != BAD_BITMAP_HANDLE)
-			dome_bm = hires_crazy_scifi_bm;
-	}
+	dome_bm = GetHighResolutionSkyBitmap(Terrain_sky.dome_texture, dome_bm);
 
 	g3Point pnt[6], * pntlist[6];
 	g3UVL	uvls[10];
