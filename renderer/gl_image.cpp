@@ -608,6 +608,34 @@ void GL4Renderer::TranslateBitmapToOpenGL(int texnum, int bm_handle, int map_typ
 		OpenGL_last_bound[tn] = texnum;
 	}
 
+	// Optional modern assets can retain their original RGBA8 source alongside
+	// the legacy 16-bit bitmap. Upload that source directly so the bitmap
+	// compatibility layer does not quantize it to 1555 first.
+	const ubyte *truecolor_data = map_type == MAP_TYPE_BITMAP ? bm_data_truecolor(bm_handle) : NULL;
+	if (truecolor_data)
+	{
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		if (replace)
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, truecolor_data);
+		else
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, truecolor_data);
+
+		if (bm_mipped(bm_handle))
+		{
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, NUM_MIP_LEVELS - 1);
+			glGenerateMipmap(GL_TEXTURE_2D);
+		}
+		else
+		{
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+		}
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+
+		CHECK_ERROR(6);
+		OpenGL_uploads++;
+		return;
+	}
+
 	SetUploadBufferSize(w, h);
 
 	int i;

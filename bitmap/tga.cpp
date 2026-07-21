@@ -27,11 +27,110 @@
 #include "mem.h"
 
 #include <stdlib.h>
+#include <limits.h>
 
 ubyte* Tga_file_data = NULL;
 int Fake_pos = 0;
 int Bad_tga = 0;
 int Fake_file_size = 0;
+
+ubyte *bm_tga_load_rgba8(CFILE *infile, int *out_width, int *out_height)
+{
+	if (!infile || !out_width || !out_height)
+		return NULL;
+
+	const ubyte image_id_len = (ubyte)cf_ReadByte(infile);
+	const ubyte color_map_type = (ubyte)cf_ReadByte(infile);
+	const ubyte image_type = (ubyte)cf_ReadByte(infile);
+	if (color_map_type != 0 || (image_type != 2 && image_type != 10))
+		return NULL;
+
+	ubyte ignored[9];
+	cf_ReadBytes(ignored, sizeof(ignored), infile);
+	const int width = (ushort)cf_ReadShort(infile);
+	const int height = (ushort)cf_ReadShort(infile);
+	const ubyte pixel_depth = (ubyte)cf_ReadByte(infile);
+	const ubyte descriptor = (ubyte)cf_ReadByte(infile);
+	if (width <= 0 || height <= 0 || (pixel_depth != 24 && pixel_depth != 32))
+		return NULL;
+	if ((descriptor & 0x0f) != 0 && (descriptor & 0x0f) != 8)
+		return NULL;
+
+	if (image_id_len > 0)
+	{
+		ubyte image_id[255];
+		cf_ReadBytes(image_id, image_id_len, infile);
+	}
+
+	const size_t pixel_count = (size_t)width * (size_t)height;
+	if (pixel_count > (size_t)INT_MAX / 4)
+		return NULL;
+
+	ubyte *rgba = (ubyte *)mem_malloc(pixel_count * 4);
+	if (!rgba)
+		return NULL;
+
+	const int bytes_per_pixel = pixel_depth / 8;
+	const bool top_origin = (descriptor & 0x20) != 0;
+	const bool right_origin = (descriptor & 0x10) != 0;
+
+	auto store_pixel = [&](size_t source_index, const ubyte *bgra)
+	{
+		const int source_x = (int)(source_index % (size_t)width);
+		const int source_y = (int)(source_index / (size_t)width);
+		const int dest_x = right_origin ? width - 1 - source_x : source_x;
+		const int dest_y = top_origin ? source_y : height - 1 - source_y;
+		ubyte *dest = rgba + ((size_t)dest_y * (size_t)width + (size_t)dest_x) * 4;
+		dest[0] = bgra[2];
+		dest[1] = bgra[1];
+		dest[2] = bgra[0];
+		dest[3] = bytes_per_pixel == 4 ? bgra[3] : 255;
+	};
+
+	size_t decoded = 0;
+	if (image_type == 2)
+	{
+		ubyte pixel[4];
+		while (decoded < pixel_count)
+		{
+			cf_ReadBytes(pixel, bytes_per_pixel, infile);
+			store_pixel(decoded++, pixel);
+		}
+	}
+	else
+	{
+		ubyte pixel[4];
+		while (decoded < pixel_count)
+		{
+			const ubyte packet = (ubyte)cf_ReadByte(infile);
+			const size_t count = (size_t)(packet & 0x7f) + 1;
+			if (count > pixel_count - decoded)
+			{
+				mem_free(rgba);
+				return NULL;
+			}
+
+			if (packet & 0x80)
+			{
+				cf_ReadBytes(pixel, bytes_per_pixel, infile);
+				for (size_t i = 0; i < count; ++i)
+					store_pixel(decoded++, pixel);
+			}
+			else
+			{
+				for (size_t i = 0; i < count; ++i)
+				{
+					cf_ReadBytes(pixel, bytes_per_pixel, infile);
+					store_pixel(decoded++, pixel);
+				}
+			}
+		}
+	}
+
+	*out_width = width;
+	*out_height = height;
+	return rgba;
+}
 
 inline char tga_read_byte()
 {

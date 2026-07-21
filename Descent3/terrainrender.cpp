@@ -144,7 +144,7 @@ static int GetHighResolutionSkyBitmap(short texture_handle, int fallback_bitmap)
 		if (!sky.attempted_load)
 		{
 			sky.attempted_load = true;
-			sky.bitmap_handle = bm_AllocLoadFileBitmap(sky.bitmap_filename, 1);
+			sky.bitmap_handle = bm_AllocLoadFileBitmapTrueColor(sky.bitmap_filename, 1);
 		}
 
 		return sky.bitmap_handle != BAD_BITMAP_HANDLE ? sky.bitmap_handle : fallback_bitmap;

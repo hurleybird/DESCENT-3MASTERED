@@ -46,6 +46,10 @@ int bm_iff_alloc_file (CFILE *);
 // Loads a tga or ogf file into a bitmap...returns handle to bm or -1 on error
 int bm_tga_alloc_file (CFILE *infile,char *name,int format=0);
 
+// Loads an ordinary uncompressed or RLE 24/32-bit TGA as top-to-bottom RGBA8.
+// The returned buffer is allocated with mem_malloc and owned by the caller.
+ubyte *bm_tga_load_rgba8(CFILE *infile, int *width, int *height);
+
 // Loads a pcx file and converts it to 16 bit.  Returns bitmap handle or -1 on error
 int bm_pcx_alloc_file (CFILE *infile);
 

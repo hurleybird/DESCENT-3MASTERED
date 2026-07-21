@@ -42,6 +42,19 @@ int Num_of_bitmaps = 0;
 bms_bitmap GameBitmaps[MAX_BITMAPS];
 ulong Bitmap_memory_used = 0;
 ubyte Bitmaps_initted = 0;
+static ubyte *Bitmap_truecolor_data[MAX_BITMAPS] = {};
+static size_t Bitmap_truecolor_size[MAX_BITMAPS] = {};
+
+static void bm_FreeTrueColorData(int handle)
+{
+	if (handle < 0 || handle >= MAX_BITMAPS || !Bitmap_truecolor_data[handle])
+		return;
+
+	mem_free(Bitmap_truecolor_data[handle]);
+	Bitmap_truecolor_data[handle] = NULL;
+	Bitmap_memory_used -= (ulong)Bitmap_truecolor_size[handle];
+	Bitmap_truecolor_size[handle] = 0;
+}
 
 // modify these lines to establish data type 
 typedef bms_bitmap* bm_T;         // type of item to be stored
@@ -191,6 +204,8 @@ void bm_InitBitmaps()
 		GameBitmaps[i].format = BITMAP_FORMAT_STANDARD;
 		GameBitmaps[i].cache_slot = -1;
 		GameBitmaps[i].flags = 0;
+		Bitmap_truecolor_data[i] = NULL;
+		Bitmap_truecolor_size[i] = 0;
 	}
 	int bm = bm_AllocBitmap(128, 128, 0);
 	ASSERT(bm == BAD_BITMAP_HANDLE);
@@ -398,6 +413,7 @@ void bm_FreeBitmapData(int handle)
 void bm_FreeBitmapMain(int handle)
 {
 	bm_deleteNode(&GameBitmaps[handle]);
+	bm_FreeTrueColorData(handle);
 	bm_FreeBitmapData(handle);
 	GameBitmaps[handle].data16 = NULL;
 	GameBitmaps[handle].cache_slot = -1;
@@ -670,6 +686,44 @@ int bm_AllocLoadFileBitmap(const char* fname, int mipped, int format)
 	//Insert into the hash table!
 	bm_insertNode(&GameBitmaps[n]);
 	return n;  // We made it!
+}
+
+int bm_AllocLoadFileBitmapTrueColor(const char *filename, int mipped)
+{
+	const int handle = bm_AllocLoadFileBitmap(filename, mipped, BITMAP_FORMAT_1555);
+	if (handle < 0)
+		return handle;
+	bm_FreeTrueColorData(handle);
+
+	CFILE *infile = (CFILE *)cfopen(filename, "rb");
+	if (!infile)
+		return handle;
+
+	int width = 0;
+	int height = 0;
+	ubyte *rgba = bm_tga_load_rgba8(infile, &width, &height);
+	cfclose(infile);
+	if (!rgba)
+		return handle;
+
+	if (width != GameBitmaps[handle].width || height != GameBitmaps[handle].height)
+	{
+		mem_free(rgba);
+		return handle;
+	}
+
+	Bitmap_truecolor_data[handle] = rgba;
+	Bitmap_truecolor_size[handle] = (size_t)width * (size_t)height * 4;
+	Bitmap_memory_used += (ulong)Bitmap_truecolor_size[handle];
+	GameBitmaps[handle].flags |= BF_CHANGED | BF_BRAND_NEW;
+	return handle;
+}
+
+const ubyte *bm_data_truecolor(int handle)
+{
+	if (handle < 0 || handle >= MAX_BITMAPS || !GameBitmaps[handle].used)
+		return NULL;
+	return Bitmap_truecolor_data[handle];
 }
 
 // Allocs and loads a bitmap but doesn't actually load texel data!
@@ -1789,6 +1843,7 @@ void bm_DestroyChunkedBitmap(chunked_bitmap* chunk)
 // Changes the size of a bitmap to a new size
 void bm_ChangeSize(int handle, int new_w, int new_h)
 {
+	bm_FreeTrueColorData(handle);
 	int mipped = bm_mipped(handle);
 	int n;
 	int mem_used = (GameBitmaps[handle].width * GameBitmaps[handle].height * 2);

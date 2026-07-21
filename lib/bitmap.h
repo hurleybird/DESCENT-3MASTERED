@@ -100,6 +100,15 @@ void bm_FreeBitmap (int handle);
 // Returns -1 if something is wrong
 int bm_AllocLoadFileBitmap (const char *filename,int mipped,int format=BITMAP_FORMAT_1555);
 
+// Loads a bitmap through the legacy bitmap system while retaining an RGBA8
+// copy of ordinary 24/32-bit TGA source data for renderers that support it.
+// OGF and other legacy sources continue to use their native 16-bit format.
+int bm_AllocLoadFileBitmapTrueColor(const char *filename, int mipped);
+
+// Returns the optional top-to-bottom RGBA8 source retained for this bitmap.
+// The pointer remains owned by the bitmap system and is null for legacy data.
+const ubyte *bm_data_truecolor(int handle);
+
 // Allocs and loads a bitmap from an open file
 // Returns the handle of the loaded bitmap
 // Returns -1 if something is wrong
