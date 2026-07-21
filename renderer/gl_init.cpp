@@ -812,6 +812,9 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	motionblur_previous_view_projection = motionblurshader.FindUniform("previous_view_projection");
 	motionblur_has_static_reconstruction = motionblurshader.FindUniform("has_static_reconstruction");
 	motionblur_has_dynamic_velocity = motionblurshader.FindUniform("has_dynamic_velocity");
+	motionblur_reconstruction_mode = motionblurshader.FindUniform("reconstruction_mode");
+	motionblur_dynamic_center_mask = motionblurshader.FindUniform("dynamic_center_mask");
+	motionblur_player_translation_active = motionblurshader.FindUniform("player_translation_active");
 	if (motionblur_color_source != -1)
 		glUniform1i(motionblur_color_source, 0);
 	if (motionblur_velocity_source != -1)
@@ -829,7 +832,8 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 		motionblur_sample_count == -1 ||
 		motionblur_current_projection == -1 || motionblur_current_inverse_modelview == -1 ||
 		motionblur_previous_view_projection == -1 || motionblur_has_static_reconstruction == -1 ||
-		motionblur_has_dynamic_velocity == -1)
+		motionblur_has_dynamic_velocity == -1 || motionblur_reconstruction_mode == -1 ||
+		motionblur_dynamic_center_mask == -1 || motionblur_player_translation_active == -1)
 		Error("GLRenderer::Init: Failed to find pixel motion blur uniforms!");
 
 	ao_compositeshader.AttachSource(blitVertexSrc, aoDeferredCompositeFragmentSrc);

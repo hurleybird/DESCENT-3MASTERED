@@ -420,6 +420,8 @@ void SaveGameSettings()
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_legacy_object_center_suppression",
 		Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression);
 	Database->write("RS_pixel_motion_blur_samples", Render_preferred_state.pixel_motion_blur_samples);
+	Database->write("RS_pixel_motion_blur_reconstruction", Render_preferred_state.pixel_motion_blur_reconstruction);
+	Database->write("RS_pixel_motion_blur_dynamic_center_mask", Render_preferred_state.pixel_motion_blur_dynamic_center_mask);
 	WRITE_FLOAT_SETTING("RS_afterburner_fov_multiplier", Render_preferred_state.afterburner_fov_multiplier);
 	WRITE_FLOAT_SETTING("RS_afterburner_pixel_blur_multiplier",
 		Render_preferred_state.afterburner_pixel_blur_multiplier);
@@ -628,6 +630,8 @@ void LoadGameSettings()
 	Render_preferred_state.pixel_motion_blur_center_suppression = 0.0f;
 	Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression = 0.0f;
 	Render_preferred_state.pixel_motion_blur_samples = 9;
+	Render_preferred_state.pixel_motion_blur_reconstruction = RENDERER_MOTION_BLUR_RECONSTRUCTION_ADAPTIVE;
+	Render_preferred_state.pixel_motion_blur_dynamic_center_mask = true;
 	Render_preferred_state.afterburner_fov_multiplier = 0.08f;
 	Render_preferred_state.afterburner_pixel_blur_multiplier = 2.0f;
 	DesiredOpenGLProfile = GLPROFILE_CORE;
@@ -1007,6 +1011,15 @@ void LoadGameSettings()
 	if (tempint < 3) tempint = 3;
 	if (tempint > 17) tempint = 17;
 	Render_preferred_state.pixel_motion_blur_samples = (ubyte)tempint;
+	tempint = Render_preferred_state.pixel_motion_blur_reconstruction;
+	Database->read_int("RS_pixel_motion_blur_reconstruction", &tempint);
+	if (tempint < RENDERER_MOTION_BLUR_RECONSTRUCTION_BASIC)
+		tempint = RENDERER_MOTION_BLUR_RECONSTRUCTION_BASIC;
+	if (tempint > RENDERER_MOTION_BLUR_RECONSTRUCTION_ADAPTIVE)
+		tempint = RENDERER_MOTION_BLUR_RECONSTRUCTION_ADAPTIVE;
+	Render_preferred_state.pixel_motion_blur_reconstruction = (ubyte)tempint;
+	Database->read("RS_pixel_motion_blur_dynamic_center_mask",
+		&Render_preferred_state.pixel_motion_blur_dynamic_center_mask);
 	Render_preferred_state.afterburner_fov_multiplier = 0.08f;
 	Render_preferred_state.afterburner_pixel_blur_multiplier = 2.0f;
 	saved_motion_blur_mode_present = Database->read_int("RS_motion_blur_mode", &saved_motion_blur_mode);

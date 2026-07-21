@@ -71,6 +71,7 @@
 #include "levelgoal.h"
 #include "psrand.h"
 #include "vibeinterface.h"
+#include "renderer.h"
 
 #ifdef EDITOR
 #include "editor\d3edit.h"
@@ -1285,6 +1286,27 @@ void CheckRearView(int down_count, bool down_state)
 extern int Timedemo_frame;
 float Timedemo_timecount;
 
+static float Motion_blur_player_translation_hold = 0.0f;
+
+static void UpdateMotionBlurPlayerTranslation(const game_controls& controls)
+{
+	const bool translating = fabsf(controls.forward_thrust) > 0.001f ||
+		fabsf(controls.sideways_thrust) > 0.001f ||
+		fabsf(controls.vertical_thrust) > 0.001f ||
+		fabsf(controls.afterburn_thrust) > 0.001f;
+
+	if (translating)
+		Motion_blur_player_translation_hold = 0.2f;
+	else
+	{
+		Motion_blur_player_translation_hold -= Frametime;
+		if (Motion_blur_player_translation_hold < 0.0f)
+			Motion_blur_player_translation_hold = 0.0f;
+	}
+
+	rend_SetMotionBlurPlayerTranslationActive(Motion_blur_player_translation_hold > 0.0f);
+}
+
 //Do the controls for a player-type object
 void DoFlyingControl(object* objp)
 {
@@ -1300,6 +1322,7 @@ void DoFlyingControl(object* objp)
 
 	if (Timedemo_frame != -1)
 	{
+		rend_SetMotionBlurPlayerTranslationActive(false);
 		matrix temp_mat, rot_mat;
 
 		if (Timedemo_frame == 0)
@@ -1328,6 +1351,7 @@ void DoFlyingControl(object* objp)
 	if (Demo_flags == DF_PLAYBACK)
 	{
 		//If we are playing back a demo, bail early and don't process controls
+		rend_SetMotionBlurPlayerTranslationActive(false);
 		return;
 	}
 
@@ -1438,6 +1462,8 @@ void DoFlyingControl(object* objp)
 
 		DoPlayerAfterburnControl(&controls, objp);
 	}
+
+	UpdateMotionBlurPlayerTranslation(controls);
 
 	//Update object's physics
 	if (objp->movement_type == MT_PHYSICS)
