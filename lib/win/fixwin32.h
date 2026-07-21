@@ -39,6 +39,8 @@
 #ifndef _FIXWIN32_H
 #define _FIXWIN32_H
 
+#include <cstdint>
+
 //what does this do?  Why didn't Jason put a comment here?
 // Jason replies: This pragma disables the "no return value" warning that
 // is generated when converting doubles to floats
@@ -48,6 +50,7 @@
 
 inline fix FixDiv (fix a,fix b)
 {
+#if defined(_M_IX86)
 	__asm 
 	{
 		mov eax,a
@@ -57,11 +60,15 @@ inline fix FixDiv (fix a,fix b)
 		sal eax,16
 		idiv ebx
 	}
+#else
+	return static_cast<fix>((static_cast<std::int64_t>(a) << 16) / b);
+#endif
 }
 
 
 inline fix FixMul (fix a,fix b)
 {
+#if defined(_M_IX86)
 	__asm
 	{
 		mov eax,a
@@ -69,10 +76,14 @@ inline fix FixMul (fix a,fix b)
 	    imul ebx
         shrd eax,edx,16
 	}
+#else
+	return static_cast<fix>((static_cast<std::int64_t>(a) * b) >> 16);
+#endif
 }
 
 inline fix FixMulDiv (fix a,fix b,fix c)
 {
+#if defined(_M_IX86)
 	__asm 	
 	{
 		mov eax, a
@@ -81,6 +92,9 @@ inline fix FixMulDiv (fix a,fix b,fix c)
 		imul edx
 		idiv ebx
 	}
+#else
+	return static_cast<fix>((static_cast<std::int64_t>(a) * b) / c);
+#endif
 }
 
 #pragma warning (default:4035)

@@ -38,6 +38,7 @@ bool Debug_break=false;
 bool Debug_NT = false;
 
 char *Debug_DumpInfo();
+extern void AutomatedCaptureLog(const char *format, ...);
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -778,10 +779,32 @@ int PE_Debug::DumpDebugInfo( DumpBuffer& dumpBuffer, const BYTE* caller, HINSTAN
 void DumpCallsStack( DumpBuffer& dumpBuffer )
 {
 	const char* separator = "------------------------------------------------------------------\r\n" ;
-	static PE_Debug PE_debug ;
 
 	dumpBuffer.Printf( "\r\nCall stack:\r\n" ) ;
 	dumpBuffer.Printf( separator ) ;
+
+#if defined(_WIN64)
+	void *frames[16] = {};
+	const USHORT frame_count = CaptureStackBackTrace(2, 16, frames, nullptr);
+	HANDLE process = GetCurrentProcess();
+	SymInitialize(process, nullptr, TRUE);
+
+	alignas(SYMBOL_INFO) unsigned char symbol_storage[sizeof(SYMBOL_INFO) + MAX_SYM_NAME] = {};
+	auto *symbol = reinterpret_cast<SYMBOL_INFO *>(symbol_storage);
+	symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+	symbol->MaxNameLen = MAX_SYM_NAME;
+
+	for (USHORT i = 0; i < frame_count; ++i) {
+		const DWORD64 address = reinterpret_cast<DWORD64>(frames[i]);
+		DWORD64 displacement = 0;
+		if (SymFromAddr(process, address, &displacement, symbol))
+			dumpBuffer.Printf("    %s + 0x%llx\r\n", symbol->Name,
+				static_cast<unsigned long long>(displacement));
+		else
+			dumpBuffer.Printf("    0x%llx\r\n", static_cast<unsigned long long>(address));
+	}
+#else
+	static PE_Debug PE_debug ;
 
 	// The structure of the stack frames is the following:
 	// EBP -> parent stack frame EBP
@@ -835,9 +858,10 @@ void DumpCallsStack( DumpBuffer& dumpBuffer )
 		}
 	}  while( TRUE ) ;
 
+	PE_debug.ClearReport() ;  // Prepare for future calls
+#endif
 
 	dumpBuffer.Printf( separator ) ;
-	PE_debug.ClearReport() ;  // Prepare for future calls
 }
 
 
@@ -1149,6 +1173,67 @@ const int StackColumns = 8;		// Number of columns in stack dump.
 extern char* User_directory;
 extern int no_debug_dialog;
 
+#if defined(_WIN64)
+static void LogExceptionCallStack(PEXCEPTION_POINTERS data)
+{
+	if (!data || !data->ContextRecord || !data->ExceptionRecord)
+		return;
+
+	HANDLE process = GetCurrentProcess();
+	HANDLE thread = GetCurrentThread();
+	SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
+	SymInitialize(process, nullptr, TRUE);
+
+	CONTEXT context = *data->ContextRecord;
+	STACKFRAME64 frame = {};
+	frame.AddrPC.Offset = context.Rip;
+	frame.AddrPC.Mode = AddrModeFlat;
+	frame.AddrFrame.Offset = context.Rbp;
+	frame.AddrFrame.Mode = AddrModeFlat;
+	frame.AddrStack.Offset = context.Rsp;
+	frame.AddrStack.Mode = AddrModeFlat;
+
+	AutomatedCaptureLog("exception code=0x%08lx address=%p",
+		data->ExceptionRecord->ExceptionCode,
+		data->ExceptionRecord->ExceptionAddress);
+	AutomatedCaptureLog("exception registers rcx=0x%llx rdx=0x%llx r8=0x%llx r9=0x%llx",
+		static_cast<unsigned long long>(context.Rcx),
+		static_cast<unsigned long long>(context.Rdx),
+		static_cast<unsigned long long>(context.R8),
+		static_cast<unsigned long long>(context.R9));
+	for (int depth = 0; depth < 24 && frame.AddrPC.Offset; ++depth)
+	{
+		alignas(SYMBOL_INFO) unsigned char storage[sizeof(SYMBOL_INFO) + MAX_SYM_NAME] = {};
+		auto *symbol = reinterpret_cast<SYMBOL_INFO *>(storage);
+		symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+		symbol->MaxNameLen = MAX_SYM_NAME;
+		DWORD64 displacement = 0;
+		IMAGEHLP_LINE64 line = {};
+		line.SizeOfStruct = sizeof(line);
+		DWORD line_displacement = 0;
+		if (SymFromAddr(process, frame.AddrPC.Offset, &displacement, symbol))
+		{
+			if (SymGetLineFromAddr64(process, frame.AddrPC.Offset,
+				&line_displacement, &line))
+				AutomatedCaptureLog("exception frame=%d %s+0x%llx %s:%lu", depth,
+					symbol->Name, static_cast<unsigned long long>(displacement),
+					line.FileName, line.LineNumber);
+			else
+				AutomatedCaptureLog("exception frame=%d %s+0x%llx", depth,
+					symbol->Name, static_cast<unsigned long long>(displacement));
+		}
+		else
+			AutomatedCaptureLog("exception frame=%d 0x%llx", depth,
+				static_cast<unsigned long long>(frame.AddrPC.Offset));
+
+		if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, thread, &frame,
+			&context, nullptr, SymFunctionTableAccess64, SymGetModuleBase64,
+			nullptr))
+			break;
+	}
+}
+#endif
+
 int __cdecl RecordExceptionInfo(PEXCEPTION_POINTERS data, const char *Message)
 {
 	static int BeenHere;
@@ -1159,6 +1244,9 @@ int __cdecl RecordExceptionInfo(PEXCEPTION_POINTERS data, const char *Message)
 	PEXCEPTION_RECORD	Exception = data->ExceptionRecord;
 	PCONTEXT			Context = data->ContextRecord;
 	const char * desc = GetExceptionDescription(Exception->ExceptionCode);
+	#if defined(_WIN64)
+	LogExceptionCallStack(data);
+	#endif
 	
 	//An Int3()
 	if(0x80000003==Exception->ExceptionCode)

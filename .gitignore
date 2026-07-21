@@ -30,6 +30,10 @@ x86/
 bld/
 build/
 [Bb]in/
+!thirdparty/OpenAL/bin/
+!thirdparty/OpenAL/bin/Win64/
+!thirdparty/OpenAL/bin/Win64/OpenAL32.dll
+!thirdparty/OpenAL/bin/Win64/README.txt
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/

@@ -84,7 +84,7 @@ static		int				DDIO_key_language = KBLANG_AMERICAN;
 bool ddio_Win_KeyInit();
 void ddio_Win_KeyClose();
 
-int ddio_KeyHandler(HWnd wnd, unsigned msg, unsigned wParam, long lParam);
+int ddio_KeyHandler(HWnd wnd, unsigned msg, WParam wParam, LParam lParam);
 
 LRESULT CALLBACK KeyboardProc( int code, WPARAM wParam, LPARAM lParam);
 
@@ -283,7 +283,7 @@ LRESULT CALLBACK KeyboardProc( int code, WPARAM wParam, LPARAM lParam)
 }
 
 
-int ddio_KeyHandler(HWnd wnd, unsigned msg, unsigned wParam, long lParam)
+int ddio_KeyHandler(HWnd wnd, unsigned msg, WParam wParam, LParam lParam)
 {
 	ubyte scan_code;
 	float timer = timer_GetTime();

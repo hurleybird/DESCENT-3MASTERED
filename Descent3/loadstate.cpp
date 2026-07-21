@@ -53,6 +53,7 @@
 #include "cockpit.h"
 #include "hud.h"
 #include "gameloop.h"
+#include "savegame_compat.h"
 
 void PageInAllData ();
 
@@ -648,7 +649,11 @@ int LGSPlayers(CFILE *fp)
 	plr->counter_measures.Reset(false,INVRESET_ALL);
 
 	gs_ReadShort(fp, size);
-	if (size != sizeof(player)) 
+	#if defined(_WIN64)
+	if (size != static_cast<short>(savegame_compat::kPlayer32Size))
+	#else
+	if (size != sizeof(player))
+	#endif
 	{
 		Int3();
 		return LGS_OUTDATEDVER;
@@ -656,8 +661,15 @@ int LGSPlayers(CFILE *fp)
 	else 
 	{
 		int guided_handle;
+#if defined(_WIN64)
+		savegame_compat::Player32Bytes player32{};
+		cf_ReadBytes(player32.data(), static_cast<int>(player32.size()), fp);
+		const bool guided_present = savegame_compat::PlayerFrom32(*plr, player32);
+#else
 		cf_ReadBytes((ubyte *)plr, sizeof(player), fp);
-		if (plr->guided_obj) 
+		const bool guided_present = plr->guided_obj != nullptr;
+#endif
+		if (guided_present)
 		{
 			gs_ReadInt(fp, guided_handle);
 			plr->guided_obj = &Objects[guided_handle&HANDLE_OBJNUM_MASK];
@@ -1121,13 +1133,23 @@ START_VERIFY_SAVEFILE(fp);
 
 		// save out rendering information
 		gs_ReadShort(fp, size);
-		if (size != sizeof(op->rtype)) 
+		#if defined(_WIN64)
+		if (size != static_cast<short>(savegame_compat::kRenderInfo32Size))
+		#else
+		if (size != sizeof(op->rtype))
+		#endif
 		{
 			Int3();
 			retval = LGS_OUTDATEDVER;
 			goto done;
 		}
+#if defined(_WIN64)
+		savegame_compat::RenderInfo32Bytes render_info32{};
+		cf_ReadBytes(render_info32.data(), static_cast<int>(render_info32.size()), fp);
+		savegame_compat::RenderInfoFrom32(*op, render_info32);
+#else
 		cf_ReadBytes((ubyte *)&op->rtype, size, fp);
+#endif
 
 		op->size = cf_ReadFloat(fp);
 		
@@ -1372,13 +1394,23 @@ int LGSObjAI(CFILE *fp, ai_frame **pai)
 		return LGS_OK;
 
 	gs_ReadShort(fp, size);
-	if (size != sizeof(ai_frame)) 
+	#if defined(_WIN64)
+	if (size != static_cast<short>(savegame_compat::kAiFrame32Size))
+	#else
+	if (size != sizeof(ai_frame))
+	#endif
 		return LGS_OUTDATEDVER;
 
-	*pai = (ai_frame *)mem_malloc(size);
+	*pai = (ai_frame *)mem_malloc(sizeof(ai_frame));
 	ai= *pai;
 
+#if defined(_WIN64)
+	savegame_compat::AiFrame32Bytes ai32{};
+	cf_ReadBytes(ai32.data(), static_cast<int>(ai32.size()), fp);
+	savegame_compat::AiFrameFrom32(*ai, ai32);
+#else
 	cf_ReadBytes((ubyte *)ai, size, fp);
+#endif
 
 	return LGS_OK;
 }

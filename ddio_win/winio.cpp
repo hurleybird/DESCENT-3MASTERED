@@ -35,6 +35,9 @@
 
 bool 				DDIO_init = 0;
 dinput_data			DInputData;
+static HMODULE DInputModule = nullptr;
+
+using DirectInputCreateA_fp = HRESULT(WINAPI *)(HINSTANCE, DWORD, LPDIRECTINPUTA *, LPUNKNOWN);
 
 
 
@@ -54,7 +57,20 @@ bool ddio_InternalInit(ddio_init_info *init_info)
 	mprintf((0, "DI system initializing.\n"));
 
 	//Try to open DirectX 5.00
-	dires = DirectInputCreate((HINSTANCE)obj->m_hInstance, DIRECTINPUT_VERSION, &lpdi, NULL);
+	DInputModule = LoadLibraryA("dinput.dll");
+	if (!DInputModule) {
+		Error("Unable to load the DirectInput runtime.");
+	}
+
+	auto direct_input_create = reinterpret_cast<DirectInputCreateA_fp>(
+		GetProcAddress(DInputModule, "DirectInputCreateA"));
+	if (!direct_input_create) {
+		FreeLibrary(DInputModule);
+		DInputModule = nullptr;
+		Error("Unable to locate DirectInputCreateA in dinput.dll.");
+	}
+
+	dires = direct_input_create((HINSTANCE)obj->m_hInstance, DIRECTINPUT_VERSION, &lpdi, NULL);
 
 	//Deal with error opening DX5
 	if (dires != DI_OK) {
@@ -62,7 +78,7 @@ bool ddio_InternalInit(ddio_init_info *init_info)
 		//If running NT, try DirectX 3.0
 		if(obj->NT()){
 
-			dires = DirectInputCreate((HINSTANCE)obj->m_hInstance, 0x0300, &lpdi, NULL);
+			dires = direct_input_create((HINSTANCE)obj->m_hInstance, 0x0300, &lpdi, NULL);
 			if (dires != DI_OK) {
 				Error("Unable to DirectInput system (Requires at least DirectX 3.0 For NT) [DirectInput:%x]\n", dires);
 			}
@@ -93,6 +109,10 @@ void ddio_InternalClose()
 
 	DInputData.lpdi->Release();
 	DInputData.lpdi = NULL;
+	if (DInputModule) {
+		FreeLibrary(DInputModule);
+		DInputModule = nullptr;
+	}
 	DDIO_init = 0;
 
 	mprintf((0, "DI system closed.\n"));

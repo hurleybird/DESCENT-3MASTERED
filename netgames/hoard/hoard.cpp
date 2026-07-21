@@ -190,10 +190,9 @@ void ShowStatBitmap(int precord_num,int column_num,int x,int y,int w,int h,ubyte
 	}
 }
 
-// We import these from DMFC
-bool StringParseNumber(char *string,int *number,char **newpos);
-bool StringParseWord(char *string,char *word,int size,char **newpos);
-/*
+// Keep command parsing local to the game module.  These helpers were once
+// resolved accidentally from a statically linked DMFC object; a shared DMFC
+// ABI should not expose undocumented C++ implementation symbols.
 bool StringParseWord(char *string,char *word,int size,char **newpos)
 {
 	*newpos = string;
@@ -237,7 +236,6 @@ bool StringParseNumber(char *string,int *number,char **newpos)
 	*number = atoi(temp);
 	return true;
 }
-*/
 void DMFCInputCommand_MinCount(char *input_string)
 {
 	if(DMFCBase->GetLocalRole()!=LR_SERVER)

@@ -273,12 +273,13 @@ void ddio_InternalMouseFrame() {
 
 void MouseError() { MessageBoxA(nullptr, "Failed to init raw input for mouse", "Error", MB_ICONERROR); }
 
-int RawInputHandler(HWND hWnd, unsigned int msg, unsigned int wParam, long lParam) {
+int RawInputHandler(HWnd hWnd, unsigned int msg, WParam wParam, LParam lParam) {
     unsigned int buttons;
     t_mse_event ev;
     float curtime = timer_GetTime();
+    const HWND native_window = reinterpret_cast<HWND>(hWnd);
 
-    if (GetForegroundWindow() != hWnd) {
+    if (GetForegroundWindow() != native_window) {
         DDIO_mouse_state.btn_mask = 0;
         DDIO_mouse_state.dx = 0;
         DDIO_mouse_state.dy = 0;
@@ -444,11 +445,11 @@ int RawInputHandler(HWND hWnd, unsigned int msg, unsigned int wParam, long lPara
                 POINT mousept;
                 if (!GetCursorPos(&mousept))
                     Int3();
-                if (!ScreenToClient(hWnd, &mousept))
+                if (!ScreenToClient(native_window, &mousept))
                     Int3();
                 //Get the client rectangle of the window and map brect to it. 
                 RECT clientrect;
-                if (!GetClientRect(hWnd, &clientrect))
+                if (!GetClientRect(native_window, &clientrect))
                     Int3();
 
                 int brectwidth = DDIO_mouse_state.brect.right - DDIO_mouse_state.brect.left;
@@ -480,12 +481,12 @@ int RawInputHandler(HWND hWnd, unsigned int msg, unsigned int wParam, long lPara
                 DDIO_mouse_state.y += rawinput->data.mouse.lLastY;
 
                 RECT clientrect;
-                if (!GetClientRect(hWnd, &clientrect))
+                if (!GetClientRect(native_window, &clientrect))
                     Int3();
                 else
                 {
                     POINT pt = { clientrect.right / 2, clientrect.bottom / 2 };
-                    ClientToScreen(hWnd, &pt);
+                    ClientToScreen(native_window, &pt);
                     SetCursorPos(pt.x, pt.y);
                 }
                 

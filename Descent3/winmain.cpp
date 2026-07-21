@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <intrin.h>
 #include "mono.h"
 #include "descent.h"
 #include "game.h"
@@ -201,7 +202,7 @@ public:
 	};
 
 //	returns 0 if we pass to default window handler.
-	virtual int WndProc( HWnd hwnd, unsigned msg, unsigned wParam, long lParam)
+	virtual LResult WndProc(HWnd hwnd, unsigned msg, WParam wParam, LParam lParam)
 	{
 		if (final_shutdown)
 		{
@@ -403,23 +404,9 @@ inline void MessageBoxStr(int id)
 // Returns true if this machine can support the CPUID instruction
 bool SupportsCPUID ()
 {
-	bool enabled=true;
-
-	__try
-	{
-		_asm{
-			pushad
-			__emit 0x0f  //CPUID
-			__emit 0xa2	 //CPUID
-			popad
-		}
-	}
-	__except(1)
-	{
-		enabled=false;
-	}
-
-	return enabled;
+	// CPUID is mandatory in the x64 architecture and is available on every
+	// supported 32-bit Windows target as well.
+	return true;
 }
 
 // Returns true if this machine can support katmai instructions
@@ -553,45 +540,27 @@ end_win32_check:
 __declspec(no_sanitize_address)
 void getcpudata(cpuinfo *info)
 {
-	unsigned char family,model,mask;
-	int level;
-	unsigned int capability;
-	unsigned int a,b,c;
+	unsigned char family = 0, model = 0, mask = 0;
+	int level = 0;
+	unsigned int capability = 0;
+	unsigned int a = 0, b = 0, c = 0;
 
 	if(SupportsCPUID())
-	{		
-		_asm{
-			pushad;
+	{
+		int registers[4] = {};
+		__cpuid(registers, 0);
+		level = registers[0];
+		a = static_cast<unsigned int>(registers[1]);
+		b = static_cast<unsigned int>(registers[3]);
+		c = static_cast<unsigned int>(registers[2]);
 
-			xor eax,eax;				// call CPUID with 0 -> return vendor ID
-
-			__emit 0x0f;				//CPUID
-			__emit 0xa2;				//CPUID
-
-			mov level,eax;				// save CPUID level
-			mov a,ebx;					// lo 4 chars
-			mov b,edx;					// next 4 chars
-			mov c,ecx;					// last 4 chars
-
-			or eax,eax;					// do we have processor info as well?
-			je noinfo;
-
-			mov eax,1;					// Use the CPUID instruction to get CPU type
-			__emit 0x0f;				//CPUID
-			__emit 0xa2;				//CPUID
-
-			mov cl,al;					// save reg for future use
-			and ah,15;					// mask processor family
-			mov family,ah;
-			and al,240;					// mask model
-			shr al,4;
-			mov model,al;
-			and cl,15;					// mask mask revision
-			mov mask,cl;
-			mov capability,edx;
-
-		noinfo:
-			popad;
+		if (level >= 1) {
+			__cpuid(registers, 1);
+			const unsigned int signature = static_cast<unsigned int>(registers[0]);
+			family = static_cast<unsigned char>((signature >> 8) & 0x0f);
+			model = static_cast<unsigned char>((signature >> 4) & 0x0f);
+			mask = static_cast<unsigned char>(signature & 0x0f);
+			capability = static_cast<unsigned int>(registers[3]);
 		}
 
 		// fill in the struct
@@ -744,6 +713,12 @@ int PASCAL HandledWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine,
 //This is the winmain that tests for exceptions..
 int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine, int nCmdShow)
 {
+	// Let AddressSanitizer see the original fault.  Routing its deliberate
+	// exception through the legacy SEH crash reporter causes a nested ASan
+	// failure and hides the actual memory diagnostic.
+#if defined(__SANITIZE_ADDRESS__) || defined(PICCU_ASAN_BUILD)
+	return HandledWinMain(hInst, hPrevInst, szCmdLine, nCmdShow);
+#else
 	int result =-1;
 	
 	__try
@@ -755,6 +730,7 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine, int nC
 
 	}
 	return result;
+#endif
 }
 
 #endif

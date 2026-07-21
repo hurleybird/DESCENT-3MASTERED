@@ -54,6 +54,7 @@
 
 #include <stdlib.h>
 #include <memory.h>
+#include <cstdint>
 
 
 extern char **DMFCStringTable;
@@ -109,7 +110,7 @@ void Remote_Initialize(void)
 {
 	// initialize encryption keys
 	void *data = malloc(1);
-	srand((uint)data);
+	srand(static_cast<unsigned int>(reinterpret_cast<uintptr_t>(data)));
 	free(data);
 
 	int i,j;

@@ -295,6 +295,10 @@
 #include "gamedll_header.h"
 #include "DMFCKeyCodes.h"
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 #if ( (defined __LINUX__) && (!defined __i386__) )
 #include <signal.h>
 #endif
@@ -309,7 +313,7 @@
 		do { \
 			if (DLLDebugBreak_callback_stop)  \
 				DLLDebugBreak_callback_stop(); \
-				_asm{ int 3}; \
+				__debugbreak(); \
 			if (DebugBreak_callback_resume) \
 				DebugBreak_callback_resume(); \
 		} while(0)
@@ -334,7 +338,7 @@
 		mprintf((0, "Int3 at %s line %d.\n", __FILE__, __LINE__));	\
 		if (DLLDebugBreak_callback_stop)  \
 			DLLDebugBreak_callback_stop(); \
-		_asm{ int 3}; \
+		__debugbreak(); \
 		if (DLLDebugBreak_callback_resume) \
 			DLLDebugBreak_callback_resume(); \
 	} while (0)

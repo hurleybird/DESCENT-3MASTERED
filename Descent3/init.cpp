@@ -1357,8 +1357,11 @@ void InitIOSystems(bool editor)
 	char Working_directory[_MAX_PATH];
 	ddio_GetWorkingDir(Working_directory, sizeof(Working_directory));
 	
-	//Dedicated server is always portable on Windows, not the most ideal but it will make admin's lives easier.
-	if (FindArg("-portable") != 0 || Dedicated_server)
+	const bool portable_requested = FindArg("-portable") != 0;
+	// Dedicated servers use the base directory for runtime state, but that is a
+	// per-process policy.  It must not permanently convert a normal install to
+	// portable mode merely because a dedicated server was launched once.
+	if (portable_requested || Dedicated_server)
 	{
 		Portable = true;
 	}
@@ -1434,7 +1437,7 @@ void InitIOSystems(bool editor)
 	{
 		//In portable mode, the user directory is the same as the base directory.
 		User_directory = Base_directory;
-		if (!portableexists && !modifiedbase)
+		if (!portableexists && !modifiedbase && (!Dedicated_server || portable_requested))
 		{
 			CFILE* fp = cfopen("piccu_portable", "wb");
 			if (!fp)
@@ -1508,6 +1511,9 @@ void InitIOSystems(bool editor)
 
 	//Init hogfiles
 	int d3_hid=-1,extra_hid=-1,extra1_hid=-1,merc_hid=-1,sys_hid=-1,extra13_hid=-1,piccu_hid=-1;
+#if defined(_WIN64)
+	int piccu_win_hid=-1;
+#endif
 	char fullname[_MAX_PATH];
 
 	#ifdef DEMO
@@ -1557,6 +1563,18 @@ void InitIOSystems(bool editor)
 		Error("Cannot find piccuengine.hog file!");
 	}
 
+#if defined(_WIN64)
+	// Retail Windows archives contain x86 Osiris DLLs.  Mount native first-party
+	// replacements after the common engine archive, while leaving mission-local
+	// content mounted later with the highest resource priority.
+	ddio_MakePath(fullname, Working_directory, "piccuengine-win.hog", nullptr);
+	piccu_win_hid = cf_OpenLibrary(fullname);
+	if (piccu_win_hid == 0)
+	{
+		Error("Cannot find piccuengine-win.hog file required by the 64-bit build!");
+	}
+#endif
+
 	//Try opening a couple of known Mercenary only files
 	if (cfexist("BP_hud.inf")
 		&& cfexist("BlackPyroCockpit.OOF")
@@ -1596,7 +1614,12 @@ void InitIOSystems(bool editor)
 
 	//	initialize all the OSIRIS systems
 	//	extract from extra.hog first, so it's dll files are listed ahead of d3.hog's
-	Osiris_InitModuleLoader();	
+	Osiris_InitModuleLoader();
+#if defined(_WIN64)
+	// Extraction lookup is first-match-wins.  Register the native replacements
+	// before the x86 retail modules with the same names.
+	Osiris_ExtractScriptsFromHog(piccu_win_hid, false);
+#endif
 	if(extra13_hid != 0)
 		Osiris_ExtractScriptsFromHog(extra13_hid,false);
 	if (extra1_hid != 0)

@@ -45,6 +45,7 @@
 #include "levelgoal.h"
 #include "aistruct.h"
 #include "psrand.h"
+#include "savegame_compat.h"
 
 // Save selected by LoadGameDialog() or the -loadgame startup option.
 static char LGS_Path[PSPATHNAME_LEN];
@@ -864,8 +865,14 @@ void SGSPlayers(CFILE* fp)
 	// player struct needs savin
 	player* plr = &Players[0];
 
+#if defined(_WIN64)
+	const auto player32 = savegame_compat::PlayerTo32(*plr);
+	gs_WriteShort(fp, static_cast<short>(player32.size()));
+	cf_WriteBytes(player32.data(), static_cast<int>(player32.size()), fp);
+#else
 	gs_WriteShort(fp, sizeof(player));
 	cf_WriteBytes((ubyte*)plr, sizeof(player), fp);
+#endif
 	if (plr->guided_obj)
 		gs_WriteInt(fp, plr->guided_obj->handle);
 
@@ -1102,8 +1109,14 @@ void SGSObjects(CFILE* fp)
 
 		INSURE_SAVEFILE;
 		// save out rendering information
+#if defined(_WIN64)
+		const auto render_info32 = savegame_compat::RenderInfoTo32(*op);
+		gs_WriteShort(fp, static_cast<short>(render_info32.size()));
+		cf_WriteBytes(render_info32.data(), static_cast<int>(render_info32.size()), fp);
+#else
 		gs_WriteShort(fp, sizeof(op->rtype));
 		cf_WriteBytes((ubyte*)&op->rtype, sizeof(op->rtype), fp);
+#endif
 
 		cf_WriteFloat(fp, op->size);
 		if (op->render_type == RT_POLYOBJ)
@@ -1145,8 +1158,14 @@ void SGSObjAI(CFILE* fp, const ai_frame* ai)
 	if (!ai)
 		return;
 
+#if defined(_WIN64)
+	const auto ai32 = savegame_compat::AiFrameTo32(*ai);
+	gs_WriteShort(fp, static_cast<short>(ai32.size()));
+	cf_WriteBytes(ai32.data(), static_cast<int>(ai32.size()), fp);
+#else
 	gs_WriteShort(fp, sizeof(ai_frame));
 	cf_WriteBytes((ubyte*)ai, sizeof(ai_frame), fp);
+#endif
 }
 
 //	saves fx

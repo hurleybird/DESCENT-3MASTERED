@@ -59,8 +59,14 @@ ENDIF()
 
 IF (WIN32)
 	set(USE_SDL OFF CACHE BOOL "Builds with SDL rather than the Win32 code.")
-	SET(D3_GAMEDIR "c:/games/Descent3/")	
-	set (CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} "lib/win" "lib/win/directx" "thirdparty/OpenAL/libs/Win32") 
+	SET(D3_GAMEDIR "c:/games/Descent3/")
+	if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+		set(OPENAL_ARCH_DIR "Win64")
+	else()
+		set(OPENAL_ARCH_DIR "Win32")
+	endif()
+	set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} "lib/win" "lib/win/directx"
+		"thirdparty/OpenAL/libs/${OPENAL_ARCH_DIR}")
 	SET(CMAKE_CXX_FLAGS_DEBUG "/Od /EHsc /RTC1 /MTd /MP /W3 /nologo /c /Zi /errorReport:prompt")
 	SET(CMAKE_CXX_FLAGS_RELEASE "/O2 /FD /EHsc /MT /MP /W3 /nologo /c /Zi /errorReport:prompt")
 	
@@ -81,10 +87,15 @@ IF (WIN32)
 	SET(CMAKE_FIND_LIBRARY_PREFIXES "")
 	SET(CMAKE_FIND_LIBRARY_SUFFIXES ".lib")
 	
-	FIND_LIBRARY(DINPUT_LIBRARY NAMES dinput "${CMAKE_SOURCE_DIR}/lib/win" "${CMAKE_SOURCE_DIR}/lib/win/directx")
-	FIND_LIBRARY(DXGUID_LIBRARY NAMES dxguid "${CMAKE_SOURCE_DIR}/lib/win" "${CMAKE_SOURCE_DIR}/lib/win/directx")
-	#TODO: May need to find OpenAL64 eventually
-	FIND_LIBRARY(OPENAL_LIBRARY NAMES openal32 "${CMAKE_SOURCE_DIR}/thirdparty/OpenAL/libs" "${CMAKE_SOURCE_DIR}/thirdparty/OpenAL/libs/Win32")
+	if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+		# Use the architecture-matched Windows SDK GUID library. DirectInput itself
+		# is loaded dynamically so an obsolete x86 import library is not required.
+		SET(DXGUID_LIBRARY dxguid.lib)
+	else()
+		FIND_LIBRARY(DXGUID_LIBRARY NAMES dxguid "${CMAKE_SOURCE_DIR}/lib/win" "${CMAKE_SOURCE_DIR}/lib/win/directx")
+	endif()
+	FIND_LIBRARY(OPENAL_LIBRARY NAMES openal32
+		"${CMAKE_SOURCE_DIR}/thirdparty/OpenAL/libs/${OPENAL_ARCH_DIR}")
 ENDIF ()
 
 MESSAGE("Install will copy files to ${D3_GAMEDIR}")
@@ -93,7 +104,7 @@ include_directories("lib" "Descent3" "netcon/includes" ${PLATFORM_INCLUDES})
 
 IF (WIN32)
 	SET (PLATFORM_LIBS wsock32.lib winmm.lib Glu32.lib OpenGL32.lib dbghelp.lib wininet.lib
-		${DINPUT_LIBRARY} ${DXGUID_LIBRARY} ${OPENAL_LIBRARY})
+		${DXGUID_LIBRARY} ${OPENAL_LIBRARY})
 	if (USE_SDL)
 		SET (PLATFORM_LIBS ${PLATFORM_LIBS} SDL3::SDL3)
 	endif()
@@ -165,10 +176,12 @@ ADD_SUBDIRECTORY (netcon/inetfile)
 #dependent on above
 ADD_SUBDIRECTORY (netcon)
 
-#[ISB] TODO: Needs fixing for new build system
-#IF(UNIX)
-#ADD_SUBDIRECTORY (scripts)
-#ENDIF()
+# Win64 cannot load the retail x86 Osiris modules, so ship native builds of all
+# first-party level/game scripts in a platform archive.  The legacy Unix script
+# packaging remains separate for now.
+IF(WIN32)
+ADD_SUBDIRECTORY (scripts)
+ENDIF()
 
 #From GZDOOM
 add_custom_target( revision_check ALL
@@ -264,12 +277,24 @@ target_link_libraries(PiccuEngine ${PLATFORM_LIBS})
 target_compile_definitions(PiccuEngine PUBLIC -DMONO "$<$<CONFIG:RELEASE>:RELEASE>")
 target_compile_definitions(PiccuEngine PUBLIC -DMONO "$<$<CONFIG:MINSIZEREL>:RELEASE>")
 target_compile_definitions(PiccuEngine PUBLIC -DMONO "$<$<CONFIG:RELWITHDEBINFO>:RELEASE>")
-target_compile_definitions(PiccuEngine PUBLIC -DSDLKEY) #non-main projects see the SDL app but don't bundle SDL. 
+target_compile_definitions(PiccuEngine PUBLIC -DSDLKEY) #non-main projects see the SDL app but don't bundle SDL.
+
+# The maintained 1.5 codebase defaults to the CRT allocator.  Keep the
+# original private Win32 heap for the legacy 32-bit build, but do not carry it
+# into x64: it is unnecessary there, bypasses modern allocator diagnostics,
+# and is the source of shutdown heap corruption under the 64-bit runtime.
+if (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+	target_compile_definitions(PiccuEngine PRIVATE MEM_USE_RTL)
+endif()
 
 add_library(dmfc SHARED ${DMFC_SOURCES})
-target_compile_definitions(dmfc PUBLIC -DOUTRAGE_VERSION -DDMFC_DLL)
+target_compile_definitions(dmfc PUBLIC -DOUTRAGE_VERSION)
+target_compile_definitions(dmfc PRIVATE -DDMFC_DLL)
 target_include_directories(dmfc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/netgames/includes")
 add_dependencies(PiccuEngine revision_check piccuengine_hog TCP-IP Tracker dmfc)
+if (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+	add_dependencies(PiccuEngine piccuengine_win_hog ${NETGAME_TARGETS})
+endif()
 	
 install(TARGETS PiccuEngine DESTINATION ${D3_GAMEDIR})
 install(TARGETS dmfc
@@ -279,14 +304,14 @@ install(TARGETS dmfc
 if (WIN32)
 	find_file(OPENAL_RUNTIME_DLL
 		NAMES OpenAL32.dll
-		PATHS "${CMAKE_SOURCE_DIR}/thirdparty/OpenAL/bin/Win32"
+		PATHS "${CMAKE_SOURCE_DIR}/thirdparty/OpenAL/bin/${OPENAL_ARCH_DIR}"
 		NO_DEFAULT_PATH)
 	if (OPENAL_RUNTIME_DLL)
 		install(FILES "${OPENAL_RUNTIME_DLL}" DESTINATION ${D3_GAMEDIR})
 	elseif (EXISTS "${D3_GAMEDIR}/OpenAL32.dll")
 		message(STATUS "OpenAL32.dll already exists in ${D3_GAMEDIR}; install will leave it in place.")
 	else()
-		message(WARNING "OpenAL32.dll was not found at thirdparty/OpenAL/bin/Win32; install will not copy it.")
+		message(WARNING "OpenAL32.dll was not found for ${OPENAL_ARCH_DIR}; install will not copy it.")
 	endif()
 endif()
 

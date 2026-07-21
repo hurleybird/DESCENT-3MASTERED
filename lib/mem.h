@@ -19,6 +19,7 @@
 #ifndef MEM_H
 #define MEM_H
 
+#include <cstdlib>
 
 //#define MEM_USE_RTL	1
 

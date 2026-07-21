@@ -68,6 +68,7 @@
 #include "DMFC.h"
 #include "dmfcinternal.h"
 #include "d3events.h"
+#include <cstdint>
 
 //	DMFCBase::InitializeVirtualHandles
 //		Prepares the virtual handles
@@ -1197,7 +1198,7 @@ void DMFCBase::TranslateEvent(int eventnum,dllinfo *data)
 	case EVT_GAMECHECKBAN:
 		{
 			network_address *addr = (network_address *)data->special_data;
-			char *tracker_id = (char *)data->iParam;
+			char *tracker_id = reinterpret_cast<char *>(static_cast<intptr_t>(data->iParam));
 
 			data->iRet = (CallOnServerIsAddressBanned(addr,tracker_id))?1:0;
 		}break;

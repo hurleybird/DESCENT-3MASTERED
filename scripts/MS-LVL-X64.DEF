@@ -1,0 +1,10 @@
+EXPORTS
+InitializeDLL
+ShutdownDLL
+GetGOScriptID
+GetTriggerScriptID
+GetCOScriptList
+CreateInstance
+DestroyInstance
+CallInstanceEvent
+SaveRestoreState

@@ -8032,7 +8032,7 @@ void SecurityCamera::DoFrame(int me)
 				if(curr_frame > SC_END_FRAME) curr_frame = SC_MAX_FRAME - curr_frame;
 
 				// Prevent wobbling between two frames
-				if(abs(dest_frame - curr_frame) <= SC_FRAME_DELTA_ERROR)
+				if(fabsf(dest_frame - curr_frame) <= SC_FRAME_DELTA_ERROR)
 				{
 					dest_frame = curr_frame;
 				}

@@ -68,14 +68,14 @@ bool w32_mouseman_hack=false;
 
 	We also allow the option of setting these handles from outside the Application object.
 */
-extern LRESULT WINAPI MyConProc( HWND hWnd,UINT msg,UINT wParam,LPARAM lParam);
+extern LRESULT WINAPI MyConProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern void con_Defer();
 
 bool oeWin32Application::os_initialized = false;
 bool oeWin32Application::first_time = true;
 
 //	this is the app's window proc.
-LRESULT WINAPI MyWndProc( HWND hWnd,UINT msg,UINT wParam,LPARAM lParam);
+LRESULT WINAPI MyWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 //	Creates the window handle and instance
 oeWin32Application::oeWin32Application(const char *name, unsigned flags, HInstance hinst)
@@ -610,7 +610,7 @@ tWin32OS oeWin32Application::version(int *major, int *minor, int *build, char *s
 
 
 //	This Window Procedure is called from the global WindowProc.
-int oeWin32Application::WndProc( HWnd hwnd, unsigned msg, unsigned wParam, long lParam)
+LResult oeWin32Application::WndProc(HWnd hwnd, unsigned msg, WParam wParam, LParam lParam)
 {
 	switch (msg)
 	{
@@ -693,7 +693,7 @@ bool oeWin32Application::remove_handler(unsigned msg, tOEWin32MsgCallback fn)
 
 
 // Run handler for message (added by add_handler)
-bool oeWin32Application::run_handler(HWnd wnd, unsigned msg, unsigned wParam, long lParam)
+bool oeWin32Application::run_handler(HWnd wnd, unsigned msg, WParam wParam, LParam lParam)
 {
 	int j;
 //	run user-defined message handlers
@@ -741,7 +741,7 @@ void oeWin32Application::delay(float secs)
 }
 
 
-LRESULT WINAPI MyWndProc( HWND hWnd,UINT msg,UINT wParam,LPARAM lParam)
+LRESULT WINAPI MyWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	int i=-1;
 	bool force_default = false;
@@ -835,12 +835,12 @@ LRESULT WINAPI MyWndProc( HWND hWnd,UINT msg,UINT wParam,LPARAM lParam)
 	if (i == -1 || winapp == NULL || force_default) 
 		return DefWindowProc(hWnd, msg, wParam, lParam);
 
-	if (!winapp->run_handler((HWnd)hWnd, (unsigned)msg, (unsigned)wParam, (long)lParam))
+	if (!winapp->run_handler((HWnd)hWnd, (unsigned)msg, (WParam)wParam, (LParam)lParam))
 		return 0;
 	
 // run user defined window procedure.
 	return 
-		(LRESULT)winapp->WndProc((HWnd)hWnd, (unsigned)msg, (unsigned)wParam, (long)lParam);
+		(LRESULT)winapp->WndProc((HWnd)hWnd, (unsigned)msg, (WParam)wParam, (LParam)lParam);
 }
 
 

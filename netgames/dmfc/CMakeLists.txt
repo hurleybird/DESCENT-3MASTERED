@@ -23,7 +23,7 @@ SET (DMFC_SOURCES
 	netgames/dmfc/encryption.h
 	netgames/dmfc/dmfcinterface.cpp)
   
-if (WIN32)
+if (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
 	set (DMFC_SOURCES
 		${DMFC_SOURCES}
 		netgames/dmfc/dmfc.def)

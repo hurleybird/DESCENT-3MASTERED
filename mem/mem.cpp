@@ -951,6 +951,9 @@ void * mem_realloc_sub(void * memblock,int size)
 }
 int mem_size_sub(void *memblock)
 {
+#ifdef MEM_USE_RTL
+	return (int)_msize(memblock);
+#else
 #if defined(WIN32)
 	if(!Heap)
 	{
@@ -962,6 +965,7 @@ int mem_size_sub(void *memblock)
 		return 0;
 	}
 	return HeapSize(Heap,0,memblock);
+#endif
 }
 void mem_shutdown();
 MemClass::~MemClass()

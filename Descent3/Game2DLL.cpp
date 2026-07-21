@@ -71,6 +71,7 @@ extern int Camera_view_mode[NUM_CAMERA_VIEWS];
 //	to the module during initialization.
 void Osiris_CreateModuleInitStruct(tOSIRISModuleInit* mi);
 module GameDLLHandle = { NULL };
+static bool GameDLL_initialized = false;
 extern ddgr_color Player_colors[];
 struct game_api
 {
@@ -622,8 +623,9 @@ void FreeGameDLL()
 {
 	if (!GameDLLHandle.handle)
 		return;
-	if (DLLGameClose)
+	if (GameDLL_initialized && DLLGameClose)
 		DLLGameClose();
+	GameDLL_initialized = false;
 	Osiris_UnloadMissionModule();
 	CloseGameModule(&GameDLLHandle);
 	DLLGameCall = NULL;
@@ -726,6 +728,7 @@ int LoadGameDLL(char* name, int num_teams_to_use)
 		FreeGameDLL();
 		return 0;
 	}
+	GameDLL_initialized = true;
 	Osiris_LoadMissionModule(&GameDLLHandle, name);
 
 	return 1;

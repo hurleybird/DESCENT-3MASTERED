@@ -600,6 +600,14 @@ static void CaptureAutomatedFrameIfRequested()
 	AutomatedCaptureLog("capture %s frame=%d output=%s",
 		saved ? "saved" : "failed", Automated_capture.gameplay_frame,
 		Automated_capture.output_path);
+	const int save_arg = FindArg("-capture-save-output");
+	const char* save_path = save_arg ? GetArg(save_arg + 1) : nullptr;
+	if (save_path && save_path[0])
+	{
+		const bool save_ok = SaveGameState(save_path, "Automated capture");
+		AutomatedCaptureLog("save %s output=%s", save_ok ? "saved" : "failed",
+			save_path);
+	}
 	Automated_capture.exit_pending = true;
 }
 
