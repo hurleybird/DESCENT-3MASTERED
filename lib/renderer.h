@@ -280,13 +280,6 @@ enum renderer_motion_vector_mode
 	RENDERER_MOTION_VECTOR_PIXEL = 2,
 };
 
-enum renderer_motion_blur_reconstruction_mode
-{
-	RENDERER_MOTION_BLUR_RECONSTRUCTION_BASIC = 0,
-	RENDERER_MOTION_BLUR_RECONSTRUCTION_FULL = 1,
-	RENDERER_MOTION_BLUR_RECONSTRUCTION_ADAPTIVE = 2
-};
-
 struct renderer_preferred_state
 {
 	ubyte mipping;
@@ -342,8 +335,6 @@ struct renderer_preferred_state
 	float afterburner_fov_multiplier;
 	float afterburner_pixel_blur_multiplier;
 	ubyte anisotropy; //1 (off), 2, 4, 8, or 16. Effective only with mipmaps.
-	ubyte pixel_motion_blur_reconstruction;
-	bool pixel_motion_blur_dynamic_center_mask;
 };
 
 enum renderer_ao_class
@@ -466,8 +457,8 @@ renderer_draw_call_3d_category rend_Set3DDrawCallCategory(renderer_draw_call_3d_
 renderer_draw_call_3d_category rend_Get3DDrawCallCategory();
 void rend_SetMotionVectorDebugSample(const renderer_motion_vector_debug_sample *sample);
 void rend_GetMotionVectorDebugSample(renderer_motion_vector_debug_sample *sample);
-void rend_SetMotionBlurPlayerTranslationActive(bool active);
-bool rend_GetMotionBlurPlayerTranslationActive();
+void rend_SetMotionBlurPlayerTranslationDelta(const vector *world_delta);
+void rend_GetMotionBlurPlayerTranslationDelta(vector *world_delta);
 
 #ifdef __cplusplus
 class renderer_3d_draw_call_scope

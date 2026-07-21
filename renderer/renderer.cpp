@@ -39,7 +39,7 @@ static renderer_draw_call_stats Renderer_current_draw_call_stats = {};
 static renderer_draw_call_stats Renderer_last_draw_call_stats = {};
 static renderer_draw_call_3d_category Renderer_current_3d_draw_call_category = RENDERER_DRAW_CALL_3D_OTHER;
 static renderer_motion_vector_debug_sample Renderer_motion_vector_debug_sample = {};
-static bool Renderer_motion_blur_player_translation_active = false;
+static vector Renderer_motion_blur_player_translation_delta = {};
 static renderer_resource_release_callback Renderer_resource_release_callbacks[16] = {};
 
 static void rend_ReleaseRegisteredRendererResources()
@@ -276,14 +276,15 @@ void rend_GetMotionVectorDebugSample(renderer_motion_vector_debug_sample *sample
 	*sample = Renderer_motion_vector_debug_sample;
 }
 
-void rend_SetMotionBlurPlayerTranslationActive(bool active)
+void rend_SetMotionBlurPlayerTranslationDelta(const vector *world_delta)
 {
-	Renderer_motion_blur_player_translation_active = active;
+	Renderer_motion_blur_player_translation_delta = world_delta ? *world_delta : vector{};
 }
 
-bool rend_GetMotionBlurPlayerTranslationActive()
+void rend_GetMotionBlurPlayerTranslationDelta(vector *world_delta)
 {
-	return Renderer_motion_blur_player_translation_active;
+	if (world_delta)
+		*world_delta = Renderer_motion_blur_player_translation_delta;
 }
 
 static void rend_PublishDrawCallStats()

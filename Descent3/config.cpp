@@ -690,10 +690,6 @@ void config_gamma()
 #define IDV_ANISOTROPY_4X 23
 #define IDV_ANISOTROPY_8X 24
 #define IDV_ANISOTROPY_16X 25
-#define IDV_BLUR_RECON_BASIC 26
-#define IDV_BLUR_RECON_FULL 27
-#define IDV_BLUR_RECON_ADAPTIVE 28
-#define IDV_DYNAMIC_BLUR_MASK 29
 #define UID_RESOLUTION 110
 #define UID_ASPECT 111
 
@@ -1294,15 +1290,6 @@ void ConfigApplyMotionBlurPreset(int index)
 	ConfigFinalizeMotionVectorUse();
 }
 
-static int ConfigNormalizeMotionBlurReconstruction(int mode)
-{
-	if (mode < RENDERER_MOTION_BLUR_RECONSTRUCTION_BASIC)
-		return RENDERER_MOTION_BLUR_RECONSTRUCTION_BASIC;
-	if (mode > RENDERER_MOTION_BLUR_RECONSTRUCTION_ADAPTIVE)
-		return RENDERER_MOTION_BLUR_RECONSTRUCTION_ADAPTIVE;
-	return mode;
-}
-
 struct video_menu
 {
 	newuiSheet* sheet;
@@ -1320,7 +1307,6 @@ struct video_menu
 	bool* soft_vis_effects;
 	bool* motion_vector_debug;
 	bool* ao_overscan;
-	bool* dynamic_blur_mask;
 
 	short* fov;
 	short* frame_limit;
@@ -1331,7 +1317,6 @@ struct video_menu
 	int* supersampling;
 	int* ao;
 	int* anisotropy;
-	int* blur_reconstruction;
 
 	int window_width, window_height;
 	int window_aspect;
@@ -1540,17 +1525,6 @@ struct video_menu
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
 			changed = true;
 		}
-		if (blur_reconstruction && sheet->HasChanged(blur_reconstruction))
-		{
-			Render_preferred_state.pixel_motion_blur_reconstruction =
-				(ubyte)ConfigNormalizeMotionBlurReconstruction(*blur_reconstruction);
-			changed = true;
-		}
-		if (dynamic_blur_mask && sheet->HasChanged(dynamic_blur_mask))
-		{
-			Render_preferred_state.pixel_motion_blur_dynamic_center_mask = *dynamic_blur_mask;
-			changed = true;
-		}
 		if (perf_markers && sheet->HasChanged(perf_markers))
 		{
 			PerfMarkersSetEnabled(*perf_markers);
@@ -1651,7 +1625,6 @@ struct video_menu
 		soft_vis_effects = NULL;
 		motion_vector_debug = NULL;
 		ao_overscan = NULL;
-		dynamic_blur_mask = NULL;
 		fov = NULL;
 		frame_limit = NULL;
 		buffer = NULL;
@@ -1661,7 +1634,6 @@ struct video_menu
 		supersampling = NULL;
 		ao = NULL;
 		anisotropy = NULL;
-		blur_reconstruction = NULL;
 		window_width = window_height = 0;
 		window_aspect = CONFIG_ASPECT_16_9;
 		display_width = display_height = 0;
@@ -1725,9 +1697,6 @@ struct video_menu
 		face_probe = sheet->AddLongCheckBox("Face probe", Render_face_probe);
 		frame_pacing = sheet->AddLongCheckBox("Frame pacing",
 			IsAdaptiveFramePacingEnabled());
-		dynamic_blur_mask = sheet->AddLongCheckBox("Dynamic blur mask",
-			Render_preferred_state.pixel_motion_blur_dynamic_center_mask,
-			IDV_DYNAMIC_BLUR_MASK);
 
 		sheet->NewGroup("MSAA", 184, 0);
 		int iTemp = MsaaSamplesToIndex(Render_preferred_state.msaa_samples);
@@ -1770,12 +1739,6 @@ struct video_menu
 		*anisotropy = AnisotropyFactorToIndex(Render_preferred_state.anisotropy);
 		update_anisotropy_visibility();
 
-		sheet->NewGroup("Blur reconstruction", 184, 298, NEWUI_ALIGN_HORIZ);
-		blur_reconstruction = sheet->AddFirstRadioButton("Basic", IDV_BLUR_RECON_BASIC);
-		sheet->AddRadioButton("Full", IDV_BLUR_RECON_FULL);
-		sheet->AddRadioButton("Adaptive", IDV_BLUR_RECON_ADAPTIVE);
-		*blur_reconstruction = ConfigNormalizeMotionBlurReconstruction(
-			(int)Render_preferred_state.pixel_motion_blur_reconstruction);
 
 		return sheet;
 	};
@@ -1807,11 +1770,6 @@ struct video_menu
 		}
 		if (motion_vector_debug)
 			Render_preferred_state.motion_vector_debug_preview = *motion_vector_debug;
-		if (blur_reconstruction)
-			Render_preferred_state.pixel_motion_blur_reconstruction =
-				(ubyte)ConfigNormalizeMotionBlurReconstruction(*blur_reconstruction);
-		if (dynamic_blur_mask)
-			Render_preferred_state.pixel_motion_blur_dynamic_center_mask = *dynamic_blur_mask;
 		ConfigEnsureCombinedMotionBlurVectorMode();
 		ConfigEnsureAOTemporalVectorMode();
 		ConfigFinalizeMotionVectorUse();

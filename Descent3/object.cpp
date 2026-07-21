@@ -1286,25 +1286,54 @@ void CheckRearView(int down_count, bool down_state)
 extern int Timedemo_frame;
 float Timedemo_timecount;
 
-static float Motion_blur_player_translation_hold = 0.0f;
+static vector Motion_blur_player_control_velocity = {};
+static int Motion_blur_player_control_handle = -1;
+static float Motion_blur_player_control_gametime = -1.0f;
 
-static void UpdateMotionBlurPlayerTranslation(const game_controls& controls)
+static void ResetMotionBlurPlayerTranslation()
 {
-	const bool translating = fabsf(controls.forward_thrust) > 0.001f ||
-		fabsf(controls.sideways_thrust) > 0.001f ||
-		fabsf(controls.vertical_thrust) > 0.001f ||
-		fabsf(controls.afterburn_thrust) > 0.001f;
+	Motion_blur_player_control_velocity = {};
+	Motion_blur_player_control_handle = -1;
+	Motion_blur_player_control_gametime = -1.0f;
+	rend_SetMotionBlurPlayerTranslationDelta(NULL);
+}
 
-	if (translating)
-		Motion_blur_player_translation_hold = 0.2f;
-	else
+static void UpdateMotionBlurPlayerTranslation(const object& obj, bool apply_player_thrust)
+{
+	const physics_info& pi = obj.mtype.phys_info;
+	const float dt = Frametime;
+	if (obj.handle != Motion_blur_player_control_handle ||
+		Gametime < Motion_blur_player_control_gametime || dt <= 0.0f || dt > 0.25f)
 	{
-		Motion_blur_player_translation_hold -= Frametime;
-		if (Motion_blur_player_translation_hold < 0.0f)
-			Motion_blur_player_translation_hold = 0.0f;
+		Motion_blur_player_control_velocity = {};
+		Motion_blur_player_control_handle = obj.handle;
 	}
 
-	rend_SetMotionBlurPlayerTranslationActive(Motion_blur_player_translation_hold > 0.0f);
+	const vector force = apply_player_thrust ? pi.thrust : vector{};
+	vector player_delta = {};
+	if (dt > 0.0f && dt <= 0.25f)
+	{
+		if (pi.mass <= 0.000001f || pi.drag <= 0.000001f)
+		{
+			player_delta = Motion_blur_player_control_velocity * dt + force * (0.5f * dt * dt);
+			Motion_blur_player_control_velocity += force * dt;
+		}
+		else
+		{
+			const double mass_over_drag = (double)pi.mass / (double)pi.drag;
+			const double decay = exp(-(double)dt / mass_over_drag);
+			const double response = 1.0 - decay;
+			const vector terminal_velocity = force / pi.drag;
+			player_delta = terminal_velocity * dt +
+				(Motion_blur_player_control_velocity - terminal_velocity) *
+				(float)(mass_over_drag * response);
+			Motion_blur_player_control_velocity =
+				(Motion_blur_player_control_velocity - terminal_velocity) * (float)decay + terminal_velocity;
+		}
+	}
+
+	Motion_blur_player_control_gametime = Gametime;
+	rend_SetMotionBlurPlayerTranslationDelta(&player_delta);
 }
 
 //Do the controls for a player-type object
@@ -1322,7 +1351,7 @@ void DoFlyingControl(object* objp)
 
 	if (Timedemo_frame != -1)
 	{
-		rend_SetMotionBlurPlayerTranslationActive(false);
+		ResetMotionBlurPlayerTranslation();
 		matrix temp_mat, rot_mat;
 
 		if (Timedemo_frame == 0)
@@ -1351,7 +1380,7 @@ void DoFlyingControl(object* objp)
 	if (Demo_flags == DF_PLAYBACK)
 	{
 		//If we are playing back a demo, bail early and don't process controls
-		rend_SetMotionBlurPlayerTranslationActive(false);
+		ResetMotionBlurPlayerTranslation();
 		return;
 	}
 
@@ -1463,9 +1492,8 @@ void DoFlyingControl(object* objp)
 		DoPlayerAfterburnControl(&controls, objp);
 	}
 
-	UpdateMotionBlurPlayerTranslation(controls);
-
 	//Update object's physics
+	bool applies_player_translation = false;
 	if (objp->movement_type == MT_PHYSICS)
 	{
 		if (objp->type == OBJ_PLAYER && Players[objp->id].guided_obj != NULL)
@@ -1479,6 +1507,7 @@ void DoFlyingControl(object* objp)
 		}
 		else
 		{
+			applies_player_translation = true;
 			player* playp = &Players[objp->id];
 
 			objp->mtype.phys_info.rotthrust.x = controls.pitch_thrust * objp->mtype.phys_info.full_rotthrust * playp->turn_scalar;
@@ -1502,6 +1531,8 @@ void DoFlyingControl(object* objp)
 			(objp->orient.uvec * controls.vertical_thrust * objp->mtype.phys_info.full_thrust) +
 			(objp->orient.rvec * controls.sideways_thrust * objp->mtype.phys_info.full_thrust));
 	}
+
+	UpdateMotionBlurPlayerTranslation(*objp, applies_player_translation);
 
 	//Process player-specific stuff
 	if (objp->type == OBJ_PLAYER)

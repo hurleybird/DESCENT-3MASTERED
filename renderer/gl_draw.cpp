@@ -469,17 +469,13 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 		glUniform1i(motionblur_has_static_reconstruction, has_static_reconstruction ? 1 : 0);
 	if (motionblur_has_dynamic_velocity != -1)
 		glUniform1i(motionblur_has_dynamic_velocity, has_dynamic_velocity ? 1 : 0);
-	if (motionblur_reconstruction_mode != -1)
-		glUniform1i(motionblur_reconstruction_mode,
-			std::max((int)RENDERER_MOTION_BLUR_RECONSTRUCTION_BASIC,
-				std::min((int)OpenGL_preferred_state.pixel_motion_blur_reconstruction,
-					(int)RENDERER_MOTION_BLUR_RECONSTRUCTION_ADAPTIVE)));
-	if (motionblur_dynamic_center_mask != -1)
-		glUniform1i(motionblur_dynamic_center_mask,
-			OpenGL_preferred_state.pixel_motion_blur_dynamic_center_mask ? 1 : 0);
-	if (motionblur_player_translation_active != -1)
-		glUniform1i(motionblur_player_translation_active,
-			rend_GetMotionBlurPlayerTranslationActive() ? 1 : 0);
+	if (motionblur_player_translation_delta != -1)
+	{
+		vector player_translation_delta = {};
+		rend_GetMotionBlurPlayerTranslationDelta(&player_translation_delta);
+		glUniform3f(motionblur_player_translation_delta,
+			player_translation_delta.x, player_translation_delta.y, player_translation_delta.z);
+	}
 
 	rend_ClearBoundTextures();
 	GL_BindFramebufferTexture(post_present_framebuffer.ColorTextureForRead(), 0, GL_LINEAR);

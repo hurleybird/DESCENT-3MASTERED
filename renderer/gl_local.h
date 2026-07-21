@@ -245,9 +245,7 @@ class GL4Renderer : public IRenderer
 	GLint motionblur_previous_view_projection = -1;
 	GLint motionblur_has_static_reconstruction = -1;
 	GLint motionblur_has_dynamic_velocity = -1;
-	GLint motionblur_reconstruction_mode = -1;
-	GLint motionblur_dynamic_center_mask = -1;
-	GLint motionblur_player_translation_active = -1;
+	GLint motionblur_player_translation_delta = -1;
 	GLint ao_composite_final_source = -1;
 	GLint ao_composite_scene_source = -1;
 	GLint ao_composite_ao_source = -1;
