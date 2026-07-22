@@ -62,6 +62,7 @@ struct enhanced_snow_particle
 	float phase;
 	float flutter_frequency;
 	ushort lighting_color;
+	int roomnum;
 	ubyte variant;
 	ubyte flags;
 };

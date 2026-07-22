@@ -48,10 +48,10 @@ int ThunderA_sound_handle = -1;
 int ThunderB_sound_handle = -1;
 
 static void ApplyEnhancedWeatherGravity(vector* pos, vector* velocity, float strength_scale);
-static bool FindEnhancedWeatherSurfaceHit(const vector* start, const vector* end,
+static int EnhancedWeatherRoomForPos(const vector& pos, int fallback_room);
+static bool FindEnhancedWeatherSurfaceHit(const vector* start, const vector* end, int start_room,
 	vector* hit_pos, vector* hit_normal, int* hit_room);
 static bool EnhancedWeatherHasOverheadOccluder();
-static bool EnhancedSnowShouldProbeSurface(const enhanced_snow_particle& particle);
 
 // resets the weather so there is nothing happening
 void ResetWeather()
@@ -214,7 +214,8 @@ void DoRainEffect()
 				vector fall_end = pos;
 				fall_end.y = ypos - 4.0f;
 				const bool hit_weather_surface = FindEnhancedWeatherSurfaceHit(&fall_start,
-					&fall_end, &hit_pos, &hit_norm, &hit_room);
+					&fall_end, Viewer_object->roomnum,
+					&hit_pos, &hit_norm, &hit_room);
 				if (hit_weather_surface)
 				{
 					pos = hit_pos + hit_norm * 0.03f;
@@ -311,7 +312,16 @@ static bool EnhancedWeatherHasOverheadOccluder()
 	return fate != HIT_NONE && fate != HIT_BAD_P0 && fate != HIT_OUT_OF_TERRAIN_BOUNDS;
 }
 
-static bool FindEnhancedWeatherSurfaceHit(const vector* start, const vector* end,
+static int EnhancedWeatherRoomForPos(const vector& pos, int fallback_room)
+{
+	vector query_pos = pos;
+	const int cell = GetTerrainCellFromPos(&query_pos);
+	if (cell >= 0)
+		return MAKE_ROOMNUM(cell);
+	return fallback_room;
+}
+
+static bool FindEnhancedWeatherSurfaceHit(const vector* start, const vector* end, int start_room,
 	vector* hit_pos, vector* hit_normal, int* hit_room)
 {
 	if (!Render_enhanced_weather || !Viewer_object || !start || !end)
@@ -323,7 +333,7 @@ static bool FindEnhancedWeatherSurfaceHit(const vector* start, const vector* end
 	fvi_info hit_info = {};
 	fq.p0 = &query_start;
 	fq.p1 = &query_end;
-	fq.startroom = Viewer_object->roomnum;
+	fq.startroom = start_room;
 	fq.rad = 0.0f;
 	fq.thisobjnum = -1;
 	fq.ignore_obj_list = NULL;
@@ -343,7 +353,7 @@ static bool FindEnhancedWeatherSurfaceHit(const vector* start, const vector* end
 				*hit_normal = { 0.0f, 1.0f, 0.0f };
 		}
 		if (hit_room)
-			*hit_room = hit_info.hit_room >= 0 ? hit_info.hit_room : Viewer_object->roomnum;
+			*hit_room = hit_info.hit_room >= 0 ? hit_info.hit_room : start_room;
 		return true;
 	}
 	if (fate != HIT_OBJECT && fate != HIT_SPHERE_2_POLY_OBJECT)
@@ -377,23 +387,16 @@ static bool FindEnhancedWeatherSurfaceHit(const vector* start, const vector* end
 	return false;
 }
 
-static bool EnhancedSnowShouldProbeSurface(const enhanced_snow_particle& particle)
-{
-	// Surface tests are distributed across frames.  Each flake casts from its
-	// last probe point to its current point, so skipped frames do not create
-	// tunneling gaps, but we also avoid doing hundreds of FVI calls every frame.
-	const int phase = (int)(particle.variant & 3);
-	return ((FrameCount + phase) & 3) == 0;
-}
-
-static void EnhancedSnowImpactFade(enhanced_snow_particle& particle, const vector& pos)
+static void EnhancedSnowImpactFade(enhanced_snow_particle& particle, const vector& pos,
+	const vector& impact_velocity, int hit_room)
 {
 	particle.pos = pos;
-	particle.velocity = { 0.0f, 0.0f, 0.0f };
+	particle.velocity = impact_velocity * 0.03f;
 	particle.flags |= 4;
 	if (particle.lifeleft > 0.32f)
 		particle.lifeleft = 0.32f;
 	particle.last_surface_probe_pos = particle.pos;
+	particle.roomnum = hit_room;
 }
 
 static void MoveEnhancedSnowParticle(enhanced_snow_particle& particle)
@@ -405,7 +408,12 @@ static void MoveEnhancedSnowParticle(enhanced_snow_particle& particle)
 		return;
 	}
 
-	if (!(particle.flags & (2 | 4)))
+	if (particle.flags & 4)
+	{
+		particle.pos += particle.velocity * Frametime;
+		particle.roomnum = EnhancedWeatherRoomForPos(particle.pos, particle.roomnum);
+	}
+	else if (!(particle.flags & 2))
 	{
 		const float time_live = Gametime - particle.creation_time;
 		const float phase = particle.phase + time_live * particle.flutter_frequency;
@@ -417,16 +425,17 @@ static void MoveEnhancedSnowParticle(enhanced_snow_particle& particle)
 		ApplyEnhancedWeatherGravity(&particle.pos, &frame_velocity, 1.0f);
 		particle.pos += frame_velocity * Frametime;
 
-		if (EnhancedSnowShouldProbeSurface(particle))
 		{
 			vector hit_pos, hit_normal;
 			int hit_room;
 			if (FindEnhancedWeatherSurfaceHit(&particle.last_surface_probe_pos,
-				&particle.pos, &hit_pos, &hit_normal, &hit_room))
+				&particle.pos, particle.roomnum, &hit_pos, &hit_normal, &hit_room))
 			{
-				EnhancedSnowImpactFade(particle, hit_pos + hit_normal * 0.04f);
+				EnhancedSnowImpactFade(particle, hit_pos + hit_normal * 0.04f,
+					frame_velocity, hit_room);
 			}
 			particle.last_surface_probe_pos = particle.pos;
+			particle.roomnum = EnhancedWeatherRoomForPos(particle.pos, particle.roomnum);
 		}
 
 		if (particle.pos.y - particle.ground_data.y < 96.0f)
@@ -438,7 +447,8 @@ static void MoveEnhancedSnowParticle(enhanced_snow_particle& particle)
 			{
 				vector settle_pos = particle.pos;
 				settle_pos.y = ground_y + 0.04f;
-				EnhancedSnowImpactFade(particle, settle_pos);
+				EnhancedSnowImpactFade(particle, settle_pos, frame_velocity,
+					EnhancedWeatherRoomForPos(settle_pos, particle.roomnum));
 			}
 		}
 	}
@@ -537,6 +547,7 @@ static int CreateEnhancedSnow(float age, PSRand& random, int available_slots)
 		enhanced_snow_particle particle = {};
 		particle.pos = pos;
 		particle.last_surface_probe_pos = pos;
+		particle.roomnum = EnhancedWeatherRoomForPos(pos, Viewer_object->roomnum);
 		const float size_roll = SnowRandomUnit(random);
 		if (size_roll < 0.82f)
 			particle.size = 0.25f + SnowRandomUnit(random) * 0.40f;
@@ -564,6 +575,8 @@ static int CreateEnhancedSnow(float age, PSRand& random, int available_slots)
 		const int tint = 205 + (random() % 35);
 		particle.lighting_color = GR_RGB16(tint, tint + 3, 255);
 		particle.pos += particle.velocity * age;
+		particle.last_surface_probe_pos = particle.pos;
+		particle.roomnum = EnhancedWeatherRoomForPos(particle.pos, particle.roomnum);
 		Enhanced_snow_particles.push_back(particle);
 		created++;
 	}
