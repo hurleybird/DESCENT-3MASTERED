@@ -54,6 +54,7 @@ struct enhanced_snow_particle
 	vector pos;
 	vector velocity;
 	vector ground_data;
+	vector last_surface_probe_pos;
 	float size;
 	float lifeleft;
 	float lifetime;

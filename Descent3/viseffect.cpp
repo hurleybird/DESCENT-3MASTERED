@@ -262,6 +262,13 @@ static EnhancedSnowRenderParams VisEffectEnhancedSnowRenderParams(const vis_effe
 	float size_alpha = 0.45f + vis->size * 0.28f;
 	if (size_alpha > 0.75f) size_alpha = 0.75f;
 	params.alpha = fade_in * fade_out * size_alpha;
+	if (vis->custom_handle & 8)
+	{
+		float impact_fade = vis->lifeleft / 0.32f;
+		if (impact_fade > 1.0f) impact_fade = 1.0f;
+		if (impact_fade < 0.0f) impact_fade = 0.0f;
+		params.alpha *= impact_fade;
+	}
 	if (params.alpha < 0.0f) params.alpha = 0.0f;
 	return params;
 }
@@ -3528,7 +3535,8 @@ void DrawEnhancedSnowParticlesBatched()
 		vis.lifetime = particle.lifetime;
 		vis.creation_time = particle.creation_time;
 		vis.roomnum = roomnum;
-		vis.custom_handle = (short)(particle.variant | ((particle.flags & 2) ? 4 : 0));
+		vis.custom_handle = (short)(particle.variant |
+			((particle.flags & 2) ? 4 : 0) | ((particle.flags & 4) ? 8 : 0));
 		vis.lighting_color = particle.lighting_color;
 		vis.flags = VF_ENHANCED_SNOW;
 
@@ -3620,7 +3628,8 @@ void DrawEnhancedSnowParticlesBatched()
 		vis.lifetime = particle.lifetime;
 		vis.creation_time = particle.creation_time;
 		vis.roomnum = roomnum;
-		vis.custom_handle = (short)(particle.variant | ((particle.flags & 2) ? 4 : 0));
+		vis.custom_handle = (short)(particle.variant |
+			((particle.flags & 2) ? 4 : 0) | ((particle.flags & 4) ? 8 : 0));
 		vis.lighting_color = particle.lighting_color;
 		vis.flags = VF_ENHANCED_SNOW;
 

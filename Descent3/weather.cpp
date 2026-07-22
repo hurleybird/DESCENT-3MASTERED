@@ -42,6 +42,7 @@
 
 weather Weather = { 0 };
 static std::vector<enhanced_snow_particle> Enhanced_snow_particles;
+static const float ENHANCED_WEATHER_BLACKSHARK_PULL = 1024.0f;
 
 int ThunderA_sound_handle = -1;
 int ThunderB_sound_handle = -1;
@@ -49,6 +50,8 @@ int ThunderB_sound_handle = -1;
 static void ApplyEnhancedWeatherGravity(vector* pos, vector* velocity, float strength_scale);
 static bool FindEnhancedWeatherSurfaceHit(const vector* start, const vector* end,
 	vector* hit_pos, vector* hit_normal, int* hit_room);
+static bool EnhancedWeatherHasOverheadOccluder();
+static bool EnhancedSnowShouldProbeSurface(const enhanced_snow_particle& particle);
 
 // resets the weather so there is nothing happening
 void ResetWeather()
@@ -93,9 +96,13 @@ void DoRainEffect()
 	if ((upvec * Viewer_object->orient.uvec) < 0)
 		randval = 8000; // Make sure rain does fall upwards
 
+	const bool suppress_windshield_splatter =
+		Render_enhanced_weather && EnhancedWeatherHasOverheadOccluder();
+
 	for (int event = 0; event < droplet_events; ++event)
 	{
-		if (Viewer_object->type != OBJ_PLAYER || !OBJECT_OUTSIDE(Viewer_object) ||
+		if (suppress_windshield_splatter || Viewer_object->type != OBJ_PLAYER ||
+			!OBJECT_OUTSIDE(Viewer_object) ||
 			(ps_rand() % randval) != 0)
 			continue;
 
@@ -274,9 +281,34 @@ static void ApplyEnhancedWeatherGravity(vector* pos, vector* velocity, float str
 
 		delta /= dist;
 		const float falloff = 1.0f - (dist / radius);
-		const float acceleration = 760.0f * falloff * falloff * strength_scale;
+		const float acceleration = 190.0f * ENHANCED_WEATHER_BLACKSHARK_PULL *
+			falloff * falloff * strength_scale;
 		*velocity += delta * (acceleration * Frametime);
 	}
+}
+
+static bool EnhancedWeatherHasOverheadOccluder()
+{
+	if (!Render_enhanced_weather || !Viewer_object)
+		return false;
+
+	vector start = Viewer_object->pos;
+	vector end = start;
+	end.y += MAX_TERRAIN_HEIGHT * 2.0f;
+
+	fvi_query fq = {};
+	fvi_info hit_info = {};
+	fq.p0 = &start;
+	fq.p1 = &end;
+	fq.startroom = Viewer_object->roomnum;
+	fq.rad = 0.0f;
+	fq.thisobjnum = OBJNUM(Viewer_object);
+	fq.ignore_obj_list = NULL;
+	fq.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS |
+		FQ_IGNORE_RENDER_THROUGH_PORTALS | FQ_NO_RELINK;
+
+	const int fate = fvi_FindIntersection(&fq, &hit_info);
+	return fate != HIT_NONE && fate != HIT_BAD_P0 && fate != HIT_OUT_OF_TERRAIN_BOUNDS;
 }
 
 static bool FindEnhancedWeatherSurfaceHit(const vector* start, const vector* end,
@@ -345,6 +377,25 @@ static bool FindEnhancedWeatherSurfaceHit(const vector* start, const vector* end
 	return false;
 }
 
+static bool EnhancedSnowShouldProbeSurface(const enhanced_snow_particle& particle)
+{
+	// Surface tests are distributed across frames.  Each flake casts from its
+	// last probe point to its current point, so skipped frames do not create
+	// tunneling gaps, but we also avoid doing hundreds of FVI calls every frame.
+	const int phase = (int)(particle.variant & 3);
+	return ((FrameCount + phase) & 3) == 0;
+}
+
+static void EnhancedSnowImpactFade(enhanced_snow_particle& particle, const vector& pos)
+{
+	particle.pos = pos;
+	particle.velocity = { 0.0f, 0.0f, 0.0f };
+	particle.flags |= 4;
+	if (particle.lifeleft > 0.32f)
+		particle.lifeleft = 0.32f;
+	particle.last_surface_probe_pos = particle.pos;
+}
+
 static void MoveEnhancedSnowParticle(enhanced_snow_particle& particle)
 {
 	particle.lifeleft -= Frametime;
@@ -354,7 +405,7 @@ static void MoveEnhancedSnowParticle(enhanced_snow_particle& particle)
 		return;
 	}
 
-	if (!(particle.flags & 2))
+	if (!(particle.flags & (2 | 4)))
 	{
 		const float time_live = Gametime - particle.creation_time;
 		const float phase = particle.phase + time_live * particle.flutter_frequency;
@@ -364,33 +415,30 @@ static void MoveEnhancedSnowParticle(enhanced_snow_particle& particle)
 		frame_velocity.z += particle.ground_data.z * flutter_speed;
 		frame_velocity.y += cosf(phase * 0.71f) * 0.8f;
 		ApplyEnhancedWeatherGravity(&particle.pos, &frame_velocity, 1.0f);
-		const vector previous_pos = particle.pos;
 		particle.pos += frame_velocity * Frametime;
+
+		if (EnhancedSnowShouldProbeSurface(particle))
+		{
+			vector hit_pos, hit_normal;
+			int hit_room;
+			if (FindEnhancedWeatherSurfaceHit(&particle.last_surface_probe_pos,
+				&particle.pos, &hit_pos, &hit_normal, &hit_room))
+			{
+				EnhancedSnowImpactFade(particle, hit_pos + hit_normal * 0.04f);
+			}
+			particle.last_surface_probe_pos = particle.pos;
+		}
 
 		if (particle.pos.y - particle.ground_data.y < 96.0f)
 		{
 			vector ground_normal;
 			const float ground_y = GetTerrainGroundPoint(&particle.pos, &ground_normal);
 			particle.ground_data.y = ground_y;
-			vector hit_pos, hit_normal;
-			int hit_room;
-			if (FindEnhancedWeatherSurfaceHit(&previous_pos, &particle.pos,
-				&hit_pos, &hit_normal, &hit_room))
+			if (!(particle.flags & (2 | 4)) && particle.pos.y <= ground_y + 0.12f)
 			{
-				particle.pos = hit_pos + hit_normal * 0.04f;
-				particle.velocity = hit_normal;
-				particle.flags |= 2;
-				if (particle.lifeleft > 0.32f)
-					particle.lifeleft = 0.32f;
-			}
-			else
-			if (particle.pos.y <= ground_y + 0.12f)
-			{
-				particle.pos.y = ground_y + 0.04f;
-				particle.velocity = ground_normal;
-				particle.flags |= 2;
-				if (particle.lifeleft > 0.32f)
-					particle.lifeleft = 0.32f;
+				vector settle_pos = particle.pos;
+				settle_pos.y = ground_y + 0.04f;
+				EnhancedSnowImpactFade(particle, settle_pos);
 			}
 		}
 	}
@@ -488,6 +536,7 @@ static int CreateEnhancedSnow(float age, PSRand& random, int available_slots)
 
 		enhanced_snow_particle particle = {};
 		particle.pos = pos;
+		particle.last_surface_probe_pos = pos;
 		const float size_roll = SnowRandomUnit(random);
 		if (size_roll < 0.82f)
 			particle.size = 0.25f + SnowRandomUnit(random) * 0.40f;
