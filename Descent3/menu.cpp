@@ -342,6 +342,39 @@ bool ProcessCommandLine()
 		return true;
 	}
 
+	// Headless renderer/script harness: start a real mission level without
+	// navigating the menus.  This is intentionally independent of -mission,
+	// which only mounts an archive early for asset overrides.
+	const int loadmission_arg = FindArg("-loadmission");
+	const char* loadmission_name = loadmission_arg ? GetArg(loadmission_arg + 1) : nullptr;
+	if (loadmission_name)
+		AutomatedCaptureLog("loadmission attempt mission=%s dir=%s", loadmission_name, D3MissionsDir);
+	if (loadmission_name && LoadMission(const_cast<char*>(loadmission_name)))
+	{
+		int level = 1;
+		const int level_arg = FindArg("-missionlevel");
+		if (level_arg)
+			level = atoi(GetArg(level_arg + 1));
+		if (level < 1 || level > Current_mission.num_levels)
+		{
+			AutomatedCaptureLog("loadmission invalid level=%d count=%d", level, Current_mission.num_levels);
+			return false;
+		}
+		Current_mission.cur_level = level;
+		Players[0].ship_permissions = GetPilotShipPermissions(&Current_pilot, Current_mission.name);
+		SetGameMode(GM_NORMAL);
+		SetFunctionMode(GAME_MODE);
+		AutomatedCaptureLog("loadmission accepted mission=%s level=%d", loadmission_name, level);
+		return true;
+	}
+	if (loadmission_name)
+	{
+		AutomatedCaptureLog("loadmission rejected mission=%s dir=%s", loadmission_name,
+			D3MissionsDir);
+		SetFunctionMode(QUIT_MODE);
+		return true;
+	}
+
 	// Auto connect to a network game if the parm is there.
 	if ((!Auto_connected) && (TCP_active) && (FindArg("-url")))
 	{

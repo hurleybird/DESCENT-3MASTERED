@@ -190,6 +190,10 @@ void *Osiris_AllocateMemory(tOSIRISMEMCHUNK *mc);
 //		Frees a chunk of memory that was allocated by Osiris_AllocateMemory().
 void Osiris_FreeMemory(void *mem_ptr);
 
+// Returns the byte size of an auto-managed script allocation, or 0 when the
+// pointer is not owned by the Osiris memory manager.
+bool Osiris_GetMemoryInfo(void *mem_ptr, tOSIRISMEMCHUNK *chunk);
+
 //	Osiris_FreeMemoryForScript
 //	Purpose:
 //		Frees all memory allocated for a given script

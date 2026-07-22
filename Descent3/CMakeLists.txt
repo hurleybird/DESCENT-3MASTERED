@@ -230,6 +230,8 @@ SET (MAIN_SOURCES
 		Descent3/ObjInit.cpp
 		Descent3/ObjScript.cpp
 		Descent3/OsirisLoadandBind.cpp
+		Descent3/osiris_bridge_client.cpp
+		Descent3/osiris_bridge_client.h
 		Descent3/osiris_predefs.cpp
 		Descent3/pilot.cpp
 		Descent3/PilotPicsAPI.cpp

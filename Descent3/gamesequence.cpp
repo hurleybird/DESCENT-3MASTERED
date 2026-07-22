@@ -411,6 +411,8 @@ bool StartNewGame()
 bool DoLevelIntro()
 {
 	tLevelNode* lvl = Current_level;
+	if (FindArg("-capture-frame") || FindArg("-screenshot-frame"))
+		return true;
 
 	mprintf((0, "In DoLevelIntro()\n"));
 

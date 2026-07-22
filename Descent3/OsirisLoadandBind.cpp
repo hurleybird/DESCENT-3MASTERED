@@ -36,14 +36,18 @@
 #include "player.h"
 #include "gamecinematics.h"
 #include "demofile.h"
+#include "osiris_bridge_client.h"
+#include "args.h"
 
 #ifdef _DEBUG
 #define OSIRISDEBUG
 #endif
 
 bool Show_osiris_debug = false;
+void AutomatedCaptureLog(const char* format, ...);
 
 #define MAX_LOADED_MODULES	64		//maximum number of dlls that can be loaded at a time
+#define MAX_EXTRACTED_SCRIPTS 256	//native archive plus mission-local legacy copies
 
 #define OSIMF_INUSE			0x1		//slot in use
 #define OSIMF_LEVEL			0x2		//level module
@@ -51,6 +55,7 @@ bool Show_osiris_debug = false;
 #define OSIMF_INTEMPDIR		0x8		//the dll was extracted from a hog and it is in a temp file
 #define OSIMF_NOUNLOAD		0x10	//the dll should not be unloaded if the reference count is 
 									//0, only when the level ends
+#define OSIMF_BRIDGED		0x20	//module is hosted by the Win32 compatibility process
 
 // The exported DLL function call prototypes
 #if defined(__LINUX__)
@@ -101,11 +106,69 @@ struct tOSIRISModule
 	char* module_name;
 	char** string_table;
 	int						strings_loaded;
+	OsirisBridgeClient*		bridge;
 
 #ifdef OSIRISDEBUG
 	tRefObj* RefRoot;
 #endif
 };
+
+static bool OsirisModuleInitialize(tOSIRISModule* module, tOSIRISModuleInit* init)
+{
+	return module->bridge ? module->bridge->Initialize(init) : module->InitializeDLL(init) != 0;
+}
+
+static void OsirisModuleShutdown(tOSIRISModule* module)
+{
+	if (module->bridge)
+		module->bridge->Shutdown();
+	else if (module->ShutdownDLL)
+		module->ShutdownDLL();
+}
+
+static int OsirisModuleGetGOScriptID(tOSIRISModule* module, const char* name, ubyte isdoor)
+{
+	return module->bridge ? module->bridge->GetGOScriptID(name, isdoor)
+		: module->GetGOScriptID(const_cast<char*>(name), isdoor);
+}
+
+static int OsirisModuleGetTriggerScriptID(tOSIRISModule* module, int room, int face)
+{
+	return module->bridge ? module->bridge->GetTriggerScriptID(room, face)
+		: module->GetTriggerScriptID(room, face);
+}
+
+static int OsirisModuleGetCOScriptList(tOSIRISModule* module, int** handles, int** ids)
+{
+	return module->bridge ? module->bridge->GetCOScriptList(handles, ids)
+		: module->GetCOScriptList(handles, ids);
+}
+
+static void* OsirisModuleCreateInstance(tOSIRISModule* module, int id)
+{
+	return module->bridge ? module->bridge->CreateInstance(id) : module->CreateInstance(id);
+}
+
+static void OsirisModuleDestroyInstance(tOSIRISModule* module, int id, void* instance)
+{
+	if (module->bridge)
+		module->bridge->DestroyInstance(id, instance);
+	else
+		module->DestroyInstance(id, instance);
+}
+
+static short OsirisModuleCallInstanceEvent(tOSIRISModule* module, int id, void* instance, int event,
+											tOSIRISEventInfo* data)
+{
+	return module->bridge ? module->bridge->CallInstanceEvent(id, instance, event, data)
+		: module->CallInstanceEvent(id, instance, event, data);
+}
+
+static int OsirisModuleSaveRestoreState(tOSIRISModule* module, void* file, ubyte saving)
+{
+	return module->bridge ? module->bridge->SaveRestoreState(file, saving)
+		: module->SaveRestoreState(file, saving);
+}
 
 tOSIRISModule OSIRIS_loaded_modules[MAX_LOADED_MODULES];
 tOSIRISModuleInit Osiris_module_init;
@@ -133,7 +196,7 @@ struct tExtractedScriptInfo
 	char* temp_filename;
 	char* real_filename;
 };
-tExtractedScriptInfo OSIRIS_Extracted_scripts[MAX_LOADED_MODULES];
+tExtractedScriptInfo OSIRIS_Extracted_scripts[MAX_EXTRACTED_SCRIPTS];
 char* OSIRIS_Extracted_script_dir = NULL;
 
 //	Osiris_CreateModuleInitStruct
@@ -212,6 +275,7 @@ void Osiris_InitModuleLoader(void)
 		OSIRIS_loaded_modules[i].SaveRestoreState = NULL;
 		OSIRIS_loaded_modules[i].string_table = NULL;
 		OSIRIS_loaded_modules[i].strings_loaded = 0;
+		OSIRIS_loaded_modules[i].bridge = NULL;
 
 #ifdef OSIRISDEBUG
 		ASSERT(OSIRIS_loaded_modules[i].RefRoot == NULL);
@@ -307,16 +371,15 @@ void Osiris_FreeModule(int id)
 		{
 
 			//this is a DLL belonging to us
-			if (OSIRIS_loaded_modules[id].ShutdownDLL)
-			{
-				//call the shutdown function so the DLL can perform what it needs
-				OSIRIS_loaded_modules[id].ShutdownDLL();
-			}
+			OsirisModuleShutdown(&OSIRIS_loaded_modules[id]);
 
 			if (OSIRIS_loaded_modules[id].string_table != NULL)
 				DestroyStringTable(OSIRIS_loaded_modules[id].string_table, OSIRIS_loaded_modules[id].strings_loaded);
 			
-			mod_FreeModule(&OSIRIS_loaded_modules[id].mod);
+			if (OSIRIS_loaded_modules[id].mod.handle)
+				mod_FreeModule(&OSIRIS_loaded_modules[id].mod);
+			delete OSIRIS_loaded_modules[id].bridge;
+			OSIRIS_loaded_modules[id].bridge = NULL;
 		}
 
 		if (tOSIRISCurrentMission.mission_loaded && id == tOSIRISCurrentMission.dll_id)
@@ -336,6 +399,7 @@ void Osiris_FreeModule(int id)
 		OSIRIS_loaded_modules[id].SaveRestoreState = NULL;
 		OSIRIS_loaded_modules[id].string_table = NULL;
 		OSIRIS_loaded_modules[id].strings_loaded = 0;
+		OSIRIS_loaded_modules[id].bridge = NULL;
 		OSIRIS_loaded_modules[id].flags = 0;
 		OSIRIS_loaded_modules[id].reference_count = 0;
 
@@ -500,7 +564,8 @@ void Osiris_UnloadLevelModule(void)
 		for (int i = 0; i < Num_triggers; i++)
 		{
 			if (Triggers[i].osiris_script.script_instance)
-				OSIRIS_loaded_modules[dll_id].DestroyInstance(Triggers[i].osiris_script.script_id, Triggers[i].osiris_script.script_instance);
+				OsirisModuleDestroyInstance(&OSIRIS_loaded_modules[dll_id], Triggers[i].osiris_script.script_id,
+					Triggers[i].osiris_script.script_instance);
 			
 			Triggers[i].osiris_script.script_id = -1;
 			Triggers[i].osiris_script.script_instance = NULL;
@@ -571,8 +636,27 @@ int _get_full_path_to_module(char* module_name, char* fullpath, char* basename)
 		if (!OSIRIS_Extracted_script_dir)
 			return -2;
 
+		// The bridge test harness can deliberately select the mission's retail
+		// Win32 copy even when a native first-party module was extracted earlier.
+		if (FindArg("-osiris-force-bridge"))
+		{
+			for (int i = MAX_EXTRACTED_SCRIPTS - 1; i >= 0; --i)
+			{
+				if ((OSIRIS_Extracted_scripts[i].flags & (OESF_USED | OESF_MISSION)) ==
+					(OESF_USED | OESF_MISSION) &&
+					!stricmp(basename, OSIRIS_Extracted_scripts[i].real_filename))
+				{
+					ddio_MakePath(fullpath, OSIRIS_Extracted_script_dir,
+						OSIRIS_Extracted_scripts[i].temp_filename, NULL);
+					AutomatedCaptureLog("osiris bridge forced module=%s extracted=%s slot=%d",
+						basename, fullpath, i);
+					return i;
+				}
+			}
+		}
+
 		//search through our list of extracted files to find it...
-		for (int i = 0; i < MAX_LOADED_MODULES; i++) {
+		for (int i = 0; i < MAX_EXTRACTED_SCRIPTS; i++) {
 			if (OSIRIS_Extracted_scripts[i].flags & OESF_USED)
 			{
 				if (!stricmp(basename, OSIRIS_Extracted_scripts[i].real_filename))
@@ -668,16 +752,30 @@ int Osiris_LoadLevelModule(char* module_name)
 	}
 
 	//the module exists, now attempt to load it
-	if (!mod_LoadModule(&OSIRIS_loaded_modules[loaded_id].mod, fullpath))
+	tOSIRISModule* osm = &OSIRIS_loaded_modules[loaded_id];
+	osm->bridge = NULL;
+	if (!mod_LoadModule(&osm->mod, fullpath))
 	{
-		//there was an error trying to load the module
-		mprintf((0, "OSIRIS: Osiris_LoadLevelModule(%s): Unable to load module\n", module_name));
-		Int3();
-		return -3;
+		if (OsirisBridgeClient::IsWin32Module(fullpath))
+		{
+			auto bridge = OsirisBridgeClient::Start(fullpath);
+			if (bridge)
+			{
+				osm->bridge = bridge.release();
+				osm->flags |= OSIMF_BRIDGED;
+				AutomatedCaptureLog("osiris bridge hosting level module=%s path=%s", module_name, fullpath);
+				mprintf((0, "OSIRIS: Hosting legacy Win32 level module (%s) out of process\n", module_name));
+			}
+		}
+		if (!osm->bridge)
+		{
+			mprintf((0, "OSIRIS: Osiris_LoadLevelModule(%s): Unable to load module\n", module_name));
+			Int3();
+			return -3;
+		}
 	}
 
 	//the module has loaded, attempt to import all the level functions
-	tOSIRISModule* osm = &OSIRIS_loaded_modules[loaded_id];
 	module* mod = &osm->mod;
 
 	//there are 9 functions we need to import
@@ -691,15 +789,18 @@ int Osiris_LoadLevelModule(char* module_name)
 	// CallInstanceEvent@16
 	// SaveRestoreState@8
 
-	osm->InitializeDLL = (InitializeDLL_fp)mod_GetSymbol(mod, "InitializeDLL", 4);
-	osm->ShutdownDLL = (ShutdownDLL_fp)mod_GetSymbol(mod, "ShutdownDLL", 0);
-	osm->GetGOScriptID = (GetGOScriptID_fp)mod_GetSymbol(mod, "GetGOScriptID", 8);
-	osm->GetTriggerScriptID = (GetTriggerScriptID_fp)mod_GetSymbol(mod, "GetTriggerScriptID", 8);
-	osm->GetCOScriptList = (GetCOScriptList_fp)mod_GetSymbol(mod, "GetCOScriptList", 8);
-	osm->CreateInstance = (CreateInstance_fp)mod_GetSymbol(mod, "CreateInstance", 4);
-	osm->DestroyInstance = (DestroyInstance_fp)mod_GetSymbol(mod, "DestroyInstance", 8);
-	osm->CallInstanceEvent = (CallInstanceEvent_fp)mod_GetSymbol(mod, "CallInstanceEvent", 16);
-	osm->SaveRestoreState = (SaveRestoreState_fp)mod_GetSymbol(mod, "SaveRestoreState", 8);
+	if (!osm->bridge)
+	{
+		osm->InitializeDLL = (InitializeDLL_fp)mod_GetSymbol(mod, "InitializeDLL", 4);
+		osm->ShutdownDLL = (ShutdownDLL_fp)mod_GetSymbol(mod, "ShutdownDLL", 0);
+		osm->GetGOScriptID = (GetGOScriptID_fp)mod_GetSymbol(mod, "GetGOScriptID", 8);
+		osm->GetTriggerScriptID = (GetTriggerScriptID_fp)mod_GetSymbol(mod, "GetTriggerScriptID", 8);
+		osm->GetCOScriptList = (GetCOScriptList_fp)mod_GetSymbol(mod, "GetCOScriptList", 8);
+		osm->CreateInstance = (CreateInstance_fp)mod_GetSymbol(mod, "CreateInstance", 4);
+		osm->DestroyInstance = (DestroyInstance_fp)mod_GetSymbol(mod, "DestroyInstance", 8);
+		osm->CallInstanceEvent = (CallInstanceEvent_fp)mod_GetSymbol(mod, "CallInstanceEvent", 16);
+		osm->SaveRestoreState = (SaveRestoreState_fp)mod_GetSymbol(mod, "SaveRestoreState", 8);
+	}
 
 	osm->flags |= OSIMF_INUSE | OSIMF_LEVEL;
 	osm->module_name = mem_strdup(basename);
@@ -711,7 +812,7 @@ int Osiris_LoadLevelModule(char* module_name)
 #endif
 
 	//make sure all of the functions imported ok
-	if (!osm->InitializeDLL ||
+	if (!osm->bridge && (!osm->InitializeDLL ||
 		!osm->ShutdownDLL ||
 		!osm->GetGOScriptID ||
 		!osm->GetTriggerScriptID ||
@@ -719,7 +820,7 @@ int Osiris_LoadLevelModule(char* module_name)
 		!osm->CreateInstance ||
 		!osm->DestroyInstance ||
 		!osm->SaveRestoreState ||
-		!osm->CallInstanceEvent)
+		!osm->CallInstanceEvent))
 	{
 		//there was an error importing a function
 		mprintf((0, "OSIRIS: Osiris_LoadLevelModule(%s) couldn't import function.\n", module_name));
@@ -728,7 +829,8 @@ int Osiris_LoadLevelModule(char* module_name)
 		if (osm->module_name)
 			mem_free(osm->module_name);
 		osm->module_name = NULL;
-		mod_FreeModule(mod);
+		if (mod->handle)
+			mod_FreeModule(mod);
 		return -3;
 	}
 
@@ -762,7 +864,7 @@ int Osiris_LoadLevelModule(char* module_name)
 	Osiris_module_init.module_identifier = loaded_id;
 
 	//when we get to this point we nearly have a loaded module, we just need to initialize it
-	if (!osm->InitializeDLL(&Osiris_module_init))
+	if (!OsirisModuleInitialize(osm, &Osiris_module_init))
 	{
 		//there was an error initializing the module
 		mprintf((0, "OSIRIS: Osiris_LoadLevelModule(%s) error initializing module.\n", basename));
@@ -775,7 +877,10 @@ int Osiris_LoadLevelModule(char* module_name)
 		osm->module_name = NULL;
 		osm->string_table = NULL;
 		osm->strings_loaded = 0;
-		mod_FreeModule(mod);
+		if (mod->handle)
+			mod_FreeModule(mod);
+		delete osm->bridge;
+		osm->bridge = NULL;
 		return -2;
 	}
 
@@ -788,11 +893,11 @@ int Osiris_LoadLevelModule(char* module_name)
 		Triggers[i].osiris_script.script_id = -1;
 		Triggers[i].osiris_script.script_instance = NULL;
 
-		script_id = osm->GetTriggerScriptID(Triggers[i].roomnum, Triggers[i].facenum);
+		script_id = OsirisModuleGetTriggerScriptID(osm, Triggers[i].roomnum, Triggers[i].facenum);
 		if (script_id != -1)
 		{
 			//the trigger was found
-			instance = osm->CreateInstance(script_id);
+			instance = OsirisModuleCreateInstance(osm, script_id);
 			if (!instance)
 			{
 				mprintf((0, "OSIRIS: Unable to create instance for trigger script (%d)\n", i));
@@ -808,8 +913,9 @@ int Osiris_LoadLevelModule(char* module_name)
 	//we have a successful module load
 	tOSIRISCurrentLevel.level_loaded = true;
 	tOSIRISCurrentLevel.dll_id = loaded_id;
-	tOSIRISCurrentLevel.num_customs = OSIRIS_loaded_modules[loaded_id].GetCOScriptList(&tOSIRISCurrentLevel.custom_handles, &tOSIRISCurrentLevel.custom_ids);
-	tOSIRISCurrentLevel.instance = OSIRIS_loaded_modules[loaded_id].CreateInstance(0);//level scripts always have id of 0 in a level dll
+	tOSIRISCurrentLevel.num_customs = OsirisModuleGetCOScriptList(&OSIRIS_loaded_modules[loaded_id],
+		&tOSIRISCurrentLevel.custom_handles, &tOSIRISCurrentLevel.custom_ids);
+	tOSIRISCurrentLevel.instance = OsirisModuleCreateInstance(&OSIRIS_loaded_modules[loaded_id], 0);//level scripts always have id of 0 in a level dll
 
 	mprintf((0, "OSIRIS: Level Module (%s) loaded successfully (%d custom handles)\n", basename, tOSIRISCurrentLevel.num_customs));
 	Osiris_level_script_loaded = true;
@@ -883,16 +989,30 @@ int Osiris_LoadGameModule(char* module_name)
 	}
 
 	//the module exists, now attempt to load it
-	if (!mod_LoadModule(&OSIRIS_loaded_modules[loaded_id].mod, fullpath))
+	tOSIRISModule* osm = &OSIRIS_loaded_modules[loaded_id];
+	osm->bridge = NULL;
+	if (!mod_LoadModule(&osm->mod, fullpath))
 	{
-		//there was an error trying to load the module
-		mprintf((0, "OSIRIS: Osiris_LoadGameModule(%s): Unable to load module\n", module_name));
-		Int3();
-		return -3;
+		if (OsirisBridgeClient::IsWin32Module(fullpath))
+		{
+			auto bridge = OsirisBridgeClient::Start(fullpath);
+			if (bridge)
+			{
+				osm->bridge = bridge.release();
+				osm->flags |= OSIMF_BRIDGED;
+				AutomatedCaptureLog("osiris bridge hosting game module=%s path=%s", module_name, fullpath);
+				mprintf((0, "OSIRIS: Hosting legacy Win32 game-script module (%s) out of process\n", module_name));
+			}
+		}
+		if (!osm->bridge)
+		{
+			mprintf((0, "OSIRIS: Osiris_LoadGameModule(%s): Unable to load module\n", module_name));
+			Int3();
+			return -3;
+		}
 	}
 
 	//the module has loaded, attempt to import all the level functions
-	tOSIRISModule* osm = &OSIRIS_loaded_modules[loaded_id];
 	module* mod = &osm->mod;
 
 	//there are 7 functions we need to import
@@ -904,15 +1024,18 @@ int Osiris_LoadGameModule(char* module_name)
 	// CallInstanceEvent@16
 	// SaveRestoreState@8
 
-	osm->InitializeDLL = (InitializeDLL_fp)mod_GetSymbol(mod, "InitializeDLL", 4);
-	osm->ShutdownDLL = (ShutdownDLL_fp)mod_GetSymbol(mod, "ShutdownDLL", 0);
-	osm->GetGOScriptID = (GetGOScriptID_fp)mod_GetSymbol(mod, "GetGOScriptID", 8);
-	osm->GetTriggerScriptID = NULL;
-	osm->GetCOScriptList = NULL;
-	osm->CreateInstance = (CreateInstance_fp)mod_GetSymbol(mod, "CreateInstance", 4);
-	osm->DestroyInstance = (DestroyInstance_fp)mod_GetSymbol(mod, "DestroyInstance", 8);
-	osm->CallInstanceEvent = (CallInstanceEvent_fp)mod_GetSymbol(mod, "CallInstanceEvent", 16);
-	osm->SaveRestoreState = (SaveRestoreState_fp)mod_GetSymbol(mod, "SaveRestoreState", 8);
+	if (!osm->bridge)
+	{
+		osm->InitializeDLL = (InitializeDLL_fp)mod_GetSymbol(mod, "InitializeDLL", 4);
+		osm->ShutdownDLL = (ShutdownDLL_fp)mod_GetSymbol(mod, "ShutdownDLL", 0);
+		osm->GetGOScriptID = (GetGOScriptID_fp)mod_GetSymbol(mod, "GetGOScriptID", 8);
+		osm->GetTriggerScriptID = NULL;
+		osm->GetCOScriptList = NULL;
+		osm->CreateInstance = (CreateInstance_fp)mod_GetSymbol(mod, "CreateInstance", 4);
+		osm->DestroyInstance = (DestroyInstance_fp)mod_GetSymbol(mod, "DestroyInstance", 8);
+		osm->CallInstanceEvent = (CallInstanceEvent_fp)mod_GetSymbol(mod, "CallInstanceEvent", 16);
+		osm->SaveRestoreState = (SaveRestoreState_fp)mod_GetSymbol(mod, "SaveRestoreState", 8);
+	}
 
 	osm->flags |= OSIMF_INUSE;
 	osm->module_name = mem_strdup(basename);
@@ -924,13 +1047,13 @@ int Osiris_LoadGameModule(char* module_name)
 #endif
 
 	//make sure all of the functions imported ok
-	if (!osm->InitializeDLL ||
+	if (!osm->bridge && (!osm->InitializeDLL ||
 		!osm->ShutdownDLL ||
 		!osm->GetGOScriptID ||
 		!osm->CreateInstance ||
 		!osm->DestroyInstance ||
 		!osm->SaveRestoreState ||
-		!osm->CallInstanceEvent)
+		!osm->CallInstanceEvent))
 	{
 		//there was an error importing a function
 		mprintf((0, "OSIRIS: Osiris_LoadGameModule(%s) couldn't import function.\n", basename));
@@ -939,7 +1062,8 @@ int Osiris_LoadGameModule(char* module_name)
 		if (osm->module_name)
 			mem_free(osm->module_name);
 		osm->module_name = NULL;
-		mod_FreeModule(mod);
+		if (mod->handle)
+			mod_FreeModule(mod);
 		return -3;
 	}
 
@@ -972,7 +1096,7 @@ int Osiris_LoadGameModule(char* module_name)
 	Osiris_module_init.module_identifier = loaded_id;
 
 	//when we get to this point we nearly have a loaded module, we just need to initialize it
-	if (!osm->InitializeDLL(&Osiris_module_init))
+	if (!OsirisModuleInitialize(osm, &Osiris_module_init))
 	{
 		//there was an error initializing the module
 		mprintf((0, "OSIRIS: Osiris_LoadGameModule(%s) error initializing module.\n", basename));
@@ -985,7 +1109,10 @@ int Osiris_LoadGameModule(char* module_name)
 		if (osm->module_name)
 			mem_free(osm->module_name);
 		osm->module_name = NULL;
-		mod_FreeModule(mod);
+		if (mod->handle)
+			mod_FreeModule(mod);
+		delete osm->bridge;
+		osm->bridge = NULL;
 		return -2;
 	}
 
@@ -1247,7 +1374,7 @@ bool Osiris_BindScriptsToObject(object* obj)
 			os = obj->osiris_script;
 
 			//we have the module loaded for the object, now we need to setup it's default script
-			gos_id = OSIRIS_loaded_modules[dll_id].GetGOScriptID(page_name, isdoor);
+			gos_id = OsirisModuleGetGOScriptID(&OSIRIS_loaded_modules[dll_id], page_name, isdoor);
 
 			if (gos_id == -1) {
 				//the default script for this object does not exist in the dll set for it
@@ -1259,7 +1386,7 @@ bool Osiris_BindScriptsToObject(object* obj)
 
 				//we now have the GOS ID for the script.  All future communication with the default script-dll is
 				//to use this GOS ID.  Now try to create an instance of the object.  Hopefully we have enough memory.
-				gos_instance = OSIRIS_loaded_modules[dll_id].CreateInstance(gos_id);
+				gos_instance = OsirisModuleCreateInstance(&OSIRIS_loaded_modules[dll_id], gos_id);
 				if (!gos_instance) {
 					//we had an error obtaining the instance of the GOS...ugh
 					mprintf((0, "OSIRIS: Unable to create GOS instance for (%s)\n", page_name));
@@ -1314,7 +1441,7 @@ bool Osiris_BindScriptsToObject(object* obj)
 				//this script can have a GOS in the level script
 				ASSERT(page_name);
 
-				gos_id = OSIRIS_loaded_modules[dll_id].GetGOScriptID(page_name, isdoor);
+				gos_id = OsirisModuleGetGOScriptID(&OSIRIS_loaded_modules[dll_id], page_name, isdoor);
 				if (gos_id != -1)
 				{
 					if (!obj->osiris_script)
@@ -1336,7 +1463,7 @@ bool Osiris_BindScriptsToObject(object* obj)
 					os = obj->osiris_script;
 
 					//ok, the level dll has a script for us
-					gos_instance = OSIRIS_loaded_modules[dll_id].CreateInstance(gos_id);
+					gos_instance = OsirisModuleCreateInstance(&OSIRIS_loaded_modules[dll_id], gos_id);
 					if (!gos_instance)
 					{
 						//we had an error obtaining the instance of the GOS...ick
@@ -1402,7 +1529,7 @@ bool Osiris_BindScriptsToObject(object* obj)
 						}
 						os = obj->osiris_script;
 
-						gos_instance = OSIRIS_loaded_modules[dll_id].CreateInstance(gos_id);
+						gos_instance = OsirisModuleCreateInstance(&OSIRIS_loaded_modules[dll_id], gos_id);
 						if (!gos_instance)
 						{
 							//we had an error obtaining the instance of the COS...doh!
@@ -1461,7 +1588,7 @@ bool Osiris_BindScriptsToObject(object* obj)
 			if (OSIRIS_loaded_modules[dll_id].flags & OSIMF_INUSE)
 			{
 				//check first for a GOS
-				gos_id = OSIRIS_loaded_modules[dll_id].GetGOScriptID(page_name, isdoor);
+				gos_id = OsirisModuleGetGOScriptID(&OSIRIS_loaded_modules[dll_id], page_name, isdoor);
 				if (gos_id != -1)
 				{
 					if (!obj->osiris_script)
@@ -1483,7 +1610,7 @@ bool Osiris_BindScriptsToObject(object* obj)
 					os = obj->osiris_script;
 
 					//ok, the mission dll has a script for us
-					gos_instance = OSIRIS_loaded_modules[dll_id].CreateInstance(gos_id);
+					gos_instance = OsirisModuleCreateInstance(&OSIRIS_loaded_modules[dll_id], gos_id);
 					if (!gos_instance)
 					{
 						//we had an error obtaining the instance of the GOS...ick
@@ -1594,7 +1721,8 @@ void Osiris_DetachScriptsFromObject(object* obj)
 		if (OSIRIS_loaded_modules[dll_id].flags & OSIMF_INUSE)
 		{
 
-			OSIRIS_loaded_modules[dll_id].DestroyInstance(os->default_script.script_id, os->default_script.script_instance);
+			OsirisModuleDestroyInstance(&OSIRIS_loaded_modules[dll_id], os->default_script.script_id,
+				os->default_script.script_instance);
 
 			//now decrement the dll's count
 			Osiris_UnloadModule(dll_id);
@@ -1637,7 +1765,8 @@ void Osiris_DetachScriptsFromObject(object* obj)
 
 		ASSERT(OSIRIS_loaded_modules[dll_id].flags & OSIMF_INUSE);
 		if (OSIRIS_loaded_modules[dll_id].flags & OSIMF_INUSE)
-			OSIRIS_loaded_modules[dll_id].DestroyInstance(os->level_script.script_id, os->level_script.script_instance);
+			OsirisModuleDestroyInstance(&OSIRIS_loaded_modules[dll_id], os->level_script.script_id,
+				os->level_script.script_instance);
 
 		os->level_script.DLLID = 0;
 		os->level_script.script_id = 0;
@@ -1676,7 +1805,8 @@ void Osiris_DetachScriptsFromObject(object* obj)
 
 		ASSERT(OSIRIS_loaded_modules[dll_id].flags & OSIMF_INUSE);
 		if (OSIRIS_loaded_modules[dll_id].flags & OSIMF_INUSE)
-			OSIRIS_loaded_modules[dll_id].DestroyInstance(os->custom_script.script_id, os->custom_script.script_instance);
+			OsirisModuleDestroyInstance(&OSIRIS_loaded_modules[dll_id], os->custom_script.script_id,
+				os->custom_script.script_instance);
 
 		os->custom_script.DLLID = 0;
 		os->custom_script.script_id = 0;
@@ -1715,7 +1845,8 @@ void Osiris_DetachScriptsFromObject(object* obj)
 
 		ASSERT(OSIRIS_loaded_modules[dll_id].flags & OSIMF_INUSE);
 		if (OSIRIS_loaded_modules[dll_id].flags & OSIMF_INUSE)
-			OSIRIS_loaded_modules[dll_id].DestroyInstance(os->mission_script.script_id, os->mission_script.script_instance);
+			OsirisModuleDestroyInstance(&OSIRIS_loaded_modules[dll_id], os->mission_script.script_id,
+				os->mission_script.script_instance);
 
 		os->mission_script.DLLID = 0;
 		os->mission_script.script_id = 0;
@@ -1771,11 +1902,11 @@ bool Osiris_CallLevelEvent(int event, tOSIRISEventInfo* data)
 			data->me_handle = OBJECT_HANDLE_NONE;	//its a level script!...no me
 			short ret;
 
-			ret = OSIRIS_loaded_modules[dll_id].CallInstanceEvent(0, instance, event, data);
+			ret = OsirisModuleCallInstanceEvent(&OSIRIS_loaded_modules[dll_id], 0, instance, event, data);
 			if (aux_event != -1)
 			{
 				//call child event
-				ret = OSIRIS_loaded_modules[dll_id].CallInstanceEvent(0, instance, aux_event, data);
+				ret = OsirisModuleCallInstanceEvent(&OSIRIS_loaded_modules[dll_id], 0, instance, aux_event, data);
 			}
 
 			return (bool)((ret & CONTINUE_DEFAULT) != 0);
@@ -1830,12 +1961,12 @@ bool Osiris_CallTriggerEvent(int trignum, int event, tOSIRISEventInfo* ei)
 
 	if (instance)
 	{
-		short ret = OSIRIS_loaded_modules[dll_id].CallInstanceEvent(script_id, instance, event, ei);
+		short ret = OsirisModuleCallInstanceEvent(&OSIRIS_loaded_modules[dll_id], script_id, instance, event, ei);
 
 		if (aux_event != -1)
 		{
 			//call child event
-			ret = OSIRIS_loaded_modules[dll_id].CallInstanceEvent(script_id, instance, aux_event, ei);
+			ret = OsirisModuleCallInstanceEvent(&OSIRIS_loaded_modules[dll_id], script_id, instance, aux_event, ei);
 		}
 
 		return (bool)((ret & CONTINUE_DEFAULT) != 0);
@@ -1965,7 +2096,7 @@ bool Osiris_CallEvent(object* obj, int event, tOSIRISEventInfo* data)
 		if (aux_event != -1)
 		{
 			//call the child event
-			OSIRIS_loaded_modules[dll_id].CallInstanceEvent(os->custom_script.script_id,
+			OsirisModuleCallInstanceEvent(&OSIRIS_loaded_modules[dll_id], os->custom_script.script_id,
 				os->custom_script.script_instance,
 				aux_event,
 				data);
@@ -1975,7 +2106,7 @@ bool Osiris_CallEvent(object* obj, int event, tOSIRISEventInfo* data)
 		{
 
 			//call the event
-			ret = OSIRIS_loaded_modules[dll_id].CallInstanceEvent(os->custom_script.script_id,
+			ret = OsirisModuleCallInstanceEvent(&OSIRIS_loaded_modules[dll_id], os->custom_script.script_id,
 				os->custom_script.script_instance,
 				event,
 				data);
@@ -1992,14 +2123,14 @@ bool Osiris_CallEvent(object* obj, int event, tOSIRISEventInfo* data)
 			if (aux_event != -1)
 			{
 				//call the child event
-				OSIRIS_loaded_modules[dll_id].CallInstanceEvent(os->level_script.script_id,
+				OsirisModuleCallInstanceEvent(&OSIRIS_loaded_modules[dll_id], os->level_script.script_id,
 					os->level_script.script_instance,
 					aux_event,
 					data);
 			}
 
 			//call the event
-			ret = OSIRIS_loaded_modules[dll_id].CallInstanceEvent(os->level_script.script_id,
+			ret = OsirisModuleCallInstanceEvent(&OSIRIS_loaded_modules[dll_id], os->level_script.script_id,
 				os->level_script.script_instance,
 				event,
 				data);
@@ -2016,14 +2147,14 @@ bool Osiris_CallEvent(object* obj, int event, tOSIRISEventInfo* data)
 			if (aux_event != -1)
 			{
 				//call the child event
-				OSIRIS_loaded_modules[dll_id].CallInstanceEvent(os->mission_script.script_id,
+				OsirisModuleCallInstanceEvent(&OSIRIS_loaded_modules[dll_id], os->mission_script.script_id,
 					os->mission_script.script_instance,
 					aux_event,
 					data);
 			}
 
 			//call the event
-			ret = OSIRIS_loaded_modules[dll_id].CallInstanceEvent(os->mission_script.script_id,
+			ret = OsirisModuleCallInstanceEvent(&OSIRIS_loaded_modules[dll_id], os->mission_script.script_id,
 				os->mission_script.script_instance,
 				event,
 				data);
@@ -2040,14 +2171,14 @@ bool Osiris_CallEvent(object* obj, int event, tOSIRISEventInfo* data)
 			if (aux_event != -1)
 			{
 				//call the child event
-				OSIRIS_loaded_modules[dll_id].CallInstanceEvent(os->default_script.script_id,
+				OsirisModuleCallInstanceEvent(&OSIRIS_loaded_modules[dll_id], os->default_script.script_id,
 					os->default_script.script_instance,
 					aux_event,
 					data);
 			}
 
 			//call the event
-			ret = OSIRIS_loaded_modules[dll_id].CallInstanceEvent(os->default_script.script_id,
+			ret = OsirisModuleCallInstanceEvent(&OSIRIS_loaded_modules[dll_id], os->default_script.script_id,
 				os->default_script.script_instance,
 				event,
 				data);
@@ -2508,7 +2639,7 @@ void Osiris_SaveSystemState(CFILE* file)
 			int saved_file_pos = cftell(file);
 			cf_WriteInt(file, 0);
 
-			int global_size = OSIRIS_loaded_modules[i].SaveRestoreState(file, 1);
+			int global_size = OsirisModuleSaveRestoreState(&OSIRIS_loaded_modules[i], file, 1);
 			int restore_file_pos = cftell(file);
 
 			//now jump back and fill in the correct global data size, than jump back
@@ -2655,7 +2786,7 @@ bool Osiris_RestoreSystemState(CFILE* file)
 		}
 		else
 		{
-			OSIRIS_loaded_modules[module_handle].SaveRestoreState(file, 0);
+			OsirisModuleSaveRestoreState(&OSIRIS_loaded_modules[module_handle], file, 0);
 		}
 
 		cfseek(file, next_file_pos, SEEK_SET);	//this ensures that we keep track in the file, even if the
@@ -2845,6 +2976,20 @@ void Osiris_FreeMemory(void* mem_ptr)
 	mem_free(tofree);
 }
 
+bool Osiris_GetMemoryInfo(void* mem_ptr, tOSIRISMEMCHUNK* chunk)
+{
+	for (tOSIRISMEMNODE* node = Osiris_mem_root; node; node = node->next)
+	{
+		if (node->memory == mem_ptr)
+		{
+			if (chunk)
+				*chunk = node->chunk_id;
+			return true;
+		}
+	}
+	return false;
+}
+
 bool compareid(tOSIRISSCRIPTID* sid, tOSIRISSCRIPTID* oid)
 {
 	if (sid->type == oid->type)
@@ -2864,6 +3009,14 @@ bool compareid(tOSIRISSCRIPTID* sid, tOSIRISSCRIPTID* oid)
 //		Frees all memory allocated for a given script
 void Osiris_FreeMemoryForScript(tOSIRISSCRIPTID* sid)
 {
+	for (int module = 0; module < MAX_LOADED_MODULES; ++module)
+	{
+		if ((OSIRIS_loaded_modules[module].flags & OSIMF_INUSE) &&
+			OSIRIS_loaded_modules[module].bridge)
+		{
+			OSIRIS_loaded_modules[module].bridge->ForgetMemoryForScript(sid);
+		}
+	}
 	if (!Osiris_mem_root)
 		return;
 	bool done = false;
@@ -3048,7 +3201,7 @@ void _extractscript(char* script, char* tempfilename)
 int _getfreeextractslot(void)
 {
 	//find a free slot
-	for (int q = 0; q < MAX_LOADED_MODULES; q++)
+	for (int q = 0; q < MAX_EXTRACTED_SCRIPTS; q++)
 	{
 		if (!(OSIRIS_Extracted_scripts[q].flags & OESF_USED))
 			return q;
@@ -3198,7 +3351,7 @@ void Osiris_ClearExtractedScripts(bool mission_only)
 	if (!OSIRIS_Extracted_script_dir)
 		return;
 
-	for (int i = 0; i < MAX_LOADED_MODULES; i++)
+	for (int i = 0; i < MAX_EXTRACTED_SCRIPTS; i++)
 	{
 		if (OSIRIS_Extracted_scripts[i].flags & OESF_USED)
 		{

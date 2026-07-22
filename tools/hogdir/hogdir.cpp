@@ -30,6 +30,7 @@ SOFTWARE.
 #include <wchar.h>
 #include <vector>
 #include <stdexcept>
+#include <algorithm>
 
 constexpr int FILENAME_LEN = 36;
 constexpr int DIRENTRY_LEN = FILENAME_LEN + 12;
@@ -53,6 +54,84 @@ void write_uint32_t(FILE* fp, uint32_t value)
 	buffer[3] = (value >> 24) & 255;
 
 	fwrite(buffer, 1, 4, fp);
+}
+
+uint32_t read_uint32_t(FILE* fp)
+{
+	uint8_t buffer[4];
+	if (fread(buffer, 1, sizeof(buffer), fp) != sizeof(buffer))
+		throw std::runtime_error("Unexpected end of HOG file");
+	return uint32_t(buffer[0]) | (uint32_t(buffer[1]) << 8) |
+		(uint32_t(buffer[2]) << 16) | (uint32_t(buffer[3]) << 24);
+}
+
+void extract_hog(const char* archive, const char* output_directory)
+{
+	FILE* input = fopen(archive, "rb");
+	if (!input)
+		throw std::runtime_error("Cannot open input HOG file");
+	try
+	{
+		char signature[4];
+		if (fread(signature, 1, sizeof(signature), input) != sizeof(signature) ||
+			memcmp(signature, sig, sizeof(signature)) != 0)
+			throw std::runtime_error("Input is not a HOG2 archive");
+		const uint32_t count = read_uint32_t(input);
+		const uint32_t data_offset = read_uint32_t(input);
+		if (count > 100000 || data_offset < 68 + count * DIRENTRY_LEN)
+			throw std::runtime_error("Invalid HOG2 directory");
+		if (fseek(input, 56, SEEK_CUR) != 0)
+			throw std::runtime_error("Invalid HOG2 header");
+
+		struct archive_entry { std::string name; uint32_t size; };
+		std::vector<archive_entry> entries;
+		entries.reserve(count);
+		for (uint32_t i = 0; i < count; ++i)
+		{
+			char name[FILENAME_LEN + 1] = {};
+			if (fread(name, 1, FILENAME_LEN, input) != FILENAME_LEN)
+				throw std::runtime_error("Truncated HOG2 directory");
+			read_uint32_t(input);
+			const uint32_t size = read_uint32_t(input);
+			read_uint32_t(input);
+			name[FILENAME_LEN] = 0;
+			if (!name[0] || strchr(name, '/') || strchr(name, '\\') || strstr(name, ".."))
+				throw std::runtime_error("Unsafe filename in HOG2 directory");
+			entries.push_back({name, size});
+		}
+		if (fseek(input, static_cast<long>(data_offset), SEEK_SET) != 0)
+			throw std::runtime_error("Invalid HOG2 data offset");
+
+		const std::filesystem::path destination(output_directory);
+		std::filesystem::create_directories(destination);
+		std::vector<uint8_t> buffer(1024 * 1024);
+		for (const auto& entry : entries)
+		{
+			const auto output_path = destination / entry.name;
+			FILE* output = fopen(output_path.u8string().c_str(), "wb");
+			if (!output)
+				throw std::runtime_error("Cannot create extracted file");
+			uint32_t remaining = entry.size;
+			while (remaining)
+			{
+				const size_t chunk = (std::min)(static_cast<size_t>(remaining), buffer.size());
+				if (fread(buffer.data(), 1, chunk, input) != chunk ||
+					fwrite(buffer.data(), 1, chunk, output) != chunk)
+				{
+					fclose(output);
+					throw std::runtime_error("Failed while extracting HOG2 data");
+				}
+				remaining -= static_cast<uint32_t>(chunk);
+			}
+			fclose(output);
+		}
+		fclose(input);
+	}
+	catch (...)
+	{
+		fclose(input);
+		throw;
+	}
 }
 
 void generate_header(std::vector<fileinfo_data>& files)
@@ -145,9 +224,23 @@ void add_dir(const char* directory)
 
 int main(int argc, char** argv)
 {
+	if (argc == 4 && strcmp(argv[1], "--extract") == 0)
+	{
+		try
+		{
+			extract_hog(argv[2], argv[3]);
+			return 0;
+		}
+		catch (const std::runtime_error& err)
+		{
+			fprintf(stderr, "Error extracting %s:\n%s\n", argv[2], err.what());
+			return 1;
+		}
+	}
 	if (argc < 3)
 	{
-		printf("usage: hogdir [output file] [source dir]\n");
+		printf("usage: hogdir [output file] [source dir]\n"
+			"       hogdir --extract [input file] [output dir]\n");
 		return 0;
 	}
 

@@ -122,6 +122,7 @@ ENDIF()
 
 #Hogdir stuff
 add_subdirectory(tools)
+add_subdirectory(osiris_bridge)
 add_subdirectory(hogfiles)
 
 ADD_SUBDIRECTORY (AudioEncode)

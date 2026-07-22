@@ -1,0 +1,8 @@
+NAME                    Osiris Bridge ABI Test
+NUMLEVELS               1
+AUTHOR                  PiccuEngine
+DESCRIPTION             Synthetic x86/x64 Osiris bridge compatibility test
+SINGLE                  YES
+
+LEVEL                   1
+MINE                    BridgeTest.d3l
