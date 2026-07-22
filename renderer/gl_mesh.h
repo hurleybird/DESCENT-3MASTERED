@@ -109,6 +109,7 @@ void rendTEMP_UnbindVertexBuffer();
 void rendTEMP_ClearShaderBinding();
 bool rendTEMP_DepthClampEnabled();
 void rendTEMP_SetDepthClamp(bool state);
+void rendTEMP_SetColorWriteMask(bool state);
 
 struct rendTEMP_ScissorState
 {

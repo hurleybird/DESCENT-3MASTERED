@@ -343,6 +343,12 @@ void rendTEMP_SetDepthClamp(bool state)
 		glDisable(GL_DEPTH_CLAMP);
 }
 
+void rendTEMP_SetColorWriteMask(bool state)
+{
+	const GLboolean enabled = state ? GL_TRUE : GL_FALSE;
+	glColorMask(enabled, enabled, enabled, enabled);
+}
+
 void rendTEMP_SaveScissorState(rendTEMP_ScissorState* state)
 {
 	state->enabled = glIsEnabled(GL_SCISSOR_TEST) == GL_TRUE;

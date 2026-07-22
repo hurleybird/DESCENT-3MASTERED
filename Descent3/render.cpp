@@ -571,6 +571,31 @@ struct clip_wnd
 
 static clip_wnd Room_render_windows[MAX_ROOMS + MAX_PALETTE_ROOMS];
 static bool Room_render_window_valid[MAX_ROOMS + MAX_PALETTE_ROOMS];
+static std::vector<ubyte> Room_depth_prepass_faces[MAX_ROOMS];
+static bool Room_depth_prepass_color_pass_active = false;
+
+static bool BeginRoomRenderScissor(int roomnum, int viewer_roomnum,
+	rendTEMP_ScissorState& state)
+{
+	if (!rend_CanUseNewrender() || !Room_render_window_valid[roomnum] ||
+		roomnum == viewer_roomnum)
+	{
+		return false;
+	}
+
+	const clip_wnd& room_window = Room_render_windows[roomnum];
+	const int padding = 2;
+	const int left = std::max(0, (int)std::floor(room_window.left) - padding);
+	const int top = std::max(0, (int)std::floor(room_window.top) - padding);
+	const int right = std::min(Render_width,
+		(int)std::ceil(room_window.right) + padding);
+	const int bottom = std::min(Render_height,
+		(int)std::ceil(room_window.bot) + padding);
+	rendTEMP_SaveScissorState(&state);
+	rendTEMP_SetScissorRect(left, top, right, bottom,
+		Render_width, Render_height);
+	return true;
+}
 
 static void AccumulateRoomRenderWindow(int roomnum, const clip_wnd& wnd)
 {
@@ -4309,6 +4334,29 @@ public:
 
 			if (!batch.retained_faces.empty())
 			{
+				bool depth_prepassed = Room_depth_prepass_color_pass_active &&
+					batch.retained_room != nullptr;
+				if (depth_prepassed)
+				{
+					const int roomnum = (int)(batch.retained_room - Rooms);
+					depth_prepassed = roomnum >= 0 && roomnum < MAX_ROOMS;
+					if (depth_prepassed)
+					{
+						const std::vector<ubyte>& prepassed =
+							Room_depth_prepass_faces[roomnum];
+						for (int facenum : batch.retained_faces)
+						{
+							if (facenum < 0 || facenum >= (int)prepassed.size() ||
+								!prepassed[facenum])
+							{
+								depth_prepassed = false;
+								break;
+							}
+						}
+					}
+				}
+				if (depth_prepassed)
+					rend_SetZBufferWriteMask(0);
 				rend_BindBitmap(batch.key.bitmap_handle);
 				if (batch.key.overlay_type != OT_NONE)
 					rend_BindLightmap(batch.key.overlay_map);
@@ -4332,6 +4380,8 @@ public:
 					batch.key.clip_codes);
 				if (per_pixel_light_count > 0)
 					rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
+				if (depth_prepassed)
+					rend_SetZBufferWriteMask(1);
 			}
 
 			if (!batch.faces.empty())
@@ -4580,6 +4630,85 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face, false,
 		face_cc.cc_or & RETAINED_ROOM_CLIP_CODES);
 	return true;
+}
+
+static void RenderRoomDepthPrepass(room* rp)
+{
+	const int roomnum = rp ? (int)(rp - Rooms) : -1;
+	if (roomnum < 0 || roomnum >= MAX_ROOMS || !rp->used)
+		return;
+
+	std::vector<ubyte>& prepassed = Room_depth_prepass_faces[roomnum];
+	prepassed.assign(rp->num_faces, 0);
+	if (rp->num_faces <= 0)
+		return;
+
+	if (rp->wpb_index == -1)
+	{
+		rp->wpb_index = Global_buffer_index;
+		RotateRoomPoints(rp, rp->verts);
+		Global_buffer_index += rp->num_verts;
+	}
+
+	static constexpr int CLIP_GROUP_COUNT = 8;
+	std::vector<int> groups[CLIP_GROUP_COUNT];
+	for (int facenum = 0; facenum < rp->num_faces; facenum++)
+	{
+		face* fp = &rp->faces[facenum];
+		if (!(fp->flags & FF_VISIBLE) || (fp->flags & FF_NOT_FACING) ||
+			!FaceIsRenderable(rp, fp))
+		{
+			continue;
+		}
+		if (No_render_windows_hack == 1 && fp->portal_num != -1)
+			continue;
+		if ((rp->flags & RF_FOG) && fp->portal_num != -1 &&
+			!(rp->portals[fp->portal_num].flags & PF_RENDER_FACES))
+		{
+			continue;
+		}
+
+		const int bitmap_handle = BaseBitmapHandleForFace(fp);
+		if (bitmap_handle < 0 || GetFaceAlpha(fp, bitmap_handle) != AT_ALWAYS ||
+			!RetainedRoomCanDrawBaseFace(rp, facenum))
+		{
+			continue;
+		}
+
+		ubyte clip_or = 0;
+		ubyte clip_and = 0xff;
+		for (int corner = 0; corner < fp->num_verts; corner++)
+		{
+			const g3Point& point = World_point_buffer[
+				rp->wpb_index + fp->face_verts[corner]];
+			clip_or |= point.p3_codes;
+			clip_and &= point.p3_codes;
+		}
+		if (clip_and)
+			continue;
+		const int clip_group =
+			((clip_or & CC_BEHIND) ? 1 : 0) |
+			((clip_or & CC_OFF_FAR) ? 2 : 0) |
+			((clip_or & CC_OFF_CUSTOM) ? 4 : 0);
+		groups[clip_group].push_back(facenum);
+	}
+
+	for (int group = 0; group < CLIP_GROUP_COUNT; group++)
+	{
+		std::vector<int>& faces = groups[group];
+		if (faces.empty())
+			continue;
+		int clip_codes = 0;
+		if (group & 1) clip_codes |= CC_BEHIND;
+		if (group & 2) clip_codes |= CC_OFF_FAR;
+		if (group & 4) clip_codes |= CC_OFF_CUSTOM;
+		if (RetainedRoomDrawFaces(rp, faces.data(), (int)faces.size(),
+			0, 0.0f, 0.0f, 1.0f, -1, clip_codes, false))
+		{
+			for (int facenum : faces)
+				prepassed[facenum] = 1;
+		}
+	}
 }
 
 //Draw the specified face
@@ -6330,6 +6459,9 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 {
 	PERF_MARKER_SCOPE(called_from_terrain ? "RenderMine.FromTerrain" : "RenderMine.Main");
 	renderer_3d_draw_call_scope room_draw_scope(RENDERER_DRAW_CALL_3D_ROOM);
+	// Mirror rooms are rendered before the main room depth prepass.  Never let
+	// them consume face marks left over from the preceding frame.
+	Room_depth_prepass_color_pass_active = false;
 	if (!called_from_terrain)
 		Deferred_fog_ao_faces.clear();
 #ifdef EDITOR
@@ -6421,6 +6553,38 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 	else
 	{
 		PERF_MARKER_SCOPE("RenderMine.RenderRooms");
+		if (UseHardware && rend_CanUseNewrender() && !In_editor_mode)
+		{
+			PERF_MARKER_SCOPE("RenderMine.RoomDepthPrepass");
+			rend_SetZBufferState(1);
+			rend_SetZBufferWriteMask(1);
+			rend_SetAlphaType(AT_ALWAYS);
+			rend_SetAlphaValue(255);
+			rend_SetLighting(LS_NONE);
+			rend_SetColorModel(CM_MONO);
+			rend_SetOverlayType(OT_NONE);
+			rend_SetTextureType(TT_FLAT);
+			rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
+			rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
+			rendTEMP_SetColorWriteMask(false);
+			// Build depth front-to-back, while the color/effect pass below keeps
+			// the legacy ordering relied on by translucent and glow presentation.
+			for (int nn = 0; nn < N_render_rooms; nn++)
+			{
+				const int roomnum = Render_list[nn];
+				if (roomnum < 0)
+					continue;
+				rendTEMP_ScissorState room_scissor_state = {};
+				const bool use_room_scissor = BeginRoomRenderScissor(
+					roomnum, viewer_roomnum, room_scissor_state);
+				RenderRoomDepthPrepass(&Rooms[roomnum]);
+				if (use_room_scissor)
+					rendTEMP_RestoreScissorState(&room_scissor_state);
+			}
+			rendTEMP_SetColorWriteMask(true);
+			rend_SetZBufferWriteMask(1);
+			Room_depth_prepass_color_pass_active = true;
+		}
 		//Render the list of rooms
 		for (int nn = N_render_rooms - 1; nn >= 0; nn--)
 		{
@@ -6439,22 +6603,8 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 				{
 					ASSERT(Rooms_visited[roomnum] != 255);
 					rendTEMP_ScissorState room_scissor_state = {};
-					const bool use_room_scissor = rend_CanUseNewrender() &&
-						Room_render_window_valid[roomnum] && roomnum != viewer_roomnum;
-					if (use_room_scissor)
-					{
-						const clip_wnd& room_window = Room_render_windows[roomnum];
-						const int padding = 2;
-						const int left = std::max(0, (int)std::floor(room_window.left) - padding);
-						const int top = std::max(0, (int)std::floor(room_window.top) - padding);
-						const int right = std::min(Render_width,
-							(int)std::ceil(room_window.right) + padding);
-						const int bottom = std::min(Render_height,
-							(int)std::ceil(room_window.bot) + padding);
-						rendTEMP_SaveScissorState(&room_scissor_state);
-						rendTEMP_SetScissorRect(left, top, right, bottom,
-							Render_width, Render_height);
-					}
+					const bool use_room_scissor = BeginRoomRenderScissor(
+						roomnum, viewer_roomnum, room_scissor_state);
 					if (Outline_release_mode & 1) {
 						RenderRoomOutline(&Rooms[roomnum]);
 					}
@@ -6467,6 +6617,7 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 				}
 			}
 		}
+		Room_depth_prepass_color_pass_active = false;
 	}
 
 	RenderDeferredFogAOSuppression();
