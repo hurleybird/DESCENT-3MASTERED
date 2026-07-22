@@ -4594,7 +4594,7 @@ void VisEffectMoveOne(vis_effect* vis)
 	if (vis->id == SNOWFLAKE_INDEX)
 	{
 		const bool enhanced = (vis->flags & VF_ENHANCED_SNOW) != 0;
-		if (enhanced != Render_enhanced_snow)
+		if (enhanced != Render_enhanced_weather)
 		{
 			VisEffectSetDeadFlag(vis);
 			return;

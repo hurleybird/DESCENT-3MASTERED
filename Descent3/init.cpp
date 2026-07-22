@@ -406,7 +406,7 @@ void SaveGameSettings()
 	Database->write("RS_motion_vector_debug_preview", Render_preferred_state.motion_vector_debug_preview);
 	Database->write("RS_face_probe", Render_face_probe);
 	Database->write("RS_soft_vis_effects", Render_soft_vis_effects);
-	Database->write("RS_enhanced_snow", Render_enhanced_snow);
+	Database->write("RS_enhanced_weather", Render_enhanced_weather);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	Database->write("RS_combined_motion_blur", Render_preferred_state.combined_motion_blur);
 	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_strength",
@@ -622,7 +622,7 @@ void LoadGameSettings()
 	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_debug_preview = false;
 	Render_soft_vis_effects = false;
-	Render_enhanced_snow = false;
+	Render_enhanced_weather = false;
 	ConfigResetPerPixelSpecularSettings();
 	Render_preferred_state.pixel_motion_blur_strength = 0.0f;
 	Render_preferred_state.combined_motion_blur = false;
@@ -937,11 +937,12 @@ void LoadGameSettings()
 	Database->read("RS_motion_vector_debug_preview", &Render_preferred_state.motion_vector_debug_preview);
 	Database->read("RS_face_probe", &Render_face_probe);
 	Database->read("RS_soft_vis_effects", &Render_soft_vis_effects);
-	Database->read("RS_enhanced_snow", &Render_enhanced_snow);
-	if (FindArg("-enhanced-snow"))
-		Render_enhanced_snow = true;
-	else if (FindArg("-legacy-snow"))
-		Render_enhanced_snow = false;
+	Database->read("RS_enhanced_snow", &Render_enhanced_weather);
+	Database->read("RS_enhanced_weather", &Render_enhanced_weather);
+	if (FindArg("-enhanced-weather") || FindArg("-enhanced-snow"))
+		Render_enhanced_weather = true;
+	else if (FindArg("-legacy-weather") || FindArg("-legacy-snow"))
+		Render_enhanced_weather = false;
 	READ_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	if (Render_preferred_state.pixel_motion_blur_strength < 0.0f)
 		Render_preferred_state.pixel_motion_blur_strength = 0.0f;
@@ -1228,7 +1229,7 @@ void LoadGameSettings()
 		Render_hires_skies = true;
 
 	AutomatedCaptureLog(
-		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d msaa=%u ssaa=%u filtering=%d mipping=%d anisotropy=%u per_pixel=%d bloom=%d ao=%d ao_resolution=%u ao_overscan=%u motion_blur=%d combined_blur=%d soft_particles=%d enhanced_snow=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
+		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d msaa=%u ssaa=%u filtering=%d mipping=%d anisotropy=%u per_pixel=%d bloom=%d ao=%d ao_resolution=%u ao_overscan=%u motion_blur=%d combined_blur=%d soft_particles=%d enhanced_weather=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
 		Game_window_res_width, Game_window_res_height, Game_fullscreen ? 1 : 0,
 		DesiredOpenGLProfile, GetFrameLimitFps(),
 		(unsigned)Render_preferred_state.msaa_samples,
@@ -1244,7 +1245,7 @@ void LoadGameSettings()
 		(int)Use_motion_blur,
 		Render_preferred_state.combined_motion_blur ? 1 : 0,
 		Render_soft_vis_effects ? 1 : 0,
-		Render_enhanced_snow ? 1 : 0,
+		Render_enhanced_weather ? 1 : 0,
 		(int)Detail_settings.Dynamic_lighting,
 		Detail_settings.Specular_lighting ? 1 : 0,
 		Detail_settings.Mirrored_surfaces ? 1 : 0,

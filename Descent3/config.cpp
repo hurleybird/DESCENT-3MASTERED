@@ -110,7 +110,7 @@ float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
 bool Render_face_probe = false;
 bool Render_soft_vis_effects = false;
-bool Render_enhanced_snow = false;
+bool Render_enhanced_weather = false;
 bool Render_hires_skies = false;
 // bool Render_split_specular_textures = false;
 bool Render_split_specular_textures = true;
@@ -1566,7 +1566,7 @@ struct video_menu
 		}
 		if (enhanced_snow && sheet->HasChanged(enhanced_snow))
 		{
-			Render_enhanced_snow = *enhanced_snow;
+			Render_enhanced_weather = *enhanced_snow;
 			ui_changed = true;
 		}
 		if (hires_skies && sheet->HasChanged(hires_skies))
@@ -1704,7 +1704,7 @@ struct video_menu
 			ConfigCanUsePerPixelLighting() && Render_preferred_state.per_pixel_lighting);
 		bloom_enabled = sheet->AddLongCheckBox("Bloom", Render_preferred_state.bloom_enabled);
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
-		enhanced_snow = sheet->AddLongCheckBox("Enhanced snow", Render_enhanced_snow);
+		enhanced_snow = sheet->AddLongCheckBox("Enhanced weather", Render_enhanced_weather);
 
 		sheet->NewGroup("Debug", 0, 224);
 		hires_skies = sheet->AddLongCheckBox("Hi-res skies", Render_hires_skies);
@@ -1810,7 +1810,7 @@ struct video_menu
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
 		if (enhanced_snow)
-			Render_enhanced_snow = *enhanced_snow;
+			Render_enhanced_weather = *enhanced_snow;
 		if (hires_skies)
 			Render_hires_skies = *hires_skies;
 		if (antialiasing)

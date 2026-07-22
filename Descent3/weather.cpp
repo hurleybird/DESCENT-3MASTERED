@@ -30,6 +30,9 @@
 #include "hlsoundlib.h"
 #include "sounds.h"
 #include "args.h"
+#include "findintersection.h"
+#include "fireball_external.h"
+#include "weapon.h"
 
 #include <stdlib.h>
 #include <math.h>
@@ -43,6 +46,9 @@ static std::vector<enhanced_snow_particle> Enhanced_snow_particles;
 int ThunderA_sound_handle = -1;
 int ThunderB_sound_handle = -1;
 
+static void ApplyEnhancedWeatherGravity(vector* pos, vector* velocity, float strength_scale);
+static bool FindEnhancedWeatherSurfaceHit(const vector* start, const vector* end,
+	vector* hit_pos, vector* hit_normal, int* hit_room);
 
 // resets the weather so there is nothing happening
 void ResetWeather()
@@ -147,6 +153,8 @@ void DoRainEffect()
 			pos += z * mat.fvec;
 
 			// Create falling rain
+			vector rain_velocity = { 0.0f, -620.0f, 0.0f };
+			ApplyEnhancedWeatherGravity(&pos, &rain_velocity, 2.0f);
 			int visnum = VisEffectCreate(VIS_FIREBALL, FADING_LINE_INDEX, Viewer_object->roomnum, &pos);
 			if (visnum >= 0)
 			{
@@ -156,7 +164,10 @@ void DoRainEffect()
 				vis->lifetime = life;
 				vis->lighting_color = GR_RGB16(200, 200, 255);
 				vis->end_pos = pos;
-				vis->end_pos.y += 20;
+				vector streak = rain_velocity;
+				if (vm_NormalizeVectorFast(&streak) <= 0.0f)
+					streak = { 0.0f, -1.0f, 0.0f };
+				vis->end_pos -= streak * 20.0f;
 				vis->flags |= VF_WINDSHIELD_EFFECT;
 				vis->pos -= (Viewer_object->mtype.phys_info.velocity / 2);
 			}
@@ -185,11 +196,27 @@ void DoRainEffect()
 				if (pos.x < 0 || pos.x >= TERRAIN_WIDTH * TERRAIN_SIZE)
 					continue;
 
-				// Create puddle drops on the terrain.
+				// Create puddle drops on the terrain or, with enhanced weather,
+				// on visible polymodels that intercept the same fall path.
 				vector norm;
 				float ypos = GetTerrainGroundPoint(&pos, &norm);
+				vector hit_pos, hit_norm;
+				int hit_room = Viewer_object->roomnum;
+				vector fall_start = pos;
+				fall_start.y += 96.0f;
+				vector fall_end = pos;
+				fall_end.y = ypos - 4.0f;
+				const bool hit_weather_surface = FindEnhancedWeatherSurfaceHit(&fall_start,
+					&fall_end, &hit_pos, &hit_norm, &hit_room);
+				if (hit_weather_surface)
+				{
+					pos = hit_pos + hit_norm * 0.03f;
+					norm = hit_norm;
+				}
+				else
 				pos.y = ypos;
-				int visnum = VisEffectCreate(VIS_FIREBALL, PUDDLEDROP_INDEX, Viewer_object->roomnum, &pos);
+				int visnum = VisEffectCreate(VIS_FIREBALL, PUDDLEDROP_INDEX,
+					hit_weather_surface ? hit_room : Viewer_object->roomnum, &pos);
 				if (visnum >= 0)
 				{
 					vis_effect* vis = &VisEffects[visnum];
@@ -223,6 +250,101 @@ static float SnowClampIntensity(float intensity)
 	return intensity;
 }
 
+static void ApplyEnhancedWeatherGravity(vector* pos, vector* velocity, float strength_scale)
+{
+	if (!Render_enhanced_weather || !pos || !velocity)
+		return;
+
+	for (int i = 0; i <= Highest_object_index; ++i)
+	{
+		object* obj = &Objects[i];
+		if (obj->type != OBJ_FIREBALL || obj->id != GRAVITY_FIELD_INDEX)
+			continue;
+		if (obj->flags & OF_DEAD)
+			continue;
+
+		const float radius = obj->ctype.blast_info.max_size * 2.2f;
+		if (radius <= 0.0f)
+			continue;
+
+		vector delta = obj->pos - *pos;
+		const float dist = vm_GetMagnitudeFast(&delta);
+		if (dist <= 0.01f || dist >= radius)
+			continue;
+
+		delta /= dist;
+		const float falloff = 1.0f - (dist / radius);
+		const float acceleration = 760.0f * falloff * falloff * strength_scale;
+		*velocity += delta * (acceleration * Frametime);
+	}
+}
+
+static bool FindEnhancedWeatherSurfaceHit(const vector* start, const vector* end,
+	vector* hit_pos, vector* hit_normal, int* hit_room)
+{
+	if (!Render_enhanced_weather || !Viewer_object || !start || !end)
+		return false;
+
+	vector query_start = *start;
+	vector query_end = *end;
+	fvi_query fq = {};
+	fvi_info hit_info = {};
+	fq.p0 = &query_start;
+	fq.p1 = &query_end;
+	fq.startroom = Viewer_object->roomnum;
+	fq.rad = 0.0f;
+	fq.thisobjnum = -1;
+	fq.ignore_obj_list = NULL;
+	fq.flags = FQ_CHECK_OBJS | FQ_IGNORE_TERRAIN | FQ_IGNORE_WEAPONS |
+		FQ_IGNORE_POWERUPS | FQ_OBJ_BACKFACE | FQ_BACKFACE | FQ_NO_RELINK;
+
+	const int fate = fvi_FindIntersection(&fq, &hit_info);
+	if (fate == HIT_WALL || fate == HIT_BACKFACE || fate == HIT_CORNER_WALL ||
+		fate == HIT_EDGE_WALL || fate == HIT_FACE_WALL)
+	{
+		if (hit_pos)
+			*hit_pos = hit_info.hit_pnt;
+		if (hit_normal)
+		{
+			*hit_normal = hit_info.hit_wallnorm[0];
+			if (vm_NormalizeVectorFast(hit_normal) <= 0.0f)
+				*hit_normal = { 0.0f, 1.0f, 0.0f };
+		}
+		if (hit_room)
+			*hit_room = hit_info.hit_room >= 0 ? hit_info.hit_room : Viewer_object->roomnum;
+		return true;
+	}
+	if (fate != HIT_OBJECT && fate != HIT_SPHERE_2_POLY_OBJECT)
+		return false;
+
+	const int num_hits = hit_info.num_hits > 0 ? hit_info.num_hits : 1;
+	for (int i = 0; i < num_hits && i < MAX_HITS; ++i)
+	{
+		const int objnum = hit_info.hit_object[i];
+		if (objnum < 0 || objnum > Highest_object_index)
+			continue;
+		object* obj = &Objects[objnum];
+		if (!(obj->flags & OF_POLYGON_OBJECT))
+			continue;
+		if (obj->flags & OF_DEAD)
+			continue;
+
+		if (hit_pos)
+			*hit_pos = hit_info.hit_face_pnt[i];
+		if (hit_normal)
+		{
+			*hit_normal = hit_info.hit_wallnorm[i];
+			if (vm_NormalizeVectorFast(hit_normal) <= 0.0f)
+				*hit_normal = { 0.0f, 1.0f, 0.0f };
+		}
+		if (hit_room)
+			*hit_room = obj->roomnum;
+		return true;
+	}
+
+	return false;
+}
+
 static void MoveEnhancedSnowParticle(enhanced_snow_particle& particle)
 {
 	particle.lifeleft -= Frametime;
@@ -241,13 +363,27 @@ static void MoveEnhancedSnowParticle(enhanced_snow_particle& particle)
 		frame_velocity.x += particle.ground_data.x * flutter_speed;
 		frame_velocity.z += particle.ground_data.z * flutter_speed;
 		frame_velocity.y += cosf(phase * 0.71f) * 0.8f;
+		ApplyEnhancedWeatherGravity(&particle.pos, &frame_velocity, 1.0f);
+		const vector previous_pos = particle.pos;
 		particle.pos += frame_velocity * Frametime;
 
-		if (particle.pos.y - particle.ground_data.y < 24.0f)
+		if (particle.pos.y - particle.ground_data.y < 96.0f)
 		{
 			vector ground_normal;
 			const float ground_y = GetTerrainGroundPoint(&particle.pos, &ground_normal);
 			particle.ground_data.y = ground_y;
+			vector hit_pos, hit_normal;
+			int hit_room;
+			if (FindEnhancedWeatherSurfaceHit(&previous_pos, &particle.pos,
+				&hit_pos, &hit_normal, &hit_room))
+			{
+				particle.pos = hit_pos + hit_normal * 0.04f;
+				particle.velocity = hit_normal;
+				particle.flags |= 2;
+				if (particle.lifeleft > 0.32f)
+					particle.lifeleft = 0.32f;
+			}
+			else
 			if (particle.pos.y <= ground_y + 0.12f)
 			{
 				particle.pos.y = ground_y + 0.04f;
@@ -455,7 +591,7 @@ static void DoLegacySnowEffect()
 // Creates snow for this frame
 void DoSnowEffect()
 {
-	if (!Render_enhanced_snow)
+	if (!Render_enhanced_weather)
 	{
 		Enhanced_snow_particles.clear();
 		DoLegacySnowEffect();
