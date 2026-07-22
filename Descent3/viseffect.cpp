@@ -1507,7 +1507,7 @@ static bool VisEffectShouldUseSoftParticles()
 	if (Close_screen_rendering_late)
 		return false;
 
-	return Render_soft_vis_effects;
+	return Render_soft_vis_effects && rend_CanUseNewrender();
 }
 
 static bool VisEffectShouldUseSoftParticlesForEffect(const vis_effect* vis)
@@ -1516,6 +1516,21 @@ static bool VisEffectShouldUseSoftParticlesForEffect(const vis_effect* vis)
 		return false;
 
 	return VisEffectShouldUseSoftParticles();
+}
+
+static float VisEffectBillboardDepthBias(const vis_effect* vis, const fireball* fb,
+	float size, bool soft_particles)
+{
+	if (vis && (vis->flags & VF_NO_Z_ADJUST))
+		return 0.0f;
+
+	// A radius-sized forward bias defeats the depth-distance fade. Smoke is a
+	// genuine volumetric billboard, so use its authored depth when soft
+	// intersections are enabled. Other effect types retain legacy ordering.
+	if (soft_particles && fb && fb->type == FT_SMOKE)
+		return 0.0f;
+
+	return -size;
 }
 
 static bool VisEffectShouldUseSoftSnowParticles(bool zbuffer_state)
@@ -2349,7 +2364,7 @@ static bool VisEffectBuildFireballBatchItem(vis_effect* vis, VisFireballBatchKey
 
 	const float width = size;
 	const float height = (size * bitmap_height) / bitmap_width;
-	const float z_bias = (vis->flags & VF_NO_Z_ADJUST) ? 0.0f : -size;
+	const float z_bias = VisEffectBillboardDepthBias(vis, fb, size, key.soft_particles);
 	const bool blend_valid = frame1_weight > 0.001f && blend_bm_handle > BAD_BITMAP_HANDLE &&
 		blend_bitmap_width > 0 && blend_bitmap_height > 0;
 	bool built;
@@ -4134,14 +4149,14 @@ void DrawVisEffect(vis_effect* vis)
 
 	rend_SetOverlayType(OT_NONE);
 
-	if (!(vis->flags & VF_NO_Z_ADJUST))
-		rend_SetZBias(-size);
+	const bool use_soft_intersection = VisEffectShouldUseSoftParticlesForEffect(vis);
+	rend_SetZBias(VisEffectBillboardDepthBias(vis, fb, size, use_soft_intersection));
 
 	rend_SetZBufferWriteMask(0);
 	rend_SetWrapType(WT_CLAMP);
 	rend_SetLighting(LS_NONE);
 	rend_SetAOSuppression(1.0f);
-	rend_SetSoftParticleState(VisEffectShouldUseSoftParticlesForEffect(vis) ? 1 : 0);
+	rend_SetSoftParticleState(use_soft_intersection ? 1 : 0);
 
 	auto draw_frame = [&](int frame_bm_handle) {
 		if (vis->id == RUBBLE1_INDEX || vis->id == RUBBLE2_INDEX || vis->id == GRAY_SPARK_INDEX)

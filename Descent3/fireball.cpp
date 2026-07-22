@@ -58,7 +58,7 @@
 
 static bool FireballUseSoftParticles()
 {
-	return Render_soft_vis_effects;
+	return Render_soft_vis_effects && rend_CanUseNewrender();
 }
 
 static void MarkCloseScreenEffectForObject(int visnum, object* obj)
@@ -277,11 +277,15 @@ void DrawFireballObject(object* obj)
 		rend_SetAlphaValue(val * FIREBALL_ALPHA * 255);
 	rend_SetOverlayType(OT_NONE);
 
-	rend_SetZBias(-2.0f);
+	const bool use_soft_intersection = FireballUseSoftParticles();
+	// Smoke is volumetric billboard imagery: when soft particles are enabled,
+	// keep its real depth so nearby opaque surfaces can produce the fade.  The
+	// legacy forward bias remains intact for every other fireball type.
+	rend_SetZBias(use_soft_intersection && Fireballs[obj->id].type == FT_SMOKE ? 0.0f : -2.0f);
 	rend_SetZBufferWriteMask(0);
 	rend_SetWrapType(WT_CLAMP);
 	rend_SetLighting(LS_NONE);
-	rend_SetSoftParticleState(FireballUseSoftParticles() ? 1 : 0);
+	rend_SetSoftParticleState(use_soft_intersection ? 1 : 0);
 	// Cap size
 	if (size > MAX_FIREBALL_SIZE)
 		size = MAX_FIREBALL_SIZE;

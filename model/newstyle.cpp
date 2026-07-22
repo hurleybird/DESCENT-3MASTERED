@@ -67,6 +67,14 @@ static void RestorePolymodelDepthWriteMask()
 	const bool transparent_pass = Polymodel_render_pass == POLYMODEL_RENDER_TRANSLUCENT_ALL;
 	rend_SetZBufferWriteMask(transparent_pass ? 0 : 1);
 }
+
+static bool PolymodelUseSoftGlowEffects()
+{
+	// The compatibility renderer has no soft-depth path, so preserve its legacy
+	// radius bias even if the shared preference happens to be enabled.
+	return Render_soft_vis_effects && rend_CanUseNewrender();
+}
+
 static int Multicolor_texture=-1;
 static bool Polymodel_cockpit_batching = false;
 static bool Polymodel_cockpit_transparent_face_filter_enabled = false;
@@ -1784,9 +1792,14 @@ void DrawGlowEffect (vector *pos,float r,float g,float b,vector *norm,float size
 	ddgr_color color=GR_RGB(r*255,g*255,b*255);
 	int bm_handle=Fireballs[GRADIENT_BALL_INDEX].bm_handle;
 
-	rend_SetZBias (-size);
+	const bool use_soft_intersection = PolymodelUseSoftGlowEffects();
+	rend_SetSoftParticleState(use_soft_intersection ? 1 : 0);
+	// With soft intersections enabled, use the glow's real depth instead of
+	// pulling it forward by its full radius through the parent model.
+	rend_SetZBias (use_soft_intersection ? 0.0f : -size);
 	g3_DrawBitmap (pos,size,(size*bm_h(bm_handle,0))/bm_w(bm_handle,0),bm_handle,color);
 
+	rend_SetSoftParticleState(0);
 	rend_SetZBias (0.0);
 	RestorePolymodelDepthWriteMask();
 }

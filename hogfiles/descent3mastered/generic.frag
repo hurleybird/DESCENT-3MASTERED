@@ -418,6 +418,11 @@ void main()
 			float particle_depth = outnormal.w >= 0.0 ? outnormal.w : gl_FragCoord.z;
 			float particle_eye = SoftParticleEyeDepth(particle_depth);
 			float fade = clamp((scene_eye - particle_eye) / max(soft_particle_depth_range, 0.0001), 0.0, 1.0);
+			// Destination-multiply blending ignores source alpha for RGB. Its
+			// transparent endpoint is a neutral multiplier, so fade the sampled
+			// material toward white as well as maintaining the ordinary alpha path.
+			if (post_mask_blend_mode == 2)
+				color.rgb = mix(vec3(1.0), color.rgb, fade);
 			color.a *= fade;
 		}
 	}
