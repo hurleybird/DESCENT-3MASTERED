@@ -9,7 +9,7 @@
 namespace osiris_bridge {
 
 constexpr uint32_t kMagic = 0x3242534f; // "OSB2"
-constexpr uint32_t kProtocolVersion = 1;
+constexpr uint32_t kProtocolVersion = 2;
 constexpr uint32_t kMaxPayload = 16 * 1024 * 1024;
 
 enum class MessageKind : uint32_t {
@@ -29,6 +29,7 @@ enum class Op : uint32_t {
   CallInstanceEvent,
   SaveRestoreState,
   ForgetMemory,
+  CinematicCallback,
   Callback = 0x1000,
 };
 
@@ -196,6 +197,34 @@ struct WireCannedCinematicInfo {
   int32_t object_to_use_for_point;
   WireVector pos;
   WireMatrix orient;
+};
+
+struct WirePercentageRange {
+  float min;
+  float max;
+};
+
+// Pointer-free representation of the retail Win32 tGameCinematic.  `orient`
+// is present only when has_orient is nonzero.  `callback_token` is an opaque
+// Win32 function address that is returned only to the host process; it is
+// never called or interpreted as a pointer by the 64-bit engine.
+struct WireGameCinematic {
+  uint32_t flags;
+  int32_t target_objhandle;
+  int32_t end_transition;
+  int32_t start_transition;
+  int32_t pathid;
+  WireVector position;
+  WireMatrix orient;
+  int32_t room;
+  float max_time_play;
+  WirePercentageRange text_display;
+  WirePercentageRange track_target;
+  WirePercentageRange player_disabled;
+  WirePercentageRange in_camera_view;
+  WirePercentageRange quick_exit;
+  uint32_t callback_token;
+  uint8_t has_orient;
 };
 
 struct WireMemoryChunk {

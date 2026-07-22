@@ -16,15 +16,16 @@ Win32 build produces `osiris_bridge/OsirisHost32.exe`. Ship the host beside the
 Win64 executable.
 
 The bridge fails closed when a legacy module invokes a callback that has no
-typed wire representation. Canned cinematics are supported. The general
-`Cine_Start` API is intentionally not yet supported because its structure can
-contain a Win32 function pointer; it needs a dedicated reverse-callback
-adapter. Other unexercised callbacks may likewise require additional typed
-marshalling.
+typed wire representation. Canned and general cinematics are supported. The
+general `Cine_Start` callback is represented by an opaque Win32 token and
+invoked through a dedicated reverse RPC; the function pointer never crosses
+into the 64-bit address space as a callable pointer. Other unexercised
+callbacks may likewise require additional typed marshalling.
 
 `OsirisBridgeTestLevel` builds the same synthetic level module for Win32 and
 Win64. It exercises initialization, timers, mission flags, `msafe` access,
-event and module serialization, and auto-managed memory. For an end-to-end
-mission, package either DLL as `BridgeTest.dll` with a test mine named
+level-goal values, nested general-cinematic callbacks, event and module
+serialization, and auto-managed memory. For an end-to-end mission, package
+either DLL as `BridgeTest.dll` with a test mine named
 `BridgeTest.d3l` and the supplied `test_mission/bridge_test.msn` (renamed to
 match the mission archive's 8.3-compatible basename).

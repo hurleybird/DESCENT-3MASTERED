@@ -47,6 +47,7 @@ struct HostMemory {
   uint32_t size = 0;
 };
 std::unordered_map<uint32_t, HostMemory> g_memory;
+uint32_t g_active_cinematic_callback = 0;
 
 bool apply_memory_snapshot(Reader &reader) {
   uint32_t count = 0;
@@ -190,6 +191,97 @@ void __cdecl bridge_cine_start_canned(tCannedCinematicInfo *info) {
   writer.string(info->text_to_display);
   Message response;
   callback(110, writer, response);
+}
+
+bool __cdecl bridge_cine_start(tGameCinematic *info, char *text) {
+  if (!info)
+    return false;
+
+  static_assert(sizeof(void *) == sizeof(uint32_t), "cinematic bridge host must be Win32");
+  WireGameCinematic wire{};
+  wire.flags = info->flags;
+  wire.target_objhandle = info->target_objhandle;
+  wire.end_transition = info->end_transition;
+  wire.start_transition = info->start_transition;
+  wire.pathid = info->pathid;
+  std::memcpy(&wire.position, &info->position, sizeof(wire.position));
+  if (info->orient) {
+    wire.has_orient = 1;
+    std::memcpy(&wire.orient, info->orient, sizeof(wire.orient));
+  }
+  wire.room = info->room;
+  wire.max_time_play = info->max_time_play;
+  std::memcpy(&wire.text_display, &info->text_display, sizeof(wire.text_display));
+  std::memcpy(&wire.track_target, &info->track_target, sizeof(wire.track_target));
+  std::memcpy(&wire.player_disabled, &info->player_disabled, sizeof(wire.player_disabled));
+  std::memcpy(&wire.in_camera_view, &info->in_camera_view, sizeof(wire.in_camera_view));
+  std::memcpy(&wire.quick_exit, &info->quick_exit, sizeof(wire.quick_exit));
+  wire.callback_token = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(info->callback));
+
+  const uint32_t previous_callback = g_active_cinematic_callback;
+  g_active_cinematic_callback = wire.callback_token;
+  Writer writer;
+  writer.pod(wire);
+  writer.string(text);
+  Message response;
+  uint8_t result = 0;
+  if (callback(94, writer, response)) {
+    Reader reader(response.payload);
+    reader.pod(result);
+  }
+  if (!result)
+    g_active_cinematic_callback = previous_callback;
+  return result != 0;
+}
+
+void __cdecl bridge_cine_stop() {
+  Writer writer;
+  Message response;
+  callback(95, writer, response);
+}
+
+uint32_t lgoal_value_capacity(char vtype) {
+  switch (vtype) {
+  case LGSV_PC_GOAL_NAME:
+  case LGSV_PC_LOCATION_NAME:
+  case LGSV_PC_DESCRIPTION:
+  case LGSV_PC_COMPLETION_MESSAGE:
+    return 256;
+  case LGSV_C_GOAL_LIST:
+  case LGSSV_C_ITEM_TYPE:
+  case LGSSV_B_ITEM_DONE:
+    return 1;
+  default:
+    return sizeof(int32_t);
+  }
+}
+
+bool lgoal_value_is_string(char vtype) {
+  return vtype >= LGSV_PC_GOAL_NAME && vtype <= LGSV_PC_COMPLETION_MESSAGE;
+}
+
+void __cdecl bridge_lgoal_value(char op, char vtype, void *pointer, int goal_index,
+                                int item_index) {
+  if (!pointer)
+    return;
+  const uint32_t capacity = lgoal_value_capacity(vtype);
+  uint32_t input_size = 0;
+  if (op != VF_GET) {
+    input_size = lgoal_value_is_string(vtype)
+                     ? static_cast<uint32_t>(strnlen(static_cast<const char *>(pointer), capacity - 1) + 1)
+                     : capacity;
+  }
+  Writer writer;
+  writer.pod(op);
+  writer.pod(vtype);
+  writer.pod(goal_index);
+  writer.pod(item_index);
+  writer.pod(input_size);
+  if (input_size)
+    writer.bytes(pointer, input_size);
+  Message response;
+  if (callback(115, writer, response) && op == VF_GET && response.payload.size() == capacity)
+    std::memcpy(pointer, response.payload.data(), capacity);
 }
 
 void __cdecl bridge_msafe_get(int type, msafe_struct *value) {
@@ -812,6 +904,8 @@ bool handle_export(const Message &request, Message &response) {
     functions[77] = reinterpret_cast<int *>(&bridge_file_tell);
     functions[78] = reinterpret_cast<int *>(&bridge_file_eof);
     functions[82] = reinterpret_cast<int *>(&bridge_find_name<82>);
+    functions[94] = reinterpret_cast<int *>(&bridge_cine_start);
+    functions[95] = reinterpret_cast<int *>(&bridge_cine_stop);
     functions[96] = reinterpret_cast<int *>(&bridge_find_name<96>);
     functions[97] = reinterpret_cast<int *>(&bridge_find_name<97>);
     functions[98] = reinterpret_cast<int *>(&bridge_find_name<98>);
@@ -825,6 +919,7 @@ bool handle_export(const Message &request, Message &response) {
     functions[112] = reinterpret_cast<int *>(&bridge_find_name<112>);
     functions[113] = reinterpret_cast<int *>(&bridge_find_name<113>);
     functions[114] = reinterpret_cast<int *>(&bridge_find_name<114>);
+    functions[115] = reinterpret_cast<int *>(&bridge_lgoal_value);
     functions[117] = reinterpret_cast<int *>(&bridge_obj_kill);
     functions[120] = reinterpret_cast<int *>(&bridge_game_difficulty);
     functions[121] = reinterpret_cast<int *>(&bridge_game_language);
@@ -937,6 +1032,19 @@ bool handle_export(const Message &request, Message &response) {
         g_memory.erase(found);
       }
     }
+    break;
+  }
+  case Op::CinematicCallback: {
+    uint32_t callback_token = 0;
+    int type = 0;
+    if (!reader.pod(callback_token) || !reader.pod(type) || !callback_token ||
+        callback_token != g_active_cinematic_callback)
+      return false;
+    auto callback_proc = reinterpret_cast<void (__cdecl *)(int)>(
+        static_cast<uintptr_t>(callback_token));
+    callback_proc(type);
+    if (type == GCCT_STOP && g_active_cinematic_callback == callback_token)
+      g_active_cinematic_callback = 0;
     break;
   }
   default:

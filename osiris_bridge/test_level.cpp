@@ -16,6 +16,14 @@ int g_intervals = 0;
 int g_timer_events = 0;
 int g_saved_value = 0;
 int *g_managed_value = nullptr;
+int g_cinematic_frames = 0;
+
+void BridgeTestCinematicCallback(int type) {
+  mprintf(0, "BRIDGE_TEST cinematic-callback type=%d frame=%d\n", type,
+          g_cinematic_frames);
+  if (type == GCCT_FRAME && ++g_cinematic_frames == 3)
+    Cine_Stop();
+}
 
 class BridgeTestScript {
 public:
@@ -26,6 +34,9 @@ public:
       const int flag = Msn_FlagGet(31);
       mprintf(0, "BRIDGE_TEST level-start flag=%d difficulty=%d language=%d\n",
               flag, static_cast<int>(Game_GetDiffLevel()), Game_GetLanguage());
+      int goal_count = -1;
+      LGoal_Value(VF_GET, LGV_I_NUM_GOALS, &goal_count);
+      mprintf(0, "BRIDGE_TEST level-goals=%d\n", goal_count);
       tOSIRISTIMER timer{};
       timer.flags = OTF_LEVEL;
       timer.id = 0x4252;
@@ -40,6 +51,34 @@ public:
       g_managed_value = static_cast<int *>(Scrpt_MemAlloc(&chunk));
       if (g_managed_value)
         *g_managed_value = 1000;
+
+      msafe_struct player{};
+      player.slot = 0;
+      MSafe_GetValue(MSAFE_OBJECT_PLAYER_HANDLE, &player);
+      if (player.objhandle != OBJECT_HANDLE_NONE) {
+        MSafe_GetValue(MSAFE_OBJECT_POS, &player);
+        const vector position = player.pos;
+        MSafe_GetValue(MSAFE_OBJECT_ORIENT, &player);
+        matrix orientation = player.orient;
+        MSafe_GetValue(MSAFE_OBJECT_ROOMNUM, &player);
+
+        tGameCinematic cinematic{};
+        cinematic.flags = GCF_FULLSCREEN | GCF_USEPOINT | GCF_TEXT_NOEFFECT |
+                          GCF_LAYOUT_BOTTOM;
+        cinematic.target_objhandle = player.objhandle;
+        cinematic.position = position;
+        cinematic.orient = &orientation;
+        cinematic.room = player.roomnum;
+        cinematic.max_time_play = 1.0f;
+        cinematic.callback = BridgeTestCinematicCallback;
+        cinematic.text_display = {0.0f, 0.0f};
+        cinematic.track_target = {0.0f, 0.0f};
+        cinematic.player_disabled = {0.0f, 1.0f};
+        cinematic.in_camera_view = {0.0f, 1.0f};
+        cinematic.quick_exit = {1.0f, 1.0f};
+        const bool started = Cine_Start(&cinematic, const_cast<char *>(""));
+        mprintf(0, "BRIDGE_TEST cinematic-started=%d\n", started ? 1 : 0);
+      }
       break;
     }
     case EVT_INTERVAL:
@@ -98,6 +137,7 @@ char STDCALL InitializeDLL(tOSIRISModuleInit *init) {
   g_timer_events = 0;
   g_saved_value = 0x12345678;
   g_managed_value = nullptr;
+  g_cinematic_frames = 0;
   mprintf(0, "BRIDGE_TEST initialize pointer-size=%u\n", static_cast<unsigned>(sizeof(void *)));
   return 1;
 }

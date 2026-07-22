@@ -109,6 +109,31 @@ struct OsirisBridgeClient::Impl {
   std::vector<int> co_handles;
   std::vector<int> co_ids;
 
+  struct CinematicRoute {
+    Impl *client = nullptr;
+    uint32_t callback_token = 0;
+  };
+  static CinematicRoute active_cinematic;
+
+  static void cinematic_callback(int type) {
+    const CinematicRoute route = active_cinematic;
+    if (!route.client || !route.callback_token)
+      return;
+    if (type != GCCT_FRAME)
+      AutomatedCaptureLog("osiris bridge cinematic callback type=%d", type);
+    Writer writer;
+    writer.pod(route.callback_token);
+    writer.pod(type);
+    Message response;
+    if (!route.client->transact(Op::CinematicCallback, writer.data, response)) {
+      bridge_log("OSIRIS bridge: failed to invoke legacy cinematic callback\n");
+      AutomatedCaptureLog("osiris bridge cinematic callback failed type=%d", type);
+    }
+    if (type == GCCT_STOP && active_cinematic.client == route.client &&
+        active_cinematic.callback_token == route.callback_token)
+      active_cinematic = {};
+  }
+
   uint32_t memory_token(void *pointer, uint32_t size, const WireMemoryChunk &chunk) {
     for (const auto &entry : memory)
       if (entry.second.pointer == pointer)
@@ -625,6 +650,45 @@ struct OsirisBridgeClient::Impl {
       writer.pod(callback_proc<ubyte (*)(void *)>(callbacks, index)(file));
       break;
     }
+    case 94: {
+      WireGameCinematic wire{};
+      std::string text;
+      if (!reader.pod(wire) || !reader.string(text) || wire.has_orient > 1)
+        return false;
+      tGameCinematic info{};
+      matrix orient{};
+      info.flags = wire.flags;
+      info.target_objhandle = wire.target_objhandle;
+      info.end_transition = wire.end_transition;
+      info.start_transition = wire.start_transition;
+      info.pathid = wire.pathid;
+      std::memcpy(&info.position, &wire.position, sizeof(info.position));
+      if (wire.has_orient) {
+        std::memcpy(&orient, &wire.orient, sizeof(orient));
+        info.orient = &orient;
+      }
+      info.room = wire.room;
+      info.max_time_play = wire.max_time_play;
+      std::memcpy(&info.text_display, &wire.text_display, sizeof(info.text_display));
+      std::memcpy(&info.track_target, &wire.track_target, sizeof(info.track_target));
+      std::memcpy(&info.player_disabled, &wire.player_disabled, sizeof(info.player_disabled));
+      std::memcpy(&info.in_camera_view, &wire.in_camera_view, sizeof(info.in_camera_view));
+      std::memcpy(&info.quick_exit, &wire.quick_exit, sizeof(info.quick_exit));
+      info.callback = wire.callback_token ? &Impl::cinematic_callback : nullptr;
+
+      const CinematicRoute previous_route = active_cinematic;
+      active_cinematic = wire.callback_token ? CinematicRoute{this, wire.callback_token}
+                                             : CinematicRoute{};
+      const bool result = callback_proc<bool (*)(tGameCinematic *, char *)>(
+          callbacks, index)(&info, text.empty() ? const_cast<char *>("") : &text[0]);
+      if (!result)
+        active_cinematic = previous_route;
+      writer.pod(static_cast<uint8_t>(result));
+      break;
+    }
+    case 95:
+      callback_proc<void (*)()>(callbacks, index)();
+      break;
     case 120:
       writer.pod(callback_proc<char (*)()>(callbacks, index)());
       break;
@@ -648,6 +712,30 @@ struct OsirisBridgeClient::Impl {
       std::memcpy(&info.pos, &wire.pos, sizeof(info.pos));
       std::memcpy(&info.orient, &wire.orient, sizeof(info.orient));
       callback_proc<void (*)(tCannedCinematicInfo *)>(callbacks, index)(&info);
+      break;
+    }
+    case 115: {
+      char op = 0, vtype = 0;
+      int goal_index = -1, item_index = -1;
+      uint32_t input_size = 0;
+      if (!reader.pod(op) || !reader.pod(vtype) || !reader.pod(goal_index) ||
+          !reader.pod(item_index) || !reader.pod(input_size))
+        return false;
+      uint32_t capacity = sizeof(int32_t);
+      if (vtype >= LGSV_PC_GOAL_NAME && vtype <= LGSV_PC_COMPLETION_MESSAGE)
+        capacity = 256;
+      else if (vtype == LGSV_C_GOAL_LIST || vtype == LGSSV_C_ITEM_TYPE ||
+               vtype == LGSSV_B_ITEM_DONE)
+        capacity = 1;
+      if (input_size > capacity || reader.remaining < input_size)
+        return false;
+      std::vector<uint8_t> value(capacity, 0);
+      if (input_size && !reader.bytes(value.data(), input_size))
+        return false;
+      callback_proc<void (*)(char, char, void *, int, int)>(callbacks, index)(
+          op, vtype, value.data(), goal_index, item_index);
+      if (op == VF_GET)
+        writer.bytes(value.data(), value.size());
       break;
     }
     case 117: {
@@ -701,8 +789,13 @@ struct OsirisBridgeClient::Impl {
   }
 };
 
+OsirisBridgeClient::Impl::CinematicRoute OsirisBridgeClient::Impl::active_cinematic{};
+
 OsirisBridgeClient::OsirisBridgeClient() : impl_(std::make_unique<Impl>()) {}
-OsirisBridgeClient::~OsirisBridgeClient() = default;
+OsirisBridgeClient::~OsirisBridgeClient() {
+  if (impl_ && Impl::active_cinematic.client == impl_.get())
+    Impl::active_cinematic = {};
+}
 
 std::unique_ptr<OsirisBridgeClient> OsirisBridgeClient::Start(const char *module_path) {
   auto result = std::unique_ptr<OsirisBridgeClient>(new OsirisBridgeClient);
