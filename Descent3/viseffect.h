@@ -82,6 +82,7 @@ void DrawVisEffect (vis_effect *vis);
 
 // Renders through the VIS_FIREBALL batcher when enabled, otherwise uses DrawVisEffect.
 void DrawVisEffectMaybeBatched(vis_effect *vis);
+void DrawEnhancedSnowParticlesBatched();
 void FlushVisEffectBatches();
 void ForceFlushVisEffectBatches();
 

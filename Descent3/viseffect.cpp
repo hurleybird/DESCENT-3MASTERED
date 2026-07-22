@@ -3496,6 +3496,141 @@ static bool VisEffectIsCloseScreenLatePassCandidate(vis_effect* vis)
 	return false;
 }
 
+void DrawEnhancedSnowParticlesBatched()
+{
+	int count = 0;
+	const enhanced_snow_particle* particles = GetEnhancedSnowParticles(&count);
+	if (!particles || count <= 0)
+		return;
+
+	if (!VisEffectCreateEnhancedSnowTextures())
+		return;
+
+	const int roomnum = Viewer_object ? Viewer_object->roomnum : 0;
+	static std::vector<renderer_weather_quad> fast_quads;
+	fast_quads.clear();
+	if (fast_quads.capacity() < (size_t)count)
+		fast_quads.reserve(count);
+
+	for (int i = 0; i < count; ++i)
+	{
+		const enhanced_snow_particle& particle = particles[i];
+		vis_effect vis = {};
+		vis.type = VIS_FIREBALL;
+		vis.id = SNOWFLAKE_INDEX;
+		vis.pos = particle.pos;
+		vis.velocity = particle.velocity;
+		vis.end_pos = particle.ground_data;
+		vis.mass = particle.phase;
+		vis.drag = particle.flutter_frequency;
+		vis.size = particle.size;
+		vis.lifeleft = particle.lifeleft;
+		vis.lifetime = particle.lifetime;
+		vis.creation_time = particle.creation_time;
+		vis.roomnum = roomnum;
+		vis.custom_handle = (short)(particle.variant | ((particle.flags & 2) ? 4 : 0));
+		vis.lighting_color = particle.lighting_color;
+		vis.flags = VF_ENHANCED_SNOW;
+
+		float time_live = Gametime - vis.creation_time;
+		if (time_live < 0.0f)
+			time_live = 0.0f;
+		float norm_time = time_live / vis.lifetime;
+		if (norm_time >= 1.0f)
+			norm_time = 0.99999f;
+		const EnhancedSnowRenderParams params =
+			VisEffectEnhancedSnowRenderParams(&vis, time_live, norm_time);
+		if (params.alpha > 0.0f)
+		{
+			renderer_weather_quad quad = {};
+			quad.pos[0] = vis.pos.x;
+			quad.pos[1] = vis.pos.y;
+			quad.pos[2] = vis.pos.z;
+			quad.velocity[0] = vis.velocity.x;
+			quad.velocity[1] = vis.velocity.y;
+			quad.velocity[2] = vis.velocity.z;
+			quad.plane_normal[0] = vis.velocity.x;
+			quad.plane_normal[1] = vis.velocity.y;
+			quad.plane_normal[2] = vis.velocity.z;
+			quad.width = params.width;
+			quad.height = params.height;
+			quad.rotation = (params.rotation / 65536.0f) * 6.28318530718f;
+			const int variant = vis.custom_handle & 3;
+			quad.u0 = (variant * 32.0f + 0.5f) / 128.0f;
+			quad.u1 = ((variant + 1) * 32.0f - 0.5f) / 128.0f;
+			quad.v0 = 0.5f / 32.0f;
+			quad.v1 = 31.5f / 32.0f;
+			VisEffectColorToFloat(GR_16_TO_COLOR(vis.lighting_color), &quad.r, &quad.g, &quad.b);
+			quad.a = params.alpha;
+			quad.planar = (vis.custom_handle & 4) != 0;
+			fast_quads.push_back(quad);
+		}
+	}
+
+	if (!fast_quads.empty())
+	{
+		RoomMaterialFogScope material_fog(Close_screen_rendering_late ? -1 : roomnum);
+		renderer_3d_draw_call_scope effect_draw_scope(RENDERER_DRAW_CALL_3D_EFFECT);
+		rend_SetAlphaType(AT_SATURATE_TEXTURE_VERTEX);
+		rend_SetAlphaValue(255);
+		rend_SetOverlayType(OT_NONE);
+		rend_SetZBias(0.0f);
+		rend_SetZBufferState(1);
+		rend_SetZBufferWriteMask(0);
+		rend_SetWrapType(WT_CLAMP);
+		rend_SetLighting(LS_GOURAUD);
+		rend_SetColorModel(CM_RGB);
+		rend_SetAOSuppression(1.0f);
+		rend_SetTextureType(TT_LINEAR);
+		rend_SetSoftParticleState(0);
+		if (rend_DrawWeatherQuadBatch(Enhanced_snow_atlas_handle, fast_quads.data(),
+			(int)fast_quads.size(), MAP_TYPE_BITMAP))
+		{
+			rend_SetAOSuppression(0.0f);
+			rend_SetZBias(0.0f);
+			rend_SetZBufferState(1);
+			rend_SetZBufferWriteMask(1);
+			rend_SetWrapType(WT_WRAP);
+			rend_SetLighting(LS_NONE);
+			rend_SetColorModel(CM_MONO);
+			return;
+		}
+		rend_SetAOSuppression(0.0f);
+		rend_SetZBias(0.0f);
+		rend_SetZBufferState(1);
+		rend_SetZBufferWriteMask(1);
+		rend_SetWrapType(WT_WRAP);
+		rend_SetLighting(LS_NONE);
+		rend_SetColorModel(CM_MONO);
+	}
+
+	for (int i = 0; i < count; ++i)
+	{
+		const enhanced_snow_particle& particle = particles[i];
+		vis_effect vis = {};
+		vis.type = VIS_FIREBALL;
+		vis.id = SNOWFLAKE_INDEX;
+		vis.pos = particle.pos;
+		vis.velocity = particle.velocity;
+		vis.end_pos = particle.ground_data;
+		vis.mass = particle.phase;
+		vis.drag = particle.flutter_frequency;
+		vis.size = particle.size;
+		vis.lifeleft = particle.lifeleft;
+		vis.lifetime = particle.lifetime;
+		vis.creation_time = particle.creation_time;
+		vis.roomnum = roomnum;
+		vis.custom_handle = (short)(particle.variant | ((particle.flags & 2) ? 4 : 0));
+		vis.lighting_color = particle.lighting_color;
+		vis.flags = VF_ENHANCED_SNOW;
+
+		VisWeatherBatchKey weather_key = {};
+		VisFireballBatchItem weather_item = {};
+		if (VisEffectBuildWeatherQuadBatchItem(&vis, weather_key, weather_item))
+			QueueVisWeatherQuadBatchItem(weather_key, weather_item);
+	}
+}
+
 void DrawVisEffectMaybeBatched(vis_effect* vis)
 {
 	const bool close_screen_effect = VisEffectIsCloseScreenLatePassCandidate(vis);

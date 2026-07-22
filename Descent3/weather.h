@@ -18,6 +18,8 @@
 #ifndef WEATHER_H
 #define WEATHER_H
 
+#include "vecmat.h"
+
 #define WEATHER_FLAGS_RAIN			1
 #define WEATHER_FLAGS_LIGHTNING		2
 #define WEATHER_FLAGS_SNOW			4
@@ -47,6 +49,22 @@ struct weather
 
 extern weather Weather;
 
+struct enhanced_snow_particle
+{
+	vector pos;
+	vector velocity;
+	vector ground_data;
+	float size;
+	float lifeleft;
+	float lifetime;
+	float creation_time;
+	float phase;
+	float flutter_frequency;
+	ushort lighting_color;
+	ubyte variant;
+	ubyte flags;
+};
+
 // resets the weather so there is nothing happening
 void ResetWeather ();
 
@@ -65,5 +83,7 @@ void SetLightningState (int on,float interval_time,int randval);
 
 // Sets the state of the snow to on or off, plus sets the intensity of the snow (0 to 1)
 void SetSnowState (int on,float intensity);
+
+const enhanced_snow_particle* GetEnhancedSnowParticles(int* count);
 
 #endif

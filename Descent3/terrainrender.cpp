@@ -2837,7 +2837,7 @@ void RenderAllTerrainObjects()
 			// Special case snow
 			if (vis->id == SNOWFLAKE_INDEX)
 			{
-				if (num_snows < (int)(sizeof(snows) / sizeof(snows[0])))
+				if (!Render_enhanced_snow && num_snows < (int)(sizeof(snows) / sizeof(snows[0])))
 					snows[num_snows++] = vis - VisEffects;
 			}
 			else
@@ -2895,8 +2895,13 @@ void RenderAllTerrainObjects()
 	{
 		PERF_MARKER_SCOPE("TerrainObjects.RenderSnow");
 		FlushWeaponStreamerBatches();
-		for (i = 0; i < num_snows; i++)
-			DrawVisEffectMaybeBatched(&VisEffects[snows[i]]);
+		if (Render_enhanced_snow)
+			DrawEnhancedSnowParticlesBatched();
+		else
+		{
+			for (i = 0; i < num_snows; i++)
+				DrawVisEffectMaybeBatched(&VisEffects[snows[i]]);
+		}
 		ForceFlushVisEffectBatches();
 		FlushWeaponStreamerBatches();
 	}

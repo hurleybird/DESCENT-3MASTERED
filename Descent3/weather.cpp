@@ -33,10 +33,12 @@
 
 #include <stdlib.h>
 #include <math.h>
+#include <vector>
 
 #include "psrand.h"
 
 weather Weather = { 0 };
+static std::vector<enhanced_snow_particle> Enhanced_snow_particles;
 
 int ThunderA_sound_handle = -1;
 int ThunderB_sound_handle = -1;
@@ -47,6 +49,7 @@ void ResetWeather()
 {
 	Weather.flags = 0;
 	Weather.last_lightning_evaluation_time = 0;
+	Enhanced_snow_particles.clear();
 }
 
 // Makes droplets appear on the windshield, plus makes rain fall in the distance
@@ -220,6 +223,75 @@ static float SnowClampIntensity(float intensity)
 	return intensity;
 }
 
+static void MoveEnhancedSnowParticle(enhanced_snow_particle& particle)
+{
+	particle.lifeleft -= Frametime;
+	if (particle.lifeleft <= 0.0f)
+	{
+		particle.flags |= 1;
+		return;
+	}
+
+	if (!(particle.flags & 2))
+	{
+		const float time_live = Gametime - particle.creation_time;
+		const float phase = particle.phase + time_live * particle.flutter_frequency;
+		const float flutter_speed = sinf(phase) * (3.0f + particle.size * 5.25f);
+		vector frame_velocity = particle.velocity;
+		frame_velocity.x += particle.ground_data.x * flutter_speed;
+		frame_velocity.z += particle.ground_data.z * flutter_speed;
+		frame_velocity.y += cosf(phase * 0.71f) * 0.8f;
+		particle.pos += frame_velocity * Frametime;
+
+		if (particle.pos.y - particle.ground_data.y < 24.0f)
+		{
+			vector ground_normal;
+			const float ground_y = GetTerrainGroundPoint(&particle.pos, &ground_normal);
+			particle.ground_data.y = ground_y;
+			if (particle.pos.y <= ground_y + 0.12f)
+			{
+				particle.pos.y = ground_y + 0.04f;
+				particle.velocity = ground_normal;
+				particle.flags |= 2;
+				if (particle.lifeleft > 0.32f)
+					particle.lifeleft = 0.32f;
+			}
+		}
+	}
+
+	if (Viewer_object)
+	{
+		const vector delta = particle.pos - Viewer_object->pos;
+		const float horizontal_distance_squared = delta.x * delta.x + delta.z * delta.z;
+		vector view_forward = Viewer_object->orient.fvec;
+		view_forward.y = 0.0f;
+		vm_NormalizeVector(&view_forward);
+		const float forward_distance = delta.x * view_forward.x + delta.z * view_forward.z;
+		if (horizontal_distance_squared > 390.0f * 390.0f ||
+			delta.y < -150.0f || delta.y > 195.0f || forward_distance < -90.0f)
+		{
+			particle.flags |= 1;
+		}
+	}
+}
+
+static void MoveEnhancedSnowParticles()
+{
+	for (size_t i = 0; i < Enhanced_snow_particles.size(); ++i)
+		MoveEnhancedSnowParticle(Enhanced_snow_particles[i]);
+
+	size_t write = 0;
+	for (size_t read = 0; read < Enhanced_snow_particles.size(); ++read)
+	{
+		if (Enhanced_snow_particles[read].flags & 1)
+			continue;
+		if (write != read)
+			Enhanced_snow_particles[write] = Enhanced_snow_particles[read];
+		write++;
+	}
+	Enhanced_snow_particles.resize(write);
+}
+
 static int CreateEnhancedSnow(float age, PSRand& random, int available_slots)
 {
 	const float intensity = SnowClampIntensity(Weather.snow_intensity_scalar);
@@ -278,40 +350,36 @@ static int CreateEnhancedSnow(float age, PSRand& random, int available_slots)
 		if (pos.y < ground_y + 8.0f)
 			pos.y = ground_y + 8.0f + SnowRandomUnit(random) * 70.0f;
 
-		int visnum = VisEffectCreate(VIS_FIREBALL, SNOWFLAKE_INDEX,
-			Viewer_object->roomnum, &pos);
-		if (visnum < 0)
-			continue;
-
-		vis_effect* vis = &VisEffects[visnum];
+		enhanced_snow_particle particle = {};
+		particle.pos = pos;
 		const float size_roll = SnowRandomUnit(random);
 		if (size_roll < 0.82f)
-			vis->size = 0.25f + SnowRandomUnit(random) * 0.40f;
+			particle.size = 0.25f + SnowRandomUnit(random) * 0.40f;
 		else
-			vis->size = 0.65f + SnowRandomUnit(random) * 0.35f;
+			particle.size = 0.65f + SnowRandomUnit(random) * 0.35f;
 
 		const float life = 4.5f + SnowRandomUnit(random) * 3.0f;
-		vis->lifetime = life;
-		vis->lifeleft = life - age;
-		vis->creation_time -= age;
-		vis->flags |= VF_USES_LIFELEFT | VF_NO_Z_ADJUST | VF_ENHANCED_SNOW;
+		particle.lifetime = life;
+		particle.lifeleft = life - age;
+		particle.creation_time = Gametime - age;
 
-		vis->velocity = prevailing_wind;
-		vis->velocity.x += (SnowRandomUnit(random) - 0.5f) * 6.0f;
-		vis->velocity.z += (SnowRandomUnit(random) - 0.5f) * 6.0f;
-		vis->velocity.y = -(18.0f + SnowRandomUnit(random) * 28.0f);
+		particle.velocity = prevailing_wind;
+		particle.velocity.x += (SnowRandomUnit(random) - 0.5f) * 9.0f;
+		particle.velocity.z += (SnowRandomUnit(random) - 0.5f) * 9.0f;
+		particle.velocity.y = -(18.0f + SnowRandomUnit(random) * 28.0f);
 
 		const float flutter_angle = SnowRandomUnit(random) * 6.28318530718f;
-		vis->end_pos.x = cosf(flutter_angle);
-		vis->end_pos.y = ground_y;
-		vis->end_pos.z = sinf(flutter_angle);
-		vis->mass = SnowRandomUnit(random) * 6.28318530718f; // flutter phase
-		vis->drag = 1.35f + SnowRandomUnit(random) * 2.4f;   // flutter frequency
-		vis->custom_handle = (short)(random() & 3); // soft flake silhouette
+		particle.ground_data.x = cosf(flutter_angle);
+		particle.ground_data.y = ground_y;
+		particle.ground_data.z = sinf(flutter_angle);
+		particle.phase = SnowRandomUnit(random) * 6.28318530718f;
+		particle.flutter_frequency = 1.35f + SnowRandomUnit(random) * 3.6f;
+		particle.variant = (ubyte)(random() & 3);
 
 		const int tint = 205 + (random() % 35);
-		vis->lighting_color = GR_RGB16(tint, tint + 3, 255);
-		vis->pos += vis->velocity * age;
+		particle.lighting_color = GR_RGB16(tint, tint + 3, 255);
+		particle.pos += particle.velocity * age;
+		Enhanced_snow_particles.push_back(particle);
 		created++;
 	}
 
@@ -389,15 +457,17 @@ void DoSnowEffect()
 {
 	if (!Render_enhanced_snow)
 	{
+		Enhanced_snow_particles.clear();
 		DoLegacySnowEffect();
 		return;
 	}
 
 	if (OBJECT_OUTSIDE(Viewer_object))
 	{
+		MoveEnhancedSnowParticles();
 		const float intensity = SnowClampIntensity(Weather.snow_intensity_scalar);
-		const int desired_flakes = (int)(110.0f + intensity * 146.0f);
-		int missing_flakes = desired_flakes - Weather.snowflakes_to_create;
+		const int desired_flakes = (int)(220.0f + intensity * 292.0f);
+		int missing_flakes = desired_flakes - (int)Enhanced_snow_particles.size();
 		if (missing_flakes < 0)
 			missing_flakes = 0;
 
@@ -414,8 +484,19 @@ void DoSnowEffect()
 			missing_flakes -= created;
 		}
 	}
+	else
+	{
+		Enhanced_snow_particles.clear();
+	}
 
 	Weather.snowflakes_to_create = 0;
+}
+
+const enhanced_snow_particle* GetEnhancedSnowParticles(int* count)
+{
+	if (count)
+		*count = (int)Enhanced_snow_particles.size();
+	return Enhanced_snow_particles.empty() ? NULL : Enhanced_snow_particles.data();
 }
 
 // does all the weather stuff that is going to be done for this frame

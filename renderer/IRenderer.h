@@ -184,6 +184,11 @@ public:
 		for (int i = 0; i < count; i++)
 			DrawPolygon3D(handle, items[i].pointlist, items[i].nv, map_type);
 	}
+	virtual bool DrawWeatherQuadBatch(int handle, const renderer_weather_quad *items, int count,
+		int map_type = MAP_TYPE_BITMAP)
+	{
+		return false;
+	}
 	virtual bool BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw) { return false; }
 	virtual void EndRetainedPolymodelDraw() {}
 	virtual bool SetRoomFogState(const renderer_room_fog_state *state) { return false; }

@@ -429,6 +429,25 @@ struct renderer_line_batch_item
 	g3Point *p1;
 };
 
+struct renderer_weather_quad
+{
+	float pos[3];
+	float velocity[3];
+	float plane_normal[3];
+	float width;
+	float height;
+	float rotation;
+	float u0;
+	float v0;
+	float u1;
+	float v1;
+	float r;
+	float g;
+	float b;
+	float a;
+	bool planar;
+};
+
 enum renderer_gpu_scene_mark
 {
 	RENDERER_GPU_SCENE_AFTER_MAIN_WORLD = 0,
@@ -486,6 +505,7 @@ void rend_DrawPolygon3D(int handle,g3Point **p,int nv,int map_type=MAP_TYPE_BITM
 
 // Draws several 3D polygons that share the current renderer state and texture.
 void rend_DrawPolygon3DBatch(int handle,const renderer_poly_batch_item *items,int count,int map_type=MAP_TYPE_BITMAP);
+bool rend_DrawWeatherQuadBatch(int handle,const renderer_weather_quad *items,int count,int map_type=MAP_TYPE_BITMAP);
 
 struct renderer_retained_polymodel_draw
 {

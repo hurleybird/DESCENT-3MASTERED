@@ -317,6 +317,12 @@ void rend_DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, 
 	renderer_inst->DrawPolygon3DBatch(handle, items, count, map_type);
 }
 
+bool rend_DrawWeatherQuadBatch(int handle, const renderer_weather_quad *items, int count, int map_type)
+{
+	return Renderer_initted && items && count > 0 &&
+		renderer_inst->DrawWeatherQuadBatch(handle, items, count, map_type);
+}
+
 bool rend_BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw)
 {
 	return Renderer_initted && draw && renderer_inst->BeginRetainedPolymodelDraw(draw);

@@ -771,6 +771,8 @@ public:
 	void DrawPolygon3D(int handle, g3Point** p, int nv, int map_type = MAP_TYPE_BITMAP) override;
 	void DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, int count,
 		int map_type = MAP_TYPE_BITMAP) override;
+	bool DrawWeatherQuadBatch(int handle, const renderer_weather_quad *items, int count,
+		int map_type = MAP_TYPE_BITMAP) override;
 	bool BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw) override;
 	void EndRetainedPolymodelDraw() override;
 	bool SetRoomFogState(const renderer_room_fog_state *state) override;

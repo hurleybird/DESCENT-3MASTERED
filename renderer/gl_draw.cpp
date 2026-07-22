@@ -2213,6 +2213,156 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 	CHECK_ERROR(10);
 }
 
+bool GL4Renderer::DrawWeatherQuadBatch(int handle, const renderer_weather_quad *items, int count, int map_type)
+{
+	if (!items || count <= 0 || OpenGL_state.cur_texture_quality == 0)
+		return false;
+
+	SelectDrawShader();
+	MakeBitmapCurrent(handle, map_type, 0);
+	MakeWrapTypeCurrent(handle, map_type, 0);
+	MakeFilterTypeCurrent(handle, map_type, 0);
+
+	static std::vector<gl_vertex> vertices;
+	vertices.clear();
+	if (vertices.capacity() < (size_t)count * 6)
+		vertices.reserve((size_t)count * 6);
+
+	const auto transform_to_view = [](const vector& world) {
+		vector view = world - View_position;
+		return view * Unscaled_matrix;
+	};
+
+	const auto append_vertex = [&](const vector& view, float u, float v,
+		const renderer_weather_quad& item) {
+		const float z_for_payload = std::max(view.z + Z_bias, 0.0001f);
+		const float texw = 1.0f / z_for_payload;
+		gl_vertex vertex = {};
+		vertex.vert.x = Window_cx + view.x * (Window_w2 / view.z);
+		vertex.vert.y = Window_cy - view.y * (Window_h2 / view.z);
+		vertex.vert.z = -GL4DepthFromEyeZ(z_for_payload);
+		vertex.color.r = (ubyte)std::max(0.0f, std::min(255.0f, item.r * 255.0f));
+		vertex.color.g = (ubyte)std::max(0.0f, std::min(255.0f, item.g * 255.0f));
+		vertex.color.b = (ubyte)std::max(0.0f, std::min(255.0f, item.b * 255.0f));
+		vertex.color.a = (ubyte)std::max(0.0f,
+			std::min(255.0f, item.a * Alpha_multiplier * OpenGL_Alpha_factor));
+		vertex.tex_coord.s = u * texw;
+		vertex.tex_coord.t = v * texw;
+		vertex.tex_coord.w = texw;
+		vertices.push_back(vertex);
+	};
+
+	for (int i = 0; i < count; i++)
+	{
+		const renderer_weather_quad& item = items[i];
+		const vector item_pos = { item.pos[0], item.pos[1], item.pos[2] };
+		if (item.a <= 0.0f || item.width <= 0.0f || item.height <= 0.0f)
+			continue;
+
+		vector corners[4];
+		if (item.planar)
+		{
+			vector normal = { item.plane_normal[0], item.plane_normal[1], item.plane_normal[2] };
+			if (vm_NormalizeVectorFast(&normal) <= 0.0f)
+				normal = { 0.0f, 1.0f, 0.0f };
+			matrix plane_matrix;
+			vm_VectorToMatrix(&plane_matrix, &normal, NULL, NULL);
+			vm_TransposeMatrix(&plane_matrix);
+			const float c = cosf(item.rotation);
+			const float s = sinf(item.rotation);
+			vector local[4];
+			local[0] = { -item.width * c - item.height * s, item.width * s - item.height * c, 0.0f };
+			local[1] = { item.width * c - item.height * s, -item.width * s - item.height * c, 0.0f };
+			local[2] = { item.width * c + item.height * s, -item.width * s + item.height * c, 0.0f };
+			local[3] = { -item.width * c + item.height * s, item.width * s + item.height * c, 0.0f };
+			for (int c = 0; c < 4; c++)
+			{
+				vector world_offset;
+				vm_MatrixMulVector(&world_offset, &local[c], &plane_matrix);
+				corners[c] = transform_to_view(item_pos + world_offset);
+			}
+		}
+		else
+		{
+			vector center = transform_to_view(item_pos);
+			if (center.z <= 0.0001f)
+				continue;
+			const float radius = std::max(item.width, item.height) * 1.5f;
+			if (center.z > Detail_settings.Terrain_render_distance * Matrix_scale.z ||
+				fabsf(center.x) - radius > center.z || fabsf(center.y) - radius > center.z)
+			{
+				continue;
+			}
+
+			const float c = cosf(item.rotation);
+			const float s = sinf(item.rotation);
+			const vector local[4] = {
+				{ -item.width * c - item.height * s, item.width * s - item.height * c, 0.0f },
+				{ item.width * c - item.height * s, -item.width * s - item.height * c, 0.0f },
+				{ item.width * c + item.height * s, -item.width * s + item.height * c, 0.0f },
+				{ -item.width * c + item.height * s, item.width * s + item.height * c, 0.0f }
+			};
+			for (int cidx = 0; cidx < 4; cidx++)
+			{
+				corners[cidx] = center;
+				corners[cidx].x += local[cidx].x * Matrix_scale.x;
+				corners[cidx].y += local[cidx].y * Matrix_scale.y;
+			}
+		}
+
+		bool reject = false;
+		for (int c = 0; c < 4; c++)
+		{
+			if (corners[c].z <= 0.0001f)
+			{
+				reject = true;
+				break;
+			}
+		}
+		if (reject)
+			continue;
+
+		const float u[4] = { item.u0, item.u1, item.u1, item.u0 };
+		const float v[4] = { item.v0, item.v0, item.v1, item.v1 };
+		const int indices[6] = { 0, 1, 2, 0, 2, 3 };
+		for (int t = 0; t < 6; t++)
+		{
+			const int idx = indices[t];
+			append_vertex(corners[idx], u[idx], v[idx], item);
+		}
+	}
+
+	if (vertices.empty())
+		return true;
+
+	const int offset = CopyVertices(vertices.data(), (int)vertices.size());
+	const bool drawing_to_scene = framebuffer_ok &&
+		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
+	const bool include_motion_vectors = CurrentDrawUsesPixelMotionTarget();
+	const bool include_motion_object_ids = CurrentDrawWritesMotionObjectId();
+	const bool include_ao_class = !cockpit_scene_frame_active && OpenGL_state.cur_zbuffer_state != 0;
+	const bool override_draw_buffers = drawing_to_scene &&
+		(PixelMotionVectorModeEnabled() || !include_ao_class);
+	if (override_draw_buffers)
+		GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors, include_ao_class,
+			include_motion_object_ids);
+	rend_RecordDrawCall(draw_call_category);
+	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)vertices.size());
+	NotifyDepthBufferWrite();
+	if (include_motion_vectors || include_motion_object_ids)
+	{
+		motion_vectors_dirty = true;
+		motion_vectors.MarkDirty();
+	}
+	if (override_draw_buffers)
+		UseSceneDrawBuffers();
+	OpenGL_polys_drawn += (int)vertices.size() / 6;
+	OpenGL_verts_processed += (int)vertices.size();
+
+	CHECK_ERROR(12);
+	return true;
+}
+
 bool GL4Renderer::BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw)
 {
 	if (!draw || retained_draw_active)
