@@ -1,5 +1,5 @@
 /*
-* Piccu Engine
+* DESCENT 3MASTERED
 * Copyright (C) 2024 SaladBadger
 *
 * This program is free software: you can redistribute it and/or modify

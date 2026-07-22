@@ -77,6 +77,11 @@ void ProgramVersion(int version_type, ubyte major, ubyte minor, ubyte build)
 		dbase.write("Major", Program_version.major);
 		dbase.write("Minor", Program_version.minor);
 		dbase.write("Build", Program_version.build);
+		// Keep the engine release identity separate from the legacy D3 version
+		// above, which participates in compatibility and protocol behavior.
+		dbase.write("EngineMajor", ENGINE_VERSION_MAJOR);
+		dbase.write("EngineMinor", ENGINE_VERSION_MINOR);
+		dbase.write("EnginePatch", ENGINE_VERSION_PATCH);
 	}
 	else
 	{

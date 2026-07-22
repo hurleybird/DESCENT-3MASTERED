@@ -26,8 +26,8 @@
 //Branding information
 #include "enginebrand.h"
 
-//The name of this product
-#define PRODUCT_NAME "Descent 3"
+// The public product name.  Protocol/data versioning remains in program.h.
+#define PRODUCT_NAME ENGINE_NAME
 
 
 //This is the port number assigned to "descent3" by the IANA (Internet Assigned Numbers Authority)

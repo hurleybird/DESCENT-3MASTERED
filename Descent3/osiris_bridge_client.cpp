@@ -1,4 +1,5 @@
 #include "osiris_bridge_client.h"
+#include "enginebrand.h"
 bool Osiris_GetMemoryInfo(void *mem_ptr, tOSIRISMEMCHUNK *chunk);
 
 #if defined(_WIN64)
@@ -801,7 +802,7 @@ std::unique_ptr<OsirisBridgeClient> OsirisBridgeClient::Start(const char *module
   auto result = std::unique_ptr<OsirisBridgeClient>(new OsirisBridgeClient);
   const uint32_t serial = g_pipe_serial.fetch_add(1);
   wchar_t pipe_name[160];
-  swprintf(pipe_name, _countof(pipe_name), L"\\\\.\\pipe\\PiccuOsiris32-%lu-%u",
+  swprintf(pipe_name, _countof(pipe_name), L"\\\\.\\pipe\\Descent3MasteredOsiris32-%lu-%u",
            GetCurrentProcessId(), serial);
   result->impl_->pipe = CreateNamedPipeW(pipe_name, PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
                                           PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 65536, 65536,
@@ -817,7 +818,7 @@ std::unique_ptr<OsirisBridgeClient> OsirisBridgeClient::Start(const char *module
   host_path.resize(separator == std::wstring::npos ? 0 : separator + 1);
   host_path += L"OsirisHost32.exe";
   if (GetFileAttributesW(host_path.c_str()) == INVALID_FILE_ATTRIBUTES) {
-    bridge_log("OSIRIS bridge: OsirisHost32.exe is missing beside PiccuEngine.exe\n");
+    bridge_log("OSIRIS bridge: OsirisHost32.exe is missing beside " ENGINE_EXECUTABLE_NAME "\n");
     return nullptr;
   }
 

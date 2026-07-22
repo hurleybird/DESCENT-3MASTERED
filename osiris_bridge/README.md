@@ -11,7 +11,7 @@ mirrored at event boundaries so engine save data and the pointer visible to a
 Win32 script remain coherent. Nested requests are supported because a script
 callback can synchronously call back into the engine.
 
-Build both architectures. The Win64 build produces `PiccuEngine.exe`; the
+Build both architectures. The Win64 build produces `Descent3Mastered.exe`; the
 Win32 build produces `osiris_bridge/OsirisHost32.exe`. Ship the host beside the
 Win64 executable.
 

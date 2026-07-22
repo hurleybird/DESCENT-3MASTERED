@@ -1,5 +1,5 @@
 /*
-* Descent 3: Piccu Engine
+* DESCENT 3MASTERED
 * Copyright (C) 2024 SaladBadger
 *
 * This program is free software: you can redistribute it and/or modify
@@ -23,6 +23,11 @@
 #include <sys/types.h>
 #include <SDL3/SDL_filesystem.h>
 #include <string>
+
+#ifdef WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 #include "appdatabase.h"
 #include "linux/lnxdatabase.h"
@@ -56,6 +61,15 @@ oeSDLAppDatabase::oeSDLAppDatabase()
     ddio_CreateDir(filename.c_str());
 
     filename += REGISTRY_FILENAME;
+
+	// The native database is created before the general user-directory import,
+	// so import the previous registry file here on first launch as well.
+	std::string legacy_filename = prefPath;
+	legacy_filename += '\\';
+	legacy_filename += ENGINE_LEGACY_NAME;
+	legacy_filename += '\\';
+	legacy_filename += ENGINE_LEGACY_NAME_NO_SPACE ".registry";
+	CopyFileA(legacy_filename.c_str(), filename.c_str(), TRUE);
 
 #else
 #error "oeSDLAppDatabase::oeSDLAppDatabase: Implment more suitable path for non-windows platforms here"

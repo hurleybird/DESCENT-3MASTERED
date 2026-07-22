@@ -152,15 +152,15 @@ ENDFOREACH()
 
 IF(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
   ADD_CUSTOM_COMMAND(
-    OUTPUT "${CMAKE_BINARY_DIR}/piccuengine-win.hog"
+    OUTPUT "${CMAKE_BINARY_DIR}/descent3mastered-win.hog"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       ${WIN64_MODULE_STRING_SOURCES} "${WIN_SCRIPT_HOG_DIR}"
-    COMMAND $<TARGET_FILE:hogdir> "${CMAKE_BINARY_DIR}/piccuengine-win.hog" "${WIN_SCRIPT_HOG_DIR}"
+    COMMAND $<TARGET_FILE:hogdir> "${CMAKE_BINARY_DIR}/descent3mastered-win.hog" "${WIN_SCRIPT_HOG_DIR}"
     DEPENDS hogdir ${SCRIPTTARGETS} ${WIN64_MODULE_STRING_SOURCES}
     COMMENT "Building the Win64 first-party script archive")
-  ADD_CUSTOM_TARGET(piccuengine_win_hog ALL
-    DEPENDS "${CMAKE_BINARY_DIR}/piccuengine-win.hog")
-  INSTALL(FILES "${CMAKE_BINARY_DIR}/piccuengine-win.hog" DESTINATION ${D3_GAMEDIR})
+  ADD_CUSTOM_TARGET(descent3mastered_win_hog ALL
+    DEPENDS "${CMAKE_BINARY_DIR}/descent3mastered-win.hog")
+  INSTALL(FILES "${CMAKE_BINARY_DIR}/descent3mastered-win.hog" DESTINATION ${D3_GAMEDIR})
 ENDIF()
 
 IF(UNIX)

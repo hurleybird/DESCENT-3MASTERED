@@ -220,7 +220,7 @@ bool ddio_FindDirStart(const char *wildcard, char *namebuf);
 bool ddio_FindNextDir(char *namebuf);
 
 //[ISB] Gets a string that contains the current user directory.
-//On Windows this will be user home\Saved Games\Piccu Engine\.
+//On Windows this will be user home\Saved Games\<extraname>\.
 char* ddio_GetUserDir(const char* extraname);
 
 

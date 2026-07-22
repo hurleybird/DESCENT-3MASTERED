@@ -1335,13 +1335,13 @@ static void RenderHUDItemList(tStatMask stat_mask, int small_filter)
 extern bool Demo_make_movie;
 
 // [ISB] When the vertical resolution exceeds this threshold, start scaling the font up.
-constexpr int PICCU_FONT_SCALE_THRESHOLD = 1080;
+constexpr int D3M_FONT_SCALE_THRESHOLD = 1080;
 
 static int HUDEnabledControlsLineAdvance()
 {
 	float extra_scale = 1.0f;
-	if (Max_window_h > PICCU_FONT_SCALE_THRESHOLD)
-		extra_scale = (float)Max_window_h / PICCU_FONT_SCALE_THRESHOLD;
+	if (Max_window_h > D3M_FONT_SCALE_THRESHOLD)
+		extra_scale = (float)Max_window_h / D3M_FONT_SCALE_THRESHOLD;
 
 	int line_advance = grtext_GetHeight("X") + (int)(extra_scale * 2.0f + 0.5f);
 	return (line_advance < 14) ? 14 : line_advance;
@@ -1349,10 +1349,10 @@ static int HUDEnabledControlsLineAdvance()
 
 static int HUDEnabledControlsSectionGap()
 {
-	if (Max_window_h <= PICCU_FONT_SCALE_THRESHOLD)
+	if (Max_window_h <= D3M_FONT_SCALE_THRESHOLD)
 		return 0;
 
-	return (int)(((float)Max_window_h / PICCU_FONT_SCALE_THRESHOLD - 1.0f) * 8.0f + 0.5f);
+	return (int)(((float)Max_window_h / D3M_FONT_SCALE_THRESHOLD - 1.0f) * 8.0f + 0.5f);
 }
 
 static int HUDEnabledControlsStartY()
@@ -1691,9 +1691,9 @@ void RenderHUDItems(tStatMask stat_mask)
 	//[ISB] If the screen height goes above 1080, start scaling it extra to compensate.
 	//The max stock vertical res was 1200, so this seems like a good cutoff. 
 	float extra_scale = 1.0f;
-	if (Max_window_h > PICCU_FONT_SCALE_THRESHOLD)
+	if (Max_window_h > D3M_FONT_SCALE_THRESHOLD)
 	{
-		extra_scale = (float)Max_window_h / PICCU_FONT_SCALE_THRESHOLD;
+		extra_scale = (float)Max_window_h / D3M_FONT_SCALE_THRESHOLD;
 	}
 
 	float hud_font_scale;

@@ -1,5 +1,5 @@
 /*
-* Descent 3: Piccu Engine
+* DESCENT 3MASTERED
 * Copyright (C) 2024 Parallax Software
 * Copyright (C) 2024 SaladBadger
 *

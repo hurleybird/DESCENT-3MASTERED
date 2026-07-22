@@ -1304,7 +1304,7 @@ void RunGameMenu()
 		case GAME_QUIT_CONFIRM:
 		{
 			ui_ShowCursor();
-			int ret = DoMessageBox(TXT_CONFIRM, "Terminate Piccu Engine?", MSGBOX_YESNO);
+			int ret = DoMessageBox(TXT_CONFIRM, "Terminate " ENGINE_NAME "?", MSGBOX_YESNO);
 			if (ret || ret == NEWUIRES_FORCEQUIT)
 			{
 				Demo_looping = false;

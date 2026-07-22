@@ -233,9 +233,18 @@ struct automated_capture_state
 
 static automated_capture_state Automated_capture = {};
 
+static const char* GetEngineEnvironmentValue(const char* name, const char* legacy_name)
+{
+	const char* value = getenv(name);
+	if ((!value || !value[0]) && legacy_name)
+		value = getenv(legacy_name);
+	return value;
+}
+
 void AutomatedCaptureLog(const char* format, ...)
 {
-	const char* path = getenv("PICCU_CAPTURE_LOG");
+	const char* path = GetEngineEnvironmentValue(ENGINE_ENV_CAPTURE_LOG,
+		ENGINE_LEGACY_ENV_CAPTURE_LOG);
 	if (!path || !path[0] || !format)
 		return;
 
@@ -253,7 +262,8 @@ void AutomatedCaptureLog(const char* format, ...)
 
 static bool AutomatedFramePerfEnabled()
 {
-	const char* path = getenv("PICCU_FRAME_PERF_LOG");
+	const char* path = GetEngineEnvironmentValue(ENGINE_ENV_FRAME_PERF_LOG,
+		ENGINE_LEGACY_ENV_FRAME_PERF_LOG);
 	return path && path[0];
 }
 
@@ -280,7 +290,8 @@ static void InitRendererFramePacing()
 			mprintf((0, "Ignoring invalid -framequeue value; expected 0 through 3.\n"));
 	}
 
-	const char* telemetry_env = getenv("PICCU_FRAME_PACING_TELEMETRY");
+	const char* telemetry_env = GetEngineEnvironmentValue(ENGINE_ENV_FRAME_PACING_TELEMETRY,
+		ENGINE_LEGACY_ENV_FRAME_PACING_TELEMETRY);
 	const bool telemetry_requested = AutomatedFramePerfEnabled() ||
 		(telemetry_env && telemetry_env[0] && strcmp(telemetry_env, "0") != 0);
 	// GPU elapsed-time queries feed the overload controller. They are asynchronous
@@ -299,7 +310,8 @@ static void AutomatedFramePerfLog(int gameplay_frame, double frame_start_interva
 	bool adaptive_pacing,
 	const renderer_frame_pacing_info& pacing_info, const tRendererStats& renderer_stats)
 {
-	const char* path = getenv("PICCU_FRAME_PERF_LOG");
+	const char* path = GetEngineEnvironmentValue(ENGINE_ENV_FRAME_PERF_LOG,
+		ENGINE_LEGACY_ENV_FRAME_PERF_LOG);
 	if (!path || !path[0])
 		return;
 	static bool wrote_header = false;
@@ -930,7 +942,7 @@ void PerfMarkersSetEnabled(bool enabled)
 	Perf_marker_force_reason[0] = '\0';
 	Perf_markers_enabled = true;
 
-	fprintf(Perf_marker_file, "# PiccuEngine perf markers\n");
+	fprintf(Perf_marker_file, "# " ENGINE_NAME_NO_SPACE " perf markers\n");
 	fprintf(Perf_marker_file, "# frame\tstart_ms\tduration_ms\tdepth\tmarker\n");
 }
 

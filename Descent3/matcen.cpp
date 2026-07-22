@@ -798,7 +798,7 @@ void matcen::SaveData(CFILE* fp)
 		//If the handle of a sound is -1 (happens in level 4), write known error string. 
 		char* strptr; 
 		if (m_sounds[i] == -1)
-			strptr = "PICCU INVALID HANDLE";
+			strptr = "D3M INVALID HANDLE";
 		else
 			strptr = Sounds[m_sounds[i]].name;
 		

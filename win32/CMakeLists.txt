@@ -8,6 +8,6 @@ SET (WIN32_SOURCES
 		win32/wincontroller.h
 		win32/win32res.h
 		win32/win32res.rc
-		win32/piccu_station_256.ico
-		win32/piccu_station_32.ico
+		win32/descent3mastered_256.ico
+		win32/descent3mastered_32.ico
 		PARENT_SCOPE)

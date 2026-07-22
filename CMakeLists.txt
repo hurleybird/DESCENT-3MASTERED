@@ -4,7 +4,7 @@ MARK_AS_ADVANCED(CMAKE_BACKWARDS_COMPATIBILITY)
 # allow more human readable "if then else" constructs
 SET( CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS TRUE )
 
-PROJECT(Descent3)
+PROJECT(Descent3Mastered VERSION 0.9.0)
 
 function(add_hog_file HOG_NAME HOG_SRC_DIR)
 	string( REPLACE "." "_" HOG_TARGET ${HOG_NAME} )
@@ -29,7 +29,7 @@ function(add_hog_file HOG_NAME HOG_SRC_DIR)
 endfunction()
 
 IF (UNIX)
-SET (D3_GAMEDIR "~/Descent3/")
+SET (D3_GAMEDIR "~/Descent3Mastered/")
 
   SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wno-write-strings -m32")
   SET(CMAKE_CXX_COMPILER "g++")
@@ -51,7 +51,7 @@ IF (UNIX AND NOT APPLE)
 ENDIF()
 
 IF (APPLE)
-	SET(D3_GAMEDIR "~/Descent3X")	
+	SET(D3_GAMEDIR "~/Descent3Mastered")
   MESSAGE("Building for MAC OSX")
   ADD_DEFINITIONS( -DMONO -D_DEBUG -D__LINUX__ -DLINUX -D_MAX_PATH=260 -D_MAX_FNAME=256 -D_REENRANT -DMACOSX=1 -D_USE_OGL_ACTIVE_TEXTURES)
   SET(PLATFORM_INCLUDES "lib/linux" ${SDL_INCLUDE_DIR} "/usr/X11/include" )
@@ -59,7 +59,7 @@ ENDIF()
 
 IF (WIN32)
 	set(USE_SDL OFF CACHE BOOL "Builds with SDL rather than the Win32 code.")
-	SET(D3_GAMEDIR "c:/games/Descent3/")
+	SET(D3_GAMEDIR "c:/games/DESCENT 3MASTERED/")
 	if (CMAKE_SIZEOF_VOID_P EQUAL 8)
 		set(OPENAL_ARCH_DIR "Win64")
 	else()
@@ -255,49 +255,49 @@ SET (DESCENT3_SOURCES
 	${DDIO_SOURCES})
 ENDIF()
 
-add_executable(PiccuEngine ${DESCENT3_SOURCES})
+add_executable(Descent3Mastered ${DESCENT3_SOURCES})
 	
 IF (WIN32)
 	if (USE_SDL) #for convenience SDL will compile as a console app, and dump mono there
-		target_link_options(PiccuEngine PUBLIC /SAFESEH:NO /NODEFAULTLIB:LIBC)
+		target_link_options(Descent3Mastered PUBLIC /SAFESEH:NO /NODEFAULTLIB:LIBC)
 	else()
-		target_link_options(PiccuEngine PUBLIC /SAFESEH:NO /SUBSYSTEM:WINDOWS /NODEFAULTLIB:LIBC)
+		target_link_options(Descent3Mastered PUBLIC /SAFESEH:NO /SUBSYSTEM:WINDOWS /NODEFAULTLIB:LIBC)
 	endif()
 ENDIF()
 
 IF (UNIX AND NOT APPLE)
-	target_link_options(PiccuEngine PUBLIC /usr/lib/libpulse-simple.so.0)
+	target_link_options(Descent3Mastered PUBLIC /usr/lib/libpulse-simple.so.0)
 ENDIF()
 	
 IF (APPLE)
-	target_link_options(PiccuEngine PUBLIC -framework IOKit -framework Cocoa -framework OpenGL -framework Carbon)
+	target_link_options(Descent3Mastered PUBLIC -framework IOKit -framework Cocoa -framework OpenGL -framework Carbon)
 ENDIF()
 
-target_link_libraries(PiccuEngine ${PLATFORM_LIBS})
+target_link_libraries(Descent3Mastered ${PLATFORM_LIBS})
 	
-target_compile_definitions(PiccuEngine PUBLIC -DMONO "$<$<CONFIG:RELEASE>:RELEASE>")
-target_compile_definitions(PiccuEngine PUBLIC -DMONO "$<$<CONFIG:MINSIZEREL>:RELEASE>")
-target_compile_definitions(PiccuEngine PUBLIC -DMONO "$<$<CONFIG:RELWITHDEBINFO>:RELEASE>")
-target_compile_definitions(PiccuEngine PUBLIC -DSDLKEY) #non-main projects see the SDL app but don't bundle SDL.
+target_compile_definitions(Descent3Mastered PUBLIC -DMONO "$<$<CONFIG:RELEASE>:RELEASE>")
+target_compile_definitions(Descent3Mastered PUBLIC -DMONO "$<$<CONFIG:MINSIZEREL>:RELEASE>")
+target_compile_definitions(Descent3Mastered PUBLIC -DMONO "$<$<CONFIG:RELWITHDEBINFO>:RELEASE>")
+target_compile_definitions(Descent3Mastered PUBLIC -DSDLKEY) #non-main projects see the SDL app but don't bundle SDL.
 
 # The maintained 1.5 codebase defaults to the CRT allocator.  Keep the
 # original private Win32 heap for the legacy 32-bit build, but do not carry it
 # into x64: it is unnecessary there, bypasses modern allocator diagnostics,
 # and is the source of shutdown heap corruption under the 64-bit runtime.
 if (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
-	target_compile_definitions(PiccuEngine PRIVATE MEM_USE_RTL)
+	target_compile_definitions(Descent3Mastered PRIVATE MEM_USE_RTL)
 endif()
 
 add_library(dmfc SHARED ${DMFC_SOURCES})
 target_compile_definitions(dmfc PUBLIC -DOUTRAGE_VERSION)
 target_compile_definitions(dmfc PRIVATE -DDMFC_DLL)
 target_include_directories(dmfc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/netgames/includes")
-add_dependencies(PiccuEngine revision_check piccuengine_hog TCP-IP Tracker dmfc)
+add_dependencies(Descent3Mastered revision_check descent3mastered_hog TCP-IP Tracker dmfc)
 if (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
-	add_dependencies(PiccuEngine piccuengine_win_hog ${NETGAME_TARGETS})
+	add_dependencies(Descent3Mastered descent3mastered_win_hog ${NETGAME_TARGETS})
 endif()
 	
-install(TARGETS PiccuEngine DESTINATION ${D3_GAMEDIR})
+install(TARGETS Descent3Mastered DESTINATION ${D3_GAMEDIR})
 install(TARGETS dmfc
 	RUNTIME DESTINATION ${D3_GAMEDIR}
 	LIBRARY DESTINATION ${D3_GAMEDIR})
@@ -319,9 +319,9 @@ if (WIN32)
 		set(WOOTING_ANALOG_RUNTIME_DLL
 			"${CMAKE_SOURCE_DIR}/thirdparty/WootingAnalogSDK/bin/Win64/wooting_analog_sdk_dist.dll")
 		if (EXISTS "${WOOTING_ANALOG_RUNTIME_DLL}")
-			add_custom_command(TARGET PiccuEngine POST_BUILD
+			add_custom_command(TARGET Descent3Mastered POST_BUILD
 				COMMAND ${CMAKE_COMMAND} -E copy_if_different
-					"${WOOTING_ANALOG_RUNTIME_DLL}" "$<TARGET_FILE_DIR:PiccuEngine>")
+					"${WOOTING_ANALOG_RUNTIME_DLL}" "$<TARGET_FILE_DIR:Descent3Mastered>")
 			install(FILES "${WOOTING_ANALOG_RUNTIME_DLL}" DESTINATION ${D3_GAMEDIR})
 			install(FILES
 				"${CMAKE_SOURCE_DIR}/thirdparty/WootingAnalogSDK/COPYING"

@@ -1288,7 +1288,7 @@ int __cdecl RecordExceptionInfo(PEXCEPTION_POINTERS data, const char *Message)
 		MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), dump, MiniDumpNormal, &info, nullptr, nullptr);
 		CloseHandle(dump);
 
-		wsprintf(bottommsg, "A crash dump file has been created at %s.\r\nYou can attach this to a bug report at https://github.com/InsanityBringer/PiccuEngine/issues", fullfilename.c_str());
+		wsprintf(bottommsg, "A crash dump file has been created at %s.\r\nYou can attach this to a bug report at https://github.com/hurleybird/DESCENT-3MASTERED/issues", fullfilename.c_str());
 	}
 	else
 	{

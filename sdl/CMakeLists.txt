@@ -11,8 +11,8 @@ if (WIN32) #still embed the icon
 		win32/winmono.cpp
 		win32/win32res.h
 		win32/win32res.rc
-		win32/piccu_station_256.ico
-		win32/piccu_station_32.ico
+		win32/descent3mastered_256.ico
+		win32/descent3mastered_32.ico
 		win32/wincon_sdl.cpp
 		PARENT_SCOPE)
 else()

@@ -73,6 +73,7 @@
 #include "pstring.h"
 #include "debug.h"
 #include "application.h"
+#include "enginebrand.h"
 
 #define MAX_MSG_LEN 2000
 
@@ -133,7 +134,9 @@ void Error(char *fmt,...)
 
 	sprintf(Exit_title_str,"%s Error",App_title);
 	mprintf ((0,"%s\n",Exit_message));
-	const char *capture_log_path = getenv("PICCU_CAPTURE_LOG");
+	const char *capture_log_path = getenv(ENGINE_ENV_CAPTURE_LOG);
+	if (!capture_log_path || !capture_log_path[0])
+		capture_log_path = getenv(ENGINE_LEGACY_ENV_CAPTURE_LOG);
 	if (capture_log_path && capture_log_path[0])
 	{
 		FILE *capture_log = fopen(capture_log_path, "ab");

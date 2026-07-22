@@ -71,7 +71,7 @@ bool AutomatedCaptureSuppressesInput();
 bool AutomatedCaptureForcesForwardInput();
 bool AutomatedCaptureForcesPrimaryFireInput();
 
-// Writes an opt-in lifecycle trace when PICCU_CAPTURE_LOG names a file.
+// Writes an opt-in lifecycle trace when DESCENT3MASTERED_CAPTURE_LOG names a file.
 void AutomatedCaptureLog(const char* format, ...);
 
 class PerfMarkerScope

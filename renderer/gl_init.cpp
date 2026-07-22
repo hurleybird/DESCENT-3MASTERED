@@ -1,5 +1,5 @@
 /*
-* Descent 3: Piccu Engine
+* DESCENT 3MASTERED
 * Copyright (C) 2024 Parallax Software
 * Copyright (C) 2024 SaladBadger
 *
@@ -18,6 +18,7 @@
 */
 #include "gl_local.h"
 #include "args.h"
+#include "enginebrand.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -212,7 +213,7 @@ HWND InitDummy()
 	wc.hCursor = LoadCursor(NULL, IDC_ARROW);
 	wc.hbrBackground = NULL;
 	wc.lpszMenuName = NULL;
-	wc.lpszClassName = TEXT("PiccuOpenGLDummyWindow");
+	wc.lpszClassName = TEXT("Descent3MasteredOpenGLDummyWindow");
 
 	//Register window class
 	if (!RegisterClass(&wc))
@@ -230,8 +231,8 @@ HWND InitDummy()
 
 	//Create Window
 	if (!(dummy = CreateWindowEx(exStyle,
-		TEXT("PiccuOpenGLDummyWindow"),
-		TEXT("PiccuEngine"),
+		TEXT("Descent3MasteredOpenGLDummyWindow"),
+		TEXT(ENGINE_NAME),
 		WS_CLIPSIBLINGS | WS_CLIPCHILDREN | style,
 		0, 0,
 		windowRect.right - windowRect.left,
@@ -240,7 +241,7 @@ HWND InitDummy()
 		g_hInst,
 		NULL)))
 	{
-		UnregisterClassW(L"PiccuOpenGLDummyWindow", g_hInst);
+		UnregisterClassW(L"Descent3MasteredOpenGLDummyWindow", g_hInst);
 		return 0;
 	}
 	ShowWindow(dummy, SW_HIDE);
@@ -251,7 +252,7 @@ HWND InitDummy()
 void ShutdownDummy(HWND dummy)
 {
 	DestroyWindow(dummy);
-	UnregisterClass(TEXT("PiccuOpenGLDummyWindow"), GetModuleHandle(NULL));
+	UnregisterClass(TEXT("Descent3MasteredOpenGLDummyWindow"), GetModuleHandle(NULL));
 }
 
 bool GL_GetWGLExtensionProcs()
@@ -523,7 +524,7 @@ void GL4Renderer::GetInformation()
 	mprintf((0, "OpenGL Vendor: %s\n", glGetString(GL_VENDOR)));
 	mprintf((0, "OpenGL Renderer: %s\n", glGetString(GL_RENDERER)));
 	mprintf((0, "OpenGL Version: %s\n", version ? version : "unknown"));
-	mprintf((0, "PiccuEngine GL core path requested 4.5, got %d.%d (%s)\n",
+	mprintf((0, ENGINE_NAME_NO_SPACE " GL core path requested 4.5, got %d.%d (%s)\n",
 		RendererOpenGLMajorVersion, RendererOpenGLMinorVersion, RendererOpenGLVersionString));
 }
 

@@ -19,6 +19,11 @@
 
 #include <stdlib.h>
 
+#if defined(WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 #include "mono.h"
 #include "application.h"
 #include "gametexture.h"
@@ -1357,6 +1362,79 @@ static void TransferUserData(const char* dest)
 	CopyPatternToDir(temp, destpath);
 }
 
+#if defined(WIN32)
+static bool CopyLegacyUserTree(const char* source, const char* destination)
+{
+	if (!source || !destination || !ddio_DirExists(source))
+		return false;
+	if (!CreateDirectoryA(destination, nullptr) && GetLastError() != ERROR_ALREADY_EXISTS)
+		return false;
+
+	char wildcard[MAX_PATH];
+	ddio_MakePath(wildcard, source, "*", nullptr);
+	WIN32_FIND_DATAA entry;
+	HANDLE find = FindFirstFileA(wildcard, &entry);
+	if (find == INVALID_HANDLE_VALUE)
+		return GetLastError() == ERROR_FILE_NOT_FOUND;
+
+	bool copied = true;
+	do
+	{
+		if (!strcmp(entry.cFileName, ".") || !strcmp(entry.cFileName, ".."))
+			continue;
+
+		char source_path[MAX_PATH];
+		char destination_path[MAX_PATH];
+		ddio_MakePath(source_path, source, entry.cFileName, nullptr);
+		ddio_MakePath(destination_path, destination, entry.cFileName, nullptr);
+		if (entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		{
+			// Avoid following directory junctions or other reparse points.
+			if (!(entry.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+				!CopyLegacyUserTree(source_path, destination_path))
+				copied = false;
+		}
+		else if (!CopyFileA(source_path, destination_path, TRUE))
+		{
+			const DWORD error = GetLastError();
+			if (error != ERROR_FILE_EXISTS && error != ERROR_ALREADY_EXISTS)
+				copied = false;
+		}
+	} while (FindNextFileA(find, &entry));
+
+	if (GetLastError() != ERROR_NO_MORE_FILES)
+		copied = false;
+	FindClose(find);
+	return copied;
+}
+
+static void MigrateLegacyUserData(const char* destination)
+{
+	char* source = ddio_GetUserDir(ENGINE_LEGACY_NAME);
+	if (!source || !destination || !_stricmp(source, destination) || !ddio_DirExists(source))
+		return;
+
+	char marker[MAX_PATH];
+	ddio_MakePath(marker, destination, "descent3mastered_migration_v1", nullptr);
+	if (cfexist(marker))
+		return;
+
+	mprintf((0, "Importing legacy %s user data into %s without overwriting existing files.\n",
+		ENGINE_LEGACY_NAME, destination));
+	if (!CopyLegacyUserTree(source, destination))
+	{
+		mprintf((0, "Legacy user-data import was incomplete; it will be retried next launch.\n"));
+		return;
+	}
+
+	FILE* migration_marker = fopen(marker, "wb");
+	if (migration_marker)
+		fclose(migration_marker);
+}
+#else
+static void MigrateLegacyUserData(const char*) {}
+#endif
+
 /*
 	I/O systems initialization
 */
@@ -1417,11 +1495,26 @@ void InitIOSystems(bool editor)
 	ddio_SetWorkingDir(Base_directory);
 
 	char portablepath[MAX_PATH];
-	ddio_MakePath(portablepath, Base_directory, "piccu_portable", nullptr);
-	bool portableexists = cfexist(portablepath) != 0;
+	char legacy_portablepath[MAX_PATH];
+	ddio_MakePath(portablepath, Base_directory, "descent3mastered_portable", nullptr);
+	ddio_MakePath(legacy_portablepath, Base_directory, "piccu_portable", nullptr);
+	bool product_portable_exists = cfexist(portablepath) != 0;
+	const bool legacy_portable_exists = cfexist(legacy_portablepath) != 0;
+	if (!product_portable_exists && legacy_portable_exists)
+	{
+		FILE* marker = fopen(portablepath, "wb");
+		if (marker)
+		{
+			fclose(marker);
+			product_portable_exists = true;
+		}
+	}
+	bool portableexists = product_portable_exists || legacy_portable_exists;
 	char* userdir = ddio_GetUserDir(ENGINE_NAME);
 	if (portableexists || !userdir)
 		Portable = true;
+	else
+		MigrateLegacyUserData(userdir);
 
 	//If the install isn't flagged as portable, 
 	if (!portableexists && !Portable)
@@ -1450,9 +1543,9 @@ void InitIOSystems(bool editor)
 		User_directory = Base_directory;
 		if (!portableexists && !modifiedbase && (!Dedicated_server || portable_requested))
 		{
-			CFILE* fp = cfopen("piccu_portable", "wb");
+			CFILE* fp = cfopen("descent3mastered_portable", "wb");
 			if (!fp)
-				Error("Failed to create piccu_portable marker!");
+				Error("Failed to create descent3mastered_portable marker!");
 			cfclose(fp);
 		}
 	}
@@ -1521,9 +1614,9 @@ void InitIOSystems(bool editor)
 	}
 
 	//Init hogfiles
-	int d3_hid=-1,extra_hid=-1,extra1_hid=-1,merc_hid=-1,sys_hid=-1,extra13_hid=-1,piccu_hid=-1;
+	int d3_hid=-1,extra_hid=-1,extra1_hid=-1,merc_hid=-1,sys_hid=-1,extra13_hid=-1,engine_hid=-1;
 #if defined(_WIN64)
-	int piccu_win_hid=-1;
+	int engine_win_hid=-1;
 #endif
 	char fullname[_MAX_PATH];
 
@@ -1564,25 +1657,35 @@ void InitIOSystems(bool editor)
 	extra13_hid = cf_OpenLibrary(fullname);
 
 	// Library lookup is last-opened-first.  Mount engine-owned resources after
-	// the retail archives so fixes and upgraded assets in piccuengine.hog can
+	// the retail archives so fixes and upgraded assets in descent3mastered.hog can
 	// intentionally replace their original counterparts.  Missions remain
 	// later so mission-local content keeps the highest priority.
-	ddio_MakePath(fullname, Working_directory, "piccuengine.hog", nullptr);
-	piccu_hid = cf_OpenLibrary(fullname);
-	if (piccu_hid == 0)
+	ddio_MakePath(fullname, Working_directory, "descent3mastered.hog", nullptr);
+	engine_hid = cf_OpenLibrary(fullname);
+	if (engine_hid == 0)
 	{
-		Error("Cannot find piccuengine.hog file!");
+		ddio_MakePath(fullname, Working_directory, "piccuengine.hog", nullptr);
+		engine_hid = cf_OpenLibrary(fullname);
+		if (engine_hid != 0)
+			mprintf((0, "Using legacy piccuengine.hog; replace it with descent3mastered.hog.\n"));
+		else
+			Error("Cannot find descent3mastered.hog file!");
 	}
 
 #if defined(_WIN64)
 	// Retail Windows archives contain x86 Osiris DLLs.  Mount native first-party
 	// replacements after the common engine archive, while leaving mission-local
 	// content mounted later with the highest resource priority.
-	ddio_MakePath(fullname, Working_directory, "piccuengine-win.hog", nullptr);
-	piccu_win_hid = cf_OpenLibrary(fullname);
-	if (piccu_win_hid == 0)
+	ddio_MakePath(fullname, Working_directory, "descent3mastered-win.hog", nullptr);
+	engine_win_hid = cf_OpenLibrary(fullname);
+	if (engine_win_hid == 0)
 	{
-		Error("Cannot find piccuengine-win.hog file required by the 64-bit build!");
+		ddio_MakePath(fullname, Working_directory, "piccuengine-win.hog", nullptr);
+		engine_win_hid = cf_OpenLibrary(fullname);
+		if (engine_win_hid != 0)
+			mprintf((0, "Using legacy piccuengine-win.hog; replace it with descent3mastered-win.hog.\n"));
+		else
+			Error("Cannot find descent3mastered-win.hog file required by the 64-bit build!");
 	}
 #endif
 
@@ -1629,7 +1732,7 @@ void InitIOSystems(bool editor)
 #if defined(_WIN64)
 	// Extraction lookup is first-match-wins.  Register the native replacements
 	// before the x86 retail modules with the same names.
-	Osiris_ExtractScriptsFromHog(piccu_win_hid, false);
+	Osiris_ExtractScriptsFromHog(engine_win_hid, false);
 #endif
 	if(extra13_hid != 0)
 		Osiris_ExtractScriptsFromHog(extra13_hid,false);

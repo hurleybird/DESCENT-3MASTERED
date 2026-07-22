@@ -2,6 +2,8 @@
 
 **An unofficial, preservation-first modernization of Descent 3.**
 
+Current development release: **0.9**
+
 DESCENT 3MASTERED keeps the original game, missions, mechanics, and overall
 presentation intact while rebuilding the technology around them for modern
 systems. The aim is closer to a careful modern remaster than a remake: improve
@@ -10,11 +12,6 @@ game into something else.
 
 This project does **not** include the commercial Descent 3 game data. A legally
 obtained installation of Descent 3 is required.
-
-> **Renaming in progress:** the repository is now independent and uses the
-> DESCENT 3MASTERED name. Some internal identifiers, the current executable
-> name (`PiccuEngine.exe`), and the existing user-data directory still retain
-> Piccu Engine names while compatibility-safe migration work is completed.
 
 ## Project direction
 
@@ -112,13 +109,16 @@ the relevant stock multiplayer missions, including `missions/Fury.mn3` and
 `missions/bedlam.mn3`. The `movies` directory is optional.
 
 Release archives should be extracted into that directory after the retail data
-has been copied. Development builds must include their generated HOG files,
-runtime DLLs, game modules, and the legacy Osiris bridge components—not only the
-main executable.
+has been copied. Development builds must include `Descent3Mastered.exe`,
+`descent3mastered.hog`, `descent3mastered-win.hog`, the runtime DLLs, game
+modules, and legacy Osiris bridge components—not only the main executable.
 
 By default, pilots, saves, screenshots, and other user-generated files are kept
-under the Windows Saved Games directory. Existing Piccu Engine user data remains
-in use during the naming transition so pilots and saves are not silently lost.
+under `Saved Games\DESCENT 3MASTERED`. On first launch, existing files from
+`Saved Games\Piccu Engine` are copied into the new directory without deleting
+the source or overwriting newer files. Portable installations use the marker
+`descent3mastered_portable`; the old `piccu_portable` marker remains recognized
+for migration compatibility.
 
 ## Building on Windows
 
@@ -134,10 +134,9 @@ From a Developer PowerShell or command prompt:
 
 ```powershell
 cmake -S . -B out/build/x64-Release -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build out/build/x64-Release --target PiccuEngine
+cmake --build out/build/x64-Release --target Descent3Mastered
 ```
 
-`PiccuEngine` is still the internal CMake target during the naming transition.
 The build also produces or copies supporting files required at runtime. Keep
 those files together when constructing a test installation.
 
@@ -170,6 +169,7 @@ licenses in their source or distribution directories.
 
 Acknowledgements include:
 
+- Project lead and DESCENT 3MASTERED development: Jeff Graw (hurleybird).
 - Outrage Entertainment and the original Descent 3 developers.
 - The official Descent 3 source-release contributors.
 - Piccu Engine, InjectD3, and their contributors.

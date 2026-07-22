@@ -1,6 +1,6 @@
 NAME                    Osiris Bridge ABI Test
 NUMLEVELS               1
-AUTHOR                  PiccuEngine
+AUTHOR                  Jeff Graw (hurleybird)
 DESCRIPTION             Synthetic x86/x64 Osiris bridge compatibility test
 SINGLE                  YES
 

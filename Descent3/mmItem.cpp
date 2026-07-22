@@ -396,20 +396,26 @@ void mmInterface::CopyrightText()
 	else if (Program_version.version_type == RELEASE_VERSION)
 		typestr += "Ver ";
 
-	std::string engstr = "Piccu Experiment M4";
+	std::string engstr = ENGINE_NAME " v" ENGINE_VERSION_STRING;
+	char compatibility_version[64];
+	snprintf(compatibility_version, sizeof(compatibility_version), "%sD3 compatibility v%d.%d",
+		typestr.c_str(), Program_version.major, Program_version.minor);
 
 	//Get 7 character hash
 	char hashbuf[8];
 	strncpy(hashbuf, GIT_HASH, sizeof(hashbuf) - 1);
 	hashbuf[sizeof(hashbuf) - 1] = '\0';
 
-	int x = Max_window_w - 164, y = Max_window_h - 37;		//was -128 and -29
-
 	// attempt to print text nicely.
 	grtext_SetFont(BRIEFING_FONT);
+	int text_width = grtext_GetTextLineWidth(engstr.c_str());
+	const int compatibility_width = grtext_GetTextLineWidth(compatibility_version);
+	if (compatibility_width > text_width)
+		text_width = compatibility_width;
+	int x = Max_window_w - text_width - 8, y = Max_window_h - 37;
 	grtext_SetAlpha(192);
 	grtext_SetColor(GR_RGB(255, 32, 32));
-	grtext_Printf(x, y, "%s v%d.%d", typestr.c_str(), Program_version.major, Program_version.minor);
+	grtext_Puts(x, y, compatibility_version);
 	grtext_Puts(x, y + 12, engstr.c_str());
 	grtext_Puts(x, y + 24, hashbuf);
 #ifdef SDL3
@@ -423,7 +429,7 @@ void mmInterface::CopyrightText()
 	for (i = 0; i < 1; i++)
 	{
 		grtext_SetColor(GR_RGB(255, 32, 32));
-		grtext_Printf(x, y, "%s v%d.%d", typestr.c_str(), Program_version.major, Program_version.minor, Program_version.build);
+		grtext_Puts(x, y, compatibility_version);
 		grtext_Puts(x, y + 12, engstr.c_str());
 		grtext_Puts(x, y + 24, hashbuf);
 #ifdef SDL3

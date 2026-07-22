@@ -173,7 +173,7 @@ class oeD3Win32App: public oeWin32Application
 
 public:
 	oeD3Win32App(unsigned flags, HInstance hinst):
-		 oeWin32Application(ENGINE_NAME " " GIT_DESCRIPTION, flags, hinst) 
+		 oeWin32Application(ENGINE_NAME " " ENGINE_VERSION_STRING " " GIT_DESCRIPTION, flags, hinst)
 	{ 
 	  	Descent = this;
 		shutdown = false;
@@ -239,6 +239,36 @@ public:
 	oeD3Win32Database();
 };
 
+static void MigrateLegacyRegistrySettings()
+{
+	constexpr const char* legacy_path = "SOFTWARE\\Outrage\\Descent3";
+	constexpr const char* product_path = "SOFTWARE\\Outrage\\Descent3Mastered";
+	HKEY key = nullptr;
+	if (RegOpenKeyExA(HKEY_CURRENT_USER, product_path, 0, KEY_READ, &key) == ERROR_SUCCESS)
+	{
+		RegCloseKey(key);
+		return;
+	}
+
+	HKEY legacy_key = nullptr;
+	if (RegOpenKeyExA(HKEY_CURRENT_USER, legacy_path, 0, KEY_READ, &legacy_key) != ERROR_SUCCESS)
+		return;
+
+	HKEY product_key = nullptr;
+	DWORD disposition = 0;
+	const LONG create_result = RegCreateKeyExA(HKEY_CURRENT_USER, product_path, 0, nullptr,
+		REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, nullptr, &product_key, &disposition);
+	if (create_result == ERROR_SUCCESS && disposition == REG_CREATED_NEW_KEY)
+	{
+		const LONG copy_result = RegCopyTreeA(legacy_key, nullptr, product_key);
+		if (copy_result != ERROR_SUCCESS)
+			mprintf((0, "Could not fully import legacy registry settings (error %ld).\n", copy_result));
+	}
+	if (product_key)
+		RegCloseKey(product_key);
+	RegCloseKey(legacy_key);
+}
+
 
 
 //	---------------------------------------------------------------------------
@@ -267,7 +297,8 @@ oeD3Win32Database::oeD3Win32Database():
 #elif defined(OEM)
 	lstrcat(m_Basepath, "\\Descent3_OEM");
 #else
-	lstrcat(m_Basepath, "\\Descent3");
+	MigrateLegacyRegistrySettings();
+	lstrcat(m_Basepath, "\\Descent3Mastered");
 #endif
 		
 	
@@ -716,7 +747,7 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine, int nC
 	// Let AddressSanitizer see the original fault.  Routing its deliberate
 	// exception through the legacy SEH crash reporter causes a nested ASan
 	// failure and hides the actual memory diagnostic.
-#if defined(__SANITIZE_ADDRESS__) || defined(PICCU_ASAN_BUILD)
+#if defined(__SANITIZE_ADDRESS__) || defined(DESCENT3MASTERED_ASAN_BUILD) || defined(PICCU_ASAN_BUILD)
 	return HandledWinMain(hInst, hPrevInst, szCmdLine, nCmdShow);
 #else
 	int result =-1;

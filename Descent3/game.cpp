@@ -18,9 +18,9 @@
 
 #if defined(WIN32) || defined(_WIN32)
 extern "C" __declspec(dllimport) short __stdcall GetAsyncKeyState(int vkey);
-constexpr int PICCU_VK_MENU = 0x12;
-constexpr int PICCU_VK_LMENU = 0xa4;
-constexpr int PICCU_VK_RMENU = 0xa5;
+constexpr int D3M_VK_MENU = 0x12;
+constexpr int D3M_VK_LMENU = 0xa4;
+constexpr int D3M_VK_RMENU = 0xa5;
 #endif
 
 #include "game.h"
@@ -374,9 +374,9 @@ static bool IsAltKeyDown(int key)
 		return true;
 
 #if defined(WIN32) || defined(_WIN32)
-	return (GetAsyncKeyState(PICCU_VK_MENU) & 0x8000) ||
-		(GetAsyncKeyState(PICCU_VK_LMENU) & 0x8000) ||
-		(GetAsyncKeyState(PICCU_VK_RMENU) & 0x8000);
+	return (GetAsyncKeyState(D3M_VK_MENU) & 0x8000) ||
+		(GetAsyncKeyState(D3M_VK_LMENU) & 0x8000) ||
+		(GetAsyncKeyState(D3M_VK_RMENU) & 0x8000);
 #else
 	return false;
 #endif

@@ -70,7 +70,7 @@ struct team
 };
 
 //[ISB] hack ahoy:
-//This is some aux data I needed for Piccu features but aren't important enough to warrant changing the player structure over
+// Auxiliary engine data that is not important enough to warrant changing the player structure.
 struct player_extra
 {
 	float last_pain_time;
