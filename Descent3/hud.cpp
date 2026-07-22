@@ -2231,16 +2231,40 @@ void FreeReticle()
 //	and the ship's weapon configuration
 void ResetReticle()
 {
-	player* player = &Players[Player_num];
-	object* pobj = &Objects[player->objnum];
+	Ret_prim_mask = 0;
+	Ret_sec_mask = 0;
 
-	ASSERT(player->objnum >= 0);
-
-	// Make sure we're not resetting a non-existent object
-	if (!pobj || (pobj->type != OBJ_PLAYER && pobj->type != OBJ_GHOST && pobj->type != OBJ_OBSERVER))
+	// Mission/addon transitions can temporarily leave the player referring to
+	// an object whose polymodel data has already been released.  The saved
+	// player and object are restored later, at which point the reticle is reset
+	// again.  Do not dereference that transitional state here.
+	if (Player_num < 0 || Player_num >= MAX_PLAYERS)
 		return;
 
-	poly_model* pm = &Poly_models[Objects[player->objnum].rtype.pobj_info.model_num];
+	player* player = &Players[Player_num];
+	if (player->objnum < 0 || player->objnum > Highest_object_index)
+		return;
+
+	// Make sure we're not resetting a non-existent object
+	object* pobj = &Objects[player->objnum];
+	if (pobj->type != OBJ_PLAYER && pobj->type != OBJ_GHOST && pobj->type != OBJ_OBSERVER)
+		return;
+	if (player->ship_index < 0 || player->ship_index >= MAX_SHIPS ||
+		!Ships[player->ship_index].used)
+		return;
+	if (player->weapon[PW_PRIMARY].index < 0 || player->weapon[PW_PRIMARY].index >= MAX_PLAYER_WEAPONS ||
+		player->weapon[PW_SECONDARY].index < 0 || player->weapon[PW_SECONDARY].index >= MAX_PLAYER_WEAPONS ||
+		pobj->dynamic_wb == nullptr)
+		return;
+
+	const int model_num = pobj->rtype.pobj_info.model_num;
+	if (model_num < 0 || model_num >= MAX_POLY_MODELS)
+		return;
+
+	poly_model* pm = &Poly_models[model_num];
+	if (pm->num_wbs <= 0 || pm->poly_wb == nullptr)
+		return;
+
 	otype_wb_info* prim_wb = &Ships[player->ship_index].static_wb[player->weapon[PW_PRIMARY].index];
 	otype_wb_info* sec_wb = &Ships[player->ship_index].static_wb[player->weapon[PW_SECONDARY].index];
 	dynamic_wb_info* prim_dyn_wb = &pobj->dynamic_wb[player->weapon[PW_PRIMARY].index];
@@ -2249,8 +2273,6 @@ void ResetReticle()
 
 	//	assign reticle elements to the Ret_prim_xx array.
 	//	create battery mask
-	Ret_prim_mask = 0;
-
 	// iterate through all battery masks to determine which gun points occupy the primary weapon
 	// on the player ship!
 	for (j = 0; j < prim_wb->num_masks; j++)
@@ -2273,8 +2295,6 @@ void ResetReticle()
 
 	// iterate through all battery masks to determine which gun points occupy the secondary weapon
 	// on the player ship!
-	Ret_sec_mask = 0;
-
 	for (j = 0; j < sec_wb->num_masks; j++)
 	{
 		for (i = 0; i < pm->poly_wb[0].num_gps; i++)

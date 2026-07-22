@@ -689,6 +689,10 @@ int LGSPlayers(CFILE *fp)
 	CloseShipHUD();
 	InitShipHUD(ship_index);							
 	InitCockpit(ship_index);
+	// LGSMission initializes a new ship before the saved player object has been
+	// restored.  Rebuild the reticle now that its object/model/weapon state is
+	// authoritative again.
+	ResetReticle();
 
 	return LGS_OK;
 }

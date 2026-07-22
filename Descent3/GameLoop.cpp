@@ -228,6 +228,9 @@ struct automated_capture_state
 	int force_primary_slot;
 	bool force_primary_alt;
 	bool primary_slot_applied;
+	bool reload_performed;
+	int reload_frame;
+	char reload_path[PSPATHNAME_LEN];
 	char output_path[PSPATHNAME_LEN];
 };
 
@@ -482,6 +485,7 @@ static void InitAutomatedCapture()
 		}
 	}
 	Automated_capture.force_primary_slot = -1;
+	Automated_capture.reload_frame = -1;
 	Automated_capture.force_primary_alt =
 		FindArg("-capture-primary-alt") != 0;
 	const int primary_slot_arg = FindArg("-capture-primary-slot");
@@ -508,6 +512,32 @@ static void InitAutomatedCapture()
 		if (frame_arg)
 			mprintf((0, "Automated capture disabled: invalid gameplay frame.\n"));
 		return;
+	}
+
+	const int reload_arg = FindArg("-capture-reloadgame");
+	const char* reload_path = reload_arg ? GetArg(reload_arg + 1) : nullptr;
+	if (reload_path && reload_path[0])
+	{
+		if (strlen(reload_path) >= sizeof(Automated_capture.reload_path))
+		{
+			mprintf((0, "Ignoring -capture-reloadgame: path is too long.\n"));
+		}
+		else
+		{
+			strcpy(Automated_capture.reload_path, reload_path);
+			Automated_capture.reload_frame = (int)target_frame / 2;
+			const int reload_frame_arg = FindArg("-capture-reload-frame");
+			if (reload_frame_arg)
+			{
+				const char* value = GetArg(reload_frame_arg + 1);
+				char* end = nullptr;
+				const long frame = value ? strtol(value, &end, 10) : -1;
+				if (value && end != value && *end == '\0' && frame >= 0 && frame < target_frame)
+					Automated_capture.reload_frame = (int)frame;
+				else
+					mprintf((0, "Ignoring invalid -capture-reload-frame value.\n"));
+			}
+		}
 	}
 
 	const int delta_arg = FindAutomatedCaptureArg("-capture-dt",
@@ -629,7 +659,26 @@ static void EndAutomatedCaptureFrame()
 {
 	if (Automated_capture.gameplay_frame_active &&
 		!Automated_capture.exit_pending)
+	{
 		++Automated_capture.gameplay_frame;
+		if (!Automated_capture.reload_performed &&
+			Automated_capture.reload_path[0] &&
+			Automated_capture.gameplay_frame >= Automated_capture.reload_frame)
+		{
+			Automated_capture.reload_performed = true;
+			if (SetLoadGamePath(Automated_capture.reload_path))
+			{
+				AutomatedCaptureLog("scheduled reload frame=%d path=%s",
+					Automated_capture.gameplay_frame, Automated_capture.reload_path);
+				SetGameState(GAMESTATE_LOADGAME);
+			}
+			else
+			{
+				AutomatedCaptureLog("scheduled reload rejected path=%s",
+					Automated_capture.reload_path);
+			}
+		}
+	}
 	if (Automated_capture.exit_pending)
 	{
 		Automated_capture.exit_pending = false;
