@@ -58,6 +58,8 @@ int Highest_vis_effect_index = 0;
 int Num_vis_effects = 0;
 
 static const float SNOW_FADE_IN_TIME = 0.1f;
+static int Enhanced_snow_atlas_handle = BAD_BITMAP_HANDLE;
+static int Enhanced_snow_fallback_handle = BAD_BITMAP_HANDLE;
 static std::vector<int> Close_screen_weapon_object_handles;
 
 enum
@@ -97,6 +99,171 @@ static float VisEffectSnowFadeInFactor(float time_live)
 	if (time_live >= SNOW_FADE_IN_TIME)
 		return 1.0f;
 	return time_live / SNOW_FADE_IN_TIME;
+}
+
+static float EnhancedSnowGaussian(float x, float y, float cx, float cy,
+	float radius_x, float radius_y, float angle_radians)
+{
+	const float c = cosf(angle_radians);
+	const float s = sinf(angle_radians);
+	const float dx = x - cx;
+	const float dy = y - cy;
+	const float along = (dx * c + dy * s) / radius_x;
+	const float across = (-dx * s + dy * c) / radius_y;
+	return expf(-(along * along + across * across) * 2.2f);
+}
+
+static float EnhancedSnowCoverage(int variant, float x, float y)
+{
+	float coverage;
+	if (variant == 0)
+	{
+		coverage = EnhancedSnowGaussian(x, y, 0.0f, 0.0f, 0.66f, 0.19f, 0.08f);
+		coverage = std::max(coverage, 0.62f *
+			EnhancedSnowGaussian(x, y, -0.23f, 0.18f, 0.30f, 0.13f, -0.35f));
+	}
+	else if (variant == 1)
+	{
+		coverage = EnhancedSnowGaussian(x, y, -0.15f, -0.02f, 0.42f, 0.25f, 0.24f);
+		coverage = std::max(coverage, 0.82f *
+			EnhancedSnowGaussian(x, y, 0.27f, 0.13f, 0.29f, 0.20f, -0.26f));
+		coverage = std::max(coverage, 0.48f *
+			EnhancedSnowGaussian(x, y, 0.03f, -0.28f, 0.22f, 0.12f, 0.08f));
+	}
+	else if (variant == 2)
+	{
+		coverage = EnhancedSnowGaussian(x, y, 0.0f, 0.0f, 0.74f, 0.115f, 0.34f);
+		coverage = std::max(coverage, 0.38f *
+			EnhancedSnowGaussian(x, y, -0.08f, -0.11f, 0.40f, 0.17f, 0.05f));
+	}
+	else
+	{
+		coverage = EnhancedSnowGaussian(x, y, 0.0f, 0.0f, 0.53f, 0.17f, -0.18f);
+		coverage = std::max(coverage, 0.55f *
+			EnhancedSnowGaussian(x, y, 0.18f, -0.16f, 0.24f, 0.10f, 0.30f));
+	}
+
+	return coverage > 1.0f ? 1.0f : coverage;
+}
+
+static ushort EnhancedSnowPixel(int variant, int x, int y)
+{
+	float coverage = 0.0f;
+	for (int sy = 0; sy < 2; ++sy)
+	{
+		for (int sx = 0; sx < 2; ++sx)
+		{
+			const float px = ((x + (sx + 0.5f) * 0.5f) / 32.0f) * 2.0f - 1.0f;
+			const float py = ((y + (sy + 0.5f) * 0.5f) / 32.0f) * 2.0f - 1.0f;
+			coverage += EnhancedSnowCoverage(variant, px, py);
+		}
+	}
+	coverage *= 0.25f;
+	if (coverage <= 0.025f)
+		return NEW_TRANSPARENT_COLOR;
+
+	int value = (int)(30.0f + 225.0f * powf(coverage, 0.65f));
+	if (value > 255)
+		value = 255;
+	return GR_RGB16(value - 12, value - 5, value) | OPAQUE_FLAG;
+}
+
+static bool VisEffectCreateEnhancedSnowTextures()
+{
+	if (Enhanced_snow_atlas_handle > BAD_BITMAP_HANDLE &&
+		GameBitmaps[Enhanced_snow_atlas_handle].used &&
+		Enhanced_snow_fallback_handle > BAD_BITMAP_HANDLE &&
+		GameBitmaps[Enhanced_snow_fallback_handle].used)
+	{
+		return true;
+	}
+
+	Enhanced_snow_atlas_handle = bm_AllocBitmap(128, 32, 0);
+	Enhanced_snow_fallback_handle = bm_AllocBitmap(32, 32, 0);
+	if (Enhanced_snow_atlas_handle <= BAD_BITMAP_HANDLE ||
+		Enhanced_snow_fallback_handle <= BAD_BITMAP_HANDLE)
+	{
+		if (Enhanced_snow_atlas_handle > BAD_BITMAP_HANDLE)
+			bm_FreeBitmap(Enhanced_snow_atlas_handle);
+		if (Enhanced_snow_fallback_handle > BAD_BITMAP_HANDLE)
+			bm_FreeBitmap(Enhanced_snow_fallback_handle);
+		Enhanced_snow_atlas_handle = BAD_BITMAP_HANDLE;
+		Enhanced_snow_fallback_handle = BAD_BITMAP_HANDLE;
+		return false;
+	}
+
+	ushort* atlas = bm_data(Enhanced_snow_atlas_handle, 0);
+	ushort* fallback = bm_data(Enhanced_snow_fallback_handle, 0);
+	for (int y = 0; y < 32; ++y)
+	{
+		for (int x = 0; x < 32; ++x)
+		{
+			fallback[y * 32 + x] = EnhancedSnowPixel(0, x, y);
+			for (int variant = 0; variant < 4; ++variant)
+				atlas[y * 128 + variant * 32 + x] = EnhancedSnowPixel(variant, x, y);
+		}
+	}
+	GameBitmaps[Enhanced_snow_atlas_handle].flags |= BF_CHANGED;
+	GameBitmaps[Enhanced_snow_fallback_handle].flags |= BF_CHANGED;
+	return true;
+}
+
+struct EnhancedSnowRenderParams
+{
+	angle rotation;
+	float width;
+	float height;
+	float alpha;
+};
+
+static EnhancedSnowRenderParams VisEffectEnhancedSnowRenderParams(const vis_effect* vis,
+	float time_live, float norm_time)
+{
+	EnhancedSnowRenderParams params = {};
+	if (vis->custom_handle & 4)
+	{
+		params.rotation = 0;
+		params.width = vis->size * 0.82f;
+		params.height = vis->size * 0.48f;
+		float settle_fade = vis->lifeleft / 0.32f;
+		if (settle_fade > 1.0f) settle_fade = 1.0f;
+		if (settle_fade < 0.0f) settle_fade = 0.0f;
+		params.alpha = settle_fade * 0.26f;
+		return params;
+	}
+
+	const float phase = vis->mass + time_live * vis->drag;
+	vector relative_velocity = vis->velocity;
+	if (Viewer_object && Viewer_object->movement_type == MT_PHYSICS)
+		relative_velocity -= Viewer_object->mtype.phys_info.velocity;
+
+	matrix view_orient;
+	g3_GetUnscaledMatrix(&view_orient);
+	const float screen_x = vm_DotProduct(&relative_velocity, &view_orient.rvec);
+	const float screen_y = vm_DotProduct(&relative_velocity, &view_orient.uvec);
+	const float fall_angle = atan2f(-screen_x, -screen_y);
+	params.rotation = (angle)((int)((fall_angle + sinf(phase) * 0.42f) *
+		(65536.0f / 6.28318530718f)));
+
+	const float tumble = 0.48f + 0.52f * fabsf(cosf(phase * 0.73f));
+	float relative_speed = vm_GetMagnitudeFast(&relative_velocity);
+	vector to_view = vis->pos - Viewer_object->pos;
+	const float distance = vm_GetMagnitudeFast(&to_view);
+	float proximity = 1.0f - distance / 85.0f;
+	if (proximity < 0.0f) proximity = 0.0f;
+	if (proximity > 1.0f) proximity = 1.0f;
+	float streak = proximity * relative_speed * 0.015f;
+	if (streak > 1.45f) streak = 1.45f;
+
+	params.width = vis->size * (0.42f + tumble * 0.38f);
+	params.height = vis->size * (1.10f + streak);
+	const float fade_in = time_live < 0.24f ? time_live / 0.24f : 1.0f;
+	const float fade_out = norm_time > 0.82f ? (1.0f - norm_time) / 0.18f : 1.0f;
+	float size_alpha = 0.45f + vis->size * 0.28f;
+	if (size_alpha > 0.75f) size_alpha = 0.75f;
+	params.alpha = fade_in * fade_out * size_alpha;
+	if (params.alpha < 0.0f) params.alpha = 0.0f;
+	return params;
 }
 
 static bool VisEffectCanUseLateCloseScreenPass()
@@ -160,6 +327,12 @@ void VisEffectEndCloseScreenCollection()
 
 void ShutdownVisEffects()
 {
+	if (Enhanced_snow_atlas_handle > BAD_BITMAP_HANDLE)
+		bm_FreeBitmap(Enhanced_snow_atlas_handle);
+	if (Enhanced_snow_fallback_handle > BAD_BITMAP_HANDLE)
+		bm_FreeBitmap(Enhanced_snow_fallback_handle);
+	Enhanced_snow_atlas_handle = BAD_BITMAP_HANDLE;
+	Enhanced_snow_fallback_handle = BAD_BITMAP_HANDLE;
 	if (VisEffects)
 		mem_free(VisEffects);
 	if (VisDeadList)
@@ -889,6 +1062,7 @@ void DrawVisFadingLine(vis_effect* vis)
 }
 
 static bool VisEffectShouldUseSoftParticles();
+static ubyte VisEffectClampAlpha(float value);
 
 // Draws a blast ring vis effect
 void DrawVisBlastRing(vis_effect* vis)
@@ -1063,6 +1237,7 @@ void DrawVisSnowflake(vis_effect* vis)
 	float norm_time;
 	float time_live = Gametime - vis->creation_time;
 	float size = vis->size;
+	const bool enhanced = (vis->flags & VF_ENHANCED_SNOW) != 0;
 
 	int visnum = vis - VisEffects;
 	int bm_handle;
@@ -1072,6 +1247,34 @@ void DrawVisSnowflake(vis_effect* vis)
 
 	if (norm_time >= 1)
 		norm_time = .99999f;		// don't go over!
+
+	if (enhanced && VisEffectCreateEnhancedSnowTextures())
+	{
+		const EnhancedSnowRenderParams params =
+			VisEffectEnhancedSnowRenderParams(vis, time_live, norm_time);
+		rend_SetAlphaValue(VisEffectClampAlpha(params.alpha * 255.0f));
+		rend_SetOverlayType(OT_NONE);
+		rend_SetWrapType(WT_CLAMP);
+		rend_SetLighting(LS_NONE);
+		rend_SetAlphaType(AT_SATURATE_TEXTURE);
+		rend_SetZBias(0.0f);
+		rend_SetZBufferWriteMask(0);
+		rend_SetAOSuppression(1.0f);
+		rend_SetSoftParticleState(0);
+		const ddgr_color color = GR_16_TO_COLOR(vis->lighting_color);
+		if (vis->custom_handle & 4)
+			g3_DrawPlanarRotatedBitmap(&vis->pos, &vis->velocity, 0, params.width,
+				params.height, Enhanced_snow_fallback_handle);
+		else
+			g3_DrawRotatedBitmap(&vis->pos, params.rotation, params.width, params.height,
+				Enhanced_snow_fallback_handle, color);
+		rend_SetSoftParticleState(0);
+		rend_SetAOSuppression(0.0f);
+		rend_SetZBufferWriteMask(1);
+		rend_SetZBias(0.0f);
+		rend_SetWrapType(WT_WRAP);
+		return;
+	}
 
 	//size*=(1-(norm_time/2));
 
@@ -1538,7 +1741,7 @@ static bool VisEffectShouldUseSoftSnowParticles(bool zbuffer_state)
 	if (Close_screen_rendering_late)
 		return false;
 
-	return Render_soft_vis_effects && zbuffer_state;
+	return Render_soft_vis_effects && zbuffer_state && rend_CanUseNewrender();
 }
 
 struct VisEffectVClipFrameBlend
@@ -2510,8 +2713,24 @@ static bool VisEffectBuildWeatherQuadBatchItem(vis_effect* vis, VisWeatherBatchK
 	float v0 = 0.0f;
 	float u1 = 1.0f;
 	float v1 = 1.0f;
-	VisEffectSelectBitmapForBatch(fb->bm_handle, &bm_handle, &bitmap_width, &bitmap_height,
-		&u0, &v0, &u1, &v1);
+	const bool enhanced_snow = vis->id == SNOWFLAKE_INDEX &&
+		(vis->flags & VF_ENHANCED_SNOW) != 0;
+	if (enhanced_snow && VisEffectCreateEnhancedSnowTextures())
+	{
+		bm_handle = Enhanced_snow_atlas_handle;
+		bitmap_width = 32;
+		bitmap_height = 32;
+		const int variant = vis->custom_handle & 3;
+		u0 = (variant * 32.0f + 0.5f) / 128.0f;
+		u1 = ((variant + 1) * 32.0f - 0.5f) / 128.0f;
+		v0 = 0.5f / 32.0f;
+		v1 = 31.5f / 32.0f;
+	}
+	else
+	{
+		VisEffectSelectBitmapForBatch(fb->bm_handle, &bm_handle, &bitmap_width, &bitmap_height,
+			&u0, &v0, &u1, &v1);
+	}
 
 	if (bm_handle <= BAD_BITMAP_HANDLE || bitmap_width <= 0 || bitmap_height <= 0)
 		return false;
@@ -2555,6 +2774,18 @@ static bool VisEffectBuildWeatherQuadBatchItem(vis_effect* vis, VisWeatherBatchK
 			built = VisEffectBuildPlanarBatchItem(item, &pos, &vis->end_pos, 0, width, height);
 		}
 	}
+	else if (enhanced_snow)
+	{
+		const EnhancedSnowRenderParams params =
+			VisEffectEnhancedSnowRenderParams(vis, time_live, norm_time);
+		alpha = params.alpha;
+		if (vis->custom_handle & 4)
+			built = VisEffectBuildPlanarBatchItem(item, &pos, &vis->velocity, 0,
+				params.width, params.height);
+		else
+			built = VisEffectBuildRotatedBatchItem(item, &pos, params.rotation,
+				params.width, params.height);
+	}
 	else
 	{
 		alpha = (1.0f - norm_time) * 0.6f * VisEffectSnowFadeInFactor(time_live);
@@ -2577,7 +2808,7 @@ static bool VisEffectBuildWeatherQuadBatchItem(vis_effect* vis, VisWeatherBatchK
 
 	key.bitmap_handle = bm_handle;
 	key.alpha_type = AT_SATURATE_TEXTURE_VERTEX;
-	key.soft_particles = (vis->id == SNOWFLAKE_INDEX) ?
+	key.soft_particles = (vis->id == SNOWFLAKE_INDEX && !enhanced_snow) ?
 		VisEffectShouldUseSoftSnowParticles(zbuffer_state) : false;
 	key.zbuffer_state = zbuffer_state;
 	key.roomnum = vis->roomnum;
@@ -3039,7 +3270,8 @@ static void FlushVisWeatherQuadBatchesNow()
 	rend_SetTextureType(TT_LINEAR);
 	rend_SetSoftParticleState(VisWeather_quad_batch_key.soft_particles ? 1 : 0);
 
-	std::vector<renderer_poly_batch_item> renderer_items;
+	static std::vector<renderer_poly_batch_item> renderer_items;
+	renderer_items.clear();
 	renderer_items.resize(VisWeather_quad_batch_items.size());
 	for (size_t i = 0; i < VisWeather_quad_batch_items.size(); i++)
 	{
@@ -3306,6 +3538,11 @@ void DrawVisEffectMaybeBatched(vis_effect* vis)
 				QueueVisWeatherQuadBatchItem(weather_key, weather_item);
 				return;
 			}
+			// Enhanced snow is a world-space volume and intentionally contains many
+			// off-screen flakes. The batch builder has already clipped them; do not
+			// fall through into the legacy Whiteball renderer.
+			if (vis->id == SNOWFLAKE_INDEX && (vis->flags & VF_ENHANCED_SNOW))
+				return;
 		}
 	}
 
@@ -4221,13 +4458,66 @@ void VisEffectMoveOne(vis_effect* vis)
 
 	if (vis->id == SNOWFLAKE_INDEX)
 	{
-		Weather.snowflakes_to_create++;
-
-		vis->pos += vis->velocity * Frametime;
-
-
-		if (vis->pos.y < 1)
+		const bool enhanced = (vis->flags & VF_ENHANCED_SNOW) != 0;
+		if (enhanced != Render_enhanced_snow)
+		{
 			VisEffectSetDeadFlag(vis);
+			return;
+		}
+
+		Weather.snowflakes_to_create++;
+		if (enhanced)
+		{
+			if (!(vis->custom_handle & 4))
+			{
+				const float time_live = Gametime - vis->creation_time;
+				const float phase = vis->mass + time_live * vis->drag;
+				const float flutter_speed = sinf(phase) * (2.0f + vis->size * 3.5f);
+				vector frame_velocity = vis->velocity;
+				frame_velocity.x += vis->end_pos.x * flutter_speed;
+				frame_velocity.z += vis->end_pos.z * flutter_speed;
+				frame_velocity.y += cosf(phase * 0.71f) * 0.8f;
+				vis->pos += frame_velocity * Frametime;
+
+				if (vis->pos.y - vis->end_pos.y < 24.0f)
+				{
+					vector ground_normal;
+					const float ground_y = GetTerrainGroundPoint(&vis->pos, &ground_normal);
+					vis->end_pos.y = ground_y;
+					if (vis->pos.y <= ground_y + 0.12f)
+					{
+						vis->pos.y = ground_y + 0.04f;
+						vis->velocity = ground_normal;
+						vis->custom_handle |= 4;
+						if (vis->lifeleft > 0.32f)
+							vis->lifeleft = 0.32f;
+					}
+				}
+			}
+
+			if (Viewer_object)
+			{
+				const vector delta = vis->pos - Viewer_object->pos;
+				const float horizontal_distance_squared =
+					delta.x * delta.x + delta.z * delta.z;
+				vector view_forward = Viewer_object->orient.fvec;
+				view_forward.y = 0.0f;
+				vm_NormalizeVector(&view_forward);
+				const float forward_distance =
+					delta.x * view_forward.x + delta.z * view_forward.z;
+				if (horizontal_distance_squared > 390.0f * 390.0f ||
+					delta.y < -150.0f || delta.y > 195.0f || forward_distance < -90.0f)
+				{
+					VisEffectSetDeadFlag(vis);
+				}
+			}
+		}
+		else
+		{
+			vis->pos += vis->velocity * Frametime;
+			if (vis->pos.y < 1)
+				VisEffectSetDeadFlag(vis);
+		}
 	}
 
 	// Do attached viseffect stuff here

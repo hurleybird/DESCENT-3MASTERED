@@ -2743,7 +2743,7 @@ void RenderAllTerrainObjects()
 {
 	PERF_MARKER_SCOPE("RenderAllTerrainObjects");
 	object* obj;
-	int snows[500];
+	int snows[192];
 	int num_snows = 0;
 	int obj_count = 0;
 	float zdist;
@@ -2837,8 +2837,8 @@ void RenderAllTerrainObjects()
 			// Special case snow
 			if (vis->id == SNOWFLAKE_INDEX)
 			{
-				snows[num_snows] = vis - VisEffects;
-				num_snows++;
+				if (num_snows < (int)(sizeof(snows) / sizeof(snows[0])))
+					snows[num_snows++] = vis - VisEffects;
 			}
 			else
 			{

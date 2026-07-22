@@ -110,6 +110,7 @@ float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
 bool Render_face_probe = false;
 bool Render_soft_vis_effects = false;
+bool Render_enhanced_snow = false;
 bool Render_hires_skies = false;
 // bool Render_split_specular_textures = false;
 bool Render_split_specular_textures = true;
@@ -1307,6 +1308,7 @@ struct video_menu
 	bool* face_probe;
 	bool* frame_pacing;
 	bool* soft_vis_effects;
+	bool* enhanced_snow;
 	bool* hires_skies;
 	bool* motion_vector_debug;
 	bool* ao_overscan;
@@ -1562,6 +1564,11 @@ struct video_menu
 			Render_soft_vis_effects = *soft_vis_effects;
 			ui_changed = true;
 		}
+		if (enhanced_snow && sheet->HasChanged(enhanced_snow))
+		{
+			Render_enhanced_snow = *enhanced_snow;
+			ui_changed = true;
+		}
 		if (hires_skies && sheet->HasChanged(hires_skies))
 		{
 			Render_hires_skies = *hires_skies;
@@ -1631,6 +1638,7 @@ struct video_menu
 		face_probe = NULL;
 		frame_pacing = NULL;
 		soft_vis_effects = NULL;
+		enhanced_snow = NULL;
 		hires_skies = NULL;
 		motion_vector_debug = NULL;
 		ao_overscan = NULL;
@@ -1696,8 +1704,9 @@ struct video_menu
 			ConfigCanUsePerPixelLighting() && Render_preferred_state.per_pixel_lighting);
 		bloom_enabled = sheet->AddLongCheckBox("Bloom", Render_preferred_state.bloom_enabled);
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
+		enhanced_snow = sheet->AddLongCheckBox("Enhanced snow", Render_enhanced_snow);
 
-		sheet->NewGroup("Debug", 0, 211);
+		sheet->NewGroup("Debug", 0, 224);
 		hires_skies = sheet->AddLongCheckBox("Hi-res skies", Render_hires_skies);
 		motion_vector_debug = sheet->AddLongCheckBox("Vector debug", Render_preferred_state.motion_vector_debug_preview);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
@@ -1800,6 +1809,8 @@ struct video_menu
 			SetAdaptiveFramePacingEnabled(*frame_pacing);
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
+		if (enhanced_snow)
+			Render_enhanced_snow = *enhanced_snow;
 		if (hires_skies)
 			Render_hires_skies = *hires_skies;
 		if (antialiasing)

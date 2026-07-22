@@ -42,6 +42,7 @@
 #define VF_LINK_TO_VIEWER		256	// Always link into the room that the viewer is in
 #define VF_CLOSE_SCREEN_EFFECT	512	// Near/viewer-overlay transparent effect for late rendering
 #define VF_NO_SOFT_PARTICLES	1024	// Render without soft-particle depth fading
+#define VF_ENHANCED_SNOW		2048	// World-space snow with authored drift and flake rendering
 
 extern ushort max_vis_effects;
 

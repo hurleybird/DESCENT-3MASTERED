@@ -25,11 +25,14 @@
 #include "terrain.h"
 #include "room.h"
 #include "game.h"
+#include "config.h"
 #include "soundload.h"
 #include "hlsoundlib.h"
 #include "sounds.h"
+#include "args.h"
 
 #include <stdlib.h>
+#include <math.h>
 
 #include "psrand.h"
 
@@ -200,8 +203,122 @@ void DoRainEffect()
 	}
 }
 
-// Creates snow for this frame
-void DoSnowEffect()
+static float SnowRandomUnit(PSRand& random)
+{
+	return (random() & 0x7fff) / 32767.0f;
+}
+
+static float SnowClampIntensity(float intensity)
+{
+	// The original renderer ignored the scalar, and some old content consequently
+	// enables snow with a zero scalar. Keep those levels snowy instead of silently
+	// changing their presentation.
+	if (intensity <= 0.01f)
+		return 1.0f;
+	if (intensity >= 1.0f)
+		return 1.0f;
+	return intensity;
+}
+
+static int CreateEnhancedSnow(float age, PSRand& random, int available_slots)
+{
+	const float intensity = SnowClampIntensity(Weather.snow_intensity_scalar);
+	int num = 14 + (random() % 10);
+	if (num > available_slots)
+		num = available_slots;
+	if (num <= 0)
+		return 0;
+
+	// Place new flakes in a world-aligned volume rather than a box attached to
+	// the current view. A modest velocity lead keeps a fast ship from outrunning
+	// the storm while every existing flake remains fixed in world space.
+	vector center = Viewer_object->pos;
+	vector viewer_velocity = Viewer_object->mtype.phys_info.velocity;
+	float viewer_speed = vm_GetMagnitudeFast(&viewer_velocity);
+	if (viewer_speed > 0.01f)
+	{
+		float lead_time = 0.35f;
+		if (viewer_speed * lead_time > 80.0f)
+			lead_time = 80.0f / viewer_speed;
+		center += viewer_velocity * lead_time;
+	}
+
+	const float wind_angle = Gametime * 0.075f;
+	const vector prevailing_wind = {
+		cosf(wind_angle) * (4.0f + intensity * 4.0f),
+		0.0f,
+		sinf(wind_angle * 0.83f) * (3.0f + intensity * 3.0f)
+	};
+	angvec view_angles;
+	vm_ExtractAnglesFromMatrix(&view_angles, &Viewer_object->orient);
+	matrix spawn_orient;
+	vm_AnglesToMatrix(&spawn_orient, 0, view_angles.h, 0);
+
+	int created = 0;
+	for (int i = 0; i < num; ++i)
+	{
+		const float depth_roll = SnowRandomUnit(random);
+		const float forward = 12.0f + depth_roll * depth_roll * 320.0f;
+		const float half_width = 42.0f + forward * 0.34f;
+		const float lateral = (SnowRandomUnit(random) * 2.0f - 1.0f) * half_width;
+		const float vertical = -35.0f + SnowRandomUnit(random) * 175.0f;
+		vector pos = center;
+		pos += spawn_orient.rvec * lateral;
+		pos += spawn_orient.uvec * vertical;
+		pos += spawn_orient.fvec * forward;
+
+		if (pos.z < 0 || pos.z >= TERRAIN_DEPTH * TERRAIN_SIZE ||
+			pos.x < 0 || pos.x >= TERRAIN_WIDTH * TERRAIN_SIZE)
+		{
+			continue;
+		}
+
+		vector ground_normal;
+		const float ground_y = GetTerrainGroundPoint(&pos, &ground_normal);
+		if (pos.y < ground_y + 8.0f)
+			pos.y = ground_y + 8.0f + SnowRandomUnit(random) * 70.0f;
+
+		int visnum = VisEffectCreate(VIS_FIREBALL, SNOWFLAKE_INDEX,
+			Viewer_object->roomnum, &pos);
+		if (visnum < 0)
+			continue;
+
+		vis_effect* vis = &VisEffects[visnum];
+		const float size_roll = SnowRandomUnit(random);
+		if (size_roll < 0.82f)
+			vis->size = 0.25f + SnowRandomUnit(random) * 0.40f;
+		else
+			vis->size = 0.65f + SnowRandomUnit(random) * 0.35f;
+
+		const float life = 4.5f + SnowRandomUnit(random) * 3.0f;
+		vis->lifetime = life;
+		vis->lifeleft = life - age;
+		vis->creation_time -= age;
+		vis->flags |= VF_USES_LIFELEFT | VF_NO_Z_ADJUST | VF_ENHANCED_SNOW;
+
+		vis->velocity = prevailing_wind;
+		vis->velocity.x += (SnowRandomUnit(random) - 0.5f) * 6.0f;
+		vis->velocity.z += (SnowRandomUnit(random) - 0.5f) * 6.0f;
+		vis->velocity.y = -(18.0f + SnowRandomUnit(random) * 28.0f);
+
+		const float flutter_angle = SnowRandomUnit(random) * 6.28318530718f;
+		vis->end_pos.x = cosf(flutter_angle);
+		vis->end_pos.y = ground_y;
+		vis->end_pos.z = sinf(flutter_angle);
+		vis->mass = SnowRandomUnit(random) * 6.28318530718f; // flutter phase
+		vis->drag = 1.35f + SnowRandomUnit(random) * 2.4f;   // flutter frequency
+		vis->custom_handle = (short)(random() & 3); // soft flake silhouette
+
+		const int tint = 205 + (random() % 35);
+		vis->lighting_color = GR_RGB16(tint, tint + 3, 255);
+		vis->pos += vis->velocity * age;
+		created++;
+	}
+
+	return created;
+}
+
+static void DoLegacySnowEffect()
 {
 	if (OBJECT_OUTSIDE(Viewer_object))
 	{
@@ -267,11 +384,46 @@ void DoSnowEffect()
 	Weather.snowflakes_to_create = 0;
 }
 
+// Creates snow for this frame
+void DoSnowEffect()
+{
+	if (!Render_enhanced_snow)
+	{
+		DoLegacySnowEffect();
+		return;
+	}
+
+	if (OBJECT_OUTSIDE(Viewer_object))
+	{
+		const float intensity = SnowClampIntensity(Weather.snow_intensity_scalar);
+		const int desired_flakes = (int)(55.0f + intensity * 65.0f);
+		int missing_flakes = desired_flakes - Weather.snowflakes_to_create;
+		if (missing_flakes < 0)
+			missing_flakes = 0;
+
+		float snow_ages[8] = {};
+		const int snow_events = Get60HzVisualEventAges(OBJNUM(Viewer_object),
+			Viewer_object->handle, VIS60_WEATHER_SNOW, snow_ages, 8);
+		for (int event = 0; event < snow_events; ++event)
+		{
+			if (missing_flakes <= 0)
+				break;
+			PSRand snow_random(Get60HzVisualNoise((uint32_t)Viewer_object->handle,
+				0x50u + (uint32_t)event));
+			const int created = CreateEnhancedSnow(snow_ages[event], snow_random, missing_flakes);
+			missing_flakes -= created;
+		}
+	}
+
+	Weather.snowflakes_to_create = 0;
+}
+
 // does all the weather stuff that is going to be done for this frame
 void DoWeatherForFrame()
 {
 	int i;
 	int hear_thunder = 0;
+	static const bool force_snow = FindArg("-force-snow") != 0;
 
 	if (OBJECT_OUTSIDE(Player_object))
 		hear_thunder = 1;
@@ -293,7 +445,7 @@ void DoWeatherForFrame()
 	if (Weather.flags & WEATHER_FLAGS_RAIN)
 		DoRainEffect();
 
-	if (Weather.flags & WEATHER_FLAGS_SNOW)
+	if ((Weather.flags & WEATHER_FLAGS_SNOW) || force_snow)
 		DoSnowEffect();
 
 	if (Weather.flags & WEATHER_FLAGS_LIGHTNING)

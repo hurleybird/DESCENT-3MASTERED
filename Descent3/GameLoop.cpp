@@ -460,6 +460,8 @@ static void InitAutomatedCapture()
 	if (Automated_capture.initialized)
 		return;
 	Automated_capture.initialized = true;
+	if (FindArg("-perf-markers"))
+		PerfMarkersSetEnabled(true);
 	Automated_capture.fixed_delta = 1.0f / 60.0f;
 	Automated_capture.realtime = FindArg("-capture-realtime") != 0;
 	Automated_capture.force_forward = FindArg("-capture-forward") != 0;

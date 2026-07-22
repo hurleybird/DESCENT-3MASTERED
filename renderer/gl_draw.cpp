@@ -2126,7 +2126,8 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 	if (triangle_vertices <= 0)
 		return;
 
-	std::vector<gl_vertex> vertices;
+	static std::vector<gl_vertex> vertices;
+	vertices.clear();
 	if (vertices.capacity() < (size_t)triangle_vertices)
 		vertices.reserve(triangle_vertices);
 
@@ -3115,7 +3116,8 @@ void GL4Renderer::DrawSpecialLineBatch(const renderer_line_batch_item *items, in
 
 	SelectDrawShader();
 
-	std::vector<gl_vertex> vertices;
+	static std::vector<gl_vertex> vertices;
+	vertices.clear();
 	if (vertices.capacity() < (size_t)count * 2)
 		vertices.reserve((size_t)count * 2);
 
