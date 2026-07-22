@@ -97,6 +97,8 @@ per_pixel_lightmap_face Per_pixel_lightmap_faces[MAX_DYNAMIC_FACES];
 int Num_per_pixel_lightmap_faces = 0;
 per_pixel_lightmap_face Per_pixel_lightmap_textures[MAX_DYNAMIC_FACES];
 int Num_per_pixel_lightmap_textures = 0;
+static int Per_pixel_lightmap_face_lookup[MAX_LIGHTMAP_INFOS];
+static int Per_pixel_lightmap_texture_lookup[MAX_LIGHTMAPS];
 
 constexpr float PER_PIXEL_HEADLIGHT_STRENGTH = 1.5f;
 constexpr float PER_PIXEL_HEADLIGHT_RADIUS = 0.67f;
@@ -131,8 +133,6 @@ static void AddPerPixelLightmapTextureLight(int lm_handle, const vector *pos, fl
 static void AddPerPixelLightmapFaceLight(per_pixel_lightmap_face *light_list, int &light_list_count, int lightmap_key,
 	const vector *pos, float light_dist, float red_scale, float green_scale, float blue_scale,
 	const vector *light_direction, float dot_range, bool per_pixel_headlight, const vector *specular_position);
-static int GetPerPixelLightmapFaceLights(per_pixel_lightmap_face *light_list, int light_list_count, int lightmap_key,
-	renderer_per_pixel_light *lights, int max_lights);
 
 static void AddPerPixelLightmapLight(ushort lmi_handle, const vector *pos, float light_dist,
 	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range,
@@ -194,11 +194,24 @@ static void AddPerPixelLightmapFaceLight(per_pixel_lightmap_face *light_list, in
 		light.specular_radius = light_dist + vm_GetMagnitudeFast(&specular_delta);
 	}
 
-	for (int i = 0; i < light_list_count; i++)
+	int *lookup = light_list == Per_pixel_lightmap_faces ?
+		Per_pixel_lightmap_face_lookup : Per_pixel_lightmap_texture_lookup;
+	int lookup_size = light_list == Per_pixel_lightmap_faces ?
+		MAX_LIGHTMAP_INFOS : MAX_LIGHTMAPS;
+	int existing_index = -1;
+	if (lightmap_key >= 0 && lightmap_key < lookup_size)
 	{
-		per_pixel_lightmap_face *face_lights = &light_list[i];
-		if (face_lights->lightmap_key != lightmap_key)
-			continue;
+		const int candidate = lookup[lightmap_key];
+		if (candidate >= 0 && candidate < light_list_count &&
+			light_list[candidate].lightmap_key == lightmap_key)
+		{
+			existing_index = candidate;
+		}
+	}
+
+	if (existing_index >= 0)
+	{
+		per_pixel_lightmap_face *face_lights = &light_list[existing_index];
 
 		for (int j = 0; j < face_lights->count; j++)
 		{
@@ -236,38 +249,55 @@ static void AddPerPixelLightmapFaceLight(per_pixel_lightmap_face *light_list, in
 	face_lights->lightmap_key = lightmap_key;
 	face_lights->count = 1;
 	face_lights->lights[0] = light;
+	if (lightmap_key >= 0 && lightmap_key < lookup_size)
+		lookup[lightmap_key] = light_list_count - 1;
 }
 
 int GetPerPixelLightmapLights(ushort lmi_handle, renderer_per_pixel_light *lights, int max_lights)
 {
-	return GetPerPixelLightmapFaceLights(Per_pixel_lightmap_faces, Num_per_pixel_lightmap_faces, lmi_handle, lights,
-		max_lights);
+	if (lights == nullptr || max_lights <= 0)
+		return 0;
+	const int candidate = Per_pixel_lightmap_face_lookup[lmi_handle];
+	if (candidate < 0 || candidate >= Num_per_pixel_lightmap_faces ||
+		Per_pixel_lightmap_faces[candidate].lightmap_key != lmi_handle)
+	{
+		return 0;
+	}
+
+	const per_pixel_lightmap_face &face_lights = Per_pixel_lightmap_faces[candidate];
+	const int count = (int)face_lights.count < max_lights ? (int)face_lights.count : max_lights;
+	if (lights != nullptr && count > 0)
+		memcpy(lights, face_lights.lights, sizeof(renderer_per_pixel_light) * count);
+	return count;
+}
+
+int GetPerPixelLightmapLightCount(ushort lmi_handle)
+{
+	const int candidate = Per_pixel_lightmap_face_lookup[lmi_handle];
+	if (candidate < 0 || candidate >= Num_per_pixel_lightmap_faces ||
+		Per_pixel_lightmap_faces[candidate].lightmap_key != lmi_handle)
+	{
+		return 0;
+	}
+	return Per_pixel_lightmap_faces[candidate].count;
 }
 
 int GetPerPixelLightmapTextureLights(int lm_handle, renderer_per_pixel_light *lights, int max_lights)
 {
-	return GetPerPixelLightmapFaceLights(Per_pixel_lightmap_textures, Num_per_pixel_lightmap_textures, lm_handle,
-		lights, max_lights);
-}
-
-static int GetPerPixelLightmapFaceLights(per_pixel_lightmap_face *light_list, int light_list_count, int lightmap_key,
-	renderer_per_pixel_light *lights, int max_lights)
-{
-	if (lights == nullptr || max_lights <= 0)
+	if (lights == nullptr || max_lights <= 0 || lm_handle < 0 || lm_handle >= MAX_LIGHTMAPS)
 		return 0;
-
-	for (int i = 0; i < light_list_count; i++)
+	const int candidate = Per_pixel_lightmap_texture_lookup[lm_handle];
+	if (candidate < 0 || candidate >= Num_per_pixel_lightmap_textures ||
+		Per_pixel_lightmap_textures[candidate].lightmap_key != lm_handle)
 	{
-		per_pixel_lightmap_face *face_lights = &light_list[i];
-		if (face_lights->lightmap_key != lightmap_key)
-			continue;
-
-		int count = (face_lights->count < max_lights) ? face_lights->count : max_lights;
-		memcpy(lights, face_lights->lights, sizeof(renderer_per_pixel_light) * count);
-		return count;
+		return 0;
 	}
 
-	return 0;
+	const per_pixel_lightmap_face &face_lights = Per_pixel_lightmap_textures[candidate];
+	const int count = (int)face_lights.count < max_lights ? (int)face_lights.count : max_lights;
+	if (lights != nullptr && count > 0)
+		memcpy(lights, face_lights.lights, sizeof(renderer_per_pixel_light) * count);
+	return count;
 }
 
 // Frees memory used by dynamic light structures

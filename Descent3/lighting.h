@@ -72,6 +72,7 @@ void ApplyLightingToRooms (vector *,int,float,float,float,float,vector *light_di
 void ClearDynamicLightmaps ();
 
 int GetPerPixelLightmapLights(ushort lmi_handle, renderer_per_pixel_light *lights, int max_lights);
+int GetPerPixelLightmapLightCount(ushort lmi_handle);
 int GetPerPixelLightmapTextureLights(int lm_handle, renderer_per_pixel_light *lights, int max_lights);
 
 // Changes the terrain shading to approximate lighting

@@ -569,6 +569,27 @@ struct clip_wnd
 	float left, top, right, bot;
 };
 
+static clip_wnd Room_render_windows[MAX_ROOMS + MAX_PALETTE_ROOMS];
+static bool Room_render_window_valid[MAX_ROOMS + MAX_PALETTE_ROOMS];
+
+static void AccumulateRoomRenderWindow(int roomnum, const clip_wnd& wnd)
+{
+	if (roomnum < 0 || roomnum >= MAX_ROOMS + MAX_PALETTE_ROOMS)
+		return;
+	if (!Room_render_window_valid[roomnum])
+	{
+		Room_render_windows[roomnum] = wnd;
+		Room_render_window_valid[roomnum] = true;
+		return;
+	}
+
+	clip_wnd& accumulated = Room_render_windows[roomnum];
+	accumulated.left = std::min(accumulated.left, wnd.left);
+	accumulated.top = std::min(accumulated.top, wnd.top);
+	accumulated.right = std::max(accumulated.right, wnd.right);
+	accumulated.bot = std::max(accumulated.bot, wnd.bot);
+}
+
 inline int clip2d(g3Point* pnt, clip_wnd* wnd)
 {
 	int ret = 0;
@@ -832,6 +853,7 @@ int ExternalRoomVisibleFromPortal(int index, clip_wnd* wnd)
 void MarkFacesForRendering(int roomnum, clip_wnd* wnd)
 {
 	room* rp = &Rooms[roomnum];
+	AccumulateRoomRenderWindow(roomnum, *wnd);
 	MarkFacingFaces(roomnum, rp->verts);
 
 	// Rotate all the points in this room	
@@ -1421,6 +1443,7 @@ void BuildRoomList(int start_room_num)
 		Rooms_visited[i] = 0;
 		Room_depth_list[i] = 255;
 		Rooms[i].wpb_index = -1;
+		Room_render_window_valid[i] = false;
 	}
 #ifdef EDITOR
 	Rooms_visited[start_room_num] = 0;		//take care of rooms in the room palette
@@ -1456,6 +1479,7 @@ void BuildRoomList(int start_room_num)
 	wnd.left = wnd.top = 0.0;
 	wnd.right = Render_width;
 	wnd.bot = Render_height;
+	AccumulateRoomRenderWindow(start_room_num, wnd);
 	BuildRoomListSub(start_room_num, &wnd, 0);
 	//mprintf((0,"N_render_rooms = %d ",N_render_rooms));
 #ifdef EDITOR
@@ -4345,6 +4369,77 @@ static void CopyRoomBatchPoints(RoomBatchedFace& batched_face, g3Point** pointli
 	}
 }
 
+static void BuildRoomFallbackBatchPoints(room* rp, face* fp, float uchange,
+	float vchange, RoomBatchedFace& batched_face)
+{
+	g3Point pointbuffer[MAX_VERTS_PER_FACE];
+	g3Point* pointlist[MAX_VERTS_PER_FACE];
+	for (int vn = 0; vn < fp->num_verts; vn++)
+	{
+		pointbuffer[vn] = World_point_buffer[rp->wpb_index + fp->face_verts[vn]];
+		g3Point* p = &pointbuffer[vn];
+		pointlist[vn] = p;
+		p->p3_uvl.u = fp->face_uvls[vn].u + uchange;
+		p->p3_uvl.v = fp->face_uvls[vn].v + vchange;
+		p->p3_uvl.u2 = fp->face_uvls[vn].u2;
+		p->p3_uvl.v2 = fp->face_uvls[vn].v2;
+		p->p3_flags |= PF_UV + PF_L + PF_UV2;
+#ifndef RELEASE
+		p->p3_uvl.l = (fp->flags & FF_LIGHTMAP) ? Room_light_val : 1.0f;
+#else
+		p->p3_uvl.l = Room_light_val;
+#endif
+	}
+
+	if (NoLightmaps)
+	{
+		static bool initialized = false;
+		static float lm_red[32], lm_green[32], lm_blue[32];
+		if (!initialized)
+		{
+			initialized = true;
+			for (int i = 0; i < 32; i++)
+			{
+				lm_red[i] = (float)i / 31.0f;
+				lm_green[i] = (float)i / 31.0f;
+				lm_blue[i] = (float)i / 31.0f;
+			}
+		}
+
+		if (fp->flags & FF_LIGHTMAP)
+		{
+			int lm_handle = LightmapInfo[fp->lmi_handle].lm_handle;
+			ushort* data = (ushort*)lm_data(lm_handle);
+			int w = lm_w(lm_handle);
+			int h = lm_h(lm_handle);
+			for (int i = 0; i < fp->num_verts; i++)
+			{
+				float u = fp->face_uvls[i].u2 * (w - 1);
+				float v = fp->face_uvls[i].v2 * (h - 1);
+				g3Point* p = &pointbuffer[i];
+				ushort texel = data[(int)v * w + (int)u];
+				p->p3_r = p->p3_l * lm_red[(texel >> 10) & 0x1f];
+				p->p3_g = p->p3_l * lm_green[(texel >> 5) & 0x1f];
+				p->p3_b = p->p3_l * lm_blue[texel & 0x1f];
+				p->p3_flags |= PF_RGBA;
+			}
+		}
+		else
+		{
+			for (int i = 0; i < fp->num_verts; i++)
+			{
+				g3Point* p = &pointbuffer[i];
+				p->p3_r = p->p3_l;
+				p->p3_g = p->p3_l;
+				p->p3_b = p->p3_l;
+				p->p3_flags |= PF_RGBA;
+			}
+		}
+	}
+
+	CopyRoomBatchPoints(batched_face, pointlist, fp->num_verts);
+}
+
 static void AddBatchedRoomFaceSideEffects(room* rp, face* fp, int facenum,
 	bool spec_face, bool retained, ubyte clip_codes)
 {
@@ -4410,31 +4505,12 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	g3Codes face_cc;
 	face_cc.cc_and = 0xff;
 	face_cc.cc_or = 0;
-	g3Point pointbuffer[MAX_VERTS_PER_FACE];
-	g3Point* pointlist[MAX_VERTS_PER_FACE];
 
 	fp->flags &= ~FF_TRIANGULATED;
 
 	for (int vn = 0; vn < fp->num_verts; vn++)
 	{
-		pointbuffer[vn] = World_point_buffer[rp->wpb_index + fp->face_verts[vn]];
-		g3Point* p = &pointbuffer[vn];
-		pointlist[vn] = p;
-		p->p3_uvl.u = fp->face_uvls[vn].u;
-		p->p3_uvl.v = fp->face_uvls[vn].v;
-		p->p3_uvl.u2 = fp->face_uvls[vn].u2;
-		p->p3_uvl.v2 = fp->face_uvls[vn].v2;
-		p->p3_flags |= PF_UV + PF_L + PF_UV2;
-#ifndef RELEASE
-		if (fp->flags & FF_LIGHTMAP)
-			p->p3_uvl.l = Room_light_val;
-		else
-			p->p3_uvl.l = 1.0;
-#else
-		p->p3_uvl.l = Room_light_val;
-#endif
-		p->p3_uvl.u += uchange;
-		p->p3_uvl.v += vchange;
+		const g3Point* p = &World_point_buffer[rp->wpb_index + fp->face_verts[vn]];
 		face_cc.cc_and &= p->p3_codes;
 		face_cc.cc_or |= p->p3_codes;
 	}
@@ -4451,58 +4527,6 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	if (rp->flags & RF_FOG && fp->portal_num != -1 && !(rp->portals[fp->portal_num].flags & PF_RENDER_FACES))
 		return false;
 
-	if (NoLightmaps)
-	{
-		static bool initialized = false;
-		static float lm_red[32], lm_green[32], lm_blue[32];
-		if (!initialized)
-		{
-			initialized = true;
-			for (int i = 0; i < 32; i++)
-			{
-				lm_red[i] = (float)i / 31.0;
-				lm_green[i] = (float)i / 31.0;
-				lm_blue[i] = (float)i / 31.0;
-			}
-		}
-
-		if (fp->flags & FF_LIGHTMAP)
-		{
-			int lm_handle = LightmapInfo[fp->lmi_handle].lm_handle;
-			ushort* data = (ushort*)lm_data(lm_handle);
-			int w = lm_w(lm_handle);
-			int h = lm_h(lm_handle);
-
-			for (int i = 0; i < fp->num_verts; i++)
-			{
-				float u = fp->face_uvls[i].u2 * (w - 1);
-				float v = fp->face_uvls[i].v2 * (h - 1);
-				g3Point* p = &pointbuffer[i];
-				int int_u = u;
-				int int_v = v;
-				ushort texel = data[int_v * w + int_u];
-				int r = (texel >> 10) & 0x1f;
-				int g = (texel >> 5) & 0x1f;
-				int b = (texel) & 0x1f;
-				p->p3_r = p->p3_l * lm_red[r];
-				p->p3_g = p->p3_l * lm_green[g];
-				p->p3_b = p->p3_l * lm_blue[b];
-				p->p3_flags |= PF_RGBA;
-			}
-		}
-		else
-		{
-			for (int i = 0; i < fp->num_verts; i++)
-			{
-				g3Point* p = &pointbuffer[i];
-				p->p3_r = p->p3_l;
-				p->p3_g = p->p3_l;
-				p->p3_b = p->p3_l;
-				p->p3_flags |= PF_RGBA;
-			}
-		}
-	}
-
 	int bm_handle;
 	bm_handle = BaseBitmapHandleForFace(fp);
 	ASSERT(bm_handle != -1);
@@ -4515,10 +4539,7 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting &&
 		UseHardware && rend_CanUseNewrender())
 	{
-		renderer_per_pixel_light per_pixel_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
-		int per_pixel_light_count = GetPerPixelLightmapLights(fp->lmi_handle, per_pixel_lights,
-			RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
-		if (per_pixel_light_count > 0)
+		if (GetPerPixelLightmapLightCount(fp->lmi_handle) > 0)
 			dynamic_lightmap_lmi = fp->lmi_handle;
 	}
 
@@ -4554,7 +4575,7 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	}
 
 	RoomBatchedFace batched_face;
-	CopyRoomBatchPoints(batched_face, pointlist, fp->num_verts);
+	BuildRoomFallbackBatchPoints(rp, fp, uchange, vchange, batched_face);
 	batcher.Add(key, batched_face);
 	AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face, false,
 		face_cc.cc_or & RETAINED_ROOM_CLIP_CODES);
@@ -6417,10 +6438,29 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 				else
 				{
 					ASSERT(Rooms_visited[roomnum] != 255);
+					rendTEMP_ScissorState room_scissor_state = {};
+					const bool use_room_scissor = rend_CanUseNewrender() &&
+						Room_render_window_valid[roomnum] && roomnum != viewer_roomnum;
+					if (use_room_scissor)
+					{
+						const clip_wnd& room_window = Room_render_windows[roomnum];
+						const int padding = 2;
+						const int left = std::max(0, (int)std::floor(room_window.left) - padding);
+						const int top = std::max(0, (int)std::floor(room_window.top) - padding);
+						const int right = std::min(Render_width,
+							(int)std::ceil(room_window.right) + padding);
+						const int bottom = std::min(Render_height,
+							(int)std::ceil(room_window.bot) + padding);
+						rendTEMP_SaveScissorState(&room_scissor_state);
+						rendTEMP_SetScissorRect(left, top, right, bottom,
+							Render_width, Render_height);
+					}
 					if (Outline_release_mode & 1) {
 						RenderRoomOutline(&Rooms[roomnum]);
 					}
 					RenderRoom(&Rooms[roomnum]);
+					if (use_room_scissor)
+						rendTEMP_RestoreScissorState(&room_scissor_state);
 					Rooms_visited[roomnum] = (char)255;
 					// Stuff objects into our postrender list
 					CheckToRenderMineObjects(roomnum);
