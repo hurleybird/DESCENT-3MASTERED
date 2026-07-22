@@ -141,6 +141,7 @@ SET (MAIN_SOURCES
 		Descent3/weapon.h
 		Descent3/weapon_external.h
 		Descent3/weather.h
+		Descent3/wooting_analog.h
 		Descent3/aiambient.cpp
 		Descent3/AIGoal.cpp
 		Descent3/AImain.cpp
@@ -269,7 +270,8 @@ SET (MAIN_SOURCES
 		Descent3/viseffect.cpp
 		Descent3/weapon.cpp
 		Descent3/WeaponFire.cpp
-		Descent3/weather.cpp)
+		Descent3/weather.cpp
+		Descent3/wooting_analog.cpp)
 		
 IF (WIN32)
 	if (USE_SDL)

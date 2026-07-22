@@ -46,6 +46,7 @@
 #include "soundload.h"
 #include "ship.h"
 #include "controls.h"
+#include "wooting_analog.h"
 #include "texture.h"
 #include "Mission.h"
 #include "findintersection.h"
@@ -484,6 +485,7 @@ void SaveGameSettings()
 	Database->write("ForceFeedbackGain",force_gain);
 	// [ISB] Don't want to change pilot format so this is database for now
 	Database->write("LimitMousePolling", Mouse_limitpolling);
+	Database->write("NativeWootingAnalog", Wooting_analog_enabled);
 
 #ifndef RELEASE			// never save this value out in release.
 	Database->write("SoundMixer", Sound_mixer);
@@ -1044,6 +1046,15 @@ void LoadGameSettings()
 	if(force_gain>100) force_gain = 100;
 	D3Force_gain = ((float)force_gain)/100.0f;
 	Database->read("LimitMousePolling", &Mouse_limitpolling);
+	tempint = 0;
+	Database->read_int("NativeWootingAnalog", &tempint);
+	Wooting_analog_enabled = tempint != 0;
+	// Explicit test/troubleshooting overrides. These affect only Wooting input;
+	// neither option changes windowing or automated-capture behavior.
+	if (FindArg("-wooting-analog"))
+		Wooting_analog_enabled = true;
+	else if (FindArg("-no-wooting-analog"))
+		Wooting_analog_enabled = false;
 	Database->read_int("PreferredRenderer",&PreferredRenderer);
 	Database->read_int("MissileView",&Missile_camera_window);
 	Database->read("FastHeadlight",&Detail_settings.Fast_headlight_on);

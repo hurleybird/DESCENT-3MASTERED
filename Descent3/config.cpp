@@ -54,6 +54,7 @@
 #include "d3music.h"
 #include "gameloop.h"
 #include "renderer.h"
+#include "wooting_analog.h"
 
 #if defined(SDL3)
 #include <SDL3/SDL_video.h>
@@ -2142,6 +2143,7 @@ struct sound_menu
 #define UID_SHORTCUT_JOYSETTINGS			0x1000
 #define UID_SHORTCUT_KEYSETTINGS			0x1001
 #define UID_SHORTCUT_FORCEFEED				0x1002
+#define UID_WOOTING_ANALOG					0x1003
 
 struct toggles_menu
 {
@@ -2151,7 +2153,7 @@ struct toggles_menu
 	int* terrain_autolevel;				// auto leveling radios
 	int* mine_autolevel;
 	int* missile_view;					// missile view radio
-	bool* joy_enabled, * mse_enabled;
+	bool* joy_enabled, * mse_enabled, * wooting_enabled;
 	bool* reticle_toggle, * guided_toggle;
 	bool* shipsnd_toggle;
 
@@ -2184,8 +2186,15 @@ struct toggles_menu
 		sheet->NewGroup(TXT_CONTROL_TOGGLES, 110, 0);
 		joy_enabled = sheet->AddLongCheckBox(TXT_JOYENABLED);
 		mse_enabled = sheet->AddLongCheckBox(TXT_CFG_MOUSEENABLED);
+		const bool wooting_available = WootingAnalogDeviceAvailable();
+		wooting_enabled = sheet->AddLongCheckBox("Wooting Analog KB", false,
+			UID_WOOTING_ANALOG);
 		*joy_enabled = CHECK_FLAG(Current_pilot.read_controller, READF_JOY) ? true : false;
 		*mse_enabled = CHECK_FLAG(Current_pilot.read_controller, READF_MOUSE) ? true : false;
+		*wooting_enabled = wooting_available && Wooting_analog_enabled;
+		if (!wooting_available)
+			Wooting_analog_enabled = false;
+		sheet->SetGadgetEnabled(UID_WOOTING_ANALOG, wooting_available);
 
 		sheet->NewGroup(TXT_TOGGLES, 110, 70);
 		reticle_toggle = sheet->AddLongCheckBox(TXT_TOG_SHOWRETICLE);
@@ -2221,6 +2230,7 @@ struct toggles_menu
 		Current_pilot.read_controller = (*joy_enabled) ? READF_JOY : 0;
 		Current_pilot.read_controller |= (*mse_enabled) ? READF_MOUSE : 0;
 #endif
+		Wooting_analog_enabled = *wooting_enabled;
 		Game_toggles.show_reticle = (*reticle_toggle);
 		Game_toggles.guided_mainview = (*guided_toggle);
 		Game_toggles.ship_noises = (*shipsnd_toggle);

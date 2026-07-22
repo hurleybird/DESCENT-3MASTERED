@@ -314,6 +314,23 @@ if (WIN32)
 	else()
 		message(WARNING "OpenAL32.dll was not found for ${OPENAL_ARCH_DIR}; install will not copy it.")
 	endif()
+
+	if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+		set(WOOTING_ANALOG_RUNTIME_DLL
+			"${CMAKE_SOURCE_DIR}/thirdparty/WootingAnalogSDK/bin/Win64/wooting_analog_sdk_dist.dll")
+		if (EXISTS "${WOOTING_ANALOG_RUNTIME_DLL}")
+			add_custom_command(TARGET PiccuEngine POST_BUILD
+				COMMAND ${CMAKE_COMMAND} -E copy_if_different
+					"${WOOTING_ANALOG_RUNTIME_DLL}" "$<TARGET_FILE_DIR:PiccuEngine>")
+			install(FILES "${WOOTING_ANALOG_RUNTIME_DLL}" DESTINATION ${D3_GAMEDIR})
+			install(FILES
+				"${CMAKE_SOURCE_DIR}/thirdparty/WootingAnalogSDK/COPYING"
+				"${CMAKE_SOURCE_DIR}/thirdparty/WootingAnalogSDK/README.txt"
+				DESTINATION "${D3_GAMEDIR}licenses/WootingAnalogSDK")
+		else()
+			message(WARNING "Wooting Analog SDK distributable was not found; native Wooting support will require a system SDK installation.")
+		endif()
+	endif()
 endif()
 
 source_group("AudioEncode" REGULAR_EXPRESSION "${CMAKE_CURRENT_SOURCE_DIR}/AudioEncode/.+")

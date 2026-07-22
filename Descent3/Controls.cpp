@@ -36,6 +36,7 @@
 #include "TelCom.h"
 #include "multi.h"
 #include "args.h"
+#include "wooting_analog.h"
 
 #include "player.h"
 
@@ -94,6 +95,39 @@ void DoMisc(game_controls *contols);
 void DoKeyboardMisc(game_controls *controls);
 void DoControllerMisc(game_controls *controls);
 void DoCommands();
+
+static bool GetWootingControlValue(int id, float *value)
+{
+	if (value)
+		*value = 0.0f;
+	if (!Controller)
+		return false;
+
+	ct_type types[CTLBINDS_PER_FUNC];
+	ct_config_data config;
+	ubyte flags[CTLBINDS_PER_FUNC];
+	Controller->get_controller_function(id, types, &config, flags);
+	const ushort bindings = CONTROLLER_VALUE(config);
+
+	bool active = false;
+	float greatest_value = 0.0f;
+	for (int i = 0; i < CTLBINDS_PER_FUNC; ++i) {
+		if (types[i] != ctKey)
+			continue;
+		const ubyte key = i == 0 ? CONTROLLER_KEY1_VALUE(bindings) :
+			CONTROLLER_KEY2_VALUE(bindings);
+		float analog_value = 0.0f;
+		if (WootingAnalogGetKeyValue(key, &analog_value)) {
+			active = true;
+			if (analog_value > greatest_value)
+				greatest_value = analog_value;
+		}
+	}
+
+	if (value)
+		*value = greatest_value;
+	return active;
+}
 
 
 void ToggleHeadlightControlState ();
@@ -245,6 +279,7 @@ void InitControls()
 	Key_ramp.ox = Key_ramp.x = 0.0f;
 	Key_ramp.oy = Key_ramp.y = 0.0f;
 	Key_ramp.oz = Key_ramp.z = 0.0f;
+	WootingAnalogInitialize();
 
 	mprintf((0, "Initialized control system.\n"));
 }
@@ -253,6 +288,7 @@ void InitControls()
 void CloseControls()
 {
 	if (!Control_system_init) return;
+	WootingAnalogShutdown();
 	ResumeControls();
 	DestroyController(Controller);
 	Controller = NULL;
@@ -441,6 +477,10 @@ void DoMovement(game_controls *controls)
 void DoKeyboardMovement(game_controls *controls)
 {
 	float dx,dy,dz,dp,dh,db,d_afterburn;
+	float analog_x1 = 0.0f, analog_x0 = 0.0f;
+	float analog_y1 = 0.0f, analog_y0 = 0.0f;
+	float analog_z1 = 0.0f, analog_z0 = 0.0f;
+	float analog_b1 = 0.0f, analog_b0 = 0.0f;
 	ct_packet key_x1, key_x0, key_y1, key_y0, key_z1, key_z0;
 	ct_packet key_p1, key_p0, key_h1, key_h0, key_b1, key_b0;
 	ct_packet key_afterburn;
@@ -461,6 +501,28 @@ void DoKeyboardMovement(game_controls *controls)
 
 	Controller->get_packet (ctfAFTERBURN_KEY,&key_afterburn);
 
+	// Poll the Wooting SDK only once per gameplay frame. A binding that is
+	// active on an analog keyboard replaces that direction's digital packet;
+	// all other bindings continue through the original keyboard path.
+	if (WootingAnalogPoll()) {
+		if (GetWootingControlValue(ctfRIGHT_THRUSTKEY, &analog_x1))
+			key_x1.value = 0.0f;
+		if (GetWootingControlValue(ctfLEFT_THRUSTKEY, &analog_x0))
+			key_x0.value = 0.0f;
+		if (GetWootingControlValue(ctfUP_THRUSTKEY, &analog_y1))
+			key_y1.value = 0.0f;
+		if (GetWootingControlValue(ctfDOWN_THRUSTKEY, &analog_y0))
+			key_y0.value = 0.0f;
+		if (GetWootingControlValue(ctfFORWARD_THRUSTKEY, &analog_z1))
+			key_z1.value = 0.0f;
+		if (GetWootingControlValue(ctfREVERSE_THRUSTKEY, &analog_z0))
+			key_z0.value = 0.0f;
+		if (GetWootingControlValue(ctfBANK_RIGHTKEY, &analog_b1))
+			key_b1.value = 0.0f;
+		if (GetWootingControlValue(ctfBANK_LEFTKEY, &analog_b0))
+			key_b0.value = 0.0f;
+	}
+
 // check keyboard controls first.
 
 //	do thrust and orientation controls.  since packet contains time since last call, frametime is taken into account.
@@ -478,6 +540,9 @@ void DoKeyboardMovement(game_controls *controls)
 	controls->sideways_thrust += (KEY_RAMPUP_TIME) ? (ramp_control_value(dx, KEY_RAMPUP_TIME, Key_ramp.x, Key_ramp.ox)/KEY_RAMPUP_TIME) : unramped_control_value(dx);
 	controls->vertical_thrust += (KEY_RAMPUP_TIME) ? (ramp_control_value(dy, KEY_RAMPUP_TIME, Key_ramp.y, Key_ramp.oy)/KEY_RAMPUP_TIME) : unramped_control_value(dy);
 	controls->forward_thrust += (KEY_RAMPUP_TIME) ? (ramp_control_value(dz, KEY_RAMPUP_TIME, Key_ramp.z, Key_ramp.oz)/KEY_RAMPUP_TIME) : unramped_control_value(dz);
+	controls->sideways_thrust += analog_x1 - analog_x0;
+	controls->vertical_thrust += analog_y1 - analog_y0;
+	controls->forward_thrust += analog_z1 - analog_z0;
 
 	controls->afterburn_thrust += d_afterburn/Frametime;
 	
@@ -501,6 +566,7 @@ void DoKeyboardMovement(game_controls *controls)
 	else 
 	{
 		controls->bank_thrust += (KEY_RAMPUP_TIME) ? (ramp_control_value(db, KEY_RAMPUP_TIME, Key_ramp.b, Key_ramp.ob)/KEY_RAMPUP_TIME) : unramped_control_value(db);
+		controls->bank_thrust += analog_b0 - analog_b1;
 	}
 }
 
