@@ -2235,7 +2235,7 @@ bool GL4Renderer::DrawWeatherQuadBatch(int handle, const renderer_weather_quad *
 
 	const auto append_vertex = [&](const vector& view, float u, float v,
 		const renderer_weather_quad& item) {
-		const float z_for_payload = std::max(view.z + Z_bias, 0.0001f);
+		const float z_for_payload = std::max(view.z + Z_bias + item.depth_bias, 0.0001f);
 		const float texw = 1.0f / z_for_payload;
 		gl_vertex vertex = {};
 		vertex.vert.x = Window_cx + view.x * (Window_w2 / view.z);
@@ -2249,6 +2249,8 @@ bool GL4Renderer::DrawWeatherQuadBatch(int handle, const renderer_weather_quad *
 		vertex.tex_coord.s = u * texw;
 		vertex.tex_coord.t = v * texw;
 		vertex.tex_coord.w = texw;
+		if (soft_particle_draw_enabled)
+			vertex.normal.w = GL4DepthFromEyeZ(view.z + Z_bias + item.depth_bias);
 		vertices.push_back(vertex);
 	};
 
@@ -2280,11 +2282,21 @@ bool GL4Renderer::DrawWeatherQuadBatch(int handle, const renderer_weather_quad *
 				vector world_offset;
 				vm_MatrixMulVector(&world_offset, &local[c], &plane_matrix);
 				corners[c] = transform_to_view(item_pos + world_offset);
+				if (item.legacy_g3_projection)
+				{
+					corners[c].x *= Matrix_scale.x;
+					corners[c].y *= Matrix_scale.y;
+				}
 			}
 		}
 		else
 		{
 			vector center = transform_to_view(item_pos);
+			if (item.legacy_g3_projection)
+			{
+				center.x *= Matrix_scale.x;
+				center.y *= Matrix_scale.y;
+			}
 			if (center.z <= 0.0001f)
 				continue;
 			const float radius = std::max(item.width, item.height) * 1.5f;

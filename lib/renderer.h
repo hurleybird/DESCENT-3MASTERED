@@ -437,6 +437,7 @@ struct renderer_weather_quad
 	float width;
 	float height;
 	float rotation;
+	float depth_bias;
 	float u0;
 	float v0;
 	float u1;
@@ -446,6 +447,7 @@ struct renderer_weather_quad
 	float b;
 	float a;
 	bool planar;
+	bool legacy_g3_projection;
 };
 
 enum renderer_gpu_scene_mark

@@ -76,6 +76,7 @@ void VisEffectDeleteDead();
 
 // Moves our visuals
 void VisEffectMoveAll ();
+void VisEffectRecordPerfMarkers();
 
 // Renders a vis effect
 void DrawVisEffect (vis_effect *vis);

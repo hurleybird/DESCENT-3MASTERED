@@ -133,7 +133,10 @@ void ProcessNormalEvents()
 		}
 	}
 
-	SpewEmitAll();
+	{
+		PERF_MARKER_SCOPE("Spew.EmitAll");
+		SpewEmitAll();
+	}
 }
 
 

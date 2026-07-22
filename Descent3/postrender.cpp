@@ -176,6 +176,7 @@ void DrawPostrenderFace(int roomnum, int facenum, bool change_z)
 void PostRender(int roomnum)
 {
 	PERF_MARKER_SCOPE("PostRender");
+	VisEffectRecordPerfMarkers();
 	{
 		PERF_MARKER_SCOPE("PostRender.GetView");
 		g3_GetViewPosition(&Viewer_eye);
