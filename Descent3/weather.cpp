@@ -396,7 +396,7 @@ void DoSnowEffect()
 	if (OBJECT_OUTSIDE(Viewer_object))
 	{
 		const float intensity = SnowClampIntensity(Weather.snow_intensity_scalar);
-		const int desired_flakes = (int)(55.0f + intensity * 65.0f);
+		const int desired_flakes = (int)(110.0f + intensity * 146.0f);
 		int missing_flakes = desired_flakes - Weather.snowflakes_to_create;
 		if (missing_flakes < 0)
 			missing_flakes = 0;

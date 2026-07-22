@@ -2743,7 +2743,7 @@ void RenderAllTerrainObjects()
 {
 	PERF_MARKER_SCOPE("RenderAllTerrainObjects");
 	object* obj;
-	int snows[192];
+	int snows[384];
 	int num_snows = 0;
 	int obj_count = 0;
 	float zdist;
