@@ -51,8 +51,6 @@ void SetFrameLimitFps(int fps);
 int GetFrameLimitFps();
 void SetFrameLimitCommandLineOverride(bool enabled);
 bool FrameLimitHasCommandLineOverride();
-bool IsAdaptiveFramePacingEnabled();
-void SetAdaptiveFramePacingEnabled(bool enabled);
 
 extern bool Perf_markers_enabled;
 void PerfMarkersSetEnabled(bool enabled);

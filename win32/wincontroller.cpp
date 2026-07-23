@@ -21,6 +21,7 @@
 #include <windows.h>
 #include <process.h>
 
+#include <algorithm>
 #include <math.h>
 
 #include "pserror.h"
@@ -672,7 +673,8 @@ float gameWinController::get_axis_value(sbyte controller, ubyte axis, ct_format 
 			m_frame_time = kMinFrameTime;
 		}
 
-		//normalizer = ctldev->normalizer[axisIndex] * m_frame_time;
+		// Preserve the established displacement scale for direct mouselook.
+		// Rate-based flight controls are recomputed from m_frame_time below.
 		normalizer = ctldev->normalizer[axisIndex] * FRAMETIME_AT_60FPS;
 		nullzone = MOUSE_DEADZONE;
 	}
@@ -721,6 +723,29 @@ float gameWinController::get_axis_value(sbyte controller, ubyte axis, ct_format 
 		mprintf((1, "gameController::axis unsupported format for function.\n"));
 	}
 
+	// Raw Input mouse axes are displacement counts. Direct mouselook consumes
+	// those counts as an angle, while the legacy flight controls consume an axis
+	// rate that physics integrates over the frame. Convert only the latter to a
+	// rate so identical physical mouse motion is independent of frame rate.
+	auto mouse_rate_value = [&]() -> float
+	{
+		if (format != ctAnalog || ctldev->id != CTID_MOUSE ||
+			(axis != CT_X_AXIS && axis != CT_Y_AXIS))
+			return val;
+
+		const float frame_time = (std::max)(m_frame_time, 0.000001f);
+		float rate = axisval /
+			(ctldev->normalizer[axisIndex] * frame_time);
+		if (rate > MOUSE_DEADZONE)
+			rate = (rate - MOUSE_DEADZONE) / (1.0f - MOUSE_DEADZONE);
+		else if (rate < -MOUSE_DEADZONE)
+			rate = (rate + MOUSE_DEADZONE) / (1.0f - MOUSE_DEADZONE);
+		else
+			rate = 0.0f;
+		rate *= ctldev->sensmod[axisIndex] * ctldev->sens[axisIndex];
+		return (std::max)(-1.0f, (std::min)(rate, 1.0f));
+	};
+
 	ct_packet key_slide1, key_bank;
 
 	get_packet(ctfTOGGLE_SLIDEKEY, &key_slide1);
@@ -729,18 +754,18 @@ float gameWinController::get_axis_value(sbyte controller, ubyte axis, ct_format 
 	if (key_slide1.value || key_bank.value)
 	{
 		//Don't do mouse look if either toggle is happening
-		return val;
+		return mouse_rate_value();
 	}
 
 	if ((Current_pilot.mouselook_control) && (GAME_MODE == GetFunctionMode()))
 	{
 		//Don't do mouselook controls if they aren't enabled in multiplayer
 		if ((Game_mode & GM_MULTI) && (!(Netgame.flags & NF_ALLOW_MLOOK)))
-			return val;
+			return mouse_rate_value();
 
 		//Account for guided missile control
 		if (Players[Player_num].guided_obj)
-			return val;
+			return mouse_rate_value();
 
 		if ((axis == CT_X_AXIS) && (ctldev->id == CTID_MOUSE) && (val != 0.0f))
 		{
@@ -796,6 +821,8 @@ float gameWinController::get_axis_value(sbyte controller, ubyte axis, ct_format 
 			return 0.0f;
 		}
 	}
+
+	val = mouse_rate_value();
 
 	// Adjust mouse sensitivity
 	if (((axis == CT_X_AXIS) || (axis == CT_Y_AXIS)) && (ctldev->id == CTID_MOUSE))

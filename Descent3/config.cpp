@@ -1306,7 +1306,6 @@ struct video_menu
 	bool* show_fps;
 	bool* show_draw_calls;
 	bool* face_probe;
-	bool* frame_pacing;
 	bool* soft_vis_effects;
 	bool* enhanced_snow;
 	bool* hires_skies;
@@ -1554,11 +1553,6 @@ struct video_menu
 			Render_face_probe = *face_probe;
 			ui_changed = true;
 		}
-		if (frame_pacing && sheet->HasChanged(frame_pacing))
-		{
-			SetAdaptiveFramePacingEnabled(*frame_pacing);
-			ui_changed = true;
-		}
 		if (soft_vis_effects && sheet->HasChanged(soft_vis_effects))
 		{
 			Render_soft_vis_effects = *soft_vis_effects;
@@ -1636,7 +1630,6 @@ struct video_menu
 		show_fps = NULL;
 		show_draw_calls = NULL;
 		face_probe = NULL;
-		frame_pacing = NULL;
 		soft_vis_effects = NULL;
 		enhanced_snow = NULL;
 		hires_skies = NULL;
@@ -1714,8 +1707,6 @@ struct video_menu
 		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats, IDV_DRAW_CALL_STATS);
 		update_draw_call_title();
 		face_probe = sheet->AddLongCheckBox("Face probe", Render_face_probe);
-		frame_pacing = sheet->AddLongCheckBox("Frame pacing",
-			IsAdaptiveFramePacingEnabled());
 
 		sheet->NewGroup("MSAA", 184, 0);
 		int iTemp = MsaaSamplesToIndex(Render_preferred_state.msaa_samples);
@@ -1805,8 +1796,6 @@ struct video_menu
 			Render_draw_call_stats = *show_draw_calls;
 		if (face_probe)
 			Render_face_probe = *face_probe;
-		if (frame_pacing)
-			SetAdaptiveFramePacingEnabled(*frame_pacing);
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
 		if (enhanced_snow)
