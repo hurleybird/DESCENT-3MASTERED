@@ -67,6 +67,19 @@ enum gl4_gpu_ao_mark
 };
 
 void GL4PerfGpuAOMark(gl4_gpu_ao_mark mark);
+void GL4BindFramebufferTracked(GLenum target, GLuint framebuffer);
+void GL4DeleteFramebuffersTracked(GLsizei count, const GLuint* framebuffers);
+bool GL4DrawFramebufferIs(GLuint framebuffer);
+
+// All framebuffer mutations in the GL4 renderer pass through these wrappers.
+// This keeps draw-target checks out of glGetIntegerv, which can force the
+// driver to reconcile queued state hundreds of times per frame.
+#undef glBindFramebuffer
+#undef glDeleteFramebuffers
+#define glBindFramebuffer(target, framebuffer) \
+	GL4BindFramebufferTracked((target), (framebuffer))
+#define glDeleteFramebuffers(count, framebuffers) \
+	GL4DeleteFramebuffersTracked((count), (framebuffers))
 
 struct color_array
 {

@@ -40,6 +40,64 @@ constexpr unsigned int GL4_MOTION_OBJECT_LEGACY_BLUR_MASK = 0x80000000u;
 constexpr GLuint GL4_ROOM_FOG_PORTAL_BINDING = 5;
 constexpr GLuint GL4_PER_PIXEL_LIGHTMAP_BINDING = 6;
 
+struct GL4FramebufferBindingState
+{
+	GLuint draw = 0;
+	GLuint read = 0;
+	bool draw_valid = false;
+	bool read_valid = false;
+};
+
+static GL4FramebufferBindingState GL4_framebuffer_binding;
+
+void GL4BindFramebufferTracked(GLenum target, GLuint framebuffer)
+{
+	glad_glBindFramebuffer(target, framebuffer);
+	if (target == GL_DRAW_FRAMEBUFFER)
+	{
+		GL4_framebuffer_binding.draw = framebuffer;
+		GL4_framebuffer_binding.draw_valid = true;
+	}
+	else if (target == GL_READ_FRAMEBUFFER)
+	{
+		GL4_framebuffer_binding.read = framebuffer;
+		GL4_framebuffer_binding.read_valid = true;
+	}
+	else if (target == GL_FRAMEBUFFER)
+	{
+		GL4_framebuffer_binding.draw = framebuffer;
+		GL4_framebuffer_binding.read = framebuffer;
+		GL4_framebuffer_binding.draw_valid = true;
+		GL4_framebuffer_binding.read_valid = true;
+	}
+}
+
+void GL4DeleteFramebuffersTracked(GLsizei count, const GLuint* framebuffers)
+{
+	glad_glDeleteFramebuffers(count, framebuffers);
+	for (GLsizei i = 0; i < count; ++i)
+	{
+		if (GL4_framebuffer_binding.draw_valid &&
+			GL4_framebuffer_binding.draw == framebuffers[i])
+			GL4_framebuffer_binding.draw = 0;
+		if (GL4_framebuffer_binding.read_valid &&
+			GL4_framebuffer_binding.read == framebuffers[i])
+			GL4_framebuffer_binding.read = 0;
+	}
+}
+
+bool GL4DrawFramebufferIs(GLuint framebuffer)
+{
+	if (!GL4_framebuffer_binding.draw_valid)
+	{
+		GLint current_draw = 0;
+		glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &current_draw);
+		GL4_framebuffer_binding.draw = static_cast<GLuint>(current_draw);
+		GL4_framebuffer_binding.draw_valid = true;
+	}
+	return GL4_framebuffer_binding.draw == framebuffer;
+}
+
 static int GL4DrawBufferVertexCapacity()
 {
 	size_t capacity = std::max((size_t)MIN_VERTS_PER_BUFFER,
@@ -124,9 +182,7 @@ static void GL4SetFieldSpecularVertexPayload(gl_vertex& vert, const g3Point* pnt
 
 static bool GL4DrawTargetIsFramebuffer(GLuint framebuffer)
 {
-	GLint current_draw = 0;
-	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &current_draw);
-	return (GLuint)current_draw == framebuffer;
+	return GL4DrawFramebufferIs(framebuffer);
 }
 
 static void GL4UseSceneDrawBuffersWithoutAOClass(bool include_motion_vectors, bool include_motion_object_ids)
