@@ -363,7 +363,9 @@ void GoalDoFrame(object *obj)
 					posp = &goal_obj->pos;
 					roomnum = goal_obj->roomnum;
 
-					float dist = vm_VectorDistance(&AIDynamicPath[ai_info->path.num_paths - 1].pos[ai_info->path.path_end_node[ai_info->path.num_paths - 1]], posp);
+					float dist = 5.0f;
+					if(ai_info->path.num_paths != 0)
+						dist = vm_VectorDistance(&AIDynamicPath[ai_info->path.num_paths - 1].pos[ai_info->path.path_end_node[ai_info->path.num_paths - 1]], posp);
 
 					if(dist < 5.0f && ai_info->path.num_paths != 0)
 					{
@@ -405,7 +407,9 @@ void GoalDoFrame(object *obj)
 				posp = &cur_goal->g_info.pos;
 				roomnum = cur_goal->g_info.roomnum;
 
-				float dist = vm_VectorDistance(&AIDynamicPath[ai_info->path.num_paths - 1].pos[ai_info->path.path_end_node[ai_info->path.num_paths - 1]], posp);
+				float dist = 5.0f;
+				if(ai_info->path.num_paths != 0)
+					dist = vm_VectorDistance(&AIDynamicPath[ai_info->path.num_paths - 1].pos[ai_info->path.path_end_node[ai_info->path.num_paths - 1]], posp);
 
 				if(dist < 5.0f && ai_info->path.num_paths != 0)
 				{

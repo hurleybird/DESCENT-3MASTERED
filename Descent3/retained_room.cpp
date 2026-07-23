@@ -59,6 +59,7 @@ struct RetainedRoomClippedPolygon
 	std::array<g3Point, MAX_POINTS_IN_POLY> points;
 	std::array<g3Point*, MAX_POINTS_IN_POLY> pointlist;
 	int count = 0;
+	int lightmap_handle = -1;
 
 	void RefreshPointList()
 	{
@@ -500,7 +501,12 @@ static void BuildBaseBoundaryPolygons(room* rp, const int* facenums, int count,
 					pointlist, 3);
 			RetainedRoomClippedPolygon polygon;
 			if (ClipPreparedTriangle(points, polygon))
+			{
+				if (RoomFaceUsesLightmap(fp))
+					polygon.lightmap_handle =
+						LightmapInfo[fp->lmi_handle].lm_handle;
 				polygons.push_back(polygon);
+			}
 		}
 	}
 }
@@ -569,10 +575,44 @@ static void BuildFogBoundaryPolygons(room* rp, const int* facenums, int count,
 }
 
 static void DrawBoundaryPolygons(std::vector<RetainedRoomClippedPolygon>& polygons,
-	int bitmap_handle)
+	int bitmap_handle, bool use_face_lightmaps)
 {
 	if (polygons.empty())
 		return;
+	if (use_face_lightmaps)
+	{
+		thread_local std::vector<renderer_poly_batch_item> items;
+		for (size_t first = 0; first < polygons.size();)
+		{
+			const int lightmap_handle = polygons[first].lightmap_handle;
+			size_t end = first + 1;
+			while (end < polygons.size() &&
+				polygons[end].lightmap_handle == lightmap_handle)
+			{
+				++end;
+			}
+			if (lightmap_handle >= 0)
+			{
+				rend_SetOverlayType(OT_BLEND);
+				rend_SetOverlayMap(lightmap_handle);
+			}
+			else
+			{
+				rend_SetOverlayType(OT_NONE);
+			}
+			items.resize(end - first);
+			for (size_t i = first; i < end; i++)
+			{
+				polygons[i].RefreshPointList();
+				items[i - first].pointlist = polygons[i].pointlist.data();
+				items[i - first].nv = polygons[i].count;
+			}
+			rend_DrawPolygon3DBatch(bitmap_handle, items.data(),
+				(int)items.size(), MAP_TYPE_BITMAP);
+			first = end;
+		}
+		return;
+	}
 	std::vector<renderer_poly_batch_item> items(polygons.size());
 	for (size_t i = 0; i < polygons.size(); i++)
 	{
@@ -809,7 +849,7 @@ bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 		rend_EndRetainedPolymodelDraw();
 		rendTEMP_UnbindVertexBuffer();
 	}
-	DrawBoundaryPolygons(clipped_polygons, bitmap_handle);
+	DrawBoundaryPolygons(clipped_polygons, bitmap_handle, true);
 	return true;
 }
 
@@ -890,6 +930,6 @@ bool RetainedRoomDrawFogFaces(room* rp, const int* facenums, int count,
 		rend_EndRetainedPolymodelDraw();
 		rendTEMP_UnbindVertexBuffer();
 	}
-	DrawBoundaryPolygons(clipped_polygons, 0);
+	DrawBoundaryPolygons(clipped_polygons, 0, false);
 	return true;
 }
