@@ -334,6 +334,29 @@ void rend_EndRetainedPolymodelDraw()
 		renderer_inst->EndRetainedPolymodelDraw();
 }
 
+bool rend_PrepareRetainedRoomLightmaps(const int* lightmap_handles, int count)
+{
+	return Renderer_initted &&
+		renderer_inst->PrepareRetainedRoomLightmaps(lightmap_handles, count);
+}
+
+bool rend_RetainedRoomLightmapsReady()
+{
+	return Renderer_initted && renderer_inst->RetainedRoomLightmapsReady();
+}
+
+int rend_GetRetainedRoomLightmapPage(int lightmap_handle)
+{
+	return Renderer_initted ?
+		renderer_inst->GetRetainedRoomLightmapPage(lightmap_handle) : -1;
+}
+
+void rend_RefreshRetainedRoomLightmaps()
+{
+	if (Renderer_initted)
+		renderer_inst->RefreshRetainedRoomLightmaps();
+}
+
 bool rend_SetRoomFogState(const renderer_room_fog_state *state)
 {
 	return Renderer_initted && renderer_inst->SetRoomFogState(state);
@@ -1384,6 +1407,18 @@ void rend_SetPerPixelDynamicLighting(const vector *face_normal, int count, const
 		return;
 
 	renderer_inst->SetPerPixelDynamicLighting(face_normal, count, lights);
+}
+
+void rend_UpdatePerPixelLightmapLighting(
+	const renderer_per_pixel_lightmap_entry *entries, int entry_count)
+{
+	if (Renderer_initted)
+		renderer_inst->UpdatePerPixelLightmapLighting(entries, entry_count);
+}
+
+bool rend_PerPixelLightmapLightingReady()
+{
+	return Renderer_initted && renderer_inst->PerPixelLightmapLightingReady();
 }
 
 void rend_SetColorModel(color_model model)

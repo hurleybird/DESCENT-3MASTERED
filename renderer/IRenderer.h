@@ -108,6 +108,9 @@ public:
 	virtual void SetPerPixelLightingDirection(const vector *lightdir) = 0;
 	virtual void SetPerPixelDynamicLighting(const vector *face_normal, int count,
 		const renderer_per_pixel_light *lights) = 0;
+	virtual void UpdatePerPixelLightmapLighting(
+		const renderer_per_pixel_lightmap_entry *entries, int entry_count) {}
+	virtual bool PerPixelLightmapLightingReady() const { return false; }
 
 	// Adds a bias to each coordinates z value.  This is useful for making 2d bitmaps
 	// get drawn without being clipped by the zbuffer
@@ -191,6 +194,10 @@ public:
 	}
 	virtual bool BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw) { return false; }
 	virtual void EndRetainedPolymodelDraw() {}
+	virtual bool PrepareRetainedRoomLightmaps(const int* lightmap_handles, int count) { return false; }
+	virtual bool RetainedRoomLightmapsReady() const { return false; }
+	virtual int GetRetainedRoomLightmapPage(int lightmap_handle) const { return -1; }
+	virtual void RefreshRetainedRoomLightmaps() {}
 	virtual bool SetRoomFogState(const renderer_room_fog_state *state) { return false; }
 	virtual void SetRoomFogOverlay(int state) {}
 

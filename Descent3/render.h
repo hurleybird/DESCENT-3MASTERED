@@ -73,6 +73,8 @@ extern vector Room_fog_plane,Room_fog_portal_vert;
 struct face;
 struct room;
 struct RetainedRoomSpecularVertex;
+int RoomFaceAOClass(room* rp, face* fp);
+bool RoomFaceUsesLightmap(face* fp);
 
 void PopulateRetainedRoomSpecularVertices(room* rp, int facenum,
 	RetainedRoomSpecularVertex* vertices, int count);

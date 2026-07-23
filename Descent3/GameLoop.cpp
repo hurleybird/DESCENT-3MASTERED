@@ -3022,6 +3022,7 @@ void GameDrawHud()
 		PERF_MARKER_SCOPE("RenderHUDFrame");
 		RenderHUDFrame(HUD_RENDER_ZOOM);
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_PRIMARY_HUD);
 
 	//render auxillary consoles
 	{
@@ -3047,6 +3048,7 @@ void GameDrawHud()
 		PERF_MARKER_SCOPE("EndFrame.AuxHUD");
 		EndFrame();
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_AUX_HUD);
 }
 
 static void GameDrawPostPresentFrame(bool force_backbuffer_frame)
@@ -3143,6 +3145,11 @@ void GameRenderFrame(void)
 			StartFrame(0, 0, Max_window_w, Max_window_h, false);
 			RenderPreHUDFrame();
 			EndFrame();
+		}
+
+		{
+			PERF_MARKER_SCOPE("UpdatePerPixelLightmapRendererData");
+			UpdatePerPixelLightmapRendererData();
 		}
 
 		// Draw the big 3d view

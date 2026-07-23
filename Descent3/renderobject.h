@@ -34,8 +34,10 @@ void RenderObject(object *obj);
 // transparent materials/effects.  The saved random state makes stochastic
 // deformation identical in both traversals.
 bool RenderObjectCanUseSeparatedPasses(object *obj);
-bool RenderObjectOpaque(object *obj, unsigned int *random_state);
-void RenderObjectTransparents(object *obj, unsigned int random_state);
+bool RenderObjectOpaque(object *obj, unsigned int *random_state,
+	bool *transparent_pass_needed, ubyte *polymodel_late_mask);
+void RenderObjectTransparents(object *obj, unsigned int random_state,
+	ubyte polymodel_late_mask);
 
 void RenderObjectPerfReset();
 void RenderObjectPerfFlush();

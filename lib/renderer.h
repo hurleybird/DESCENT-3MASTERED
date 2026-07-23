@@ -139,9 +139,19 @@ struct renderer_per_pixel_light
 	float specular_scalar;
 };
 
+struct renderer_per_pixel_lightmap_entry
+{
+	int lightmap_key;
+	ubyte count;
+	renderer_per_pixel_light lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
+};
+
 void rend_SetLighting(light_state);
 void rend_SetPerPixelLightingDirection(const vector *lightdir);
 void rend_SetPerPixelDynamicLighting(const vector *face_normal, int count, const renderer_per_pixel_light *lights);
+void rend_UpdatePerPixelLightmapLighting(
+	const renderer_per_pixel_lightmap_entry *entries, int entry_count);
+bool rend_PerPixelLightmapLightingReady();
 
 enum color_model
 {
@@ -454,7 +464,13 @@ enum renderer_gpu_scene_mark
 {
 	RENDERER_GPU_SCENE_AFTER_MAIN_WORLD = 0,
 	RENDERER_GPU_SCENE_AFTER_WORLD_START,
+	RENDERER_GPU_SCENE_BEFORE_ROOM_DEPTH,
+	RENDERER_GPU_SCENE_AFTER_ROOM_DEPTH,
+	RENDERER_GPU_SCENE_AFTER_ROOM_COLOR,
 	RENDERER_GPU_SCENE_AFTER_WORLD_GEOMETRY,
+	RENDERER_GPU_SCENE_AFTER_POSTRENDER_OPAQUE,
+	RENDERER_GPU_SCENE_AFTER_POSTRENDER_ITEMS,
+	RENDERER_GPU_SCENE_AFTER_POSTRENDER_GLOWS,
 	RENDERER_GPU_SCENE_AFTER_WORLD_POSTRENDER,
 	RENDERER_GPU_SCENE_AFTER_WORLD_END,
 	RENDERER_GPU_SCENE_AFTER_ROOM_CHANGE,
@@ -463,6 +479,8 @@ enum renderer_gpu_scene_mark
 	RENDERER_GPU_SCENE_AFTER_CAPTURE_BLOOM,
 	RENDERER_GPU_SCENE_AFTER_MAIN_VIEW,
 	RENDERER_GPU_SCENE_AFTER_SMALL_VIEWS,
+	RENDERER_GPU_SCENE_AFTER_PRIMARY_HUD,
+	RENDERER_GPU_SCENE_AFTER_AUX_HUD,
 	RENDERER_GPU_SCENE_AFTER_HUD,
 	RENDERER_GPU_SCENE_AFTER_CINEMATIC,
 	RENDERER_GPU_SCENE_AFTER_DEBUG,
@@ -552,6 +570,9 @@ struct renderer_retained_polymodel_draw
 	bool far_clip_enabled;
 	float far_clip_z;
 	bool per_pixel_specular_payload;
+	bool fast_room_base;
+	bool retained_room_lightmap_arrays;
+	bool retained_dynamic_lightmaps;
 	int polygon_count;
 	int vertex_count;
 	bool has_previous;
@@ -580,6 +601,10 @@ struct renderer_room_fog_state
 // Selects the legacy material shader while sourcing a polymodel from retained local-space buffers.
 bool rend_BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw);
 void rend_EndRetainedPolymodelDraw();
+bool rend_PrepareRetainedRoomLightmaps(const int* lightmap_handles, int count);
+bool rend_RetainedRoomLightmapsReady();
+int rend_GetRetainedRoomLightmapPage(int lightmap_handle);
+void rend_RefreshRetainedRoomLightmaps();
 
 // Applies homogeneous local-room fog in the material shader. Portal triangles
 // describe the room openings through which an outside eye ray can enter.
@@ -1115,22 +1140,22 @@ public:
 
 	int NumVertices() const
 	{
-		return m_vertices.size();
+		return static_cast<int>(m_vertices.size());
 	}
 
 	int NumIndices() const
 	{
-		return m_indicies.size();
+		return static_cast<int>(m_indicies.size());
 	}
 
 	uint32_t VertexOffset() const
 	{
-		return m_vertices.size() * sizeof(m_vertices[0]);
+		return static_cast<uint32_t>(m_vertices.size() * sizeof(m_vertices[0]));
 	}
 
 	uint32_t IndexOffset() const
 	{
-		return m_indicies.size() * sizeof(m_indicies[0]);
+		return static_cast<uint32_t>(m_indicies.size() * sizeof(m_indicies[0]));
 	}
 };
 

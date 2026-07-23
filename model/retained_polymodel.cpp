@@ -143,7 +143,7 @@ static bool BuildRetainedPolymodel(poly_model *pm, RetainedPolymodelCache& cache
 				vertex.u1 = face->u ? face->u[corner] : 0.0f;
 				vertex.v1 = face->v ? face->v[corner] : 0.0f;
 				vertex.face_normal = face->normal;
-				vertex.source_vertex = vertex_num;
+				vertex.source_vertex = (int)(0xffff0000u | (uint32_t)vertex_num);
 				vertices.push_back(vertex);
 			}
 
@@ -201,7 +201,11 @@ static VertexBuffer *GetRetainedPolymodelLightmapVertices(poly_model *pm,
 		if (lightmap->num_faces[submodel_num] != sm->num_faces ||
 			(sm->num_faces > 0 && !lightmap->lightmap_faces[submodel_num]))
 		{
-			return nullptr;
+			// A partially-authored lightmap object must not demote every valid
+			// submodel. RetainedPolymodelCanDrawBaseFace validates each selected
+			// face, so leave this submodel's neutral base payload untouched and
+			// let only its affected faces use the fallback path.
+			continue;
 		}
 		for (int facenum = 0; facenum < sm->num_faces; facenum++)
 		{
@@ -210,13 +214,32 @@ static VertexBuffer *GetRetainedPolymodelLightmapVertices(poly_model *pm,
 			if ((int)retained_face.vertex_count != lightmap_face.num_verts ||
 				(retained_face.vertex_count > 0 && (!lightmap_face.u2 || !lightmap_face.v2)))
 			{
-				return nullptr;
+				continue;
 			}
 			for (uint32_t corner = 0; corner < retained_face.vertex_count; corner++)
 			{
 				RendVertex& vertex = vertices[retained_face.first_vertex + corner];
+				vertex.lmpage = -1;
 				vertex.u2 = lightmap_face.u2[corner];
 				vertex.v2 = lightmap_face.v2[corner];
+				if (lightmap_face.lmi_handle != BAD_LMI_INDEX)
+				{
+					vertex.source_vertex =
+						((int)lightmap_face.lmi_handle << 16) |
+						(vertex.source_vertex & 0xffff);
+					const int lightmap_handle =
+						LightmapInfo[lightmap_face.lmi_handle].lm_handle;
+					const int page = rend_GetRetainedRoomLightmapPage(lightmap_handle);
+					if (page >= 0 && lightmap_handle >= 0 &&
+						GameLightmaps[lightmap_handle].square_res > 0)
+					{
+						vertex.lmpage = page;
+						vertex.u2 *= (float)GameLightmaps[lightmap_handle].width /
+							GameLightmaps[lightmap_handle].square_res;
+						vertex.v2 *= (float)GameLightmaps[lightmap_handle].height /
+							GameLightmaps[lightmap_handle].square_res;
+					}
+				}
 			}
 		}
 	}
@@ -380,7 +403,8 @@ static bool DrawRetainedPolymodelRanges(poly_model *pm, bsp_info *sm, const int 
 	float u_offset, float v_offset, const vector *base_color, int effect_mode,
 	const vector *fog_plane, float fog_distance, float fog_eye_distance, float fog_depth,
 	const vector *specular_view_position, const vector *specular_light_position,
-	float specular_scalar, bool specular_smooth)
+	float specular_scalar, bool specular_smooth, bool retained_lightmap_arrays,
+	bool retained_dynamic_lightmaps)
 {
 	if (!pm || !sm || !facenums || count <= 0)
 		return false;
@@ -423,7 +447,10 @@ static bool DrawRetainedPolymodelRanges(poly_model *pm, bsp_info *sm, const int 
 	draw.lighting_mode_override = -1;
 	draw.effect_mode = effect_mode;
 	draw.effect_alpha_scale = 1.0f;
-	if (Polymodel_light_type == POLYMODEL_LIGHTING_LIGHTMAP && count > 0)
+	draw.retained_room_lightmap_arrays = retained_lightmap_arrays;
+	draw.retained_dynamic_lightmaps = retained_dynamic_lightmaps;
+	if (!retained_lightmap_arrays &&
+		Polymodel_light_type == POLYMODEL_LIGHTING_LIGHTMAP && count > 0)
 	{
 		const int submodel_num = sm - pm->submodel;
 		const int facenum = facenums[0];
@@ -516,10 +543,12 @@ static bool DrawRetainedPolymodelRanges(poly_model *pm, bsp_info *sm, const int 
 }
 
 bool RetainedPolymodelDrawFaces(poly_model *pm, bsp_info *sm, const int *facenums, int count,
-	float u_offset, float v_offset, const vector *base_color)
+	float u_offset, float v_offset, const vector *base_color,
+	bool retained_lightmap_arrays, bool retained_dynamic_lightmaps)
 {
 	return DrawRetainedPolymodelRanges(pm, sm, facenums, count, u_offset, v_offset,
-		base_color, 0, nullptr, 0.0f, 0.0f, 1.0f, nullptr, nullptr, 0.0f, false);
+		base_color, 0, nullptr, 0.0f, 0.0f, 1.0f, nullptr, nullptr, 0.0f, false,
+		retained_lightmap_arrays, retained_dynamic_lightmaps);
 }
 
 bool RetainedPolymodelDrawFogFaces(poly_model *pm, bsp_info *sm, const int *facenums, int count,
@@ -528,14 +557,15 @@ bool RetainedPolymodelDrawFogFaces(poly_model *pm, bsp_info *sm, const int *face
 {
 	return DrawRetainedPolymodelRanges(pm, sm, facenums, count, 0.0f, 0.0f,
 		nullptr, use_fog_plane ? 2 : 1, fog_plane, fog_distance, fog_eye_distance, fog_depth,
-		nullptr, nullptr, 0.0f, false);
+		nullptr, nullptr, 0.0f, false, false, false);
 }
 
 bool RetainedPolymodelDrawSpecularFaces(poly_model *pm, bsp_info *sm, const int *facenums, int count,
 	const vector *view_position, const vector *light_position, float scalar, bool smooth)
 {
 	return DrawRetainedPolymodelRanges(pm, sm, facenums, count, 0.0f, 0.0f,
-		nullptr, 3, nullptr, 0.0f, 0.0f, 1.0f, view_position, light_position, scalar, smooth);
+		nullptr, 3, nullptr, 0.0f, 0.0f, 1.0f, view_position, light_position, scalar, smooth,
+		false, false);
 }
 
 void RetainedPolymodelInvalidateLightmapObject(lightmap_object *lightmap)

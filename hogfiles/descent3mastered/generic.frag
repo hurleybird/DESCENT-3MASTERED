@@ -39,6 +39,17 @@ uniform int ao_capture_weight_mode;
 // 0: ordinary alpha coverage, 1: additive visible contribution,
 // 2: destination-multiplying material.
 uniform int post_mask_blend_mode;
+uniform int fast_additive_bitmap;
+uniform int fast_retained_room_base;
+uniform int retained_room_lightmap_arrays;
+uniform int retained_dynamic_lightmaps;
+uniform sampler2DArray retained_room_lightmaps_2;
+uniform sampler2DArray retained_room_lightmaps_4;
+uniform sampler2DArray retained_room_lightmaps_8;
+uniform sampler2DArray retained_room_lightmaps_16;
+uniform sampler2DArray retained_room_lightmaps_32;
+uniform sampler2DArray retained_room_lightmaps_64;
+uniform sampler2DArray retained_room_lightmaps_128;
 uniform int cockpit_backing_enabled;
 uniform float cockpit_backing_alpha;
 uniform float cockpit_backing_darkness;
@@ -58,16 +69,10 @@ uniform sampler2D soft_particle_depth;
 uniform vec2 soft_particle_screen_size;
 uniform float soft_particle_depth_range;
 
-struct RoomFogPortalTriangle
+layout(std430, binding = 6) readonly buffer PerPixelLightmapBuffer
 {
-	vec4 a;
-	vec4 b;
-	vec4 c;
-};
-
-layout(std430, binding = 5) readonly buffer RoomFogPortalBuffer
-{
-	RoomFogPortalTriangle room_fog_portals[];
+	int retained_dynamic_lookup[65536];
+	vec4 retained_dynamic_lights[];
 };
 
 uniform int room_fog_enabled;
@@ -77,7 +82,10 @@ uniform vec3 room_fog_viewer_forward;
 uniform vec3 room_fog_color;
 uniform float room_fog_depth;
 uniform float room_fog_intensity;
-uniform int room_fog_triangle_count;
+uniform sampler2D room_fog_entry_depth;
+uniform int room_fog_entry_map_enabled;
+uniform ivec2 room_fog_entry_origin;
+uniform ivec2 room_fog_entry_size;
 // 0: base material, 1: additive light/specular, 2: portal cap,
 // 3: approximate multiplicative overlay fallback, 4: raw multiplier pass,
 // 5: exact additive fog correction for a multiplier already applied to the base.
@@ -89,9 +97,35 @@ in vec4 outnormal;
 in vec4 out_motion_world_position;
 in vec4 out_motion_previous_world_position;
 in vec4 out_room_fog_world_position;
+flat in int out_retained_lightmap_handle;
+flat in int out_retained_ao_class;
+flat in int out_retained_lightmap_info;
+flat in vec3 out_retained_face_normal;
 #if defined(USE_SPECULAR)
 in vec4 out_field_specular_centers[4];
 in vec4 out_field_specular_colors[4];
+#endif
+
+#if defined(USE_LIGHTMAP)
+vec4 SampleLegacyLightmap(vec2 uv)
+{
+	if (retained_room_lightmap_arrays != 0)
+	{
+		if (out_retained_lightmap_handle < 0)
+			return vec4(1.0);
+		int bucket = (out_retained_lightmap_handle >> 16) & 0x7f;
+		float layer = float(out_retained_lightmap_handle & 0x0000ffff);
+		vec3 array_uv = vec3(uv, layer);
+		if (bucket == 0) return texture(retained_room_lightmaps_2, array_uv);
+		if (bucket == 1) return texture(retained_room_lightmaps_4, array_uv);
+		if (bucket == 2) return texture(retained_room_lightmaps_8, array_uv);
+		if (bucket == 3) return texture(retained_room_lightmaps_16, array_uv);
+		if (bucket == 4) return texture(retained_room_lightmaps_32, array_uv);
+		if (bucket == 5) return texture(retained_room_lightmaps_64, array_uv);
+		return texture(retained_room_lightmaps_128, array_uv);
+	}
+	return texture(lightmaptexture, uv);
+}
 #endif
 #if defined(USE_TEXTURING)
 in vec3 outuv;
@@ -221,39 +255,68 @@ vec4 ApplyPhongLighting(vec4 source_color)
 
 vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 {
-	if (dynamic_light_count == 0)
+	int retained_lookup = 0;
+	if (retained_dynamic_lightmaps != 0 && out_retained_lightmap_info >= 0)
+		retained_lookup = retained_dynamic_lookup[out_retained_lightmap_info];
+	int retained_count = retained_lookup & 15;
+	int light_count = retained_count > 0 ? retained_count : dynamic_light_count;
+	if (light_count == 0)
 		return lightmap_color;
 
 	vec3 world_position = outnormal.xyz / max(outnormal.w, 0.0001);
-	vec3 face_normal = normalize(dynamic_face_normal);
+	vec3 face_normal = retained_count > 0 ? normalize(out_retained_face_normal) :
+		normalize(dynamic_face_normal);
 	vec3 dynamic_color = vec3(0.0);
+	int retained_entry = (retained_lookup >> 4) - 1;
 
 	for (int i = 0; i < 8; i++)
 	{
-		if (i >= dynamic_light_count)
+		if (i >= light_count)
 			break;
 
-		vec3 light_delta = world_position - dynamic_light_positions[i];
-		float radius = max(dynamic_light_radii[i], 0.0001);
+		vec3 light_position = dynamic_light_positions[i];
+		vec3 light_color = dynamic_light_colors[i];
+		float radius = dynamic_light_radii[i];
+		float falloff = dynamic_light_falloffs[i];
+		vec3 stored_direction = dynamic_light_directions[i];
+		float stored_dot_range = dynamic_light_dot_ranges[i];
+		bool directional = dynamic_light_directional[i] != 0;
+		if (retained_count > 0)
+		{
+			int light_base = (retained_entry * 8 + i) * 3;
+			vec4 position_radius = retained_dynamic_lights[light_base];
+			vec4 color_falloff = retained_dynamic_lights[light_base + 1];
+			vec4 direction_dot = retained_dynamic_lights[light_base + 2];
+			light_position = position_radius.xyz;
+			radius = position_radius.w;
+			light_color = color_falloff.xyz;
+			falloff = color_falloff.w;
+			stored_direction = direction_dot.xyz;
+			stored_dot_range = direction_dot.w;
+			directional = direction_dot.w > -1.5;
+		}
+
+		vec3 light_delta = world_position - light_position;
+		radius = max(radius, 0.0001);
 		float distance = length(light_delta);
 		vec3 light_vector = (distance > 0.0001) ? light_delta / distance : face_normal;
 		float scalar = 1.0 - (distance / radius);
 		if (scalar <= 0.0)
 			continue;
-		scalar = pow(scalar, max(dynamic_light_falloffs[i], 0.0001));
+		scalar = pow(scalar, max(falloff, 0.0001));
 
-		if (dynamic_light_directional[i] != 0)
+		if (directional)
 		{
-			vec3 light_direction = normalize(dynamic_light_directions[i]);
+			vec3 light_direction = normalize(stored_direction);
 			float direction_dot = dot(light_vector, light_direction);
-			float dot_range = dynamic_light_dot_ranges[i];
+			float dot_range = stored_dot_range;
 			if (direction_dot < dot_range)
 				continue;
 
 			scalar *= (direction_dot - dot_range) / max(1.0 - dot_range, 0.0001);
 		}
 
-		dynamic_color += dynamic_light_colors[i] * scalar;
+		dynamic_color += light_color * scalar;
 	}
 
 	return clamp(lightmap_color + dynamic_color, vec3(0.0), vec3(1.0));
@@ -277,35 +340,22 @@ float RoomFogAmount(vec3 world_position)
 	float fog_length = max(dot(segment, room_fog_viewer_forward), 0.0);
 	if (room_fog_viewer_inside == 0)
 	{
-		float first_entry = 2.0;
-		for (int i = 0; i < room_fog_triangle_count; i++)
-		{
-			vec3 a = room_fog_portals[i].a.xyz;
-			vec3 edge1 = room_fog_portals[i].b.xyz - a;
-			vec3 edge2 = room_fog_portals[i].c.xyz - a;
-			vec3 p = cross(segment, edge2);
-			float determinant = dot(edge1, p);
-			if (abs(determinant) <= 0.000001)
-				continue;
-			float inverse_determinant = 1.0 / determinant;
-			vec3 from_a = room_fog_viewer_position - a;
-			float u = dot(from_a, p) * inverse_determinant;
-			vec3 q = cross(from_a, edge1);
-			float v = dot(segment, q) * inverse_determinant;
-			float t = dot(edge2, q) * inverse_determinant;
-			// Slightly overlap adjacent fan triangles so numerical error at a
-			// portal edge cannot turn fog on and off while the camera moves.
-			const float edge_epsilon = 0.0002;
-			if (u >= -edge_epsilon && v >= -edge_epsilon &&
-				u + v <= 1.0 + edge_epsilon && t >= -edge_epsilon &&
-				t <= 1.0 + edge_epsilon)
-			{
-				first_entry = min(first_entry, clamp(t, 0.0, 1.0));
-			}
-		}
-		if (first_entry > 1.0)
+		if (room_fog_entry_map_enabled == 0)
 			return 0.0;
-		fog_length *= 1.0 - first_entry;
+		ivec2 fragment_pixel = ivec2(gl_FragCoord.xy);
+		if (any(lessThan(fragment_pixel, room_fog_entry_origin)) ||
+			any(greaterThanEqual(fragment_pixel,
+				room_fog_entry_origin + room_fog_entry_size)))
+		{
+			return 0.0;
+		}
+		ivec2 entry_size = textureSize(room_fog_entry_depth, 0);
+		ivec2 entry_pixel = clamp(fragment_pixel - room_fog_entry_origin,
+			ivec2(0), entry_size - ivec2(1));
+		float entry_depth = texelFetch(room_fog_entry_depth, entry_pixel, 0).r;
+		if (entry_depth > 1.0e20)
+			return 0.0;
+		fog_length = max(fog_length - entry_depth, 0.0);
 	}
 
 	return clamp((fog_length / max(room_fog_depth, 0.0001)) *
@@ -316,6 +366,85 @@ void main()
 {
 	velocity = vec2(0.0);
 	motion_object_id = 0u;
+	#if defined(USE_TEXTURING) && !defined(USE_LIGHTMAP)
+	if (fast_additive_bitmap != 0)
+	{
+		color = texture(colortexture, outuv.xy / outuv.z) * outcolor;
+		if (color.a <= 0.0)
+			discard;
+
+		if (soft_particle_enabled != 0 &&
+			soft_particle_screen_size.x > 0.0 && soft_particle_screen_size.y > 0.0)
+		{
+			ivec2 depth_size = max(ivec2(soft_particle_screen_size), ivec2(1));
+			ivec2 depth_pixel = clamp(ivec2(gl_FragCoord.xy), ivec2(0), depth_size - ivec2(1));
+			float scene_depth = texelFetch(soft_particle_depth, depth_pixel, 0).r;
+			if (scene_depth < 0.9999)
+			{
+				float scene_eye = SoftParticleEyeDepth(scene_depth);
+				float particle_depth = outnormal.w >= 0.0 ? outnormal.w : gl_FragCoord.z;
+				float particle_eye = SoftParticleEyeDepth(particle_depth);
+				color.a *= clamp((scene_eye - particle_eye) /
+					max(soft_particle_depth_range, 0.0001), 0.0, 1.0);
+			}
+		}
+
+		if (room_fog_enabled != 0 && abs(out_room_fog_world_position.w) > 0.00001)
+		{
+			vec3 room_world_position = out_room_fog_world_position.xyz /
+				out_room_fog_world_position.w;
+			color.rgb *= 1.0 - RoomFogAmount(room_world_position);
+		}
+		#if defined(USE_FOG)
+			float fog_start = clamp(1.0 - (1.0 / max(fog.start_dist, 0.0001)), 0.0, 1.0);
+			float fog_end = clamp(1.0 - (1.0 / max(fog.end_dist, 0.0001)), 0.0, 1.0);
+			float fog_depth = clamp(-outpt.z, 0.0, 1.0);
+			float mag = clamp((fog_depth - fog_start) /
+				max(fog_end - fog_start, 0.0001), 0.0, 1.0);
+			color.rgb *= 1.0 - mag;
+		#endif
+		post_mask = vec4(0.0);
+		return;
+	}
+	#endif
+	#if defined(USE_TEXTURING)
+	if (fast_retained_room_base != 0)
+	{
+		vec4 base_color = texture(colortexture, outuv.xy / outuv.z);
+		#if defined(USE_LIGHTMAP)
+			vec4 lightmap_color = SampleLegacyLightmap(outuv2.xy / outuv2.z);
+			lightmap_color.rgb = ApplyDynamicLightmapLighting(lightmap_color.rgb);
+			color = base_color * lightmap_color * outcolor;
+		#else
+			color = base_color * outcolor;
+		#endif
+
+		float room_amount = 0.0;
+		if (room_fog_enabled != 0 && abs(out_room_fog_world_position.w) > 0.00001)
+		{
+			vec3 room_world_position = out_room_fog_world_position.xyz /
+				out_room_fog_world_position.w;
+			room_amount = RoomFogAmount(room_world_position);
+			color.rgb = mix(color.rgb, room_fog_color, room_amount);
+		}
+		float bloom_mask = 0.0;
+		#if defined(USE_FOG)
+			float fog_start = clamp(1.0 - (1.0 / max(fog.start_dist, 0.0001)), 0.0, 1.0);
+			float fog_end = clamp(1.0 - (1.0 / max(fog.end_dist, 0.0001)), 0.0, 1.0);
+			float fog_depth = clamp(-outpt.z, 0.0, 1.0);
+			float mag = clamp((fog_depth - fog_start) /
+				max(fog_end - fog_start, 0.0001), 0.0, 1.0);
+			color.rgb = mix(color.rgb, fog.color.rgb, mag);
+			bloom_mask = mag;
+		#endif
+		float coverage = clamp(color.a, 0.0, 1.0);
+		int room_ao_class = retained_room_lightmap_arrays != 0 ?
+			out_retained_ao_class : ao_class_value;
+		post_mask = vec4(room_amount * coverage, bloom_mask, 0.0,
+			float(clamp(room_ao_class, 0, 255)) / 255.0);
+		return;
+	}
+	#endif
 	if (motion_vector_mode == 2)
 	{
 		motion_object_id = motion_vector_object_id;
@@ -376,7 +505,7 @@ void main()
 		}
 		else if (per_pixel_specular_enabled != 0)
 		{
-			vec3 lightmap_color = texture(lightmaptexture, outuv2.xy / outuv2.z).rgb;
+			vec3 lightmap_color = SampleLegacyLightmap(outuv2.xy / outuv2.z).rgb;
 			vec3 specular_color = ApplyPerPixelSpecular(lightmap_color);
 			float specular_alpha = clamp(base_color.a * specular_data.alpha_strength, 0.0, 1.0);
 			color = vec4(specular_color, clamp(specular_alpha * vertex_color.a, 0.0, 1.0));
@@ -386,7 +515,7 @@ void main()
 			color = vec4(vertex_color.rgb, base_color.a * vertex_color.a);
 		}
 	#elif defined(USE_TEXTURING) && defined(USE_LIGHTMAP)
-		vec4 lightmap_color = texture(lightmaptexture, outuv2.xy / outuv2.z);
+		vec4 lightmap_color = SampleLegacyLightmap(outuv2.xy / outuv2.z);
 		lightmap_color.rgb = ApplyDynamicLightmapLighting(lightmap_color.rgb);
 		color = texture(colortexture, outuv.xy / outuv.z) * lightmap_color * vertex_color;
 	#elif defined(USE_TEXTURING)
@@ -394,6 +523,12 @@ void main()
 	#else
 		color = vertex_color;
 	#endif
+	// Additive bitmap materials contribute nothing when texture/vertex alpha is
+	// exactly zero.  Large radial glows and legacy thruster cones otherwise run
+	// blending and post-mask writes across the transparent majority of every
+	// billboard, which is especially costly with MSAA and SSAA combined.
+	if (post_mask_blend_mode == 1 && color.a <= 0.0)
+		discard;
 	if (cockpit_backing_enabled != 0)
 	{
 		float darkness = clamp(cockpit_backing_darkness, 0.0, 1.0);

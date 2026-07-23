@@ -73,7 +73,9 @@ void ClearDynamicLightmaps ();
 
 int GetPerPixelLightmapLights(ushort lmi_handle, renderer_per_pixel_light *lights, int max_lights);
 int GetPerPixelLightmapLightCount(ushort lmi_handle);
+int GetPerPixelLightmapCanonicalLightKey(ushort lmi_handle);
 int GetPerPixelLightmapTextureLights(int lm_handle, renderer_per_pixel_light *lights, int max_lights);
+void UpdatePerPixelLightmapRendererData();
 
 // Changes the terrain shading to approximate lighting
 void ApplyLightingToTerrain (vector *pos,int cellnum,float light_dist,float red_scale,float green_scale,float blue_scale,

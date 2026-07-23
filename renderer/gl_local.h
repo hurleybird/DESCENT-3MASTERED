@@ -26,6 +26,7 @@
 #include <Windows.h>
 #endif
 #include <algorithm>
+#include <cstdint>
 #include <vector>
 #include <glad/gl.h>
 #ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
@@ -122,7 +123,7 @@ class GL4Renderer : public IRenderer
 	Framebuffer post_present_framebuffer;
 	Framebuffer post_composite_framebuffer;
 	Framebuffer motion_blur_framebuffer;
-	Framebuffer soft_particle_depth_framebuffer;
+	GLuint soft_particle_depth_texture = 0;
 	MotionVectorResources motion_vectors;
 	PostProtectionMaskResources post_protection_mask;
 
@@ -167,6 +168,7 @@ class GL4Renderer : public IRenderer
 	ShaderProgram motionvectorcopyshader;
 	ShaderProgram motionblurshader;
 	ShaderProgram ao_compositeshader;
+	ShaderProgram roomfogentryshader;
 	BloomResources bloom;
 	AOResources ao;
 	//Cached projection matrix and near/far for AO. Updated on every
@@ -229,6 +231,9 @@ class GL4Renderer : public IRenderer
 	GLint motionvectorcopy_velocity_source = -1;
 	GLint motionvectorcopy_uv_origin = -1;
 	GLint motionvectorcopy_uv_scale = -1;
+	GLint roomfogentry_view_projection = -1;
+	GLint roomfogentry_viewer_position = -1;
+	GLint roomfogentry_viewer_forward = -1;
 	GLint motionblur_color_source = -1;
 	GLint motionblur_velocity_source = -1;
 	GLint motionblur_depth_source = -1;
@@ -291,94 +296,101 @@ class GL4Renderer : public IRenderer
 	GLuint drawbuffer = 0;
 	//The next committed vertex is where to start writing vertex data to the buffer
 	GLuint nextcommittedvertex = 0;
-	ShaderProgram drawshaders[8];
-	GLint drawshader_phong_enabled_uniforms[8] = {};
-	GLint drawshader_light_direction_uniforms[8] = {};
-	GLint drawshader_dynamic_count_uniforms[8] = {};
-	GLint drawshader_dynamic_face_normal_uniforms[8] = {};
-	GLint drawshader_dynamic_positions_uniforms[8] = {};
-	GLint drawshader_dynamic_colors_uniforms[8] = {};
-	GLint drawshader_dynamic_radii_uniforms[8] = {};
-	GLint drawshader_dynamic_falloffs_uniforms[8] = {};
-	GLint drawshader_dynamic_directions_uniforms[8] = {};
-	GLint drawshader_dynamic_dot_ranges_uniforms[8] = {};
-	GLint drawshader_dynamic_directional_uniforms[8] = {};
-	GLint drawshader_per_pixel_specular_enabled_uniforms[8] = {};
-	GLint drawshader_ao_suppression_uniforms[8] = {};
-	GLint drawshader_bloom_suppression_uniforms[8] = {};
-	GLint drawshader_ao_class_uniforms[8] = {};
-	GLint drawshader_ao_weight_uniforms[8] = {};
-	GLint drawshader_ao_capture_weight_mode_uniforms[8] = {};
-	GLint drawshader_post_mask_blend_mode_uniforms[8] = {};
-	GLint drawshader_cockpit_backing_enabled_uniforms[8] = {};
-	GLint drawshader_cockpit_backing_alpha_uniforms[8] = {};
-	GLint drawshader_cockpit_backing_darkness_uniforms[8] = {};
-	GLint drawshader_cockpit_scanlines_enabled_uniforms[8] = {};
-	GLint drawshader_cockpit_scanline_strength_uniforms[8] = {};
-	GLint drawshader_cockpit_scanline_spacing_uniforms[8] = {};
-	GLint drawshader_cockpit_scanline_thickness_uniforms[8] = {};
-	GLint drawshader_cockpit_scanline_phase_uniforms[8] = {};
-	GLint drawshader_motion_vector_mode_uniforms[8] = {};
-	GLint drawshader_motion_vector_current_view_projection_uniforms[8] = {};
-	GLint drawshader_motion_vector_previous_view_projection_uniforms[8] = {};
-	GLint drawshader_motion_vector_has_previous_uniforms[8] = {};
-	GLint drawshader_motion_vector_payload_type_uniforms[8] = {};
-	GLint drawshader_motion_vector_object_id_uniforms[8] = {};
-	GLint drawshader_soft_particle_enabled_uniforms[8] = {};
-	GLint drawshader_soft_particle_screen_size_uniforms[8] = {};
-	GLint drawshader_soft_particle_depth_range_uniforms[8] = {};
-	GLint drawshader_retained_mode_uniforms[8] = {};
-	GLint drawshader_retained_transform_uniforms[8] = {};
-	GLint drawshader_retained_modelview_uniforms[8] = {};
-	GLint drawshader_retained_current_world_uniforms[8] = {};
-	GLint drawshader_retained_previous_world_uniforms[8] = {};
-	GLint drawshader_retained_uv_offset_uniforms[8] = {};
-	GLint drawshader_retained_uv2_scale_uniforms[8] = {};
-	GLint drawshader_retained_base_color_uniforms[8] = {};
-	GLint drawshader_retained_depth_bias_uniforms[8] = {};
-	GLint drawshader_retained_legacy_depth_uniforms[8] = {};
-	GLint drawshader_retained_legacy_world_projection_uniforms[8] = {};
-	GLint drawshader_retained_legacy_view_position_uniforms[8] = {};
-	GLint drawshader_retained_legacy_view_right_uniforms[8] = {};
-	GLint drawshader_retained_legacy_view_up_uniforms[8] = {};
-	GLint drawshader_retained_legacy_view_forward_uniforms[8] = {};
-	GLint drawshader_retained_legacy_viewport_scale_uniforms[8] = {};
-	GLint drawshader_retained_legacy_viewport_center_uniforms[8] = {};
-	GLint drawshader_retained_lighting_mode_uniforms[8] = {};
-	GLint drawshader_retained_vertex_alpha_uniforms[8] = {};
-	GLint drawshader_retained_alpha_scale_uniforms[8] = {};
-	GLint drawshader_retained_effect_mode_uniforms[8] = {};
-	GLint drawshader_retained_effect_alpha_scale_uniforms[8] = {};
-	GLint drawshader_retained_fog_plane_uniforms[8] = {};
-	GLint drawshader_retained_fog_distance_uniforms[8] = {};
-	GLint drawshader_retained_fog_eye_distance_uniforms[8] = {};
-	GLint drawshader_retained_fog_depth_uniforms[8] = {};
-	GLint drawshader_retained_specular_view_position_uniforms[8] = {};
-	GLint drawshader_retained_specular_light_position_uniforms[8] = {};
-	GLint drawshader_retained_specular_scalar_uniforms[8] = {};
-	GLint drawshader_retained_specular_smooth_uniforms[8] = {};
-	GLint drawshader_retained_deform_enabled_uniforms[8] = {};
-	GLint drawshader_retained_deform_mode_uniforms[8] = {};
-	GLint drawshader_retained_deform_seed_uniforms[8] = {};
-	GLint drawshader_retained_deform_range_uniforms[8] = {};
-	GLint drawshader_retained_deform_direction_uniforms[8] = {};
-	GLint drawshader_retained_custom_clip_enabled_uniforms[8] = {};
-	GLint drawshader_retained_custom_clip_point_uniforms[8] = {};
-	GLint drawshader_retained_custom_clip_plane_uniforms[8] = {};
-	GLint drawshader_retained_custom_clip_scale_uniforms[8] = {};
-	GLint drawshader_retained_near_clip_enabled_uniforms[8] = {};
-	GLint drawshader_retained_far_clip_enabled_uniforms[8] = {};
-	GLint drawshader_retained_far_clip_z_uniforms[8] = {};
-	GLint drawshader_retained_per_pixel_specular_payload_uniforms[8] = {};
-	GLint drawshader_room_fog_enabled_uniforms[8] = {};
-	GLint drawshader_room_fog_viewer_inside_uniforms[8] = {};
-	GLint drawshader_room_fog_viewer_position_uniforms[8] = {};
-	GLint drawshader_room_fog_viewer_forward_uniforms[8] = {};
-	GLint drawshader_room_fog_color_uniforms[8] = {};
-	GLint drawshader_room_fog_depth_uniforms[8] = {};
-	GLint drawshader_room_fog_intensity_uniforms[8] = {};
-	GLint drawshader_room_fog_triangle_count_uniforms[8] = {};
-	GLint drawshader_fog_composite_mode_uniforms[8] = {};
+	static constexpr int DRAW_SHADER_COUNT = 8;
+	ShaderProgram drawshaders[DRAW_SHADER_COUNT];
+	GLint drawshader_phong_enabled_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_light_direction_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_dynamic_count_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_dynamic_face_normal_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_dynamic_positions_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_dynamic_colors_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_dynamic_radii_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_dynamic_falloffs_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_dynamic_directions_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_dynamic_dot_ranges_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_dynamic_directional_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_per_pixel_specular_enabled_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_ao_suppression_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_bloom_suppression_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_ao_class_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_ao_weight_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_ao_capture_weight_mode_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_post_mask_blend_mode_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_fast_additive_bitmap_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_fast_retained_room_base_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_cockpit_backing_enabled_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_cockpit_backing_alpha_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_cockpit_backing_darkness_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_cockpit_scanlines_enabled_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_cockpit_scanline_strength_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_cockpit_scanline_spacing_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_cockpit_scanline_thickness_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_cockpit_scanline_phase_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_motion_vector_mode_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_motion_vector_current_view_projection_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_motion_vector_previous_view_projection_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_motion_vector_has_previous_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_motion_vector_payload_type_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_motion_vector_object_id_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_soft_particle_enabled_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_soft_particle_screen_size_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_soft_particle_depth_range_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_mode_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_transform_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_modelview_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_current_world_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_previous_world_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_uv_offset_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_uv2_scale_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_base_color_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_depth_bias_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_legacy_depth_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_legacy_world_projection_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_legacy_view_position_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_legacy_view_right_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_legacy_view_up_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_legacy_view_forward_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_legacy_viewport_scale_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_legacy_viewport_center_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_lighting_mode_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_vertex_alpha_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_alpha_scale_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_effect_mode_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_effect_alpha_scale_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_fog_plane_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_fog_distance_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_fog_eye_distance_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_fog_depth_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_specular_view_position_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_specular_light_position_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_specular_scalar_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_specular_smooth_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_deform_enabled_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_deform_mode_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_deform_seed_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_deform_range_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_deform_direction_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_custom_clip_enabled_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_custom_clip_point_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_custom_clip_plane_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_custom_clip_scale_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_near_clip_enabled_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_far_clip_enabled_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_far_clip_z_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_per_pixel_specular_payload_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_room_fog_enabled_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_room_fog_viewer_inside_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_room_fog_viewer_position_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_room_fog_viewer_forward_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_room_fog_color_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_room_fog_depth_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_room_fog_intensity_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_room_fog_entry_map_enabled_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_room_fog_entry_origin_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_room_fog_entry_size_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_fog_composite_mode_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_room_lightmap_arrays_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_retained_dynamic_lightmaps_uniforms[DRAW_SHADER_COUNT] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
 	bool retained_draw_active = false;
@@ -474,11 +486,38 @@ class GL4Renderer : public IRenderer
 
 	bool OpenGL_cache_initted = false;
 
+	static constexpr int RETAINED_ROOM_LIGHTMAP_ARRAY_COUNT = 7;
+	GLuint retained_room_lightmap_arrays[RETAINED_ROOM_LIGHTMAP_ARRAY_COUNT] = {};
+	std::vector<int> retained_room_lightmap_pages;
+	std::vector<int> retained_room_lightmap_handles;
+	bool retained_room_lightmaps_ready = false;
+
 	//SHADER
 	GLuint commonbuffername = 0;
 	GLuint legacycommonbuffername = 0;
 	GLuint fogbuffername = 0;
 	GLuint room_fog_portal_buffer = 0;
+	struct RoomFogEntryCache
+	{
+		ColorFramebuffer framebuffer;
+		uint64_t hash = 0;
+		uint64_t last_used = 0;
+		int origin[2] = {};
+		int size[2] = {};
+		bool valid = false;
+	};
+	static constexpr int ROOM_FOG_ENTRY_CACHE_COUNT = 12;
+	RoomFogEntryCache room_fog_entry_cache[ROOM_FOG_ENTRY_CACHE_COUNT];
+	uint64_t room_fog_entry_stamp = 0;
+	GLuint room_fog_entry_texture = 0;
+	bool room_fog_entry_map_enabled = false;
+	int room_fog_entry_origin[2] = {};
+	int room_fog_entry_size[2] = {};
+	GLuint per_pixel_lightmap_buffers[3] = {};
+	bool per_pixel_lightmap_buffer_initialized[3] = {};
+	int per_pixel_lightmap_buffer_index = -1;
+	bool per_pixel_lightmap_buffer_ready = false;
+	std::vector<int> per_pixel_lightmap_lookup_upload;
 	std::vector<renderer_room_fog_triangle> room_fog_portal_cache;
 	bool room_fog_enabled = false;
 	bool room_fog_overlay = false;
@@ -488,7 +527,6 @@ class GL4Renderer : public IRenderer
 	float room_fog_color[3] = {};
 	float room_fog_depth = 1.0f;
 	float room_fog_intensity = 1.0f;
-	int room_fog_triangle_count = 0;
 	GLuint specularbuffername = 0;
 	GLuint terrainfogbuffername = 0;
 	int terrainfogcounter = 0;
@@ -537,8 +575,8 @@ private:
 	void SetDrawDefaults();
 	void SelectDrawShader();
 	bool UsesExactRoomFogMultiply() const;
+	bool CurrentDrawNeedsPostMask(bool include_ao_class) const;
 	void SetCurrentFogCompositeMode(int mode);
-	void DrawRoomFogMultiplyCorrection(GLenum primitive, GLint first, GLsizei count);
 	GLuint PrepareSoftParticleDepthTexture();
 	void InvalidateSoftParticleDepthTexture();
 	void BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xscalar, float yscalar,
@@ -564,6 +602,8 @@ private:
 	void ApplyPixelMotionBlur(int supersampling_factor);
 	void DrawMotionVectorDebugPreview(int supersampling_factor);
 	void UseSceneDrawBuffers();
+	void DrawRoomFogMultiplyCorrection(GLenum primitive, GLint first, GLsizei count);
+	bool PrepareRoomFogEntryMap(const renderer_room_fog_state& state);
 
 	// Turns on/off multitexture blending
 	void SetMultitextureBlendMode(bool state);
@@ -591,6 +631,8 @@ private:
 	void FreeUploadBuffers();
 	void SetUploadBufferSize(int width, int height);
 	void TranslateBitmapToOpenGL(int texnum, int bm_handle, int map_type, int replace, int tn);
+	void DestroyRetainedRoomLightmaps();
+	void UploadRetainedRoomLightmap(int lightmap_handle);
 	void ChangeChunkedBitmap(int bm_handle, chunked_bitmap* chunk);
 
 	bool CheckExtension(char* extName);
@@ -702,6 +744,9 @@ public:
 	void SetPerPixelLightingDirection(const vector *lightdir) override;
 	void SetPerPixelDynamicLighting(const vector *face_normal, int count,
 		const renderer_per_pixel_light *lights) override;
+	void UpdatePerPixelLightmapLighting(
+		const renderer_per_pixel_lightmap_entry *entries, int entry_count) override;
+	bool PerPixelLightmapLightingReady() const override { return per_pixel_lightmap_buffer_ready; }
 
 	// Adds a bias to each coordinates z value.  This is useful for making 2d bitmaps
 	// get drawn without being clipped by the zbuffer
@@ -775,6 +820,10 @@ public:
 		int map_type = MAP_TYPE_BITMAP) override;
 	bool BeginRetainedPolymodelDraw(const renderer_retained_polymodel_draw *draw) override;
 	void EndRetainedPolymodelDraw() override;
+	bool PrepareRetainedRoomLightmaps(const int* lightmap_handles, int count) override;
+	bool RetainedRoomLightmapsReady() const override { return retained_room_lightmaps_ready; }
+	int GetRetainedRoomLightmapPage(int lightmap_handle) const override;
+	void RefreshRetainedRoomLightmaps() override;
 	bool SetRoomFogState(const renderer_room_fog_state *state) override;
 	void SetRoomFogOverlay(int state) override;
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon

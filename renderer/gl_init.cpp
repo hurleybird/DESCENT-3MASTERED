@@ -708,6 +708,8 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	extern const char* motionVectorCopyFragmentSrc;
 	extern const char* pixelMotionBlurFragmentSrc;
 	extern const char* aoDeferredCompositeFragmentSrc;
+	extern const char* roomFogEntryVertexSrc;
+	extern const char* roomFogEntryFragmentSrc;
 	blitshader.AttachSource(blitVertexSrc, blitFragmentSrc);
 	blitshader.Use();
 	GLint blitshader_source = blitshader.FindUniform("heh");
@@ -866,6 +868,16 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 		ao_composite_debug_channel == -1 ||
 		ao_composite_visible_origin == -1 || ao_composite_visible_size == -1 || ao_composite_use_visible_rect == -1)
 		Error("GLRenderer::Init: Failed to find AO deferred composite uniforms!");
+
+	roomfogentryshader.AttachSource(roomFogEntryVertexSrc, roomFogEntryFragmentSrc);
+	roomfogentry_view_projection = roomfogentryshader.FindUniform("view_projection");
+	roomfogentry_viewer_position = roomfogentryshader.FindUniform("viewer_position");
+	roomfogentry_viewer_forward = roomfogentryshader.FindUniform("viewer_forward");
+	if (roomfogentry_view_projection == -1 || roomfogentry_viewer_position == -1 ||
+		roomfogentry_viewer_forward == -1)
+	{
+		Error("GLRenderer::Init: Failed to find room-fog entry-map uniforms!");
+	}
 	ShaderProgram::ClearBinding();
 
 	bloom.InitShaders();
@@ -900,9 +912,11 @@ void GL4Renderer::Close()
 	motionvectorcopyshader.Destroy();
 	motionblurshader.Destroy();
 	ao_compositeshader.Destroy();
+	roomfogentryshader.Destroy();
 	bloom.DestroyShaders();
 	ao.Destroy();
 
+	DestroyRetainedRoomLightmaps();
 	FreeImages();
 	DestroyFontBatchResources();
 	if (framebuffer_ok)

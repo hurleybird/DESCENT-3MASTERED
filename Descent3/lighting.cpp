@@ -86,12 +86,7 @@ int Num_destroyed_lights_this_frame = 0;
 int Destroyed_light_rooms_this_frame[MAX_DESTROYED_LIGHTS_PER_FRAME];
 int Destroyed_light_faces_this_frame[MAX_DESTROYED_LIGHTS_PER_FRAME];
 
-struct per_pixel_lightmap_face
-{
-	int lightmap_key;
-	ubyte count;
-	renderer_per_pixel_light lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
-};
+using per_pixel_lightmap_face = renderer_per_pixel_lightmap_entry;
 
 per_pixel_lightmap_face Per_pixel_lightmap_faces[MAX_DYNAMIC_FACES];
 int Num_per_pixel_lightmap_faces = 0;
@@ -99,6 +94,7 @@ per_pixel_lightmap_face Per_pixel_lightmap_textures[MAX_DYNAMIC_FACES];
 int Num_per_pixel_lightmap_textures = 0;
 static int Per_pixel_lightmap_face_lookup[MAX_LIGHTMAP_INFOS];
 static int Per_pixel_lightmap_texture_lookup[MAX_LIGHTMAPS];
+static int Per_pixel_lightmap_canonical_key[MAX_LIGHTMAP_INFOS];
 
 constexpr float PER_PIXEL_HEADLIGHT_STRENGTH = 1.5f;
 constexpr float PER_PIXEL_HEADLIGHT_RADIUS = 0.67f;
@@ -282,6 +278,12 @@ int GetPerPixelLightmapLightCount(ushort lmi_handle)
 	return Per_pixel_lightmap_faces[candidate].count;
 }
 
+int GetPerPixelLightmapCanonicalLightKey(ushort lmi_handle)
+{
+	return lmi_handle < MAX_LIGHTMAP_INFOS ?
+		Per_pixel_lightmap_canonical_key[lmi_handle] : -1;
+}
+
 int GetPerPixelLightmapTextureLights(int lm_handle, renderer_per_pixel_light *lights, int max_lights)
 {
 	if (lights == nullptr || max_lights <= 0 || lm_handle < 0 || lm_handle >= MAX_LIGHTMAPS)
@@ -298,6 +300,85 @@ int GetPerPixelLightmapTextureLights(int lm_handle, renderer_per_pixel_light *li
 	if (lights != nullptr && count > 0)
 		memcpy(lights, face_lights.lights, sizeof(renderer_per_pixel_light) * count);
 	return count;
+}
+
+void UpdatePerPixelLightmapRendererData()
+{
+	// Canonical light sets are rebuilt every frame, but the old implementation
+	// allocated an unordered_multimap node for every unique set.  The active list
+	// is capped at 2,000 entries, so a fixed chained hash table is both simpler
+	// and allocation-free.
+	constexpr int canonical_bucket_count = 4096;
+	int canonical_buckets[canonical_bucket_count];
+	int canonical_next[MAX_DYNAMIC_FACES];
+	size_t canonical_hashes[MAX_DYNAMIC_FACES];
+	memset(canonical_buckets, 0xff, sizeof(canonical_buckets));
+	auto hash_bytes = [](size_t seed, const void* data, size_t size)
+	{
+		const ubyte* bytes = (const ubyte*)data;
+		// This hash is only a bucket accelerator; PerPixelLightMatches performs
+		// the authoritative equality check.  Fold full machine words rather than
+		// doing an integer multiply for every byte of every light record.
+		while (size >= sizeof(uint64_t))
+		{
+			uint64_t word;
+			memcpy(&word, bytes, sizeof(word));
+			seed = (seed ^ (size_t)word) * (size_t)1099511628211ull;
+			bytes += sizeof(word);
+			size -= sizeof(word);
+		}
+		while (size-- > 0)
+			seed = (seed ^ *bytes++) * (size_t)1099511628211ull;
+		return seed;
+	};
+	for (int entry_index = 0; entry_index < Num_per_pixel_lightmap_faces; entry_index++)
+	{
+		const per_pixel_lightmap_face& entry = Per_pixel_lightmap_faces[entry_index];
+		size_t hash = (size_t)1469598103934665603ull;
+		hash = hash_bytes(hash, &entry.count, sizeof(entry.count));
+		bool directional = false;
+		for (int light = 0; light < entry.count; light++)
+		{
+			hash = hash_bytes(hash, &entry.lights[light], sizeof(entry.lights[light]));
+			directional |= entry.lights[light].directional;
+		}
+		if (directional)
+			hash = hash_bytes(hash, &LightmapInfo[entry.lightmap_key].normal,
+				sizeof(LightmapInfo[entry.lightmap_key].normal));
+
+		int canonical_key = entry.lightmap_key;
+		const int bucket = (int)(hash & (canonical_bucket_count - 1));
+		for (int candidate_index = canonical_buckets[bucket]; candidate_index >= 0;
+			candidate_index = canonical_next[candidate_index])
+		{
+			if (canonical_hashes[candidate_index] != hash)
+				continue;
+			const per_pixel_lightmap_face& other =
+				Per_pixel_lightmap_faces[candidate_index];
+			if (entry.count != other.count)
+				continue;
+			bool equal = true;
+			for (int light = 0; light < entry.count; light++)
+				equal &= PerPixelLightMatches(entry.lights[light], other.lights[light]);
+			if (equal && directional)
+				equal = LightmapInfo[entry.lightmap_key].normal ==
+					LightmapInfo[other.lightmap_key].normal;
+			if (equal)
+			{
+				canonical_key = other.lightmap_key;
+				break;
+			}
+		}
+		Per_pixel_lightmap_canonical_key[entry.lightmap_key] = canonical_key;
+		if (canonical_key == entry.lightmap_key)
+		{
+			canonical_hashes[entry_index] = hash;
+			canonical_next[entry_index] = canonical_buckets[bucket];
+			canonical_buckets[bucket] = entry_index;
+		}
+	}
+	rend_UpdatePerPixelLightmapLighting(Per_pixel_lightmap_faces,
+		Num_per_pixel_lightmap_faces);
 }
 
 // Frees memory used by dynamic light structures

@@ -291,7 +291,13 @@ enum GL4GpuSplitPoint
 {
 	GL4_GPU_SPLIT_START = 0,
 	GL4_GPU_SPLIT_AFTER_WORLD_START,
+	GL4_GPU_SPLIT_BEFORE_ROOM_DEPTH,
+	GL4_GPU_SPLIT_AFTER_ROOM_DEPTH,
+	GL4_GPU_SPLIT_AFTER_ROOM_COLOR,
 	GL4_GPU_SPLIT_AFTER_WORLD_GEOMETRY,
+	GL4_GPU_SPLIT_AFTER_POSTRENDER_OPAQUE,
+	GL4_GPU_SPLIT_AFTER_POSTRENDER_ITEMS,
+	GL4_GPU_SPLIT_AFTER_POSTRENDER_GLOWS,
 	GL4_GPU_SPLIT_AFTER_WORLD_POSTRENDER,
 	GL4_GPU_SPLIT_AFTER_WORLD_END,
 	GL4_GPU_SPLIT_AFTER_MAIN_WORLD,
@@ -303,6 +309,8 @@ enum GL4GpuSplitPoint
 	GL4_GPU_SPLIT_AFTER_CAPTURE_BLOOM,
 	GL4_GPU_SPLIT_AFTER_MAIN_VIEW,
 	GL4_GPU_SPLIT_AFTER_SMALL_VIEWS,
+	GL4_GPU_SPLIT_AFTER_PRIMARY_HUD,
+	GL4_GPU_SPLIT_AFTER_AUX_HUD,
 	GL4_GPU_SPLIT_AFTER_HUD,
 	GL4_GPU_SPLIT_AFTER_CINEMATIC,
 	GL4_GPU_SPLIT_AFTER_DEBUG,
@@ -523,11 +531,49 @@ static void GL4PerfGpuSplitPoll()
 			GL4PerfGpuSplitRecord("WorldGeometry", state, t[GL4_GPU_SPLIT_AFTER_WORLD_START],
 				t[GL4_GPU_SPLIT_AFTER_WORLD_GEOMETRY]);
 		}
+		const struct
+		{
+			const char* label;
+			GL4GpuSplitPoint begin;
+			GL4GpuSplitPoint end;
+		} room_ranges[] =
+		{
+			{ "WorldBeforeRooms", GL4_GPU_SPLIT_AFTER_WORLD_START, GL4_GPU_SPLIT_BEFORE_ROOM_DEPTH },
+			{ "RoomDepthPrepass", GL4_GPU_SPLIT_BEFORE_ROOM_DEPTH, GL4_GPU_SPLIT_AFTER_ROOM_DEPTH },
+			{ "RoomColor", GL4_GPU_SPLIT_AFTER_ROOM_DEPTH, GL4_GPU_SPLIT_AFTER_ROOM_COLOR },
+			{ "WorldAfterRooms", GL4_GPU_SPLIT_AFTER_ROOM_COLOR, GL4_GPU_SPLIT_AFTER_WORLD_GEOMETRY },
+		};
+		for (const auto& range : room_ranges)
+		{
+			if (state.has_point[range.begin] && state.has_point[range.end])
+				GL4PerfGpuSplitRecord(range.label, state, t[range.begin], t[range.end]);
+		}
 		if (state.has_point[GL4_GPU_SPLIT_AFTER_WORLD_GEOMETRY] &&
 			state.has_point[GL4_GPU_SPLIT_AFTER_WORLD_POSTRENDER])
 		{
 			GL4PerfGpuSplitRecord("WorldPostRender", state, t[GL4_GPU_SPLIT_AFTER_WORLD_GEOMETRY],
 				t[GL4_GPU_SPLIT_AFTER_WORLD_POSTRENDER]);
+		}
+		const struct
+		{
+			const char* label;
+			GL4GpuSplitPoint begin;
+			GL4GpuSplitPoint end;
+		} postrender_ranges[] =
+		{
+			{ "PostRender.Opaque", GL4_GPU_SPLIT_AFTER_WORLD_GEOMETRY,
+				GL4_GPU_SPLIT_AFTER_POSTRENDER_OPAQUE },
+			{ "PostRender.Items", GL4_GPU_SPLIT_AFTER_POSTRENDER_OPAQUE,
+				GL4_GPU_SPLIT_AFTER_POSTRENDER_ITEMS },
+			{ "PostRender.Glows", GL4_GPU_SPLIT_AFTER_POSTRENDER_ITEMS,
+				GL4_GPU_SPLIT_AFTER_POSTRENDER_GLOWS },
+			{ "PostRender.Tail", GL4_GPU_SPLIT_AFTER_POSTRENDER_GLOWS,
+				GL4_GPU_SPLIT_AFTER_WORLD_POSTRENDER },
+		};
+		for (const auto& range : postrender_ranges)
+		{
+			if (state.has_point[range.begin] && state.has_point[range.end])
+				GL4PerfGpuSplitRecord(range.label, state, t[range.begin], t[range.end]);
 		}
 		if (state.has_point[GL4_GPU_SPLIT_AFTER_WORLD_POSTRENDER] &&
 			state.has_point[GL4_GPU_SPLIT_AFTER_WORLD_END])
@@ -582,6 +628,24 @@ static void GL4PerfGpuSplitPoll()
 		{
 			GL4PerfGpuSplitRecord("HUD", state, t[GL4_GPU_SPLIT_AFTER_SMALL_VIEWS],
 				t[GL4_GPU_SPLIT_AFTER_HUD]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_SMALL_VIEWS] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_PRIMARY_HUD])
+		{
+			GL4PerfGpuSplitRecord("HUD.Primary", state,
+				t[GL4_GPU_SPLIT_AFTER_SMALL_VIEWS], t[GL4_GPU_SPLIT_AFTER_PRIMARY_HUD]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_PRIMARY_HUD] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_AUX_HUD])
+		{
+			GL4PerfGpuSplitRecord("HUD.Aux", state,
+				t[GL4_GPU_SPLIT_AFTER_PRIMARY_HUD], t[GL4_GPU_SPLIT_AFTER_AUX_HUD]);
+		}
+		if (state.has_point[GL4_GPU_SPLIT_AFTER_AUX_HUD] &&
+			state.has_point[GL4_GPU_SPLIT_AFTER_HUD])
+		{
+			GL4PerfGpuSplitRecord("HUD.Tail", state,
+				t[GL4_GPU_SPLIT_AFTER_AUX_HUD], t[GL4_GPU_SPLIT_AFTER_HUD]);
 		}
 		if (state.has_point[GL4_GPU_SPLIT_AFTER_HUD] &&
 			state.has_point[GL4_GPU_SPLIT_AFTER_CINEMATIC])
@@ -663,8 +727,20 @@ static GL4GpuSplitPoint GL4GpuSplitPointFromSceneMark(renderer_gpu_scene_mark ma
 		return GL4_GPU_SPLIT_AFTER_MAIN_WORLD;
 	case RENDERER_GPU_SCENE_AFTER_WORLD_START:
 		return GL4_GPU_SPLIT_AFTER_WORLD_START;
+	case RENDERER_GPU_SCENE_BEFORE_ROOM_DEPTH:
+		return GL4_GPU_SPLIT_BEFORE_ROOM_DEPTH;
+	case RENDERER_GPU_SCENE_AFTER_ROOM_DEPTH:
+		return GL4_GPU_SPLIT_AFTER_ROOM_DEPTH;
+	case RENDERER_GPU_SCENE_AFTER_ROOM_COLOR:
+		return GL4_GPU_SPLIT_AFTER_ROOM_COLOR;
 	case RENDERER_GPU_SCENE_AFTER_WORLD_GEOMETRY:
 		return GL4_GPU_SPLIT_AFTER_WORLD_GEOMETRY;
+	case RENDERER_GPU_SCENE_AFTER_POSTRENDER_OPAQUE:
+		return GL4_GPU_SPLIT_AFTER_POSTRENDER_OPAQUE;
+	case RENDERER_GPU_SCENE_AFTER_POSTRENDER_ITEMS:
+		return GL4_GPU_SPLIT_AFTER_POSTRENDER_ITEMS;
+	case RENDERER_GPU_SCENE_AFTER_POSTRENDER_GLOWS:
+		return GL4_GPU_SPLIT_AFTER_POSTRENDER_GLOWS;
 	case RENDERER_GPU_SCENE_AFTER_WORLD_POSTRENDER:
 		return GL4_GPU_SPLIT_AFTER_WORLD_POSTRENDER;
 	case RENDERER_GPU_SCENE_AFTER_WORLD_END:
@@ -681,6 +757,10 @@ static GL4GpuSplitPoint GL4GpuSplitPointFromSceneMark(renderer_gpu_scene_mark ma
 		return GL4_GPU_SPLIT_AFTER_MAIN_VIEW;
 	case RENDERER_GPU_SCENE_AFTER_SMALL_VIEWS:
 		return GL4_GPU_SPLIT_AFTER_SMALL_VIEWS;
+	case RENDERER_GPU_SCENE_AFTER_PRIMARY_HUD:
+		return GL4_GPU_SPLIT_AFTER_PRIMARY_HUD;
+	case RENDERER_GPU_SCENE_AFTER_AUX_HUD:
+		return GL4_GPU_SPLIT_AFTER_AUX_HUD;
 	case RENDERER_GPU_SCENE_AFTER_HUD:
 		return GL4_GPU_SPLIT_AFTER_HUD;
 	case RENDERER_GPU_SCENE_AFTER_CINEMATIC:
@@ -2913,6 +2993,91 @@ void GL4Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int coun
 		per_pixel_dynamic_directions, per_pixel_dynamic_dot_ranges, per_pixel_dynamic_directional);
 }
 
+void GL4Renderer::UpdatePerPixelLightmapLighting(
+	const renderer_per_pixel_lightmap_entry *entries, int entry_count)
+{
+	constexpr int gpu_lookup_count = 65536;
+	constexpr int gpu_entry_count = 2000;
+	constexpr int gpu_lights_per_entry = RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS;
+	constexpr GLuint gpu_binding = 6;
+	struct GpuLight
+	{
+		float position_radius[4];
+		float color_falloff[4];
+		float direction_dot[4];
+	};
+
+	if (!OpenGL_preferred_state.per_pixel_lighting || !entries || entry_count <= 0)
+	{
+		per_pixel_lightmap_buffer_ready = false;
+		return;
+	}
+
+	entry_count = std::min(entry_count, gpu_entry_count);
+	static std::vector<int> active_lookup_keys;
+	if (per_pixel_lightmap_lookup_upload.size() != gpu_lookup_count)
+		per_pixel_lightmap_lookup_upload.assign(gpu_lookup_count, 0);
+	else
+	{
+		for (int lmi : active_lookup_keys)
+			per_pixel_lightmap_lookup_upload[lmi] = 0;
+	}
+	active_lookup_keys.clear();
+	active_lookup_keys.reserve(entry_count);
+	for (int candidate = 0; candidate < entry_count; candidate++)
+	{
+		const int lmi = entries[candidate].lightmap_key;
+		if (lmi < 0 || lmi >= gpu_lookup_count)
+			continue;
+		const int count = std::min((int)entries[candidate].count, gpu_lights_per_entry);
+		per_pixel_lightmap_lookup_upload[lmi] = ((candidate + 1) << 4) | count;
+		active_lookup_keys.push_back(lmi);
+	}
+
+	static std::vector<GpuLight> gpu_lights;
+	gpu_lights.clear();
+	gpu_lights.resize((size_t)entry_count * gpu_lights_per_entry);
+	for (int entry = 0; entry < entry_count; entry++)
+	{
+		const int count = std::min((int)entries[entry].count, gpu_lights_per_entry);
+		for (int light_index = 0; light_index < count; light_index++)
+		{
+			const renderer_per_pixel_light& source = entries[entry].lights[light_index];
+			GpuLight& destination = gpu_lights[(size_t)entry * gpu_lights_per_entry + light_index];
+			memcpy(destination.position_radius, source.position, sizeof(source.position));
+			destination.position_radius[3] = source.radius;
+			memcpy(destination.color_falloff, source.color, sizeof(source.color));
+			destination.color_falloff[3] = source.falloff;
+			memcpy(destination.direction_dot, source.direction, sizeof(source.direction));
+			destination.direction_dot[3] = source.directional ? source.dot_range : -2.0f;
+		}
+	}
+
+	per_pixel_lightmap_buffer_index = (per_pixel_lightmap_buffer_index + 1) % 3;
+	GLuint& buffer = per_pixel_lightmap_buffers[per_pixel_lightmap_buffer_index];
+	if (buffer == 0)
+		glGenBuffers(1, &buffer);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
+	const GLsizeiptr lookup_bytes = gpu_lookup_count * sizeof(int);
+	const GLsizeiptr light_capacity_bytes =
+		gpu_entry_count * gpu_lights_per_entry * sizeof(GpuLight);
+	if (!per_pixel_lightmap_buffer_initialized[per_pixel_lightmap_buffer_index])
+	{
+		glBufferData(GL_SHADER_STORAGE_BUFFER, lookup_bytes + light_capacity_bytes,
+			nullptr, GL_STREAM_DRAW);
+		per_pixel_lightmap_buffer_initialized[per_pixel_lightmap_buffer_index] = true;
+	}
+	glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, lookup_bytes,
+		per_pixel_lightmap_lookup_upload.data());
+	if (!gpu_lights.empty())
+	{
+		glBufferSubData(GL_SHADER_STORAGE_BUFFER, lookup_bytes,
+			(GLsizeiptr)(gpu_lights.size() * sizeof(GpuLight)), gpu_lights.data());
+	}
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, gpu_binding, buffer);
+	per_pixel_lightmap_buffer_ready = true;
+}
+
 void GL4Renderer::SetColorModel(color_model state)
 {
 	if (state == OpenGL_state.cur_color_model)
@@ -3797,7 +3962,6 @@ void GL4Renderer::UpdateFramebuffer(void)
 		post_present_framebuffer.Destroy();
 		post_composite_framebuffer.Destroy();
 		motion_blur_framebuffer.Destroy();
-		soft_particle_depth_framebuffer.Destroy();
 		soft_particle_depth_copy_valid = false;
 		soft_particle_depth_source_framebuffer = 0;
 		motion_vectors.Destroy();
@@ -3919,7 +4083,6 @@ void GL4Renderer::CloseFramebuffer(void)
 	post_present_framebuffer.Destroy();
 	post_composite_framebuffer.Destroy();
 	motion_blur_framebuffer.Destroy();
-	soft_particle_depth_framebuffer.Destroy();
 	soft_particle_depth_copy_valid = false;
 	soft_particle_depth_source_framebuffer = 0;
 	bloom_source_valid = false;
@@ -3933,8 +4096,22 @@ void GL4Renderer::CloseFramebuffer(void)
 		glDeleteBuffers(1, &room_fog_portal_buffer);
 		room_fog_portal_buffer = 0;
 	}
+	for (RoomFogEntryCache& cache : room_fog_entry_cache)
+	{
+		cache.framebuffer.Destroy();
+		cache = {};
+	}
+	room_fog_entry_stamp = 0;
+	room_fog_entry_texture = 0;
+	room_fog_entry_map_enabled = false;
+	glDeleteBuffers(3, per_pixel_lightmap_buffers);
+	memset(per_pixel_lightmap_buffers, 0, sizeof(per_pixel_lightmap_buffers));
+	memset(per_pixel_lightmap_buffer_initialized, 0,
+		sizeof(per_pixel_lightmap_buffer_initialized));
+	per_pixel_lightmap_buffer_index = -1;
+	per_pixel_lightmap_buffer_ready = false;
+	per_pixel_lightmap_lookup_upload.clear();
 	room_fog_enabled = false;
-	room_fog_triangle_count = 0;
 	room_fog_portal_cache.clear();
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);

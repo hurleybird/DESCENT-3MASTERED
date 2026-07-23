@@ -213,6 +213,8 @@ void PostRender(int roomnum)
 	int object_mine_type_count[MAX_OBJECT_TYPES] = {};
 	bool separated_object[MAX_POSTRENDERS] = {};
 	bool separated_object_rendered[MAX_POSTRENDERS] = {};
+	bool separated_object_needs_transparent[MAX_POSTRENDERS] = {};
+	ubyte separated_object_polymodel_late_mask[MAX_POSTRENDERS] = {};
 	unsigned int separated_object_random_state[MAX_POSTRENDERS] = {};
 	// GL4 depth consumers (AO, motion vectors, and soft particles) all require
 	// the same stable set of opaque polygon depth.  Keep the split independent of
@@ -249,7 +251,9 @@ void PostRender(int roomnum)
 			if (first_object_time == 0.0)
 				first_object_time = object_start_time;
 			separated_object_rendered[i] = RenderObjectOpaque(
-				objp, &separated_object_random_state[i]);
+				objp, &separated_object_random_state[i],
+				&separated_object_needs_transparent[i],
+				&separated_object_polymodel_late_mask[i]);
 			if (Perf_markers_enabled && separated_object_rendered[i])
 			{
 				const double duration = PerfMarkersNow() - object_start_time;
@@ -271,6 +275,7 @@ void PostRender(int roomnum)
 			}
 		}
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_POSTRENDER_OPAQUE);
 
 	{
 		PERF_MARKER_SCOPE("PostRender.RenderItems");
@@ -297,6 +302,8 @@ void PostRender(int roomnum)
 				const bool object_was_separated = separated_object[i];
 				bool object_outside = OBJECT_OUTSIDE(objp);
 				if (object_was_separated && !separated_object_rendered[i])
+					continue;
+				if (object_was_separated && !separated_object_needs_transparent[i])
 					continue;
 				{
 					PERF_MARKER_SCOPE("PostRender.FlushVisEffects.BeforeObject");
@@ -326,7 +333,8 @@ void PostRender(int roomnum)
 						room_setup_time += PerfMarkersNow() - setup_start_time;
 				}
 				if (object_was_separated)
-					RenderObjectTransparents(objp, separated_object_random_state[i]);
+					RenderObjectTransparents(objp, separated_object_random_state[i],
+						separated_object_polymodel_late_mask[i]);
 				else
 				{
 					// In GL4, non-polygon post-render objects are transparent items.  The
@@ -400,6 +408,7 @@ void PostRender(int roomnum)
 			FlushWeaponStreamerBatches();
 		}
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_POSTRENDER_ITEMS);
 	if (Perf_markers_enabled)
 	{
 		if (vis_effect_time > 0.0)
@@ -452,4 +461,5 @@ void PostRender(int roomnum)
 		PERF_MARKER_SCOPE("PostRender.RenderLightGlows");
 		RenderLightGlows();
 	}
+	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_POSTRENDER_GLOWS);
 }

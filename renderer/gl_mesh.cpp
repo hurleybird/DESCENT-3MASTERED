@@ -84,6 +84,11 @@ void VertexBuffer::Initialize(uint32_t numvertices, uint32_t datasize, void* dat
 		glEnableVertexAttribArray(5);
 		glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE, stride,
 			attribute_offset(offsetof(RendVertex, face_normal)));
+		// Retained shaders do not consume the legacy previous-position input.
+		// Carry the per-face lightmap handle through its x component instead.
+		glEnableVertexAttribArray(6);
+		glVertexAttribPointer(6, 1, GL_INT, GL_FALSE, stride,
+			attribute_offset(offsetof(RendVertex, lmpage)));
 		glEnableVertexAttribArray(15);
 		glVertexAttribIPointer(15, 1, GL_INT, stride,
 			attribute_offset(offsetof(RendVertex, source_vertex)));

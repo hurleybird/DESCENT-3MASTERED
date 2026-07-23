@@ -18,6 +18,7 @@
 */
 #include <string.h>
 #include "gl_local.h"
+#include "gameloop.h"
 
 #ifndef GL_UNSIGNED_SHORT_5_5_5_1
 #define GL_UNSIGNED_SHORT_5_5_5_1 0x8034
@@ -70,6 +71,220 @@ void GL4Renderer::FreeImages()
 		glDeleteTextures(Cur_texture_object_num, (const uint*)delete_list);
 
 	mem_free(delete_list);
+}
+
+void GL4Renderer::DestroyRetainedRoomLightmaps()
+{
+	glDeleteTextures(RETAINED_ROOM_LIGHTMAP_ARRAY_COUNT,
+		retained_room_lightmap_arrays);
+	memset(retained_room_lightmap_arrays, 0,
+		sizeof(retained_room_lightmap_arrays));
+	retained_room_lightmap_handles.clear();
+	retained_room_lightmap_pages.clear();
+	retained_room_lightmaps_ready = false;
+}
+
+void GL4Renderer::UploadRetainedRoomLightmap(int lightmap_handle)
+{
+	if (lightmap_handle < 0 ||
+		lightmap_handle >= (int)retained_room_lightmap_pages.size())
+		return;
+	const int page = retained_room_lightmap_pages[lightmap_handle];
+	if (page < 0)
+		return;
+	const int bucket = (page >> 16) & 0x7f;
+	const int layer = page & 0x0000ffff;
+	const int size = 2 << bucket;
+	if (bucket < 0 || bucket >= RETAINED_ROOM_LIGHTMAP_ARRAY_COUNT ||
+		retained_room_lightmap_arrays[bucket] == 0)
+		return;
+
+	SetUploadBufferSize(size, size);
+	const int width = lm_w(lightmap_handle);
+	const int height = lm_h(lightmap_handle);
+	const ushort* source = lm_data(lightmap_handle);
+	glActiveTexture(GL_TEXTURE3 + bucket);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, retained_room_lightmap_arrays[bucket]);
+	if (OpenGL_packed_pixels)
+	{
+		memset(opengl_packed_Upload_data, 0, size * size * sizeof(ushort));
+		ushort* destination = opengl_packed_Upload_data;
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+				destination[y * size + x] =
+					opengl_packed_Translate_table[source[y * width + x]];
+		}
+		glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer,
+			size, size, 1, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1,
+			opengl_packed_Upload_data);
+	}
+	else
+	{
+		memset(opengl_Upload_data, 0, size * size * sizeof(uint));
+		uint* destination = opengl_Upload_data;
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+				destination[y * size + x] =
+					opengl_Translate_table[source[y * width + x]];
+		}
+		glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer,
+			size, size, 1, GL_RGBA, GL_UNSIGNED_BYTE,
+			opengl_Upload_data);
+	}
+	OpenGL_uploads++;
+}
+
+bool GL4Renderer::PrepareRetainedRoomLightmaps(const int* lightmap_handles,
+	int count)
+{
+	DestroyRetainedRoomLightmaps();
+	if (!OpenGL_cache_initted || !lightmap_handles || count <= 0)
+		return false;
+
+	// Room geometry is no longer the only retained consumer. Lightmapped
+	// polymodels historically rebound a 2D lightmap for nearly every face; make
+	// every live level lightmap addressable through the same arrays so those
+	// models can batch by their real material instead of by lightmap page.
+	std::vector<int> retained_lightmap_handles;
+	retained_lightmap_handles.reserve(count + 128);
+	std::vector<ubyte> included(MAX_LIGHTMAPS, 0);
+	auto include_lightmap = [&](int handle)
+	{
+		if (handle < 0 || handle >= MAX_LIGHTMAPS || included[handle] ||
+			!GameLightmaps[handle].used || (GameLightmaps[handle].flags & LF_WRAP))
+			return;
+		included[handle] = 1;
+		retained_lightmap_handles.push_back(handle);
+	};
+	for (int index = 0; index < count; index++)
+		include_lightmap(lightmap_handles[index]);
+	for (int handle = 0; handle < MAX_LIGHTMAPS; handle++)
+		include_lightmap(handle);
+	lightmap_handles = retained_lightmap_handles.data();
+	count = (int)retained_lightmap_handles.size();
+
+	int highest_handle = -1;
+	int layer_counts[RETAINED_ROOM_LIGHTMAP_ARRAY_COUNT] = {};
+	for (int index = 0; index < count; index++)
+	{
+		const int handle = lightmap_handles[index];
+		if (handle < 0 || handle >= MAX_LIGHTMAPS ||
+			!GameLightmaps[handle].used || (GameLightmaps[handle].flags & LF_WRAP))
+			continue;
+		const int size = GameLightmaps[handle].square_res;
+		int bucket = -1;
+		for (int candidate = 0; candidate < RETAINED_ROOM_LIGHTMAP_ARRAY_COUNT;
+			candidate++)
+		{
+			if (size == (2 << candidate))
+			{
+				bucket = candidate;
+				break;
+			}
+		}
+		if (bucket < 0)
+			continue;
+		highest_handle = std::max(highest_handle, handle);
+		layer_counts[bucket]++;
+	}
+	if (highest_handle < 0)
+		return false;
+
+	retained_room_lightmap_pages.assign(highest_handle + 1, -1);
+	int next_layers[RETAINED_ROOM_LIGHTMAP_ARRAY_COUNT] = {};
+	for (int index = 0; index < count; index++)
+	{
+		const int handle = lightmap_handles[index];
+		if (handle < 0 || handle > highest_handle ||
+			retained_room_lightmap_pages[handle] >= 0 ||
+			!GameLightmaps[handle].used || (GameLightmaps[handle].flags & LF_WRAP))
+			continue;
+		const int size = GameLightmaps[handle].square_res;
+		int bucket = -1;
+		for (int candidate = 0; candidate < RETAINED_ROOM_LIGHTMAP_ARRAY_COUNT;
+			candidate++)
+		{
+			if (size == (2 << candidate))
+			{
+				bucket = candidate;
+				break;
+			}
+		}
+		if (bucket < 0)
+			continue;
+		const int layer = next_layers[bucket]++;
+		retained_room_lightmap_pages[handle] = (bucket << 16) | layer;
+		retained_room_lightmap_handles.push_back(handle);
+	}
+
+	glGenTextures(RETAINED_ROOM_LIGHTMAP_ARRAY_COUNT,
+		retained_room_lightmap_arrays);
+	for (int bucket = 0; bucket < RETAINED_ROOM_LIGHTMAP_ARRAY_COUNT; bucket++)
+	{
+		if (layer_counts[bucket] <= 0)
+			continue;
+		const int size = 2 << bucket;
+		glActiveTexture(GL_TEXTURE3 + bucket);
+		glBindTexture(GL_TEXTURE_2D_ARRAY,
+			retained_room_lightmap_arrays[bucket]);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_LEVEL, 0);
+		glTexImage3D(GL_TEXTURE_2D_ARRAY, 0,
+			OpenGL_packed_pixels ? GL_RGB5_A1 : GL_RGBA8,
+			size, size, layer_counts[bucket], 0, GL_RGBA,
+			OpenGL_packed_pixels ? GL_UNSIGNED_SHORT_5_5_5_1 : GL_UNSIGNED_BYTE,
+			nullptr);
+	}
+	for (int handle : retained_room_lightmap_handles)
+	{
+		UploadRetainedRoomLightmap(handle);
+		GameLightmaps[handle].flags &= ~(LF_CHANGED | LF_BRAND_NEW);
+	}
+	glActiveTexture(GL_TEXTURE0);
+	Last_texel_unit_set = 0;
+
+	retained_room_lightmaps_ready = true;
+	AutomatedCaptureLog("retained room lightmap arrays ready handles=%d",
+		(int)retained_room_lightmap_handles.size());
+	return true;
+}
+
+int GL4Renderer::GetRetainedRoomLightmapPage(int lightmap_handle) const
+{
+	if (!retained_room_lightmaps_ready || lightmap_handle < 0 ||
+		lightmap_handle >= (int)retained_room_lightmap_pages.size())
+		return -1;
+	return retained_room_lightmap_pages[lightmap_handle];
+}
+
+void GL4Renderer::RefreshRetainedRoomLightmaps()
+{
+	if (!retained_room_lightmaps_ready)
+		return;
+	for (int handle : retained_room_lightmap_handles)
+	{
+		if (!(GameLightmaps[handle].flags & (LF_CHANGED | LF_BRAND_NEW)))
+			continue;
+		MakeBitmapCurrent(handle, MAP_TYPE_LIGHTMAP, 1);
+		MakeWrapTypeCurrent(handle, MAP_TYPE_LIGHTMAP, 1);
+		MakeFilterTypeCurrent(handle, MAP_TYPE_LIGHTMAP, 1);
+		UploadRetainedRoomLightmap(handle);
+	}
+	for (int bucket = 0; bucket < RETAINED_ROOM_LIGHTMAP_ARRAY_COUNT; bucket++)
+	{
+		if (retained_room_lightmap_arrays[bucket] == 0)
+			continue;
+		glActiveTexture(GL_TEXTURE3 + bucket);
+		glBindTexture(GL_TEXTURE_2D_ARRAY,
+			retained_room_lightmap_arrays[bucket]);
+	}
+	glActiveTexture(GL_TEXTURE0);
+	Last_texel_unit_set = 0;
 }
 
 int GL4Renderer::MakeTextureObject(int tn, bool wrap)
@@ -387,6 +602,10 @@ void GL4Renderer::FreeCache()
 // Resets the texture cache
 void GL4Renderer::ResetCache()
 {
+	// ResetCache rebuilds the legacy texture remap tables but does not delete
+	// the GL texture objects. Bindless room handles therefore remain valid, and
+	// keeping them resident avoids silently falling back after loading-screen
+	// framebuffer copies reset the legacy cache.
 	if (OpenGL_cache_initted)
 	{
 		mem_free(OpenGL_lightmap_remap);

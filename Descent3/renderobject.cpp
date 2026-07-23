@@ -211,6 +211,7 @@ static int Render_object_perf_attach_reject_count = 0;
 static int Render_object_perf_setup_reject_count = 0;
 static int Render_object_perf_safe_reject_count = 0;
 static int Render_object_perf_type_count[MAX_OBJECT_TYPES];
+static uint32_t Render_object_perf_type_draw_calls[MAX_OBJECT_TYPES];
 static int Render_object_perf_polymodel_base_type_count[MAX_OBJECT_TYPES];
 static int Render_object_perf_extra_effects_type_count[MAX_OBJECT_TYPES];
 static int Render_object_perf_render_type_count[10];
@@ -311,6 +312,7 @@ void RenderObjectPerfReset()
 	memset(Render_object_perf_extra_effects_type_time, 0, sizeof(Render_object_perf_extra_effects_type_time));
 	memset(Render_object_perf_render_type_time, 0, sizeof(Render_object_perf_render_type_time));
 	memset(Render_object_perf_type_count, 0, sizeof(Render_object_perf_type_count));
+	memset(Render_object_perf_type_draw_calls, 0, sizeof(Render_object_perf_type_draw_calls));
 	memset(Render_object_perf_polymodel_base_type_count, 0, sizeof(Render_object_perf_polymodel_base_type_count));
 	memset(Render_object_perf_extra_effects_type_count, 0, sizeof(Render_object_perf_extra_effects_type_count));
 	memset(Render_object_perf_render_type_count, 0, sizeof(Render_object_perf_render_type_count));
@@ -350,6 +352,13 @@ void RenderObjectPerfFlush()
 		snprintf(marker, sizeof(marker), "RenderObject.Type.%s.Count=%d",
 			RenderObjectPerfObjectTypeName(i), Render_object_perf_type_count[i]);
 		PerfMarkersRecordDuration(marker, marker_time, Render_object_perf_type_time[i]);
+		if (Render_object_perf_type_draw_calls[i] > 0)
+		{
+			snprintf(marker, sizeof(marker), "RenderObject.Type.%s.DrawCalls=%u",
+				RenderObjectPerfObjectTypeName(i),
+				(unsigned)Render_object_perf_type_draw_calls[i]);
+			PerfMarkersRecordDuration(marker, marker_time, 0.0);
+		}
 
 		if (Render_object_perf_polymodel_base_type_count[i] > 0)
 		{
@@ -365,6 +374,7 @@ void RenderObjectPerfFlush()
 			PerfMarkersRecordDuration(marker, marker_time, Render_object_perf_extra_effects_type_time[i]);
 		}
 	}
+
 
 	for (int i = 0; i < (int)(sizeof(Render_object_perf_render_type_count) / sizeof(Render_object_perf_render_type_count[0])); i++)
 	{
@@ -1183,6 +1193,8 @@ static bool RenderObjectInternal(object* obj)
 #endif
 
 	double draw_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
+	const uint32_t draw_calls_before = perf_scope.IsActive() ?
+		rend_GetCurrentDrawCallCount() : 0;
 	renderer_3d_draw_call_scope object_draw_scope(RENDERER_DRAW_CALL_3D_OBJECT);
 	switch (obj->render_type)
 	{
@@ -1558,6 +1570,12 @@ static bool RenderObjectInternal(object* obj)
 	if (perf_scope.IsActive())
 	{
 		const double draw_duration = PerfMarkersNow() - draw_start_time;
+		if (obj->type >= 0 && obj->type < MAX_OBJECT_TYPES)
+		{
+			const uint32_t draw_calls =
+				rend_GetCurrentDrawCallCount() - draw_calls_before;
+			Render_object_perf_type_draw_calls[obj->type] += draw_calls;
+		}
 		Render_object_perf_draw_switch_time += draw_duration;
 		if (obj->type >= 0 && obj->type < MAX_OBJECT_TYPES)
 			Render_object_perf_type_time[obj->type] += draw_duration;
@@ -2041,26 +2059,43 @@ bool RenderObjectCanUseSeparatedPasses(object* obj)
 	return model.used && model.new_style;
 }
 
-bool RenderObjectOpaque(object* obj, unsigned int* random_state)
+bool RenderObjectOpaque(object* obj, unsigned int* random_state,
+	bool* transparent_pass_needed, ubyte* polymodel_late_mask)
 {
 	ASSERT(RenderObjectCanUseSeparatedPasses(obj));
 	ASSERT(random_state);
+	ASSERT(transparent_pass_needed);
+	ASSERT(polymodel_late_mask);
 
 	*random_state = ps_rand_get_state();
 	const render_object_pass saved_object_pass = RenderObject_pass;
 	const polymodel_render_pass saved_polymodel_pass = Polymodel_render_pass;
 	RenderObject_pass = RENDER_OBJECT_OPAQUE;
 	Polymodel_render_pass = POLYMODEL_RENDER_OPAQUE;
+	PolymodelBeginLatePassTracking();
 	const bool material_fog = BeginObjectMaterialFog(obj);
 	const bool rendered = RenderObjectInternal(obj);
 	if (material_fog)
 		EndRoomMaterialFog();
+	*polymodel_late_mask = PolymodelLatePassMask();
+	const bool combined_legacy_motion_blur =
+		Render_preferred_state.combined_motion_blur &&
+		Render_preferred_state.combined_motion_blur_legacy_strength > 0.0f;
+	const bool legacy_motion_blur = (Use_motion_blur || combined_legacy_motion_blur) &&
+		RenderObject_IsLegacyMotionBlurEligible(obj);
+	const bool attached_effects = obj->type == OBJ_POWERUP || obj->type == OBJ_PLAYER ||
+		obj->type == OBJ_ROBOT || (obj->type == OBJ_BUILDING && obj->ai_info);
+	// Polygonal weapons add their rings, streamers, and similar transparent work
+	// outside DrawPolygonModel, so they always retain the late replay.
+	*transparent_pass_needed = *polymodel_late_mask != 0 || legacy_motion_blur ||
+		attached_effects || obj->render_type == RT_WEAPON;
 	Polymodel_render_pass = saved_polymodel_pass;
 	RenderObject_pass = saved_object_pass;
 	return rendered;
 }
 
-void RenderObjectTransparents(object* obj, unsigned int random_state)
+void RenderObjectTransparents(object* obj, unsigned int random_state,
+	ubyte polymodel_late_mask)
 {
 	ASSERT(RenderObjectCanUseSeparatedPasses(obj));
 
@@ -2077,6 +2112,7 @@ void RenderObjectTransparents(object* obj, unsigned int random_state)
 	RenderObject_pass = RENDER_OBJECT_TRANSPARENT;
 	Polymodel_render_pass = POLYMODEL_RENDER_TRANSPARENT;
 	RenderObject_disable_motion_capture = true;
+	PolymodelSetTransparentReplayMask(polymodel_late_mask);
 	// The opaque half already passed visibility/occlusion and clears
 	// OF_SAFE_TO_RENDER as part of the ordinary one-pass bookkeeping.  The
 	// transparent half is the remainder of that accepted render item, not a new
@@ -2093,6 +2129,7 @@ void RenderObjectTransparents(object* obj, unsigned int random_state)
 	if (material_fog)
 		EndRoomMaterialFog();
 	rend_EndLateDepthWrite();
+	PolymodelClearTransparentReplayMask();
 
 	RenderObject_disable_motion_capture = saved_disable_motion_capture;
 	Polymodel_render_pass = saved_polymodel_pass;

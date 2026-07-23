@@ -72,6 +72,7 @@ uniform int retained_near_clip_enabled;
 uniform int retained_far_clip_enabled;
 uniform float retained_far_clip_z;
 uniform int retained_per_pixel_specular_payload;
+uniform int retained_dynamic_lightmaps;
 
 out vec4 outcolor;
 // Legacy g3 draws submit already-projected vertices, so vertex alpha is
@@ -83,6 +84,10 @@ out vec4 outnormal;
 out vec4 out_motion_world_position;
 out vec4 out_motion_previous_world_position;
 out vec4 out_room_fog_world_position;
+flat out int out_retained_lightmap_handle;
+flat out int out_retained_ao_class;
+flat out int out_retained_lightmap_info;
+flat out vec3 out_retained_face_normal;
 #if defined(USE_SPECULAR)
 out vec4 out_field_specular_centers[4];
 out vec4 out_field_specular_colors[4];
@@ -123,7 +128,8 @@ vec3 RetainedDeformedPosition()
 {
 	if (retained_deform_enabled == 0)
 		return position;
-	uint state = AdvanceVisualRandom(retained_deform_seed, uint(retained_source_vertex) + 1u);
+	uint source_vertex = uint(retained_source_vertex) & 0xffffu;
+	uint state = AdvanceVisualRandom(retained_deform_seed, source_vertex + 1u);
 	int random_value = int((state >> 16u) & 0x7fffu);
 	float signed_value = float((random_value % 1000) - 500) / 500.0;
 	if (retained_deform_mode == 2)
@@ -286,12 +292,17 @@ void main()
 		else
 		{
 			outnormal = retained_lighting_mode == 2 ? vec4(normal.xyz, 1.0) :
-				(dynamic_light_count > 0 ? retained_interpolated_world_position :
+				((dynamic_light_count > 0 || retained_dynamic_lightmaps != 0) ? retained_interpolated_world_position :
 					vec4(0.0, 0.0, 0.0, -1.0));
 			out_motion_world_position = retained_interpolated_world_position;
 		}
 		out_motion_previous_world_position =
 			(retained_previous_world * local_position) * retained_payload_scale;
+		out_retained_lightmap_handle = int(round(motion_previous_world_position.x));
+		out_retained_ao_class = int(round(color.r * 255.0));
+		int retained_lmi = (retained_source_vertex >> 16) & 0xffff;
+		out_retained_lightmap_info = retained_lmi == 0xffff ? -1 : retained_lmi;
+		out_retained_face_normal = normalize(mat3(retained_current_world) * motion_world_position.xyz);
 		#if defined(USE_SPECULAR)
 			for (int i = 0; i < 4; i++)
 			{
@@ -350,6 +361,10 @@ void main()
 	#endif
 	out_motion_world_position = motion_world_position;
 	out_motion_previous_world_position = motion_previous_world_position;
+	out_retained_lightmap_handle = -1;
+	out_retained_ao_class = -1;
+	out_retained_lightmap_info = -1;
+	out_retained_face_normal = vec3(0.0, 0.0, 1.0);
 	// Static immediate room draws do not consume the per-vertex previous-motion
 	// payload. The renderer uses it to carry the original world position when
 	// local room fog is active, including CPU-clipped boundary triangles.

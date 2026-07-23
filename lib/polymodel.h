@@ -67,6 +67,16 @@ enum polymodel_render_pass
 
 extern polymodel_render_pass Polymodel_render_pass;
 
+constexpr ubyte POLYMODEL_LATE_GEOMETRY = 1;
+constexpr ubyte POLYMODEL_LATE_FACING = 2;
+
+// The separated object renderer uses the opaque traversal to discover which
+// portions of the late pass are actually required.
+void PolymodelBeginLatePassTracking();
+ubyte PolymodelLatePassMask();
+void PolymodelSetTransparentReplayMask(ubyte mask);
+void PolymodelClearTransparentReplayMask();
+
 inline float POLY_WIDTH(int model_num)
 {
 	return Poly_models[model_num].maxs.x - Poly_models[model_num].mins.x;

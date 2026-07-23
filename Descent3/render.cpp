@@ -39,6 +39,7 @@
 #include "door.h"
 #include "terrain.h"
 #include "renderer.h"
+#include "../renderer/HardwareInternal.h"
 #include "room.h"
 #include "lighting.h"
 #include "lightmap.h"
@@ -68,6 +69,8 @@
 #include "../renderer/gl_mesh.h"
 
 static int Faces_rendered = 0;
+static int Room_base_batch_count = 0;
+static int Room_base_batched_face_count = 0;
 
 static bool TextureNameContainsNoCase(const char* name, const char* needle)
 {
@@ -101,7 +104,7 @@ static bool RenderObjectHasWeaponStreamer(const object* objp)
 	return objp && objp->type == OBJ_WEAPON && (Weapons[objp->id].flags & WF_STREAMER);
 }
 
-static int RoomFaceAOClass(room* rp, face* fp)
+int RoomFaceAOClass(room* rp, face* fp)
 {
 	if (!rp || !fp || (rp->flags & RF_EXTERNAL))
 		return RENDERER_AO_CLASS_DEFAULT;
@@ -595,6 +598,13 @@ static bool BeginRoomRenderScissor(int roomnum, int viewer_roomnum,
 	rendTEMP_SetScissorRect(left, top, right, bottom,
 		Render_width, Render_height);
 	return true;
+}
+
+bool RoomFaceUsesLightmap(face* fp)
+{
+	return fp && (fp->flags & FF_LIGHTMAP) &&
+		fp->lmi_handle != BAD_LMI_INDEX &&
+		!(GameTextures[BaseTextureTmapForFace(fp)].flags & TF_SATURATE);
 }
 
 static void AccumulateRoomRenderWindow(int roomnum, const clip_wnd& wnd)
@@ -3470,6 +3480,26 @@ void PopulateRetainedRoomSpecularPoints(room* rp, int facenum,
 	}
 }
 
+struct RetainedRoomFieldSpecularBatch
+{
+	int bitmap_handle = -1;
+	SpecularBlock state = {};
+	std::vector<int> faces;
+};
+
+static bool RetainedRoomFieldSpecularBatchMatches(
+	const RetainedRoomFieldSpecularBatch& batch, int bitmap_handle,
+	const SpecularBlock& state)
+{
+	return batch.bitmap_handle == bitmap_handle &&
+		batch.state.exponent == state.exponent &&
+		batch.state.strength == state.strength &&
+		batch.state.lightmap_mix == state.lightmap_mix &&
+		batch.state.alpha_strength == state.alpha_strength &&
+		batch.state.debug_tint == state.debug_tint &&
+		batch.state.debug_authored == state.debug_authored;
+}
+
 void RenderSpecularFacesFlat(room* rp)
 {
 	static int first = 1;
@@ -3517,6 +3547,7 @@ void RenderSpecularFacesFlat(room* rp)
 		UseHardware && rend_CanUseNewrender();
 	if (per_pixel_shader_specular)
 	{
+		std::vector<RetainedRoomFieldSpecularBatch> retained_field_batches;
 		for (int i = 0; i < Num_specular_faces_to_render; i++)
 		{
 			int face_index = Specular_faces[i];
@@ -3539,6 +3570,41 @@ void RenderSpecularFacesFlat(room* rp)
 			if (!BuildPerPixelSpecularState(rp, face_index, specblock, dynamic_lights, dynamic_light_count))
 				continue;
 
+			ubyte specular_clip_codes = 0;
+			for (int vn = 0; vn < fp->num_verts; vn++)
+				specular_clip_codes |=
+					World_point_buffer[rp->wpb_index + fp->face_verts[vn]].p3_codes;
+
+			// Field-static specular already carries its four source lobes in the
+			// retained vertex stream. Faces with no dynamic lights therefore differ
+			// only by ordinary material state and can share one multi-draw instead of
+			// updating a UBO and issuing a draw for every face.
+			const bool can_batch_field = dynamic_light_count == 0 &&
+				UseFieldStaticSpecularForFace(fp) && specular_clip_codes == 0 &&
+				rend_RetainedRoomLightmapsReady() && !In_editor_mode &&
+				RetainedRoomCanDrawBaseFace(rp, face_index);
+			if (can_batch_field)
+			{
+				SpecularBlock batch_state = specblock;
+				batch_state.num_speculars = MAX_SPECULARS;
+				batch_state.pad0 = 1.0f;
+				auto found = std::find_if(retained_field_batches.begin(),
+					retained_field_batches.end(),
+					[&](const RetainedRoomFieldSpecularBatch& batch) {
+						return RetainedRoomFieldSpecularBatchMatches(batch,
+							bm_handle, batch_state);
+					});
+				if (found == retained_field_batches.end())
+				{
+					retained_field_batches.push_back({});
+					found = retained_field_batches.end() - 1;
+					found->bitmap_handle = bm_handle;
+					found->state = batch_state;
+				}
+				found->faces.push_back(face_index);
+				continue;
+			}
+
 			for (int vn = 0; vn < fp->num_verts; vn++)
 			{
 				int vertnum = fp->face_verts[vn];
@@ -3557,9 +3623,6 @@ void RenderSpecularFacesFlat(room* rp)
 			}
 			SetSpecularNormalsForFace(rp, fp, pointlist);
 			SetFieldSpecularSourcesForFace(rp, fp, pointlist);
-			ubyte specular_clip_codes = 0;
-			for (int vn = 0; vn < fp->num_verts; vn++)
-				specular_clip_codes |= pointlist[vn]->p3_codes;
 
 			rend_UpdateSpecular(&specblock);
 			rend_SetOverlayType(OT_BLEND);
@@ -3585,6 +3648,18 @@ void RenderSpecularFacesFlat(room* rp)
 				if (fp->flags & FF_TRIANGULATED)
 					g3_SetTriangulationTest(0);
 			}
+		}
+
+		for (RetainedRoomFieldSpecularBatch& batch : retained_field_batches)
+		{
+			rend_UpdateSpecular(&batch.state);
+			rend_SetOverlayType(OT_BLEND);
+			rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
+			rend_BindBitmap(batch.bitmap_handle);
+			const bool drawn = RetainedRoomDrawFaces(rp, batch.faces.data(),
+				(int)batch.faces.size(), batch.bitmap_handle, 0.0f, 0.0f, 1.0f,
+				-1, 0, true, true);
+			ASSERT(drawn);
 		}
 
 		rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
@@ -4276,62 +4351,40 @@ class RoomBaseFaceBatcher
 public:
 	void Add(const RoomBaseFaceBatchKey& key, const RoomBatchedFace& face)
 	{
-		for (size_t i = 0; i < m_batches.size(); i++)
-		{
-			if (m_batches[i].key.Equals(key))
-			{
-				m_batches[i].faces.push_back(face);
-				return;
-			}
-		}
-
-		RoomBaseFaceBatch batch;
-		batch.key = key;
+		RoomBaseFaceBatch& batch = FindOrCreateBatch(key);
 		batch.faces.push_back(face);
-		m_batches.push_back(batch);
 	}
 
 	void AddRetained(const RoomBaseFaceBatchKey& key, room* rp, int facenum)
 	{
-		for (size_t i = 0; i < m_batches.size(); i++)
-		{
-			if (m_batches[i].key.Equals(key) &&
-				(!m_batches[i].retained_room || m_batches[i].retained_room == rp))
-			{
-				m_batches[i].retained_room = rp;
-				m_batches[i].retained_faces.push_back(facenum);
-				return;
-			}
-		}
-
-		RoomBaseFaceBatch batch;
-		batch.key = key;
+		RoomBaseFaceBatch& batch = FindOrCreateBatch(key);
+		ASSERT(!batch.retained_room || batch.retained_room == rp);
 		batch.retained_room = rp;
 		batch.retained_faces.push_back(facenum);
-		m_batches.push_back(batch);
 	}
 
 	void Flush()
 	{
-		if (m_batches.empty())
+		if (m_active_batch_count == 0)
 			return;
-
-		for (size_t i = 0; i < m_batches.size(); i++)
+		for (size_t i = 0; i < m_active_batch_count; i++)
 		{
 			RoomBaseFaceBatch& batch = m_batches[i];
 			if (batch.faces.empty() && batch.retained_faces.empty())
 				continue;
+			Room_base_batch_count++;
+			Room_base_batched_face_count += (int)batch.faces.size() +
+				(int)batch.retained_faces.size();
 
 			rend_SetAlphaType(batch.key.alpha_type);
 			rend_SetAlphaValue(batch.key.alpha_value);
 			rend_SetLighting(LS_GOURAUD);
 			rend_SetColorModel(batch.key.color_model_value);
 			rend_SetOverlayType(batch.key.overlay_type);
-			if (batch.key.overlay_type != OT_NONE)
+			if (batch.key.overlay_type != OT_NONE && batch.key.overlay_map >= 0)
 				rend_SetOverlayMap(batch.key.overlay_map);
 			rend_SetTextureType(TT_PERSPECTIVE);
 			rend_SetAOClass(batch.key.ao_class);
-
 			if (!batch.retained_faces.empty())
 			{
 				bool depth_prepassed = Room_depth_prepass_color_pass_active &&
@@ -4358,7 +4411,7 @@ public:
 				if (depth_prepassed)
 					rend_SetZBufferWriteMask(0);
 				rend_BindBitmap(batch.key.bitmap_handle);
-				if (batch.key.overlay_type != OT_NONE)
+				if (batch.key.overlay_type != OT_NONE && batch.key.overlay_map >= 0)
 					rend_BindLightmap(batch.key.overlay_map);
 				renderer_per_pixel_light per_pixel_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
 				int per_pixel_light_count = 0;
@@ -4377,7 +4430,8 @@ public:
 					batch.key.u_offset,
 					batch.key.v_offset, batch.key.light_scalar,
 					batch.key.overlay_type != OT_NONE ? batch.key.overlay_map : -1,
-					batch.key.clip_codes);
+					batch.key.clip_codes, false,
+					batch.key.overlay_type != OT_NONE && batch.key.overlay_map < 0);
 				if (per_pixel_light_count > 0)
 					rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 				if (depth_prepassed)
@@ -4400,11 +4454,54 @@ public:
 		}
 
 		rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
-		m_batches.clear();
+		for (size_t i = 0; i < m_active_batch_count; i++)
+		{
+			m_batches[i].faces.clear();
+			m_batches[i].retained_faces.clear();
+			m_batches[i].retained_room = nullptr;
+		}
+		m_active_batch_count = 0;
+		m_last_batch_index = (size_t)-1;
 	}
 
 private:
+	RoomBaseFaceBatch& FindOrCreateBatch(const RoomBaseFaceBatchKey& key)
+	{
+		if (m_last_batch_index != (size_t)-1 &&
+			m_last_batch_index < m_active_batch_count &&
+			m_batches[m_last_batch_index].key.Equals(key))
+		{
+			return m_batches[m_last_batch_index];
+		}
+
+		// A room normally has only a handful of active material batches. A compact
+		// linear lookup is cheaper here than allocating and hashing an unordered map
+		// afresh for every visible room, and preserves first-seen draw order.
+		for (size_t i = 0; i < m_active_batch_count; i++)
+		{
+			if (m_batches[i].key.Equals(key))
+			{
+				m_last_batch_index = i;
+				return m_batches[i];
+			}
+		}
+
+		if (m_batches.empty())
+			m_batches.reserve(16);
+		m_last_batch_index = m_active_batch_count++;
+		if (m_last_batch_index == m_batches.size())
+			m_batches.emplace_back();
+		RoomBaseFaceBatch& batch = m_batches[m_last_batch_index];
+		batch.key = key;
+		batch.faces.clear();
+		batch.retained_faces.clear();
+		batch.retained_room = nullptr;
+		return batch;
+	}
+
 	std::vector<RoomBaseFaceBatch> m_batches;
+	size_t m_active_batch_count = 0;
+	size_t m_last_batch_index = (size_t)-1;
 };
 
 static void CopyRoomBatchPoints(RoomBatchedFace& batched_face, g3Point** pointlist, int nv)
@@ -4551,7 +4648,6 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 		norm_time /= GameTextures[fp->tmap].slide_v;
 		vchange = norm_time;
 	}
-
 	g3Codes face_cc;
 	face_cc.cc_and = 0xff;
 	face_cc.cc_or = 0;
@@ -4584,39 +4680,46 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 	sbyte alpha_type = (sbyte)GetFaceAlpha(fp, bm_handle);
 	if (alpha_type != AT_ALWAYS)
 		return false;
-
 	int dynamic_lightmap_lmi = -1;
 	if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting &&
 		UseHardware && rend_CanUseNewrender())
 	{
 		if (GetPerPixelLightmapLightCount(fp->lmi_handle) > 0)
-			dynamic_lightmap_lmi = fp->lmi_handle;
+			dynamic_lightmap_lmi = GetPerPixelLightmapCanonicalLightKey(fp->lmi_handle);
 	}
-
 	RoomBaseFaceBatchKey key = {};
+	const ubyte full_clip_codes = face_cc.cc_or & RETAINED_ROOM_CLIP_CODES;
+	const bool retained_face = RetainedRoomCanDrawBaseFace(rp, facenum);
+	const bool retained_room_lightmap_arrays =
+		rend_RetainedRoomLightmapsReady() && retained_face && full_clip_codes == 0;
 	key.bitmap_handle = bm_handle;
 	key.alpha_type = alpha_type;
 	key.alpha_value = 255;
 	key.color_model_value = NoLightmaps ? CM_RGB : CM_MONO;
 	key.overlay_type = OT_NONE;
 	key.overlay_map = 0;
-	key.ao_class = RoomFaceAOClass(rp, fp);
+	key.ao_class = retained_room_lightmap_arrays ? RENDERER_AO_CLASS_DEFAULT :
+		RoomFaceAOClass(rp, fp);
 	key.dynamic_lightmap_lmi = dynamic_lightmap_lmi;
-	key.clip_codes = face_cc.cc_or & RETAINED_ROOM_CLIP_CODES;
+	key.clip_codes = full_clip_codes;
 	key.u_offset = uchange;
 	key.v_offset = vchange;
 	key.light_scalar = Room_light_val;
 
-	if (fp->flags & FF_LIGHTMAP)
+	if (retained_room_lightmap_arrays)
 	{
-		if (!(GameTextures[BaseTextureTmapForFace(fp)].flags & TF_SATURATE))
-		{
-			key.overlay_type = OT_BLEND;
-			key.overlay_map = LightmapInfo[fp->lmi_handle].lm_handle;
-		}
+		// The retained shader selects each face's original lightmap array page from
+		// vertex data. Unlightmapped and saturated faces sample neutral white,
+		// allowing one coherent shader family without changing their result.
+		key.overlay_type = OT_BLEND;
+		key.overlay_map = -1;
 	}
-
-	if (RetainedRoomCanDrawBaseFace(rp, facenum))
+	else if (RoomFaceUsesLightmap(fp))
+	{
+		key.overlay_type = OT_BLEND;
+		key.overlay_map = LightmapInfo[fp->lmi_handle].lm_handle;
+	}
+	if (retained_face)
 	{
 		batcher.AddRetained(key, rp, facenum);
 		AddBatchedRoomFaceSideEffects(rp, fp, facenum, spec_face, true,
@@ -5228,7 +5331,7 @@ void SetupRoomFog(room* rp, vector* eye, matrix* orient, int viewer_room)
 void RenderRoomUnsorted(room* rp)
 {
 	int rcount = 0;
-	RoomBaseFaceBatcher base_face_batcher;
+	thread_local RoomBaseFaceBatcher base_face_batcher;
 	const bool batch_room_faces = UseHardware && rend_CanUseNewrender();
 	ASSERT(rp->num_faces <= MAX_FACES_PER_ROOM);
 
@@ -5361,41 +5464,52 @@ void ComputeRoomPulseLight(room* rp)
 }
 
 #define CORONA_DIST_CUTOFF	5.0f
-//Draws a glow around a light
-void RenderSingleLightGlow(int index)
+
+static bool RoomLightGlowsUseDepthOcclusion()
+{
+	return Render_soft_vis_effects && rend_CanUseNewrender();
+}
+
+struct PreparedRoomLightGlow
+{
+	vector center;
+	float size;
+	float alpha;
+	ddgr_color color;
+	int bitmap_handle;
+	bool depth_occluded;
+	bool fast;
+};
+
+static bool PrepareSingleLightGlow(int index, PreparedRoomLightGlow& glow)
 {
 	room* rp = &Rooms[LightGlows[index].roomnum];
 	face* fp = &rp->faces[LightGlows[index].facenum];
 	texture* texp = &GameTextures[fp->tmap];
-	int bm_handle = Fireballs[DEFAULT_CORONA_INDEX + texp->corona_type].bm_handle;
+	glow.bitmap_handle = Fireballs[DEFAULT_CORONA_INDEX + texp->corona_type].bm_handle;
+	glow.size = LightGlows[index].size;
+	glow.center = LightGlows[index].center;
 
-	// Get size of light	
-	float size = LightGlows[index].size;
-	vector center = LightGlows[index].center;
-
-	// Get alpha of light
 	vector tvec = Viewer_eye - rp->verts[fp->face_verts[0]];
 	vm_NormalizeVectorFast(&tvec);
 	float facing_scalar = (tvec * fp->normal) * 2;
 	if (facing_scalar < 0)
-		return;
-	tvec = center - Viewer_eye;
+		return false;
+	tvec = glow.center - Viewer_eye;
 
 	float dist = vm_GetMagnitudeFast(&tvec);
-	if (dist < (size * CORONA_DIST_CUTOFF))
-		return;
-	if (dist < (size * (CORONA_DIST_CUTOFF + 15)))
+	if (dist < (glow.size * CORONA_DIST_CUTOFF))
+		return false;
+	if (dist < (glow.size * (CORONA_DIST_CUTOFF + 15)))
 	{
-		float dist_scalar = ((dist - (size * CORONA_DIST_CUTOFF)) / (size * 15));
+		float dist_scalar = ((dist - (glow.size * CORONA_DIST_CUTOFF)) / (glow.size * 15));
 		facing_scalar *= dist_scalar;
 	}
 
 	facing_scalar *= LightGlows[index].scalar;
 	facing_scalar = std::min(facing_scalar, 1.0f);
-	// Take into effect pulsing
 	ComputeRoomPulseLight(rp);
-	facing_scalar *= Room_light_val;
-	rend_SetAlphaValue(facing_scalar * .4 * 255);
+	glow.alpha = facing_scalar * .4f;
 
 	float maxc = std::max(texp->r, texp->g);
 	maxc = std::max(texp->b, maxc);
@@ -5412,20 +5526,39 @@ void RenderSingleLightGlow(int index)
 		g = texp->g;
 		b = texp->b;
 	}
+	glow.color = GR_RGB(r * 255, g * 255, b * 255);
+	glow.depth_occluded = RoomLightGlowsUseDepthOcclusion();
+	glow.fast = (LightGlows[index].flags & LGF_FAST) != 0;
+	return true;
+}
 
-	if (LightGlows[index].flags & LGF_FAST)
+//Draws a glow around a light
+void RenderSingleLightGlow(int index)
+{
+	PreparedRoomLightGlow glow;
+	if (!PrepareSingleLightGlow(index, glow))
+		return;
+	// Take into effect pulsing.
+	glow.alpha *= Room_light_val;
+	rend_SetAlphaValue(glow.alpha * 255);
+
+	if (glow.fast || glow.depth_occluded)
 	{
 		rend_SetZBufferWriteMask(0);
-		rend_SetZBias((-size / 2));
+		// The modern soft-depth path uses the authored, slightly face-offset
+		// center. The legacy half-radius bias pulled the entire corona through
+		// nearby geometry and required a CPU visibility ray to compensate.
+		rend_SetZBias(glow.depth_occluded ? 0.0f : (-glow.size / 2));
 	}
 	else
 	{
 		rend_SetZBufferState(0);
 	}
 
-	ddgr_color color = GR_RGB(r * 255, g * 255, b * 255);
-	g3_DrawBitmap(&center, size, (size * bm_h(bm_handle, 0)) / bm_w(bm_handle, 0), bm_handle, color);
-	if (LightGlows[index].flags & LGF_FAST)
+	g3_DrawBitmap(&glow.center, glow.size,
+		(glow.size * bm_h(glow.bitmap_handle, 0)) / bm_w(glow.bitmap_handle, 0),
+		glow.bitmap_handle, glow.color);
+	if (glow.fast || glow.depth_occluded)
 	{
 		rend_SetZBufferWriteMask(1);
 		rend_SetZBias(0);
@@ -5452,6 +5585,16 @@ void CheckLightGlowsForRoom(room* rp)
 		center += (fp->normal / 4);
 		if (vm_VectorDistanceQuick(&center, &Viewer_eye) < (size * CORONA_DIST_CUTOFF))
 			continue;
+
+		// GL4 already has the immutable opaque scene depth used by soft particles.
+		// Let the rasterizer reject occluded fragments and fade intersections in
+		// the shader instead of casting hundreds of CPU visibility rays per frame.
+		if (RoomLightGlowsUseDepthOcclusion())
+		{
+			SetGlowStatus(rp - Rooms, LightGlowsThisFrame[i].facenum, &center,
+				size, FastCoronas);
+			continue;
+		}
 
 		// Check if we can see this light
 		fvi_info hit_info;
@@ -5868,7 +6011,7 @@ void RenderMirroredRoom(room* rp)
 	rend_SetColorModel(CM_MONO);
 	rend_SetLighting(LS_GOURAUD);
 	rend_SetWrapType(WT_WRAP);
-	const bool material_fog = BeginRoomMaterialFog(rp, &Viewer_eye,
+	bool material_fog = BeginRoomMaterialFog(rp, &Viewer_eye,
 		Viewer_roomnum, Room_light_val);
 	RenderRoomUnsorted(rp);
 	if (material_fog)
@@ -6457,6 +6600,7 @@ void RenderRoomOutline(room* rp)
 //					called_from_terrain - set if calling this routine from the terrain renderer
 void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 {
+	RetainedRoomEnsureLightmaps();
 	PERF_MARKER_SCOPE(called_from_terrain ? "RenderMine.FromTerrain" : "RenderMine.Main");
 	renderer_3d_draw_call_scope room_draw_scope(RENDERER_DRAW_CALL_3D_ROOM);
 	// Mirror rooms are rendered before the main room depth prepass.  Never let
@@ -6553,6 +6697,10 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 	else
 	{
 		PERF_MARKER_SCOPE("RenderMine.RenderRooms");
+		const uint32_t room_draw_calls_before = rend_GetCurrentDrawCallCount();
+		Room_base_batch_count = 0;
+		Room_base_batched_face_count = 0;
+		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_BEFORE_ROOM_DEPTH);
 		if (UseHardware && rend_CanUseNewrender() && !In_editor_mode)
 		{
 			PERF_MARKER_SCOPE("RenderMine.RoomDepthPrepass");
@@ -6585,6 +6733,7 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 			rend_SetZBufferWriteMask(1);
 			Room_depth_prepass_color_pass_active = true;
 		}
+		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_ROOM_DEPTH);
 		//Render the list of rooms
 		for (int nn = N_render_rooms - 1; nn >= 0; nn--)
 		{
@@ -6618,6 +6767,24 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 			}
 		}
 		Room_depth_prepass_color_pass_active = false;
+		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_ROOM_COLOR);
+		char room_draw_count_marker[64];
+		snprintf(room_draw_count_marker, sizeof(room_draw_count_marker),
+			"Frame.Count.RoomDrawCalls=%u",
+			(unsigned)(rend_GetCurrentDrawCallCount() - room_draw_calls_before));
+		PerfMarkersRecordDuration(room_draw_count_marker, PerfMarkersNow(), 0.0);
+		char visible_room_count_marker[64];
+		snprintf(visible_room_count_marker, sizeof(visible_room_count_marker),
+			"Frame.Count.VisibleRooms=%d", N_render_rooms);
+		PerfMarkersRecordDuration(visible_room_count_marker, PerfMarkersNow(), 0.0);
+		char room_batch_marker[64];
+		snprintf(room_batch_marker, sizeof(room_batch_marker),
+			"Frame.Count.RoomBaseBatches=%d", Room_base_batch_count);
+		PerfMarkersRecordDuration(room_batch_marker, PerfMarkersNow(), 0.0);
+		char room_face_marker[64];
+		snprintf(room_face_marker, sizeof(room_face_marker),
+			"Frame.Count.RoomBaseFaces=%d", Room_base_batched_face_count);
+		PerfMarkersRecordDuration(room_face_marker, PerfMarkersNow(), 0.0);
 	}
 
 	RenderDeferredFogAOSuppression();
@@ -6649,6 +6816,102 @@ void ResetLightGlows()
 }
 
 // Renders all the lights glows for this frame
+struct RoomLightGlowBatchItem
+{
+	g3Point points[4];
+};
+
+struct RoomLightGlowBatch
+{
+	int bitmap_handle = BAD_BITMAP_HANDLE;
+	std::vector<RoomLightGlowBatchItem> items;
+};
+
+static bool BuildRoomLightGlowBatchItem(const PreparedRoomLightGlow& glow,
+	RoomLightGlowBatchItem& item)
+{
+	g3Point center;
+	if (g3_RotatePoint(&center, const_cast<vector*>(&glow.center)) & CC_BEHIND)
+		return false;
+	if (center.p3_codes & CC_OFF_FAR)
+		return false;
+	g3_ProjectPoint(&center);
+
+	const float height = (glow.size * bm_h(glow.bitmap_handle, 0)) /
+		bm_w(glow.bitmap_handle, 0);
+	const int dw = (int)((glow.size * Window_w2) / center.p3_z * Matrix_scale.x);
+	const int dh = (int)((height * Window_h2) / center.p3_z * Matrix_scale.y);
+	if (dw == 0 && dh == 0)
+		return false;
+
+	int x1 = (int)center.p3_sx - dw;
+	int y1 = (int)center.p3_sy - dh;
+	int x2 = x1 + dw * 2;
+	int y2 = y1 + dh * 2;
+	if (x2 == x1 || y2 == y1)
+		return false;
+
+	float u0 = 0.0f, u1 = 1.0f;
+	float v0 = 0.0f, v1 = 1.0f;
+	const float xstep = (u1 - u0) / (x2 - x1);
+	const float ystep = (v1 - v0) / (y2 - y1);
+	if (x1 < 0)
+	{
+		u0 = xstep * -x1;
+		x1 = 0;
+	}
+	else if (x1 > Window_width - 1)
+		return false;
+	if (x2 > Window_width - 1)
+	{
+		u1 -= xstep * (x2 - (Window_width - 1));
+		x2 = Window_width - 1;
+	}
+	else if (x2 < 0)
+		return false;
+	if (y1 < 0)
+	{
+		v0 = ystep * -y1;
+		y1 = 0;
+	}
+	else if (y1 > Window_height - 1)
+		return false;
+	if (y2 > Window_height - 1)
+	{
+		v1 -= ystep * (y2 - (Window_height - 1));
+		y2 = Window_height - 1;
+	}
+	else if (y2 < 0)
+		return false;
+
+	const float sx[4] = { (float)x1, (float)x2, (float)x2, (float)x1 };
+	const float sy[4] = { (float)y1, (float)y1, (float)y2, (float)y2 };
+	const float u[4] = { u0, u1, u1, u0 };
+	const float v[4] = { v0, v0, v1, v1 };
+	const float red = GR_COLOR_RED(glow.color) / 255.0f;
+	const float green = GR_COLOR_GREEN(glow.color) / 255.0f;
+	const float blue = GR_COLOR_BLUE(glow.color) / 255.0f;
+	const float alpha = (ubyte)(std::max(0.0f, std::min(1.0f, glow.alpha)) * 255.0f) / 255.0f;
+	for (int i = 0; i < 4; i++)
+	{
+		g3Point& point = item.points[i];
+		point = {};
+		point.p3_vec = center.p3_vec;
+		point.p3_vecPreRot = glow.center;
+		point.p3_sx = sx[i];
+		point.p3_sy = sy[i];
+		point.p3_u = u[i];
+		point.p3_v = v[i];
+		point.p3_r = red;
+		point.p3_g = green;
+		point.p3_b = blue;
+		point.p3_a = alpha;
+		point.p3_l = 1.0f;
+		point.p3_flags = PF_PROJECTED | PF_UV | PF_RGBA;
+	}
+	return true;
+}
+
 void RenderLightGlows()
 {
 	// Render all the glows for this mine
@@ -6659,18 +6922,80 @@ void RenderLightGlows()
 	rend_SetOverlayType(OT_NONE);
 	rend_SetFogState(0);
 	rend_SetAOSuppression(1.0f);
+	rend_SetSoftParticleState(RoomLightGlowsUseDepthOcclusion() ? 1 : 0);
 	int count = 0;
-
-	for (int i = 0; i < MAX_LIGHT_GLOWS && count < Num_glows; i++)
+	if (RoomLightGlowsUseDepthOcclusion())
 	{
-		if (LightGlows[i].flags & LGF_USED)
+		thread_local std::vector<RoomLightGlowBatch> batches;
+		for (RoomLightGlowBatch& batch : batches)
+			batch.items.clear();
+		int active_batches = 0;
+		for (int i = 0; i < MAX_LIGHT_GLOWS && count < Num_glows; i++)
 		{
-			RenderSingleLightGlow(i);
+			if (!(LightGlows[i].flags & LGF_USED))
+				continue;
 			count++;
+			PreparedRoomLightGlow glow;
+			if (!PrepareSingleLightGlow(i, glow))
+				continue;
+			glow.alpha *= Room_light_val;
+			int batch_index = -1;
+			for (int b = 0; b < active_batches; b++)
+			{
+				if (batches[b].bitmap_handle == glow.bitmap_handle)
+				{
+					batch_index = b;
+					break;
+				}
+			}
+			if (batch_index < 0)
+			{
+				batch_index = active_batches++;
+				if (batch_index == (int)batches.size())
+					batches.emplace_back();
+				batches[batch_index].bitmap_handle = glow.bitmap_handle;
+			}
+			RoomLightGlowBatchItem item;
+			if (BuildRoomLightGlowBatchItem(glow, item))
+				batches[batch_index].items.push_back(item);
+		}
+
+		rend_SetAlphaType(AT_SATURATE_TEXTURE_VERTEX);
+		rend_SetAlphaValue(255);
+		rend_SetZBias(0.0f);
+		rend_SetZBufferWriteMask(0);
+		thread_local std::vector<renderer_poly_batch_item> renderer_items;
+		for (int b = 0; b < active_batches; b++)
+		{
+			RoomLightGlowBatch& batch = batches[b];
+			renderer_items.resize(batch.items.size());
+			thread_local std::vector<g3Point*> point_lists;
+			point_lists.resize(batch.items.size() * 4);
+			for (size_t i = 0; i < batch.items.size(); i++)
+			{
+				for (int p = 0; p < 4; p++)
+					point_lists[i * 4 + p] = &batch.items[i].points[p];
+				renderer_items[i].pointlist = &point_lists[i * 4];
+				renderer_items[i].nv = 4;
+			}
+			rend_DrawPolygon3DBatch(batch.bitmap_handle, renderer_items.data(),
+				(int)renderer_items.size(), MAP_TYPE_BITMAP);
+		}
+	}
+	else
+	{
+		for (int i = 0; i < MAX_LIGHT_GLOWS && count < Num_glows; i++)
+		{
+			if (LightGlows[i].flags & LGF_USED)
+			{
+				RenderSingleLightGlow(i);
+				count++;
+			}
 		}
 	}
 
 	rend_SetAOSuppression(0.0f);
+	rend_SetSoftParticleState(0);
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBufferState(1);
 }

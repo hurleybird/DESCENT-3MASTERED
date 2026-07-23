@@ -7,6 +7,7 @@
 #include "../renderer/gl_mesh.h"
 #include "renderer.h"
 #include "lightmap.h"
+#include "lightmap_info.h"
 #include "terrain.h"
 
 #include <algorithm>
@@ -69,6 +70,8 @@ struct RetainedRoomClippedPolygon
 static std::array<std::unique_ptr<RetainedRoomCache>, MAX_ROOMS> Retained_room_caches;
 static std::array<RetainedRoomDeformation, MAX_ROOMS> Retained_room_deformations;
 static std::array<RetainedRoomTransform, MAX_ROOMS> Retained_room_transforms;
+static std::vector<int> Retained_room_lightmap_handles;
+static uint32_t Retained_room_lightmap_attempt_generation = 0;
 
 static void SetIdentity(float matrix[16])
 {
@@ -279,11 +282,30 @@ static bool BuildRetainedRoom(room* rp, RetainedRoomCache& cache)
 			vertex.normal = fp->normal;
 			vertex.face_normal = fp->normal;
 			vertex.r = vertex.g = vertex.b = vertex.a = 255;
+			vertex.r = (ubyte)RoomFaceAOClass(rp, fp);
 			vertex.u1 = uv.u;
 			vertex.v1 = uv.v;
+			vertex.lmpage = -1;
 			vertex.u2 = uv.u2;
 			vertex.v2 = uv.v2;
-			vertex.source_vertex = vertex_num;
+			if (RoomFaceUsesLightmap(fp))
+			{
+				const int lightmap_handle = LightmapInfo[fp->lmi_handle].lm_handle;
+				if (lightmap_handle >= 0 && lightmap_handle < MAX_LIGHTMAPS &&
+					GameLightmaps[lightmap_handle].square_res > 0)
+				{
+					vertex.lmpage =
+						rend_GetRetainedRoomLightmapPage(lightmap_handle);
+					vertex.u2 *= (float)GameLightmaps[lightmap_handle].width /
+						GameLightmaps[lightmap_handle].square_res;
+					vertex.v2 *= (float)GameLightmaps[lightmap_handle].height /
+						GameLightmaps[lightmap_handle].square_res;
+				}
+			}
+			const int retained_lmi = (fp->flags & FF_LIGHTMAP) ?
+				fp->lmi_handle : 0xffff;
+			vertex.source_vertex = (int)(((uint32_t)retained_lmi << 16) |
+				((uint32_t)vertex_num & 0xffffu));
 			vertices.push_back(vertex);
 		}
 
@@ -634,6 +656,31 @@ void RetainedRoomPrecacheAll(bool include_specular)
 		return;
 
 	RegisterRetainedRoomReleaseCallback();
+	std::vector<ubyte> seen_lightmaps(MAX_LIGHTMAPS, 0);
+	std::vector<int> lightmap_handles;
+	for (int roomnum = 0; roomnum <= Highest_room_index; roomnum++)
+	{
+		room* rp = &Rooms[roomnum];
+		if (!rp->used)
+			continue;
+		for (int facenum = 0; facenum < rp->num_faces; facenum++)
+		{
+			const face& fp = rp->faces[facenum];
+			if (!RoomFaceUsesLightmap(const_cast<face*>(&fp)))
+				continue;
+			const int lightmap_handle = LightmapInfo[fp.lmi_handle].lm_handle;
+			if (lightmap_handle >= 0 && lightmap_handle < MAX_LIGHTMAPS &&
+				!seen_lightmaps[lightmap_handle])
+			{
+				seen_lightmaps[lightmap_handle] = 1;
+				lightmap_handles.push_back(lightmap_handle);
+			}
+		}
+	}
+	Retained_room_lightmap_handles = lightmap_handles;
+	Retained_room_lightmap_attempt_generation = rend_GetGeneration();
+	rend_PrepareRetainedRoomLightmaps(lightmap_handles.data(),
+		(int)lightmap_handles.size());
 	for (int roomnum = 0; roomnum <= Highest_room_index; roomnum++)
 	{
 		room* rp = &Rooms[roomnum];
@@ -650,6 +697,24 @@ void RetainedRoomPrecacheAll(bool include_specular)
 	rendTEMP_UnbindVertexBuffer();
 }
 
+void RetainedRoomEnsureLightmaps()
+{
+	if (Retained_room_lightmap_handles.empty())
+		return;
+	if (rend_RetainedRoomLightmapsReady())
+	{
+		rend_RefreshRetainedRoomLightmaps();
+		return;
+	}
+
+	const uint32_t generation = rend_GetGeneration();
+	if (Retained_room_lightmap_attempt_generation == generation)
+		return;
+	Retained_room_lightmap_attempt_generation = generation;
+	rend_PrepareRetainedRoomLightmaps(Retained_room_lightmap_handles.data(),
+		(int)Retained_room_lightmap_handles.size());
+}
+
 bool RetainedRoomCanDrawBaseFace(room* rp, int facenum)
 {
 	if (!UseHardware || StateLimited || !rend_CanUseNewrender() || NoLightmaps ||
@@ -664,7 +729,8 @@ bool RetainedRoomCanDrawBaseFace(room* rp, int facenum)
 
 bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 	int bitmap_handle, float u_offset, float v_offset, float light_scalar,
-	int lightmap_handle, int clip_codes, bool per_pixel_specular_payload)
+	int lightmap_handle, int clip_codes, bool per_pixel_specular_payload,
+	bool retained_room_lightmap_arrays)
 {
 	if (!rp || !facenums || count <= 0)
 		return false;
@@ -704,13 +770,9 @@ bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 	draw.u_offset = u_offset;
 	draw.v_offset = v_offset;
 	draw.uv2_scale[0] = draw.uv2_scale[1] = 1.0f;
-	if (lightmap_handle >= 0 && GameLightmaps[lightmap_handle].square_res > 0)
-	{
-		draw.uv2_scale[0] = (float)GameLightmaps[lightmap_handle].width /
-			GameLightmaps[lightmap_handle].square_res;
-		draw.uv2_scale[1] = (float)GameLightmaps[lightmap_handle].height /
-			GameLightmaps[lightmap_handle].square_res;
-	}
+	// Room cache vertices carry each face's final lightmap scale. This permits
+	// a material batch to select independent lightmaps without changing the
+	// legacy normalized sampling coordinates.
 	draw.depth_bias = Z_bias;
 	draw.legacy_depth = true;
 	draw.lighting_mode_override = 0;
@@ -720,6 +782,10 @@ bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 	draw.vertex_count = vertex_count;
 	draw.has_previous = false;
 	draw.per_pixel_specular_payload = per_pixel_specular_payload;
+	// Per-pixel specular reuses this geometry entry point with a different
+	// material contract; only the ordinary base-material pass is eligible.
+	draw.fast_room_base = !per_pixel_specular_payload;
+	draw.retained_room_lightmap_arrays = retained_room_lightmap_arrays;
 	ApplyRetainedRoomTransform(rp, draw);
 	ApplyRetainedRoomDeformation(rp, draw);
 	ApplyRetainedRoomClipping(clip_codes, draw);
