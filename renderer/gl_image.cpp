@@ -103,9 +103,9 @@ void GL4Renderer::UploadRetainedRoomLightmap(int lightmap_handle)
 	const int width = lm_w(lightmap_handle);
 	const int height = lm_h(lightmap_handle);
 	const ushort* source = lm_data(lightmap_handle);
-	GLint saved_active_texture = GL_TEXTURE0;
-	glGetIntegerv(GL_ACTIVE_TEXTURE, &saved_active_texture);
 	const int saved_last_texel_unit = Last_texel_unit_set;
+	const int saved_active_unit =
+		saved_last_texel_unit >= 0 ? saved_last_texel_unit : 0;
 	glActiveTexture(GL_TEXTURE3 + bucket);
 	glBindTexture(GL_TEXTURE_2D_ARRAY, retained_room_lightmap_arrays[bucket]);
 	if (OpenGL_packed_pixels)
@@ -136,8 +136,8 @@ void GL4Renderer::UploadRetainedRoomLightmap(int lightmap_handle)
 			size, size, 1, GL_RGBA, GL_UNSIGNED_BYTE,
 			opengl_Upload_data);
 	}
-	glActiveTexture((GLenum)saved_active_texture);
-	Last_texel_unit_set = saved_last_texel_unit;
+	glActiveTexture(GL_TEXTURE0 + saved_active_unit);
+	Last_texel_unit_set = saved_active_unit;
 	OpenGL_uploads++;
 }
 
