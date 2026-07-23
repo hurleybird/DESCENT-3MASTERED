@@ -107,8 +107,11 @@ void Descent3()
 	{
 		//Init a bunch of stuff
 		InitD3Systems1(false);
-		if (FindArg("-perfmarkers"))
+		if (FindArg("-perfmarkers") || FindArg("-gpumarkers"))
+		{
+			PerfMarkersSetGpuOnly(FindArg("-gpumarkers") != 0);
 			PerfMarkersSetEnabled(true);
+		}
 		AutomatedCaptureLog("descent systems1 complete");
 
 		int proxyarg = FindArg("-httpproxy");

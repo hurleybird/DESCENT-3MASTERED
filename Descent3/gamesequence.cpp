@@ -62,6 +62,7 @@
 #include "sounds.h"
 #include "ambient.h"
 #include "vclip.h"
+#include "viseffect.h"
 #include "pilot.h"
 #include "doorway.h"
 #include "matcen.h"
@@ -528,7 +529,6 @@ void StartLevel()
 				RetainedPolymodelPrecache(model_num);
 		}
 		RetainedRoomPrecacheAll(Render_preferred_state.per_pixel_lighting);
-		TerrainRenderer_PrecacheLevel();
 	}
 
 	// TEMP HACK 
@@ -686,6 +686,9 @@ void StartLevel()
 	LoadLevelText(Current_mission.levels[Current_mission.cur_level - 1].filename);
 
 	Gametime = 0.0f;
+	if (!Dedicated_server)
+		TerrainRenderer_PrecacheLevel();
+
 	//Start the clock
 	InitFrameTime();
 	gamegauge_start_time = timer_GetTime();
@@ -1486,16 +1489,19 @@ void PageInWeapon(int id)
 	if (weaponpointer->explode_image_handle != -1)
 	{
 		PageInLevelTexture(weaponpointer->explode_image_handle);
+		VisEffectPrewarmTexture(weaponpointer->explode_image_handle);
 	}
 
 	if (weaponpointer->particle_handle != -1)
 	{
 		PageInLevelTexture(weaponpointer->particle_handle);
+		VisEffectPrewarmTexture(weaponpointer->particle_handle);
 	}
 
 	if (weaponpointer->smoke_handle != -1)
 	{
 		PageInLevelTexture(weaponpointer->smoke_handle);
+		VisEffectPrewarmTexture(weaponpointer->smoke_handle);
 	}
 
 	if (weaponpointer->scorch_handle != -1)
@@ -1789,8 +1795,12 @@ void PageInAllData()
 	$$TABLE_TEXTURE "LightFlareStare"
 	$$TABLE_TEXTURE "LightFlare"
 	*/
-	PageInLevelTexture(FindTextureName(IGNORE_TABLE("LightFlareStar")));
-	PageInLevelTexture(FindTextureName(IGNORE_TABLE("LightFlare")));
+	const int light_flare_star = FindTextureName(IGNORE_TABLE("LightFlareStar"));
+	const int light_flare = FindTextureName(IGNORE_TABLE("LightFlare"));
+	PageInLevelTexture(light_flare_star);
+	PageInLevelTexture(light_flare);
+	VisEffectPrewarmTexture(light_flare_star);
+	VisEffectPrewarmTexture(light_flare);
 
 	LoadLevelProgress(LOAD_PROGRESS_PAGING_DATA, PAGED_IN_CALC);
 
@@ -1820,7 +1830,10 @@ void PageInAllData()
 		name[strlen(name) - 4] = 0;
 		int id = FindTextureName(name);
 		if (id != -1)
+		{
 			PageInLevelTexture(id);
+			VisEffectPrewarmTexture(id);
+		}
 	}
 	LoadLevelProgress(LOAD_PROGRESS_PAGING_DATA, PAGED_IN_CALC);
 	// Get static sounds
@@ -1882,5 +1895,6 @@ void PageInAllData()
 			continue;
 		}
 	}
+	VisEffectUploadPrewarmedAtlases();
 	LoadLevelProgress(LOAD_PROGRESS_PREPARE, 0);
 }

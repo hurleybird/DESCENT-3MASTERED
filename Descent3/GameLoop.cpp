@@ -910,6 +910,7 @@ struct PerfMarkerStackEntry
 };
 
 bool Perf_markers_enabled = false;
+static bool Perf_markers_gpu_only = false;
 static FILE* Perf_marker_file = nullptr;
 static bool Perf_marker_frame_active = false;
 static int Perf_marker_frame_number = 0;
@@ -953,6 +954,11 @@ static void PerfMarkersCloseFile()
 		fclose(Perf_marker_file);
 		Perf_marker_file = nullptr;
 	}
+}
+
+void PerfMarkersSetGpuOnly(bool gpu_only)
+{
+	Perf_markers_gpu_only = gpu_only;
 }
 
 void PerfMarkersSetEnabled(bool enabled)
@@ -1092,6 +1098,8 @@ void PerfMarkersBegin(const char* marker_name)
 {
 	if (!Perf_markers_enabled || !Perf_marker_file || !Perf_marker_frame_active)
 		return;
+	if (Perf_markers_gpu_only)
+		return;
 
 	PerfMarkerStackEntry entry = {};
 	entry.name = marker_name;
@@ -1127,6 +1135,11 @@ void PerfMarkersRecordDuration(const char* marker_name, double start_time, doubl
 {
 	if (!Perf_markers_enabled || !Perf_marker_file || !Perf_marker_frame_active)
 		return;
+	if (Perf_markers_gpu_only &&
+		(!marker_name || strncmp(marker_name, "GPU.", 4) != 0))
+	{
+		return;
+	}
 
 	PerfMarkerRecord record = {};
 	PerfMarkersCopyName(record.name, marker_name);

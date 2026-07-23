@@ -1993,6 +1993,8 @@ static bool VisEffectAddSharedAtlasFrame(int source_handle, int* bitmap_handle,
 	const int cell_y = (slot / atlas->columns) * padded_height;
 	VisEffectCopyAtlasFrame(atlas->atlas_handle, cell_x, cell_y, source_handle);
 	GameBitmaps[atlas->atlas_handle].flags |= BF_CHANGED;
+	rend_UpdateBitmapTextureRegion(atlas->atlas_handle, cell_x, cell_y,
+		padded_width, padded_height);
 
 	VisFireballAtlasFrame frame = {};
 	frame.source_handle = source_handle;
@@ -2038,6 +2040,57 @@ static bool VisEffectGetSharedAtlasFrame(int source_handle, int* bitmap_handle,
 	}
 
 	return VisEffectAddSharedAtlasFrame(source_handle, bitmap_handle, width, height, u0, v0, u1, v1);
+}
+
+void VisEffectPrewarmTexture(int texture_handle)
+{
+	if (texture_handle < 0 || texture_handle >= MAX_TEXTURES ||
+		!GameTextures[texture_handle].used ||
+		(GameTextures[texture_handle].flags & (TF_PROCEDURAL | TF_SPECULAR)))
+	{
+		return;
+	}
+
+	auto prewarm_bitmap = [](int source_handle) {
+		if (source_handle <= BAD_BITMAP_HANDLE || source_handle >= MAX_BITMAPS ||
+			!GameBitmaps[source_handle].used)
+		{
+			return;
+		}
+
+		int bitmap_handle = BAD_BITMAP_HANDLE;
+		int width = 0;
+		int height = 0;
+		float u0 = 0.0f;
+		float v0 = 0.0f;
+		float u1 = 0.0f;
+		float v1 = 0.0f;
+		VisEffectGetSharedAtlasFrame(source_handle, &bitmap_handle, &width, &height,
+			&u0, &v0, &u1, &v1);
+	};
+
+	if (GameTextures[texture_handle].flags & TF_ANIMATED)
+	{
+		const vclip* clip = &GameVClips[GameTextures[texture_handle].bm_handle];
+		for (int frame = 0; frame < clip->num_frames; frame++)
+			prewarm_bitmap(clip->frames[frame]);
+	}
+	else
+	{
+		prewarm_bitmap(GameTextures[texture_handle].bm_handle);
+	}
+}
+
+void VisEffectUploadPrewarmedAtlases()
+{
+	for (VisFireballSharedAtlas& atlas : VisFireball_shared_atlases)
+	{
+		if (atlas.valid && !atlas.failed && atlas.atlas_handle > BAD_BITMAP_HANDLE &&
+			GameBitmaps[atlas.atlas_handle].used)
+		{
+			rend_PreUploadTextureToCard(atlas.atlas_handle, MAP_TYPE_BITMAP);
+		}
+	}
 }
 
 static void VisEffectApplyBatchUVs(VisFireballBatchItem& item, float u0, float v0, float u1, float v1)

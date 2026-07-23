@@ -1098,6 +1098,10 @@ void DemoFrame()
 				Game_interface_mode = GAME_DEMO_LOOP;
 				strcpy(Demo_fname, Old_demo_fname);
 			}
+			else if (FindArg("-demoexit"))
+			{
+				SetFunctionMode(QUIT_MODE);
+			}
 			else
 			{
 				Game_interface_mode = GAME_POST_DEMO;
@@ -1193,6 +1197,10 @@ void DemoFrame()
 			{
 				Game_interface_mode = GAME_DEMO_LOOP;
 				strcpy(Demo_fname, Old_demo_fname);
+			}
+			else if (FindArg("-demoexit"))
+			{
+				SetFunctionMode(QUIT_MODE);
 			}
 			else
 			{

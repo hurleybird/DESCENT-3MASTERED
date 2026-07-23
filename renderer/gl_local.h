@@ -790,6 +790,7 @@ public:
 	// Preuploads a bitmap to the card
 	void PreUploadTextureToCard(int, int) override;
 	void FreePreUploadedTexture(int, int) override;
+	void UpdateBitmapTextureRegion(int handle, int x, int y, int width, int height) override;
 
 	// Clears the texture cache
 	void ResetCache() override;

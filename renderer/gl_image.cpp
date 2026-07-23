@@ -361,13 +361,21 @@ int GL4Renderer::MakeBitmapCurrent(int handle, int map_type, int tn)
 			SET_WRAP_STATE(OpenGL_lightmap_states[handle], WT_CLAMP);
 			SET_FILTER_STATE(OpenGL_lightmap_states[handle], 0);
 			OpenGL_lightmap_remap[handle] = texnum;
+			char marker[96];
+			snprintf(marker, sizeof(marker), "Texture.Upload.Lightmap handle=%d new=1", handle);
+			PERF_MARKER_SCOPE(marker);
 			TranslateBitmapToOpenGL(texnum, handle, map_type, 0, tn);
 		}
 		else
 		{
 			texnum = OpenGL_lightmap_remap[handle];
 			if (GameLightmaps[handle].flags & LF_CHANGED)
+			{
+				char marker[96];
+				snprintf(marker, sizeof(marker), "Texture.Upload.Lightmap handle=%d new=0", handle);
+				PERF_MARKER_SCOPE(marker);
 				TranslateBitmapToOpenGL(texnum, handle, map_type, 1, tn);
+			}
 		}
 	}
 	else
@@ -378,6 +386,10 @@ int GL4Renderer::MakeBitmapCurrent(int handle, int map_type, int tn)
 			SET_WRAP_STATE(OpenGL_bitmap_states[handle], WT_WRAP);
 			SET_FILTER_STATE(OpenGL_bitmap_states[handle], 0);
 			OpenGL_bitmap_remap[handle] = texnum;
+			char marker[128];
+			snprintf(marker, sizeof(marker), "Texture.Upload.Bitmap handle=%d new=1 name=%s",
+				handle, GameBitmaps[handle].name);
+			PERF_MARKER_SCOPE(marker);
 			TranslateBitmapToOpenGL(texnum, handle, map_type, 0, tn);
 		}
 		else
@@ -385,6 +397,10 @@ int GL4Renderer::MakeBitmapCurrent(int handle, int map_type, int tn)
 			texnum = OpenGL_bitmap_remap[handle];
 			if (GameBitmaps[handle].flags & BF_CHANGED)
 			{
+				char marker[128];
+				snprintf(marker, sizeof(marker), "Texture.Upload.Bitmap handle=%d new=0 name=%s",
+					handle, GameBitmaps[handle].name);
+				PERF_MARKER_SCOPE(marker);
 				TranslateBitmapToOpenGL(texnum, handle, map_type, 1, tn);
 			}
 		}
@@ -406,6 +422,88 @@ int GL4Renderer::MakeBitmapCurrent(int handle, int map_type, int tn)
 	CHECK_ERROR(7);
 
 	return 1;
+}
+
+void GL4Renderer::UpdateBitmapTextureRegion(int handle, int x, int y, int width, int height)
+{
+	if (handle <= BAD_BITMAP_HANDLE || handle >= MAX_BITMAPS ||
+		!GameBitmaps[handle].used || OpenGL_bitmap_remap[handle] == 65535 ||
+		bm_mipped(handle) || bm_data_truecolor(handle) != nullptr)
+	{
+		return;
+	}
+
+	const int bitmap_width = bm_w(handle, 0);
+	const int bitmap_height = bm_h(handle, 0);
+	const int left = std::max(0, x);
+	const int top = std::max(0, y);
+	const int right = std::min(bitmap_width, x + width);
+	const int bottom = std::min(bitmap_height, y + height);
+	const int upload_width = right - left;
+	const int upload_height = bottom - top;
+	if (upload_width <= 0 || upload_height <= 0)
+		return;
+
+	ushort* source = bm_data(handle, 0);
+	if (!source)
+		return;
+
+	SetUploadBufferSize(upload_width, upload_height);
+	const bool format_4444 = bm_format(handle) == BITMAP_FORMAT_4444;
+	if (OpenGL_packed_pixels)
+	{
+		const ushort* table = format_4444 ?
+			opengl_packed_4444_translate_table : opengl_packed_Translate_table;
+		for (int row = 0; row < upload_height; row++)
+		{
+			const ushort* source_row = source + (top + row) * bitmap_width + left;
+			ushort* dest_row = opengl_packed_Upload_data + row * upload_width;
+			for (int column = 0; column < upload_width; column++)
+				dest_row[column] = table[source_row[column]];
+		}
+	}
+	else
+	{
+		const uint* table = format_4444 ?
+			opengl_4444_translate_table : opengl_Translate_table;
+		for (int row = 0; row < upload_height; row++)
+		{
+			const ushort* source_row = source + (top + row) * bitmap_width + left;
+			uint* dest_row = opengl_Upload_data + row * upload_width;
+			for (int column = 0; column < upload_width; column++)
+				dest_row[column] = table[source_row[column]];
+		}
+	}
+
+	const int texnum = OpenGL_bitmap_remap[handle];
+	if (UseMultitexture && Last_texel_unit_set != 0)
+	{
+		glActiveTexture(GL_TEXTURE0);
+		Last_texel_unit_set = 0;
+	}
+	if (OpenGL_last_bound[0] != texnum)
+	{
+		glBindTexture(GL_TEXTURE_2D, texnum);
+		OpenGL_last_bound[0] = texnum;
+		OpenGL_sets_this_frame[0]++;
+	}
+
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+	if (OpenGL_packed_pixels)
+	{
+		glTexSubImage2D(GL_TEXTURE_2D, 0, left, top, upload_width, upload_height,
+			GL_RGBA, format_4444 ? GL_UNSIGNED_SHORT_4_4_4_4 :
+			GL_UNSIGNED_SHORT_5_5_5_1, opengl_packed_Upload_data);
+	}
+	else
+	{
+		glTexSubImage2D(GL_TEXTURE_2D, 0, left, top, upload_width, upload_height,
+			GL_RGBA, GL_UNSIGNED_BYTE, opengl_Upload_data);
+	}
+
+	GameBitmaps[handle].flags &= ~BF_CHANGED;
+	OpenGL_uploads++;
+	CHECK_ERROR(6);
 }
 
 // Sets up an appropriate wrap type for the current bound texture

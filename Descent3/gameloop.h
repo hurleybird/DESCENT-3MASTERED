@@ -56,6 +56,7 @@ void SetAdaptiveFramePacingEnabled(bool enabled);
 
 extern bool Perf_markers_enabled;
 void PerfMarkersSetEnabled(bool enabled);
+void PerfMarkersSetGpuOnly(bool gpu_only);
 void PerfMarkersCaptureNextFrames(int frame_count, const char* reason);
 void PerfMarkersBeginFrame();
 void PerfMarkersEndFrame();

@@ -329,6 +329,24 @@ int MainMenu()
 bool ProcessCommandLine()
 {
 	int exit_menu = 0;
+	const int playdemo_arg = FindArg("-playdemo");
+	const char* playdemo_path = playdemo_arg ? GetArg(playdemo_arg + 1) : nullptr;
+	if (playdemo_path && playdemo_path[0])
+	{
+		if (strlen(playdemo_path) >= sizeof(Demo_fname))
+		{
+			AutomatedCaptureLog("playdemo rejected: path is too long");
+			SetFunctionMode(QUIT_MODE);
+			return true;
+		}
+		strcpy(Demo_fname, playdemo_path);
+		AutomatedCaptureLog("playdemo accepted path=%s", Demo_fname);
+		SetGameMode(GM_NORMAL);
+		SetFunctionMode(LOADDEMO_MODE);
+		SetUICallback(DEFAULT_UICALLBACK);
+		return true;
+	}
+
 	const int loadgame_arg = FindArg("-loadgame");
 	const char *loadgame_path = loadgame_arg ? GetArg(loadgame_arg + 1) : nullptr;
 	AutomatedCaptureLog("loadgame argument=%d path=%s", loadgame_arg,

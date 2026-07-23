@@ -359,6 +359,7 @@ struct GL4GpuSplitQueryState
 	int requested_samples = 0;
 	int actual_samples = 0;
 	int ssaa_factor = 1;
+	uint64_t serial = 0;
 };
 static GL4GpuSplitQueryState GL4_gpu_split_query_state[GL4_GPU_SPLIT_QUERY_COUNT];
 
@@ -375,9 +376,10 @@ static void GL4PerfGpuSplitRecord(const char* label, const GL4GpuSplitQueryState
 	if (end < start)
 		return;
 
-	char marker[96];
-	snprintf(marker, sizeof(marker), "GPU.Split.%s req=%d actual=%d ssaa=%d",
-		label, state.requested_samples, state.actual_samples, state.ssaa_factor);
+	char marker[128];
+	snprintf(marker, sizeof(marker), "GPU.Split.%s serial=%llu req=%d actual=%d ssaa=%d",
+		label, (unsigned long long)state.serial, state.requested_samples,
+		state.actual_samples, state.ssaa_factor);
 	PerfMarkersRecordDuration(marker, PerfMarkersNow(), (double)(end - start) / 1000000000.0);
 }
 
@@ -798,6 +800,7 @@ static void GL4PerfGpuSplitBegin(const Framebuffer& framebuffer, int ssaa_factor
 	state.requested_samples = (int)framebuffer.RequestedSamples();
 	state.actual_samples = (int)framebuffer.Samples();
 	state.ssaa_factor = ssaa_factor;
+	state.serial = GL4_next_gpu_frame_serial;
 	GL4_gpu_split_active_index = index;
 	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_START);
 }

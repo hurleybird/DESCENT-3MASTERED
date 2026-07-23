@@ -1185,6 +1185,14 @@ void rend_FreePreUploadedTexture(int a, int b)
 	renderer_inst->FreePreUploadedTexture(a, b);
 }
 
+void rend_UpdateBitmapTextureRegion(int handle, int x, int y, int width, int height)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->UpdateBitmapTextureRegion(handle, x, y, width, height);
+}
+
 // Returns 1 if there is mid video memory, 2 if there is low vid memory, or 0 if there is large vid memory
 int rend_LowVidMem()
 {
