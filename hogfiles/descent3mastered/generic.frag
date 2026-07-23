@@ -16,7 +16,6 @@ uniform sampler2D lightmaptexture;
 #endif
 
 uniform int phong_enabled;
-uniform int retained_effect_mode;
 uniform vec3 phong_light_direction;
 uniform int dynamic_light_count;
 uniform vec3 dynamic_face_normal;
@@ -40,9 +39,42 @@ uniform int ao_capture_weight_mode;
 // 2: destination-multiplying material.
 uniform int post_mask_blend_mode;
 uniform int fast_additive_bitmap;
-uniform int fast_retained_room_base;
-uniform int retained_room_lightmap_arrays;
-uniform int retained_dynamic_lightmaps;
+
+layout(std140, binding = 5) uniform RetainedDrawBlock
+{
+	mat4 retained_transform;
+	mat4 retained_modelview;
+	mat4 retained_current_world;
+	mat4 retained_previous_world;
+	vec4 retained_base_color_depth_bias;
+	vec4 retained_uv_offset_uv2_scale;
+	vec4 retained_legacy_view_position_packed;
+	vec4 retained_legacy_view_right_packed;
+	vec4 retained_legacy_view_up_packed;
+	vec4 retained_legacy_view_forward_packed;
+	vec4 retained_legacy_viewport_packed;
+	vec4 retained_alpha_effect_packed;
+	vec4 retained_fog_plane_depth;
+	vec4 retained_specular_view_scalar;
+	vec4 retained_specular_light_range;
+	vec4 retained_deform_direction_far_clip;
+	vec4 retained_custom_clip_point_packed;
+	vec4 retained_custom_clip_plane_packed;
+	vec4 retained_custom_clip_scale_packed;
+	vec4 retained_phong_direction_packed;
+	ivec4 retained_modes0;
+	ivec4 retained_modes1;
+	ivec4 retained_modes2;
+	ivec4 retained_modes3;
+	uvec4 retained_deform_seed_packed;
+};
+
+#define retained_mode retained_modes0.x
+#define retained_effect_mode retained_modes1.y
+#define retained_per_pixel_specular_payload retained_modes3.x
+#define fast_retained_room_base retained_modes3.y
+#define retained_room_lightmap_arrays retained_modes3.z
+#define retained_dynamic_lightmaps retained_modes3.w
 uniform sampler2DArray retained_room_lightmaps_2;
 uniform sampler2DArray retained_room_lightmaps_4;
 uniform sampler2DArray retained_room_lightmaps_8;

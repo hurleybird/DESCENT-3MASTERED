@@ -922,6 +922,7 @@ void GL4Renderer::Close()
 	if (framebuffer_ok)
 		CloseFramebuffer();
 
+	DestroyRetainedDrawBuffer();
 	DestroyPersistentDrawBuffer();
 	glFinish();
 

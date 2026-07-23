@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cfloat>
 #include <cmath>
 #include <cstring>
@@ -39,6 +40,40 @@ constexpr float PIXEL_MOTION_BLUR_REFERENCE_FRAME_TIME = 1.0f / 60.0f;
 constexpr unsigned int GL4_MOTION_OBJECT_LEGACY_BLUR_MASK = 0x80000000u;
 constexpr GLuint GL4_ROOM_FOG_PORTAL_BINDING = 5;
 constexpr GLuint GL4_PER_PIXEL_LIGHTMAP_BINDING = 6;
+constexpr GLuint GL4_RETAINED_DRAW_BINDING = 5;
+constexpr GLuint GL4_RETAINED_DRAW_CAPACITY = 8192;
+
+struct alignas(16) GL4RetainedDrawBlock
+{
+	float transform[16];
+	float modelview[16];
+	float current_world[16];
+	float previous_world[16];
+	float base_color_depth_bias[4];
+	float uv_offset_uv2_scale[4];
+	float legacy_view_position[4];
+	float legacy_view_right[4];
+	float legacy_view_up[4];
+	float legacy_view_forward[4];
+	float legacy_viewport[4];
+	float alpha_effect[4];
+	float fog_plane_depth[4];
+	float specular_view_scalar[4];
+	float specular_light_range[4];
+	float deform_direction_far_clip[4];
+	float custom_clip_point[4];
+	float custom_clip_plane[4];
+	float custom_clip_scale[4];
+	float phong_direction[4];
+	int32_t modes0[4];
+	int32_t modes1[4];
+	int32_t modes2[4];
+	int32_t modes3[4];
+	uint32_t deform_seed[4];
+};
+
+static_assert(sizeof(GL4RetainedDrawBlock) == 592,
+	"RetainedDrawBlock must match the std140 shader declaration");
 
 struct GL4FramebufferBindingState
 {
@@ -913,6 +948,87 @@ void GL4Renderer::DestroyPersistentDrawBuffer()
 	}
 }
 
+void GL4Renderer::InitRetainedDrawBuffer()
+{
+	DestroyRetainedDrawBuffer();
+
+	GLint alignment = 1;
+	glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &alignment);
+	const size_t required_alignment = static_cast<size_t>(std::max(alignment, 1));
+	const size_t block_size = sizeof(GL4RetainedDrawBlock);
+	retained_draw_buffer_stride = static_cast<GLsizeiptr>(
+		(block_size + required_alignment - 1) / required_alignment * required_alignment);
+
+	glGenBuffers(1, &retained_draw_buffer);
+	glBindBuffer(GL_UNIFORM_BUFFER, retained_draw_buffer);
+	const GLsizeiptr buffer_size =
+		retained_draw_buffer_stride * GL4_RETAINED_DRAW_CAPACITY;
+	if (OpenGL_buffer_storage_enabled)
+	{
+		glBufferStorage(GL_UNIFORM_BUFFER, buffer_size, nullptr,
+			GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+		if (glGetError() == GL_NO_ERROR)
+		{
+			retained_draw_buffer_map = glMapBufferRange(GL_UNIFORM_BUFFER, 0, buffer_size,
+				GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+		}
+	}
+	if (retained_draw_buffer_map == nullptr)
+	{
+		if (OpenGL_buffer_storage_enabled)
+		{
+			glDeleteBuffers(1, &retained_draw_buffer);
+			glGenBuffers(1, &retained_draw_buffer);
+			glBindBuffer(GL_UNIFORM_BUFFER, retained_draw_buffer);
+		}
+		glBufferData(GL_UNIFORM_BUFFER, buffer_size, nullptr, GL_STREAM_DRAW);
+	}
+
+	const GL4RetainedDrawBlock legacy_block = {};
+	if (retained_draw_buffer_map != nullptr)
+		std::memcpy(retained_draw_buffer_map, &legacy_block, sizeof(legacy_block));
+	else
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(legacy_block), &legacy_block);
+	glBindBufferRange(GL_UNIFORM_BUFFER, GL4_RETAINED_DRAW_BINDING,
+		retained_draw_buffer, 0, sizeof(legacy_block));
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+	retained_draw_buffer_cursor = 1;
+	retained_draw_buffer_active_segment = -1;
+}
+
+void GL4Renderer::DestroyRetainedDrawBuffer()
+{
+	for (GLsync& sync : retained_draw_buffer_sync_points)
+	{
+		if (sync != nullptr && glDeleteSync != nullptr)
+			glDeleteSync(sync);
+		sync = nullptr;
+	}
+	if (retained_draw_buffer != 0)
+	{
+		if (retained_draw_buffer_map != nullptr)
+		{
+			glBindBuffer(GL_UNIFORM_BUFFER, retained_draw_buffer);
+			glUnmapBuffer(GL_UNIFORM_BUFFER);
+		}
+		glDeleteBuffers(1, &retained_draw_buffer);
+		retained_draw_buffer = 0;
+	}
+	retained_draw_buffer_stride = 0;
+	retained_draw_buffer_cursor = 0;
+	retained_draw_buffer_map = nullptr;
+	retained_draw_buffer_active_segment = -1;
+}
+
+void GL4Renderer::UseLegacyRetainedDrawBlock()
+{
+	if (retained_draw_buffer != 0)
+	{
+		glBindBufferRange(GL_UNIFORM_BUFFER, GL4_RETAINED_DRAW_BINDING,
+			retained_draw_buffer, 0, sizeof(GL4RetainedDrawBlock));
+	}
+}
+
 void GL4Renderer::WaitForPersistentDrawBufferSync(GLsync& sync)
 {
 	if (sync == nullptr)
@@ -1513,11 +1629,6 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_ao_capture_weight_mode_uniforms[i] = drawshaders[i].FindUniform("ao_capture_weight_mode");
 		drawshader_post_mask_blend_mode_uniforms[i] = drawshaders[i].FindUniform("post_mask_blend_mode");
 		drawshader_fast_additive_bitmap_uniforms[i] = drawshaders[i].FindUniform("fast_additive_bitmap");
-		drawshader_fast_retained_room_base_uniforms[i] = drawshaders[i].FindUniform("fast_retained_room_base");
-		drawshader_retained_room_lightmap_arrays_uniforms[i] =
-			drawshaders[i].FindUniform("retained_room_lightmap_arrays");
-		drawshader_retained_dynamic_lightmaps_uniforms[i] =
-			drawshaders[i].FindUniform("retained_dynamic_lightmaps");
 		drawshader_cockpit_backing_enabled_uniforms[i] = drawshaders[i].FindUniform("cockpit_backing_enabled");
 		drawshader_cockpit_backing_alpha_uniforms[i] = drawshaders[i].FindUniform("cockpit_backing_alpha");
 		drawshader_cockpit_backing_darkness_uniforms[i] = drawshaders[i].FindUniform("cockpit_backing_darkness");
@@ -1535,49 +1646,6 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_soft_particle_enabled_uniforms[i] = drawshaders[i].FindUniform("soft_particle_enabled");
 		drawshader_soft_particle_screen_size_uniforms[i] = drawshaders[i].FindUniform("soft_particle_screen_size");
 		drawshader_soft_particle_depth_range_uniforms[i] = drawshaders[i].FindUniform("soft_particle_depth_range");
-		drawshader_retained_mode_uniforms[i] = drawshaders[i].FindUniform("retained_mode");
-		drawshader_retained_transform_uniforms[i] = drawshaders[i].FindUniform("retained_transform");
-		drawshader_retained_modelview_uniforms[i] = drawshaders[i].FindUniform("retained_modelview");
-		drawshader_retained_current_world_uniforms[i] = drawshaders[i].FindUniform("retained_current_world");
-		drawshader_retained_previous_world_uniforms[i] = drawshaders[i].FindUniform("retained_previous_world");
-		drawshader_retained_uv_offset_uniforms[i] = drawshaders[i].FindUniform("retained_uv_offset");
-		drawshader_retained_uv2_scale_uniforms[i] = drawshaders[i].FindUniform("retained_uv2_scale");
-		drawshader_retained_base_color_uniforms[i] = drawshaders[i].FindUniform("retained_base_color");
-		drawshader_retained_depth_bias_uniforms[i] = drawshaders[i].FindUniform("retained_depth_bias");
-		drawshader_retained_legacy_depth_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_depth");
-		drawshader_retained_legacy_world_projection_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_world_projection");
-		drawshader_retained_legacy_view_position_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_view_position");
-		drawshader_retained_legacy_view_right_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_view_right");
-		drawshader_retained_legacy_view_up_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_view_up");
-		drawshader_retained_legacy_view_forward_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_view_forward");
-		drawshader_retained_legacy_viewport_scale_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_viewport_scale");
-		drawshader_retained_legacy_viewport_center_uniforms[i] = drawshaders[i].FindUniform("retained_legacy_viewport_center");
-		drawshader_retained_lighting_mode_uniforms[i] = drawshaders[i].FindUniform("retained_lighting_mode");
-		drawshader_retained_vertex_alpha_uniforms[i] = drawshaders[i].FindUniform("retained_vertex_alpha");
-		drawshader_retained_alpha_scale_uniforms[i] = drawshaders[i].FindUniform("retained_alpha_scale");
-		drawshader_retained_effect_mode_uniforms[i] = drawshaders[i].FindUniform("retained_effect_mode");
-		drawshader_retained_effect_alpha_scale_uniforms[i] = drawshaders[i].FindUniform("retained_effect_alpha_scale");
-		drawshader_retained_fog_plane_uniforms[i] = drawshaders[i].FindUniform("retained_fog_plane");
-		drawshader_retained_fog_distance_uniforms[i] = drawshaders[i].FindUniform("retained_fog_distance");
-		drawshader_retained_fog_eye_distance_uniforms[i] = drawshaders[i].FindUniform("retained_fog_eye_distance");
-		drawshader_retained_fog_depth_uniforms[i] = drawshaders[i].FindUniform("retained_fog_depth");
-		drawshader_retained_specular_view_position_uniforms[i] = drawshaders[i].FindUniform("retained_specular_view_position");
-		drawshader_retained_specular_light_position_uniforms[i] = drawshaders[i].FindUniform("retained_specular_light_position");
-		drawshader_retained_specular_scalar_uniforms[i] = drawshaders[i].FindUniform("retained_specular_scalar");
-		drawshader_retained_specular_smooth_uniforms[i] = drawshaders[i].FindUniform("retained_specular_smooth");
-		drawshader_retained_deform_enabled_uniforms[i] = drawshaders[i].FindUniform("retained_deform_enabled");
-		drawshader_retained_deform_mode_uniforms[i] = drawshaders[i].FindUniform("retained_deform_mode");
-		drawshader_retained_deform_seed_uniforms[i] = drawshaders[i].FindUniform("retained_deform_seed");
-		drawshader_retained_deform_range_uniforms[i] = drawshaders[i].FindUniform("retained_deform_range");
-		drawshader_retained_deform_direction_uniforms[i] = drawshaders[i].FindUniform("retained_deform_direction");
-		drawshader_retained_custom_clip_enabled_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_enabled");
-		drawshader_retained_custom_clip_point_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_point");
-		drawshader_retained_custom_clip_plane_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_plane");
-		drawshader_retained_custom_clip_scale_uniforms[i] = drawshaders[i].FindUniform("retained_custom_clip_scale");
-		drawshader_retained_near_clip_enabled_uniforms[i] = drawshaders[i].FindUniform("retained_near_clip_enabled");
-		drawshader_retained_far_clip_enabled_uniforms[i] = drawshaders[i].FindUniform("retained_far_clip_enabled");
-		drawshader_retained_far_clip_z_uniforms[i] = drawshaders[i].FindUniform("retained_far_clip_z");
-		drawshader_retained_per_pixel_specular_payload_uniforms[i] = drawshaders[i].FindUniform("retained_per_pixel_specular_payload");
 		drawshader_room_fog_enabled_uniforms[i] = drawshaders[i].FindUniform("room_fog_enabled");
 		drawshader_room_fog_viewer_inside_uniforms[i] = drawshaders[i].FindUniform("room_fog_viewer_inside");
 		drawshader_room_fog_viewer_position_uniforms[i] = drawshaders[i].FindUniform("room_fog_viewer_position");
@@ -1623,6 +1691,7 @@ void GL4Renderer::SetDrawDefaults()
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	InitRetainedDrawBuffer();
 }
 
 GLuint GL4Renderer::PrepareSoftParticleDepthTexture()
@@ -1684,7 +1753,7 @@ void GL4Renderer::NotifyDepthBufferWrite()
 	}
 }
 
-void GL4Renderer::SelectDrawShader()
+void GL4Renderer::SelectDrawShader(bool retained_setup)
 {
 	int shader_index = 0;
 
@@ -1721,6 +1790,9 @@ void GL4Renderer::SelectDrawShader()
 	}
 	const bool shader_changed = shader_index != lastdrawshader;
 	drawshaders[shader_index].Use();
+	if (retained_setup && !shader_changed && !legacy_draw_uniforms_dirty &&
+		!soft_particle_draw_enabled)
+		return;
 	if (!shader_changed && !legacy_draw_uniforms_dirty && !CurrentDrawUsesPixelMotionTarget() &&
 		!CurrentDrawWritesMotionObjectId() && !soft_particle_draw_enabled)
 		return;
@@ -1766,12 +1838,6 @@ void GL4Renderer::SelectDrawShader()
 		glUniform1i(drawshader_fast_additive_bitmap_uniforms[shader_index],
 			fast_additive_bitmap ? 1 : 0);
 	}
-	if (drawshader_fast_retained_room_base_uniforms[shader_index] != -1)
-		glUniform1i(drawshader_fast_retained_room_base_uniforms[shader_index], 0);
-	if (drawshader_retained_room_lightmap_arrays_uniforms[shader_index] != -1)
-		glUniform1i(drawshader_retained_room_lightmap_arrays_uniforms[shader_index], 0);
-	if (drawshader_retained_dynamic_lightmaps_uniforms[shader_index] != -1)
-		glUniform1i(drawshader_retained_dynamic_lightmaps_uniforms[shader_index], 0);
 	if (drawshader_cockpit_backing_enabled_uniforms[shader_index] != -1)
 		glUniform1i(drawshader_cockpit_backing_enabled_uniforms[shader_index], cockpit_backing_effect.enabled);
 	if (drawshader_cockpit_backing_alpha_uniforms[shader_index] != -1)
@@ -2514,9 +2580,9 @@ bool GL4Renderer::BeginRetainedPolymodelDraw(const renderer_retained_polymodel_d
 	if (!draw || retained_draw_active)
 		return false;
 
-	SelectDrawShader();
+	SelectDrawShader(true);
 	const int shader_index = lastdrawshader;
-	if (shader_index < 0 || drawshader_retained_mode_uniforms[shader_index] == -1)
+	if (shader_index < 0 || retained_draw_buffer == 0)
 		return false;
 
 	float base_color[3] = { draw->base_color[0], draw->base_color[1], draw->base_color[2] };
@@ -2539,105 +2605,126 @@ bool GL4Renderer::BeginRetainedPolymodelDraw(const renderer_retained_polymodel_d
 	if (draw->lighting_mode_override >= 0)
 		lighting_mode = draw->lighting_mode_override;
 
-	glUniform1i(drawshader_retained_mode_uniforms[shader_index], 1);
-	glUniformMatrix4fv(drawshader_retained_transform_uniforms[shader_index], 1, GL_FALSE, draw->transform);
-	glUniformMatrix4fv(drawshader_retained_modelview_uniforms[shader_index], 1, GL_FALSE, draw->modelview);
-	glUniformMatrix4fv(drawshader_retained_current_world_uniforms[shader_index], 1, GL_FALSE, draw->current_world);
-	glUniformMatrix4fv(drawshader_retained_previous_world_uniforms[shader_index], 1, GL_FALSE, draw->previous_world);
-	glUniform2f(drawshader_retained_uv_offset_uniforms[shader_index], draw->u_offset, draw->v_offset);
-	glUniform2fv(drawshader_retained_uv2_scale_uniforms[shader_index], 1, draw->uv2_scale);
-	glUniform3fv(drawshader_retained_base_color_uniforms[shader_index], 1, base_color);
-	glUniform1f(drawshader_retained_depth_bias_uniforms[shader_index], draw->depth_bias);
-	glUniform1i(drawshader_retained_legacy_depth_uniforms[shader_index], draw->legacy_depth ? 1 : 0);
-	glUniform1i(drawshader_retained_legacy_world_projection_uniforms[shader_index],
-		draw->legacy_world_projection ? 1 : 0);
-	if (draw->legacy_world_projection)
-	{
-		glUniform3fv(drawshader_retained_legacy_view_position_uniforms[shader_index], 1,
-			draw->legacy_view_position);
-		glUniform3fv(drawshader_retained_legacy_view_right_uniforms[shader_index], 1,
-			draw->legacy_view_right);
-		glUniform3fv(drawshader_retained_legacy_view_up_uniforms[shader_index], 1,
-			draw->legacy_view_up);
-		glUniform3fv(drawshader_retained_legacy_view_forward_uniforms[shader_index], 1,
-			draw->legacy_view_forward);
-		glUniform2fv(drawshader_retained_legacy_viewport_scale_uniforms[shader_index], 1,
-			draw->legacy_viewport_scale);
-		glUniform2fv(drawshader_retained_legacy_viewport_center_uniforms[shader_index], 1,
-			draw->legacy_viewport_center);
-	}
-	glUniform1i(drawshader_retained_lighting_mode_uniforms[shader_index], lighting_mode);
-	if (lighting_mode == 1 && drawshader_light_direction_uniforms[shader_index] != -1)
-	{
-		glUniform3f(drawshader_light_direction_uniforms[shader_index],
-			per_pixel_light_direction.x, per_pixel_light_direction.y,
-			per_pixel_light_direction.z);
-	}
-	glUniform1i(drawshader_retained_vertex_alpha_uniforms[shader_index],
-		(OpenGL_state.cur_alpha_type & ATF_VERTEX) != 0 ? 1 : 0);
-	glUniform1f(drawshader_retained_alpha_scale_uniforms[shader_index],
-		Alpha_multiplier * OpenGL_Alpha_factor / 255.0f);
-	glUniform1i(drawshader_retained_effect_mode_uniforms[shader_index], draw->effect_mode);
-	glUniform1f(drawshader_retained_effect_alpha_scale_uniforms[shader_index], draw->effect_alpha_scale);
-	if (draw->effect_mode == 1 || draw->effect_mode == 2 ||
-		draw->effect_mode == 4 || draw->effect_mode == 5)
-	{
-		glUniform3fv(drawshader_retained_fog_plane_uniforms[shader_index], 1, draw->fog_plane);
-		glUniform1f(drawshader_retained_fog_distance_uniforms[shader_index], draw->fog_distance);
-		glUniform1f(drawshader_retained_fog_eye_distance_uniforms[shader_index], draw->fog_eye_distance);
-		glUniform1f(drawshader_retained_fog_depth_uniforms[shader_index], draw->fog_depth);
-	}
-	if (draw->effect_mode == 3)
-	{
-		glUniform3fv(drawshader_retained_specular_view_position_uniforms[shader_index], 1,
-			draw->specular_view_position);
-		glUniform3fv(drawshader_retained_specular_light_position_uniforms[shader_index], 1,
-			draw->specular_light_position);
-		glUniform1f(drawshader_retained_specular_scalar_uniforms[shader_index], draw->specular_scalar);
-		glUniform1i(drawshader_retained_specular_smooth_uniforms[shader_index],
-			draw->specular_smooth ? 1 : 0);
-	}
-	glUniform1i(drawshader_retained_deform_enabled_uniforms[shader_index], draw->deform_enabled ? 1 : 0);
-	if (draw->deform_enabled)
-	{
-		glUniform1i(drawshader_retained_deform_mode_uniforms[shader_index], draw->deform_mode);
-		glUniform1ui(drawshader_retained_deform_seed_uniforms[shader_index], draw->deform_seed);
-		glUniform1f(drawshader_retained_deform_range_uniforms[shader_index], draw->deform_range);
-		glUniform3fv(drawshader_retained_deform_direction_uniforms[shader_index], 1,
-			draw->deform_direction);
-	}
-	glUniform1i(drawshader_retained_custom_clip_enabled_uniforms[shader_index],
-		draw->custom_clip_enabled ? 1 : 0);
-	if (draw->custom_clip_enabled)
-	{
-		glUniform3fv(drawshader_retained_custom_clip_point_uniforms[shader_index], 1,
-			draw->custom_clip_point);
-		glUniform3fv(drawshader_retained_custom_clip_plane_uniforms[shader_index], 1,
-			draw->custom_clip_plane);
-		glUniform3fv(drawshader_retained_custom_clip_scale_uniforms[shader_index], 1,
-			draw->custom_clip_scale);
-	}
-	glUniform1i(drawshader_retained_near_clip_enabled_uniforms[shader_index],
-		draw->near_clip_enabled ? 1 : 0);
-	glUniform1i(drawshader_retained_far_clip_enabled_uniforms[shader_index],
-		draw->far_clip_enabled ? 1 : 0);
-	if (draw->far_clip_enabled)
-		glUniform1f(drawshader_retained_far_clip_z_uniforms[shader_index], draw->far_clip_z);
-	glUniform1i(drawshader_retained_per_pixel_specular_payload_uniforms[shader_index],
-		draw->per_pixel_specular_payload ? 1 : 0);
-	if (drawshader_fast_retained_room_base_uniforms[shader_index] != -1)
-		glUniform1i(drawshader_fast_retained_room_base_uniforms[shader_index],
-			draw->fast_room_base ? 1 : 0);
 	const bool use_retained_room_lightmap_arrays =
 		draw->retained_room_lightmap_arrays && retained_room_lightmaps_ready;
-	if (drawshader_retained_room_lightmap_arrays_uniforms[shader_index] != -1)
-		glUniform1i(drawshader_retained_room_lightmap_arrays_uniforms[shader_index],
-			use_retained_room_lightmap_arrays ? 1 : 0);
 	const bool use_retained_dynamic_lightmaps = draw->retained_dynamic_lightmaps &&
 		per_pixel_lightmap_buffer_ready && per_pixel_lightmap_buffer_index >= 0;
-	if (drawshader_retained_dynamic_lightmaps_uniforms[shader_index] != -1)
-		glUniform1i(drawshader_retained_dynamic_lightmaps_uniforms[shader_index],
-			use_retained_dynamic_lightmaps ? 1 : 0);
+
+	GL4RetainedDrawBlock block = {};
+	std::memcpy(block.transform, draw->transform, sizeof(block.transform));
+	std::memcpy(block.modelview, draw->modelview, sizeof(block.modelview));
+	std::memcpy(block.current_world, draw->current_world, sizeof(block.current_world));
+	std::memcpy(block.previous_world, draw->previous_world, sizeof(block.previous_world));
+	std::memcpy(block.base_color_depth_bias, base_color, sizeof(base_color));
+	block.base_color_depth_bias[3] = draw->depth_bias;
+	block.uv_offset_uv2_scale[0] = draw->u_offset;
+	block.uv_offset_uv2_scale[1] = draw->v_offset;
+	block.uv_offset_uv2_scale[2] = draw->uv2_scale[0];
+	block.uv_offset_uv2_scale[3] = draw->uv2_scale[1];
+	std::memcpy(block.legacy_view_position, draw->legacy_view_position,
+		sizeof(draw->legacy_view_position));
+	std::memcpy(block.legacy_view_right, draw->legacy_view_right,
+		sizeof(draw->legacy_view_right));
+	std::memcpy(block.legacy_view_up, draw->legacy_view_up,
+		sizeof(draw->legacy_view_up));
+	std::memcpy(block.legacy_view_forward, draw->legacy_view_forward,
+		sizeof(draw->legacy_view_forward));
+	block.legacy_viewport[0] = draw->legacy_viewport_scale[0];
+	block.legacy_viewport[1] = draw->legacy_viewport_scale[1];
+	block.legacy_viewport[2] = draw->legacy_viewport_center[0];
+	block.legacy_viewport[3] = draw->legacy_viewport_center[1];
+	block.alpha_effect[0] = Alpha_multiplier * OpenGL_Alpha_factor / 255.0f;
+	block.alpha_effect[1] = draw->effect_alpha_scale;
+	block.alpha_effect[2] = draw->fog_distance;
+	block.alpha_effect[3] = draw->fog_eye_distance;
+	std::memcpy(block.fog_plane_depth, draw->fog_plane, sizeof(draw->fog_plane));
+	block.fog_plane_depth[3] = draw->fog_depth;
+	std::memcpy(block.specular_view_scalar, draw->specular_view_position,
+		sizeof(draw->specular_view_position));
+	block.specular_view_scalar[3] = draw->specular_scalar;
+	std::memcpy(block.specular_light_range, draw->specular_light_position,
+		sizeof(draw->specular_light_position));
+	block.specular_light_range[3] = draw->deform_range;
+	std::memcpy(block.deform_direction_far_clip, draw->deform_direction,
+		sizeof(draw->deform_direction));
+	block.deform_direction_far_clip[3] = draw->far_clip_z;
+	std::memcpy(block.custom_clip_point, draw->custom_clip_point,
+		sizeof(draw->custom_clip_point));
+	std::memcpy(block.custom_clip_plane, draw->custom_clip_plane,
+		sizeof(draw->custom_clip_plane));
+	std::memcpy(block.custom_clip_scale, draw->custom_clip_scale,
+		sizeof(draw->custom_clip_scale));
+	block.phong_direction[0] = per_pixel_light_direction.x;
+	block.phong_direction[1] = per_pixel_light_direction.y;
+	block.phong_direction[2] = per_pixel_light_direction.z;
+	block.modes0[0] = 1;
+	block.modes0[1] = draw->legacy_depth ? 1 : 0;
+	block.modes0[2] = draw->legacy_world_projection ? 1 : 0;
+	block.modes0[3] = lighting_mode;
+	block.modes1[0] = (OpenGL_state.cur_alpha_type & ATF_VERTEX) != 0 ? 1 : 0;
+	block.modes1[1] = draw->effect_mode;
+	block.modes1[2] = draw->specular_smooth ? 1 : 0;
+	block.modes1[3] = draw->deform_enabled ? 1 : 0;
+	block.modes2[0] = draw->deform_mode;
+	block.modes2[1] = draw->custom_clip_enabled ? 1 : 0;
+	block.modes2[2] = draw->near_clip_enabled ? 1 : 0;
+	block.modes2[3] = draw->far_clip_enabled ? 1 : 0;
+	block.modes3[0] = draw->per_pixel_specular_payload ? 1 : 0;
+	block.modes3[1] = draw->fast_room_base ? 1 : 0;
+	block.modes3[2] = use_retained_room_lightmap_arrays ? 1 : 0;
+	block.modes3[3] = use_retained_dynamic_lightmaps ? 1 : 0;
+	block.deform_seed[0] = draw->deform_seed;
+
+	if (retained_draw_buffer_cursor >= GL4_RETAINED_DRAW_CAPACITY)
+	{
+		retained_draw_buffer_cursor = 1;
+	}
+	if (retained_draw_buffer_map != nullptr)
+	{
+		const GLuint segment_size =
+			GL4_RETAINED_DRAW_CAPACITY / GL4_DRAW_BUFFER_SYNC_POINT_COUNT;
+		const int segment = static_cast<int>(
+			retained_draw_buffer_cursor / segment_size);
+		if (segment != retained_draw_buffer_active_segment)
+		{
+			if (retained_draw_buffer_active_segment >= 0)
+			{
+				GLsync& completed_segment =
+					retained_draw_buffer_sync_points[retained_draw_buffer_active_segment];
+				if (completed_segment != nullptr)
+					WaitForPersistentDrawBufferSync(completed_segment);
+				completed_segment = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+			}
+			GLsync& incoming_segment = retained_draw_buffer_sync_points[segment];
+			if (incoming_segment != nullptr)
+				WaitForPersistentDrawBufferSync(incoming_segment);
+			retained_draw_buffer_active_segment = segment;
+		}
+	}
+	else if (retained_draw_buffer_cursor == 1)
+	{
+		glBindBuffer(GL_UNIFORM_BUFFER, retained_draw_buffer);
+		glBufferData(GL_UNIFORM_BUFFER,
+			retained_draw_buffer_stride * GL4_RETAINED_DRAW_CAPACITY,
+			nullptr, GL_STREAM_DRAW);
+		const GL4RetainedDrawBlock legacy_block = {};
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(legacy_block), &legacy_block);
+	}
+	const GLintptr block_offset =
+		static_cast<GLintptr>(retained_draw_buffer_cursor++) * retained_draw_buffer_stride;
+	if (retained_draw_buffer_map != nullptr)
+	{
+		std::memcpy(static_cast<unsigned char*>(retained_draw_buffer_map) + block_offset,
+			&block, sizeof(block));
+	}
+	else
+	{
+		glBindBuffer(GL_UNIFORM_BUFFER, retained_draw_buffer);
+		glBufferSubData(GL_UNIFORM_BUFFER, block_offset, sizeof(block), &block);
+	}
+	glBindBufferRange(GL_UNIFORM_BUFFER, GL4_RETAINED_DRAW_BINDING,
+		retained_draw_buffer, block_offset, sizeof(block));
+
 	if (use_retained_dynamic_lightmaps)
 	{
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, GL4_PER_PIXEL_LIGHTMAP_BINDING,
@@ -2661,16 +2748,28 @@ bool GL4Renderer::BeginRetainedPolymodelDraw(const renderer_retained_polymodel_d
 
 	retained_include_motion_vectors = CurrentDrawUsesPixelMotionTarget();
 	retained_include_motion_object_ids = CurrentDrawWritesMotionObjectId();
+	if (drawshader_motion_vector_mode_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_motion_vector_mode_uniforms[shader_index],
+			retained_include_motion_vectors ? RENDERER_MOTION_VECTOR_PIXEL :
+			RENDERER_MOTION_VECTOR_OFF);
+	if (drawshader_motion_vector_current_view_projection_uniforms[shader_index] != -1)
+		glUniformMatrix4fv(
+			drawshader_motion_vector_current_view_projection_uniforms[shader_index],
+			1, GL_FALSE, current_view_projection);
 	if (drawshader_motion_vector_payload_type_uniforms[shader_index] != -1)
 		glUniform1i(drawshader_motion_vector_payload_type_uniforms[shader_index], 0);
-	if (drawshader_motion_vector_previous_view_projection_uniforms[shader_index] != -1 && cockpit_motion_object_active)
+	if (drawshader_motion_vector_previous_view_projection_uniforms[shader_index] != -1)
 		glUniformMatrix4fv(drawshader_motion_vector_previous_view_projection_uniforms[shader_index], 1,
-			GL_FALSE, cockpit_previous_view_projection);
+			GL_FALSE, cockpit_motion_object_active ? cockpit_previous_view_projection :
+			previous_view_projection);
 	const bool has_previous_view = cockpit_motion_object_active ?
 		have_cockpit_previous_view_projection : have_previous_view_projection;
 	if (drawshader_motion_vector_has_previous_uniforms[shader_index] != -1)
 		glUniform1i(drawshader_motion_vector_has_previous_uniforms[shader_index],
 			draw->has_previous && has_previous_view ? 1 : 0);
+	if (drawshader_motion_vector_object_id_uniforms[shader_index] != -1)
+		glUniform1ui(drawshader_motion_vector_object_id_uniforms[shader_index],
+			retained_include_motion_object_ids ? motion_object_id : 0u);
 
 	const bool drawing_to_scene = framebuffer_ok &&
 		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
@@ -2701,14 +2800,7 @@ void GL4Renderer::EndRetainedPolymodelDraw()
 	if (!retained_draw_active)
 		return;
 
-	if (lastdrawshader >= 0 && drawshader_retained_mode_uniforms[lastdrawshader] != -1)
-		glUniform1i(drawshader_retained_mode_uniforms[lastdrawshader], 0);
-	if (lastdrawshader >= 0 && drawshader_fast_retained_room_base_uniforms[lastdrawshader] != -1)
-		glUniform1i(drawshader_fast_retained_room_base_uniforms[lastdrawshader], 0);
-	if (lastdrawshader >= 0 && drawshader_retained_room_lightmap_arrays_uniforms[lastdrawshader] != -1)
-		glUniform1i(drawshader_retained_room_lightmap_arrays_uniforms[lastdrawshader], 0);
-	if (lastdrawshader >= 0 && drawshader_retained_dynamic_lightmaps_uniforms[lastdrawshader] != -1)
-		glUniform1i(drawshader_retained_dynamic_lightmaps_uniforms[lastdrawshader], 0);
+	UseLegacyRetainedDrawBlock();
 	if (retained_custom_clip_active)
 	{
 		glDisable(GL_CLIP_DISTANCE0);
@@ -2741,7 +2833,6 @@ void GL4Renderer::EndRetainedPolymodelDraw()
 	retained_override_draw_buffers = false;
 	retained_include_motion_vectors = false;
 	retained_include_motion_object_ids = false;
-	legacy_draw_uniforms_dirty = true;
 }
 
 static uint64_t GL4RoomFogHashBytes(uint64_t hash, const void* data, size_t size)

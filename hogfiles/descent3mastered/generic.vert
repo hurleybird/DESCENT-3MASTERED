@@ -29,50 +29,80 @@ layout(location = 14) in vec4 field_specular_color3;
 uniform int phong_enabled;
 uniform vec3 phong_light_direction;
 uniform int dynamic_light_count;
-uniform int retained_mode;
-uniform mat4 retained_transform;
-uniform mat4 retained_modelview;
-uniform mat4 retained_current_world;
-uniform mat4 retained_previous_world;
-uniform vec2 retained_uv_offset;
-uniform vec2 retained_uv2_scale;
-uniform vec3 retained_base_color;
-uniform float retained_depth_bias;
-uniform int retained_legacy_depth;
-uniform int retained_legacy_world_projection;
-uniform vec3 retained_legacy_view_position;
-uniform vec3 retained_legacy_view_right;
-uniform vec3 retained_legacy_view_up;
-uniform vec3 retained_legacy_view_forward;
-uniform vec2 retained_legacy_viewport_scale;
-uniform vec2 retained_legacy_viewport_center;
-uniform int retained_lighting_mode;
-uniform int retained_vertex_alpha;
-uniform float retained_alpha_scale;
-uniform int retained_effect_mode;
-uniform float retained_effect_alpha_scale;
-uniform vec3 retained_fog_plane;
-uniform float retained_fog_distance;
-uniform float retained_fog_eye_distance;
-uniform float retained_fog_depth;
-uniform vec3 retained_specular_view_position;
-uniform vec3 retained_specular_light_position;
-uniform float retained_specular_scalar;
-uniform int retained_specular_smooth;
-uniform int retained_deform_enabled;
-uniform int retained_deform_mode;
-uniform uint retained_deform_seed;
-uniform float retained_deform_range;
-uniform vec3 retained_deform_direction;
-uniform int retained_custom_clip_enabled;
-uniform vec3 retained_custom_clip_point;
-uniform vec3 retained_custom_clip_plane;
-uniform vec3 retained_custom_clip_scale;
-uniform int retained_near_clip_enabled;
-uniform int retained_far_clip_enabled;
-uniform float retained_far_clip_z;
-uniform int retained_per_pixel_specular_payload;
-uniform int retained_dynamic_lightmaps;
+
+// Retained rooms and polymodels change this state as a unit. Keeping it in one
+// streamed block avoids rebuilding the same collection of scalar uniforms for
+// every material range.
+layout(std140, binding = 5) uniform RetainedDrawBlock
+{
+	mat4 retained_transform;
+	mat4 retained_modelview;
+	mat4 retained_current_world;
+	mat4 retained_previous_world;
+	vec4 retained_base_color_depth_bias;
+	vec4 retained_uv_offset_uv2_scale;
+	vec4 retained_legacy_view_position_packed;
+	vec4 retained_legacy_view_right_packed;
+	vec4 retained_legacy_view_up_packed;
+	vec4 retained_legacy_view_forward_packed;
+	vec4 retained_legacy_viewport_packed;
+	vec4 retained_alpha_effect_packed;
+	vec4 retained_fog_plane_depth;
+	vec4 retained_specular_view_scalar;
+	vec4 retained_specular_light_range;
+	vec4 retained_deform_direction_far_clip;
+	vec4 retained_custom_clip_point_packed;
+	vec4 retained_custom_clip_plane_packed;
+	vec4 retained_custom_clip_scale_packed;
+	vec4 retained_phong_direction_packed;
+	ivec4 retained_modes0;
+	ivec4 retained_modes1;
+	ivec4 retained_modes2;
+	ivec4 retained_modes3;
+	uvec4 retained_deform_seed_packed;
+};
+
+#define retained_base_color retained_base_color_depth_bias.xyz
+#define retained_depth_bias retained_base_color_depth_bias.w
+#define retained_uv_offset retained_uv_offset_uv2_scale.xy
+#define retained_uv2_scale retained_uv_offset_uv2_scale.zw
+#define retained_legacy_view_position retained_legacy_view_position_packed.xyz
+#define retained_legacy_view_right retained_legacy_view_right_packed.xyz
+#define retained_legacy_view_up retained_legacy_view_up_packed.xyz
+#define retained_legacy_view_forward retained_legacy_view_forward_packed.xyz
+#define retained_legacy_viewport_scale retained_legacy_viewport_packed.xy
+#define retained_legacy_viewport_center retained_legacy_viewport_packed.zw
+#define retained_alpha_scale retained_alpha_effect_packed.x
+#define retained_effect_alpha_scale retained_alpha_effect_packed.y
+#define retained_fog_distance retained_alpha_effect_packed.z
+#define retained_fog_eye_distance retained_alpha_effect_packed.w
+#define retained_fog_plane retained_fog_plane_depth.xyz
+#define retained_fog_depth retained_fog_plane_depth.w
+#define retained_specular_view_position retained_specular_view_scalar.xyz
+#define retained_specular_scalar retained_specular_view_scalar.w
+#define retained_specular_light_position retained_specular_light_range.xyz
+#define retained_deform_range retained_specular_light_range.w
+#define retained_deform_direction retained_deform_direction_far_clip.xyz
+#define retained_far_clip_z retained_deform_direction_far_clip.w
+#define retained_custom_clip_point retained_custom_clip_point_packed.xyz
+#define retained_custom_clip_plane retained_custom_clip_plane_packed.xyz
+#define retained_custom_clip_scale retained_custom_clip_scale_packed.xyz
+#define retained_phong_light_direction retained_phong_direction_packed.xyz
+#define retained_mode retained_modes0.x
+#define retained_legacy_depth retained_modes0.y
+#define retained_legacy_world_projection retained_modes0.z
+#define retained_lighting_mode retained_modes0.w
+#define retained_vertex_alpha retained_modes1.x
+#define retained_effect_mode retained_modes1.y
+#define retained_specular_smooth retained_modes1.z
+#define retained_deform_enabled retained_modes1.w
+#define retained_deform_mode retained_modes2.x
+#define retained_custom_clip_enabled retained_modes2.y
+#define retained_near_clip_enabled retained_modes2.z
+#define retained_far_clip_enabled retained_modes2.w
+#define retained_per_pixel_specular_payload retained_modes3.x
+#define retained_dynamic_lightmaps retained_modes3.w
+#define retained_deform_seed retained_deform_seed_packed.x
 
 out vec4 outcolor;
 // Legacy g3 draws submit already-projected vertices, so vertex alpha is
@@ -229,7 +259,7 @@ void main()
 		{
 			// Match SetPolymodelGouraudPointLighting. Imported model normals and
 			// light directions are already normalized by the model pipeline.
-			float light = clamp((-dot(phong_light_direction, normal.xyz) + 1.0) * 0.5, 0.0, 1.0);
+			float light = clamp((-dot(retained_phong_light_direction, normal.xyz) + 1.0) * 0.5, 0.0, 1.0);
 			vertex_color *= light;
 		}
 		float vertex_alpha = retained_vertex_alpha != 0 ? color.a : 1.0;
