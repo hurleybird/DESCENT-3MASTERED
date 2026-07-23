@@ -2823,6 +2823,7 @@ bool GL4Renderer::PrepareRoomFogEntryMap(const renderer_room_fog_state& state)
 	const GLboolean clip0_enabled = glIsEnabled(GL_CLIP_DISTANCE0);
 	const GLboolean clip1_enabled = glIsEnabled(GL_CLIP_DISTANCE1);
 	const GLboolean clip2_enabled = glIsEnabled(GL_CLIP_DISTANCE2);
+	const GLboolean depth_clamp_enabled = glIsEnabled(GL_DEPTH_CLAMP);
 	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
 	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
 	glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &old_vao);
@@ -2848,6 +2849,7 @@ bool GL4Renderer::PrepareRoomFogEntryMap(const renderer_room_fog_state& state)
 	glDisable(GL_CLIP_DISTANCE0);
 	glDisable(GL_CLIP_DISTANCE1);
 	glDisable(GL_CLIP_DISTANCE2);
+	glEnable(GL_DEPTH_CLAMP);
 	glEnable(GL_BLEND);
 	glBlendEquation(GL_MIN);
 	glBlendFunc(GL_ONE, GL_ONE);
@@ -2880,6 +2882,7 @@ bool GL4Renderer::PrepareRoomFogEntryMap(const renderer_room_fog_state& state)
 	if (clip0_enabled) glEnable(GL_CLIP_DISTANCE0); else glDisable(GL_CLIP_DISTANCE0);
 	if (clip1_enabled) glEnable(GL_CLIP_DISTANCE1); else glDisable(GL_CLIP_DISTANCE1);
 	if (clip2_enabled) glEnable(GL_CLIP_DISTANCE2); else glDisable(GL_CLIP_DISTANCE2);
+	if (depth_clamp_enabled) glEnable(GL_DEPTH_CLAMP); else glDisable(GL_DEPTH_CLAMP);
 	glBindVertexArray(old_vao);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
