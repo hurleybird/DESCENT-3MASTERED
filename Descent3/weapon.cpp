@@ -1090,7 +1090,7 @@ int GetSecondaryPriority(int num)
 }
 
 // automatically switches weapon up to next level in autoselect order to this value. and type.
-int SwitchPlayerWeapon(int weapon_type)
+int SwitchPlayerWeapon(int weapon_type, int direction)
 {
 	player* plr;
 	ship* ship;
@@ -1105,6 +1105,7 @@ int SwitchPlayerWeapon(int weapon_type)
 
 	setwpnfunc = (weapon_type == PW_SECONDARY) ? SetSecondaryWeapon : SetPrimaryWeapon;
 	sel_list = (weapon_type == PW_SECONDARY) ? SecondaryWpnSelectList : PrimaryWpnSelectList;
+	direction = direction < 0 ? -1 : 1;
 
 	new_index = 0;
 	while (WPNINDEX(new_index) != plr_wpn_index && WPNINDEX(new_index) != SELLIST_END)
@@ -1116,60 +1117,49 @@ int SwitchPlayerWeapon(int weapon_type)
 		new_index = 1;						// 1st item after SELLIST_START
 	}
 
-	// select weapon if we can. find a weapon we can select, if we go back to start, return.
-	//	THIS CODE IS SIMILAR BUT NOT THE SAME AS THE AUTO SELECT CODE.
-	int old_index = new_index;
-	new_index++;
+	int end_index = new_index;
+	while (WPNINDEX(end_index) != SELLIST_END)
+		end_index++;
 
-	while (old_index != new_index)
+	// Select the next available weapon in the requested direction. Both
+	// directions honor the same ownership, ammo, energy, and skip rules.
+	const int old_index = new_index;
+	do
 	{
-		if (WPNINDEX(new_index) == SELLIST_END)
-		{
-			new_index = 0;
-		}
-		else if (WPNINDEX(new_index) == SELLIST_START)
-		{
-			new_index++;
-		}
-		else
-		{
-			ushort wpn_index = WPNINDEX(new_index);
-			otype_wb_info* wb = &ship->static_wb[wpn_index];
-			int slot = (weapon_type == PW_SECONDARY) ? (((wpn_index - SECONDARY_INDEX) % NUM_SECONDARY_SLOTS) + NUM_PRIMARY_SLOTS) : (wpn_index % NUM_PRIMARY_SLOTS);
+		new_index += direction;
+		if (new_index >= end_index)
+			new_index = 1;
+		else if (new_index <= 0)
+			new_index = end_index - 1;
 
-			//mprintf((0, "wpn_index = %d\n", wpn_index));
+		ushort wpn_index = WPNINDEX(new_index);
+		otype_wb_info* wb = &ship->static_wb[wpn_index];
+		int slot = (weapon_type == PW_SECONDARY) ? (((wpn_index - SECONDARY_INDEX) % NUM_SECONDARY_SLOTS) + NUM_PRIMARY_SLOTS) : (wpn_index % NUM_PRIMARY_SLOTS);
 
-			if ((Players[Player_num].weapon_flags & HAS_FLAG(wpn_index)) && !(sel_list[new_index] & WPNSEL_SKIP))
+		if ((Players[Player_num].weapon_flags & HAS_FLAG(wpn_index)) && !(sel_list[new_index] & WPNSEL_SKIP))
+		{
+			if (wpn_index >= SECONDARY_INDEX && wb->ammo_usage && (wb->ammo_usage <= plr->weapon_ammo[wpn_index]))
 			{
-				if (wpn_index >= SECONDARY_INDEX && wb->ammo_usage && (wb->ammo_usage <= plr->weapon_ammo[wpn_index]))
-				{
-					//	we've found a weapon to select to that uses ammo!
-					(*setwpnfunc)(wpn_index, slot);
-					LOGFILE((_logfp, "ammo wpn: switch to new index %d\n", wpn_index));
-					break;
-				}
-				else if (wpn_index < SECONDARY_INDEX && wb->ammo_usage && plr->weapon_ammo[wpn_index])
-				{
-					//	we've found a weapon to select to that uses ammo!
-					(*setwpnfunc)(wpn_index, slot);
-					LOGFILE((_logfp, "ammo wpn: switch to new index %d\n", wpn_index));
-					break;
-				}
-				else if (!wb->ammo_usage && (plr->energy >= wb->energy_usage))
-				{
-					//	we've found an energy weapon to select to!
-					(*setwpnfunc)(wpn_index, slot);
-					LOGFILE((_logfp, "energy wpn:switch to new index %d\n", wpn_index));
-					break;
-				}
+				(*setwpnfunc)(wpn_index, slot);
+				LOGFILE((_logfp, "ammo wpn: switch to new index %d\n", wpn_index));
+				return wpn_index;
 			}
-
-			new_index++;
-			//mprintf((0, "new_index = %d\n", new_index));
+			else if (wpn_index < SECONDARY_INDEX && wb->ammo_usage && plr->weapon_ammo[wpn_index])
+			{
+				(*setwpnfunc)(wpn_index, slot);
+				LOGFILE((_logfp, "ammo wpn: switch to new index %d\n", wpn_index));
+				return wpn_index;
+			}
+			else if (!wb->ammo_usage && (plr->energy >= wb->energy_usage))
+			{
+				(*setwpnfunc)(wpn_index, slot);
+				LOGFILE((_logfp, "energy wpn:switch to new index %d\n", wpn_index));
+				return wpn_index;
+			}
 		}
-	}
+	} while (old_index != new_index);
 
-	return sel_list[new_index] & (~WPNSEL_SKIP);
+	return plr_wpn_index;
 }
 
 

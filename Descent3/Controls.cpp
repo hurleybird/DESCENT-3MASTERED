@@ -207,7 +207,11 @@ ct_function Controller_needs[NUM_CONTROLLER_FUNCTIONS] = {
 	{ ctfAUDIOTAUNT3_KEY,		ctDownCount,ctKey,		ctKey,			0,				0 ,0,0},
 	{ ctfAUDIOTAUNT3_BTN,		ctDownCount,ctButton,	ctButton,		0,				0 ,0,0},
 	{ ctfAUDIOTAUNT4_KEY,		ctDownCount,ctKey,		ctKey,			0,				0 ,0,0},
-	{ ctfAUDIOTAUNT4_BTN,		ctDownCount,ctButton,	ctButton,		0,				0 ,0,0}
+	{ ctfAUDIOTAUNT4_BTN,		ctDownCount,ctButton,	ctButton,		0,				0 ,0,0},
+	{ ctfWPNSEL_PCYCLEDOWNKEY,	ctDownCount,ctKey,		ctKey,			0,				0 ,0,0},
+	{ ctfWPNSEL_PCYCLEDOWNBTN,	ctDownCount,ctButton,	ctButton,		0,				0 ,0,0},
+	{ ctfWPNSEL_SCYCLEDOWNKEY,	ctDownCount,ctKey,		ctKey,			0,				0 ,0,0},
+	{ ctfWPNSEL_SCYCLEDOWNBTN,	ctDownCount,ctButton,	ctButton,		0,				0 ,0,0}
 };
 
 // ramping macros
@@ -718,7 +722,8 @@ void DoKeyboardWeapons(game_controls *controls)
 	ct_packet fire_secondary_key_time;
 	ct_packet fire_flare_key_count;
 	ct_packet automap_key;
-	ct_packet cycle_prim, cycle_sec;
+	ct_packet cycle_prim_up, cycle_prim_down;
+	ct_packet cycle_sec_up, cycle_sec_down;
 	int i;
 
 //	read controls
@@ -726,8 +731,10 @@ void DoKeyboardWeapons(game_controls *controls)
 	Controller->get_packet(ctfFIRESECONDARY_KEY, &fire_secondary_key_time);
 	Controller->get_packet(ctfFIREFLARE_KEY, &fire_flare_key_count);
 	Controller->get_packet(ctfAUTOMAP_KEY, &automap_key);
-	Controller->get_packet(ctfWPNSEL_PCYCLEKEY, &cycle_prim);
-	Controller->get_packet(ctfWPNSEL_SCYCLEKEY, &cycle_sec);
+	Controller->get_packet(ctfWPNSEL_PCYCLEKEY, &cycle_prim_up);
+	Controller->get_packet(ctfWPNSEL_PCYCLEDOWNKEY, &cycle_prim_down);
+	Controller->get_packet(ctfWPNSEL_SCYCLEKEY, &cycle_sec_up);
+	Controller->get_packet(ctfWPNSEL_SCYCLEDOWNKEY, &cycle_sec_down);
 
 //	weapon fire
 	if (fire_primary_key_time.value > 0) 
@@ -753,11 +760,15 @@ void DoKeyboardWeapons(game_controls *controls)
 	}
 
 // do cycling weapons
-	for (i = 0; i < (int)cycle_prim.value; i++)
-		SwitchPlayerWeapon(PW_PRIMARY);
+	for (i = 0; i < (int)cycle_prim_up.value; i++)
+		SwitchPlayerWeapon(PW_PRIMARY, 1);
+	for (i = 0; i < (int)cycle_prim_down.value; i++)
+		SwitchPlayerWeapon(PW_PRIMARY, -1);
 
-	for (i = 0; i < (int)cycle_sec.value; i++)
-   	SwitchPlayerWeapon(PW_SECONDARY);
+	for (i = 0; i < (int)cycle_sec_up.value; i++)
+		SwitchPlayerWeapon(PW_SECONDARY, 1);
+	for (i = 0; i < (int)cycle_sec_down.value; i++)
+		SwitchPlayerWeapon(PW_SECONDARY, -1);
 }
 
 
@@ -766,7 +777,8 @@ void DoControllerWeapons(game_controls *controls)
 	ct_packet fire_primary_count, fire_primary_time;
 	ct_packet fire_secondary_count, fire_secondary_time;
 	ct_packet fire_flare_count;
-	ct_packet cycle_prim, cycle_sec;
+	ct_packet cycle_prim_up, cycle_prim_down;
+	ct_packet cycle_sec_up, cycle_sec_down;
 	ct_packet automap_key;
 	int i;
 
@@ -776,8 +788,10 @@ void DoControllerWeapons(game_controls *controls)
 	Controller->get_packet(ctfFIRESECONDARY_BUTTON, &fire_secondary_time);
 	Controller->get_packet(ctfFIRESECONDARY_BUTTON, &fire_secondary_count, ctDownCount);
 	Controller->get_packet(ctfFIREFLARE_BUTTON, &fire_flare_count, ctDownCount);
-	Controller->get_packet(ctfWPNSEL_PCYCLEBTN, &cycle_prim);
-	Controller->get_packet(ctfWPNSEL_SCYCLEBTN, &cycle_sec);
+	Controller->get_packet(ctfWPNSEL_PCYCLEBTN, &cycle_prim_up);
+	Controller->get_packet(ctfWPNSEL_PCYCLEDOWNBTN, &cycle_prim_down);
+	Controller->get_packet(ctfWPNSEL_SCYCLEBTN, &cycle_sec_up);
+	Controller->get_packet(ctfWPNSEL_SCYCLEDOWNBTN, &cycle_sec_down);
 	Controller->get_packet(ctfAUTOMAP_BUTTON, &automap_key);
 
 //	weapon fire
@@ -802,11 +816,15 @@ void DoControllerWeapons(game_controls *controls)
 		Game_interface_mode = GAME_TELCOM_AUTOMAP;
 
 // do cycling weapons
-	for (i = 0; i < (int)cycle_prim.value; i++)
-		SwitchPlayerWeapon(PW_PRIMARY);
+	for (i = 0; i < (int)cycle_prim_up.value; i++)
+		SwitchPlayerWeapon(PW_PRIMARY, 1);
+	for (i = 0; i < (int)cycle_prim_down.value; i++)
+		SwitchPlayerWeapon(PW_PRIMARY, -1);
 
-	for (i = 0; i < (int)cycle_sec.value; i++)
-   	SwitchPlayerWeapon(PW_SECONDARY);
+	for (i = 0; i < (int)cycle_sec_up.value; i++)
+		SwitchPlayerWeapon(PW_SECONDARY, 1);
+	for (i = 0; i < (int)cycle_sec_down.value; i++)
+		SwitchPlayerWeapon(PW_SECONDARY, -1);
 }
 
 void DoMisc(game_controls *controls)

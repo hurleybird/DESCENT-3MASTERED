@@ -58,8 +58,10 @@ t_cfg_element Cfg_key_elements[] =
 	{ ctfFIREPRIMARY_KEY,			CtlText_FirePrimary,	0, 0 },
 	{ ctfFIRESECONDARY_KEY,			CtlText_FireSecondary,	0, 0 },
 	{ ctfFIREFLARE_KEY,				CtlText_FireFlare,		0, 0 },
-	{ ctfWPNSEL_PCYCLEKEY,			CtlText_WpnCycP,		0, 0 },
-	{ ctfWPNSEL_SCYCLEKEY,			CtlText_WpnCycS,		0, 0 },
+	{ ctfWPNSEL_PCYCLEKEY,			CtlText_WpnCycP,		0, 0, "Primary Up" },
+	{ ctfWPNSEL_PCYCLEDOWNKEY,		CtlText_WpnCycP,		0, 0, "Primary Down" },
+	{ ctfWPNSEL_SCYCLEKEY,			CtlText_WpnCycS,		0, 0, "Secondary Up" },
+	{ ctfWPNSEL_SCYCLEDOWNKEY,		CtlText_WpnCycS,		0, 0, "Secondary Down" },
 	{ -1,							CtlText_MiscGroup,		CCITEM_AUX_X, CCITEM_AUX_Y },
 	{ ctfHEADLIGHT_KEY,				CtlText_Headlight,		0, 0 },
 	{ ctfREARVIEW_KEY,				CtlText_Rearview,		0, 0 },
@@ -106,8 +108,10 @@ t_cfg_element Cfg_joy_elements[] =
 	{ ctfFIREPRIMARY_BUTTON,		CtlText_FirePrimary,	0, 0 },
 	{ ctfFIRESECONDARY_BUTTON,		CtlText_FireSecondary,	0, 0 },
 	{ ctfFIREFLARE_BUTTON,			CtlText_FireFlare,		0, 0 },
-	{ ctfWPNSEL_PCYCLEBTN,			CtlText_WpnCycP,		0, 0 },
-	{ ctfWPNSEL_SCYCLEBTN,			CtlText_WpnCycS,		0, 0 },
+	{ ctfWPNSEL_PCYCLEBTN,			CtlText_WpnCycP,		0, 0, "Primary Up" },
+	{ ctfWPNSEL_PCYCLEDOWNBTN,		CtlText_WpnCycP,		0, 0, "Primary Down" },
+	{ ctfWPNSEL_SCYCLEBTN,			CtlText_WpnCycS,		0, 0, "Secondary Up" },
+	{ ctfWPNSEL_SCYCLEDOWNBTN,		CtlText_WpnCycS,		0, 0, "Secondary Down" },
 	{ -1,							CtlText_MiscGroup,		CCITEM_AUX_X2, CCITEM_AUX_Y2 },
 	{ ctfHEADLIGHT_BUTTON,			CtlText_Headlight,		0, 0 },
 	{ ctfREARVIEW_BTN,				CtlText_Rearview,		0, 0 },
@@ -273,7 +277,9 @@ void key_cfg_screen::realize()
 			x = cfg_elem->x + m_sheet->X();
 			y = cfg_elem->y + m_sheet->Y();
 		}
-		m_elem[i].Create(m_menu, cfg_elem->text, x, y, cfg_elem->fn_id, (cfg_elem->fn_id == -1) ? -1 : UID_KEYCFG_ID+cfg_elem->fn_id);
+		m_elem[i].Create(m_menu, cfg_elem->text, x, y, cfg_elem->fn_id,
+			(cfg_elem->fn_id == -1) ? -1 : UID_KEYCFG_ID+cfg_elem->fn_id,
+			cfg_elem->title_override);
 		y += m_elem[i].H()+2;
 		cfg_elem++;
 	}
@@ -395,7 +401,9 @@ void joy_cfg_screen::realize()
 			x = cfg_elem->x + m_sheet->X();
 			y = cfg_elem->y + m_sheet->Y();
 		}
-		m_elem[i].Create(m_menu, cfg_elem->text, x, y, cfg_elem->fn_id, (cfg_elem->fn_id == -1) ? -1 : UID_JOYCFG_ID+cfg_elem->fn_id);
+		m_elem[i].Create(m_menu, cfg_elem->text, x, y, cfg_elem->fn_id,
+			(cfg_elem->fn_id == -1) ? -1 : UID_JOYCFG_ID+cfg_elem->fn_id,
+			cfg_elem->title_override);
 		y += m_elem[i].H()+2;
 		cfg_elem++;
 	}

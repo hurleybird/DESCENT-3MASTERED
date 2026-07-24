@@ -254,7 +254,7 @@ void CreateWeaponDebris(object *obj);
 void SelectWeapon(int slot);
 
 // automatically switches primary weapon to this value. and type.
-int SwitchPlayerWeapon(int weapon_type);
+int SwitchPlayerWeapon(int weapon_type, int direction = 1);
 
 //	Auto selects a weapon, usually the next best weapon.
 // weapon_type is either PW_PRIMARY or PW_SECONDARY

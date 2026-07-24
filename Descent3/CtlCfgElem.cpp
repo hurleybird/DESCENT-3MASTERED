@@ -274,9 +274,10 @@ bool key_cfg_element(ubyte *element, ubyte *flags);
 //////////////////////////////////////////////////////////////////////////////
 //
 
-void cfg_element::Create(UIWindow *wnd, int str_i, int x, int y, int fnid, int id)
+void cfg_element::Create(UIWindow *wnd, int str_i, int x, int y, int fnid, int id,
+	const char* title_override)
 {
-	m_title = TXT(str_i);
+	m_title = title_override ? title_override : TXT(str_i);
 	m_fnid = (sbyte)fnid;
 	m_slot = 0;
 	m_curslot = -1;

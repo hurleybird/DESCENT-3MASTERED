@@ -29,6 +29,7 @@ struct t_cfg_element
 	short text;										// text string id.
 	short x;
 	short y;											// location (for groups only)
+	const char* title_override;							// optional non-table label
 };
 
 extern t_cfg_element Cfg_key_elements[];

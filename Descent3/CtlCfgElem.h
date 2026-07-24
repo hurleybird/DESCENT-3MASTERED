@@ -44,7 +44,8 @@ class cfg_element: public UIGadget
 	sbyte m_blink_state;
 
 public:
-	void Create(UIWindow *wnd, int str_i, int x, int y, int fnid, int id);
+	void Create(UIWindow *wnd, int str_i, int x, int y, int fnid, int id,
+		const char* title_override = nullptr);
 	sbyte GetActiveSlot() const { return m_slot; };
 	bool Configure(ct_type *elem_type, ubyte *controller, ubyte *new_elem, sbyte *slot);	// calls configuration routines (returns true if approved)
 

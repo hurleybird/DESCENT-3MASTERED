@@ -41,7 +41,7 @@ class pilot;
 
 //	Controller functions
 const int NUM_CTLFUNCS_DEMOv1_0 = 63;
-const int NUM_CONTROLLER_FUNCTIONS = 73;
+const int NUM_CONTROLLER_FUNCTIONS = 77;
 
 const int ctfFORWARD_THRUSTAXIS = 0,
 		ctfFORWARD_THRUSTKEY = 1,
@@ -115,7 +115,11 @@ const int ctfFORWARD_THRUSTAXIS = 0,
 		ctfAUDIOTAUNT3_KEY = 69,
 		ctfAUDIOTAUNT3_BTN = 70,
 		ctfAUDIOTAUNT4_KEY = 71,
-		ctfAUDIOTAUNT4_BTN = 72;
+		ctfAUDIOTAUNT4_BTN = 72,
+		ctfWPNSEL_PCYCLEDOWNKEY = 73,
+		ctfWPNSEL_PCYCLEDOWNBTN = 74,
+		ctfWPNSEL_SCYCLEDOWNKEY = 75,
+		ctfWPNSEL_SCYCLEDOWNBTN = 76;
 
 
 typedef struct game_controls {
