@@ -35,6 +35,7 @@
 PFNWGLSWAPINTERVALEXTPROC dwglSwapIntervalEXT;
 PFNWGLGETSWAPINTERVALEXTPROC dwglGetSwapIntervalEXT;
 PFNWGLCREATECONTEXTATTRIBSARBPROC dwglCreateContextAttribsARB;
+static PFNWGLCHOOSEPIXELFORMATARBPROC dwglChoosePixelFormatARB;
 
 //	Moved from DDGR library
 HWND hOpenGLWnd = NULL;
@@ -333,6 +334,13 @@ bool GL_GetWGLExtensionProcs()
 		Int3();
 		goto die;
 	}
+	dwglChoosePixelFormatARB =
+		(PFNWGLCHOOSEPIXELFORMATARBPROC)opengl_GLADLoad("wglChoosePixelFormatARB");
+	if (!dwglChoosePixelFormatARB)
+	{
+		Int3();
+		goto die;
+	}
 
 	ret = true;
 
@@ -361,51 +369,56 @@ int GL4Renderer::Setup(HDC glhdc)
 		return 0;
 	}
 
-	// Finds an acceptable pixel format to render to
-	PIXELFORMATDESCRIPTOR pfd, pfd_copy;
-	int pf;
-
-	memset(&pfd, 0, sizeof(pfd));
-	pfd.nSize = sizeof(pfd);
-	pfd.nVersion = 1;
-	pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER | PFD_GENERIC_ACCELERATED;
-	pfd.iPixelType = PFD_TYPE_RGBA;
-
-	// Find the user's "best match" PFD
-	pf = ChoosePixelFormat(glhdc, &pfd);
-	if (pf == 0)
+	// Select the real window's format through WGL_ARB_pixel_format. This is the
+	// conventional modern WGL path used by SDL, GLFW, and GZDoom; the legacy
+	// ChoosePixelFormat call above exists only to bootstrap the dummy context.
+	const int pixel_attributes[] =
+	{
+		WGL_DRAW_TO_WINDOW_ARB, TRUE,
+		WGL_SUPPORT_OPENGL_ARB, TRUE,
+		WGL_DOUBLE_BUFFER_ARB, TRUE,
+		WGL_PIXEL_TYPE_ARB, WGL_TYPE_RGBA_ARB,
+		WGL_ACCELERATION_ARB, WGL_FULL_ACCELERATION_ARB,
+		WGL_RED_BITS_ARB, 8,
+		WGL_GREEN_BITS_ARB, 8,
+		WGL_BLUE_BITS_ARB, 8,
+		WGL_ALPHA_BITS_ARB, 8,
+		WGL_DEPTH_BITS_ARB, 24,
+		WGL_STENCIL_BITS_ARB, 8,
+		0
+	};
+	int pf = 0;
+	UINT format_count = 0;
+	if (!dwglChoosePixelFormatARB(glhdc, pixel_attributes, nullptr, 1,
+			&pf, &format_count) || format_count == 0)
 	{
 		Int3();
-		//FreeLibrary(opengl_dll_handle);
 		return NULL;
 	}
 
-	mprintf((0, "Choose pixel format successful!\n"));
+	PIXELFORMATDESCRIPTOR pfd = {};
+	if (DescribePixelFormat(glhdc, pf, sizeof(pfd), &pfd) == 0)
+	{
+		Int3();
+		return NULL;
+	}
 
-	// Try and set the new PFD
 	if (SetPixelFormat(glhdc, pf, &pfd) == FALSE)
 	{
-		DWORD ret = GetLastError();
 		Int3();
-		//FreeLibrary(opengl_dll_handle);
 		return NULL;
 	}
 
-	mprintf((0, "SetPixelFormat successful!\n"));
+	mprintf((0, "WGL_ARB_pixel_format selected format %d (%d-bit color, %d-bit depth, %d-bit stencil).\n",
+		pf, pfd.cColorBits, pfd.cDepthBits, pfd.cStencilBits));
 
-	// Get a copy of the newly set PFD
-	if (DescribePixelFormat(glhdc, pf, sizeof(PIXELFORMATDESCRIPTOR), &pfd_copy) == 0)
+	// Reject Microsoft's software implementation. Full acceleration was already
+	// required in the ARB query, but retaining this check makes the failure mode
+	// explicit if a driver reports an inconsistent format.
+	if ((pfd.dwFlags & PFD_GENERIC_ACCELERATED) == 0 &&
+		(pfd.dwFlags & PFD_GENERIC_FORMAT) != 0)
 	{
 		Int3();
-		//FreeLibrary(opengl_dll_handle);
-		return NULL;
-	}
-
-	// Check the returned PFD to see if it is hardware accelerated
-	if ((pfd_copy.dwFlags & PFD_GENERIC_ACCELERATED) == 0 && (pfd_copy.dwFlags & PFD_GENERIC_FORMAT) != 0)
-	{
-		Int3();
-		//FreeLibrary(opengl_dll_handle);
 		return NULL;
 	}
 
@@ -470,9 +483,6 @@ int GL4Renderer::Setup(HDC glhdc)
 
 void GL4Renderer::ApplySwapInterval()
 {
-	frame_pacing_vrr_eligibility_known = false;
-	frame_pacing_fixed_refresh = false;
-
 	int interval = OpenGL_preferred_state.vsync ? 1 : 0;
 	const int swap_interval_arg = FindArg("-swapinterval");
 	const char* swap_interval_value = swap_interval_arg ? GetArg(swap_interval_arg + 1) : nullptr;

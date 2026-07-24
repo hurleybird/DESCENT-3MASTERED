@@ -1861,7 +1861,6 @@ void GL4Renderer::DestroyFramePacingFences()
 	frame_pacing_latest_swap_call_ms = 0.0;
 	frame_pacing_latest_queue_wait_ms = 0.0;
 	frame_pacing_present_deadline = 0.0;
-	frame_pacing_fixed_refresh = false;
 }
 
 void GL4Renderer::ConfigureFramePacing(int max_frames_in_flight, bool telemetry_enabled)
@@ -1877,39 +1876,12 @@ void GL4Renderer::ConfigureFramePacing(int max_frames_in_flight, bool telemetry_
 
 bool GL4Renderer::SchedulePresent(double interval_seconds)
 {
-	// Keep an explicitly configured software cap authoritative even when VSync
-	// is enabled. Under VRR and composed presentation SwapBuffers may return
-	// before a scanout boundary, so it cannot be relied upon to enforce that cap.
-	// VSync owns cadence only when the application is genuinely uncapped.
-	int swap_interval = 0;
-#if defined(SDL3)
-	swap_interval = SDL_GL_GetSwapInterval();
-#elif defined(WIN32)
-	if (dwglGetSwapIntervalEXT)
-		swap_interval = dwglGetSwapIntervalEXT();
-#endif
-
-	const bool vsync_owns_cadence =
-		swap_interval != 0 && interval_seconds <= 0.0;
-
-	if (swap_interval != 0 && !frame_pacing_vrr_eligibility_known)
-	{
-		renderer_vrr_info vrr = {};
-#if defined(WIN32)
-		int monitor_x = INT_MIN;
-		int monitor_y = INT_MIN;
-		GL4GetWindowMonitorMode(hOpenGLWnd, &monitor_x, &monitor_y, nullptr);
-		GL4FreeSyncProbe().Query(&vrr, monitor_x, monitor_y);
-#endif
-		frame_pacing_vrr_eligible = vrr.display_supported &&
-			vrr.gaming_enabled;
-		frame_pacing_vrr_eligibility_known = true;
-	}
-	frame_pacing_fixed_refresh = swap_interval != 0 &&
-		!frame_pacing_vrr_eligible;
-
+	// The software frame limit and platform swap interval are independent.
+	// This deadline limits submission cadence; ApplySwapInterval requests
+	// synchronization through the canonical WGL/SDL mechanism. Display and VRR
+	// capability must not alter game timing here.
 	frame_pacing_present_deadline = interval_seconds > 0.0 &&
-		frame_pacing_last_present_time > 0.0 && !vsync_owns_cadence ?
+		frame_pacing_last_present_time > 0.0 ?
 		frame_pacing_last_present_time + interval_seconds : 0.0;
 	return true;
 }
@@ -1968,7 +1940,6 @@ void GL4Renderer::GetFramePacingInfo(renderer_frame_pacing_info* info)
 	info->latest_present_interval_ms = frame_pacing_latest_present_interval_ms;
 	info->latest_swap_call_ms = frame_pacing_latest_swap_call_ms;
 	info->latest_queue_wait_ms = frame_pacing_latest_queue_wait_ms;
-	info->fixed_refresh_pacing = frame_pacing_fixed_refresh;
 	info->latest_present_serial = frame_pacing_present_serial;
 	info->latest_gpu_frame_ms = GL4_latest_gpu_frame_ms;
 	info->latest_gpu_frame_serial = GL4_latest_gpu_frame_serial;

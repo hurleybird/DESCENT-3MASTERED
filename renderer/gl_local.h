@@ -151,9 +151,6 @@ class GL4Renderer : public IRenderer
 	double frame_pacing_latest_swap_call_ms = 0.0;
 	double frame_pacing_latest_queue_wait_ms = 0.0;
 	double frame_pacing_present_deadline = 0.0;
-	bool frame_pacing_fixed_refresh = false;
-	bool frame_pacing_vrr_eligibility_known = false;
-	bool frame_pacing_vrr_eligible = false;
 	uint64_t frame_pacing_present_serial = 0;
 	void SubmitFramePacingFence();
 	void DestroyFramePacingFences();

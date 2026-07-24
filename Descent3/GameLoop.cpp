@@ -709,75 +709,10 @@ double Min_allowed_frametime = 0;
 static int Frame_limit_fps = 0;
 static bool Frame_limit_command_line_override = false;
 
-struct fixed_refresh_timing_state
-{
-	static constexpr int SAMPLE_COUNT = 60;
-	double samples[SAMPLE_COUNT];
-	double sum;
-	int count;
-	int write;
-};
-
-static fixed_refresh_timing_state Fixed_refresh_timing = {};
-
-static void ResetFixedRefreshTiming()
-{
-	Fixed_refresh_timing = {};
-}
-
-static float SmoothFixedRefreshFrameTime(float measured_frame_time, bool enabled)
-{
-	if (!enabled)
-	{
-		ResetFixedRefreshTiming();
-		return measured_frame_time;
-	}
-
-	const double sample = measured_frame_time;
-	if (sample < 0.004 || sample > 0.100)
-	{
-		// Loading stalls and other discontinuities are not display cadence.
-		// Preserve their elapsed time and reacquire on subsequent frames.
-		ResetFixedRefreshTiming();
-		return measured_frame_time;
-	}
-
-	if (Fixed_refresh_timing.count >= 12)
-	{
-		const double average = Fixed_refresh_timing.sum /
-			static_cast<double>(Fixed_refresh_timing.count);
-		if (sample < average * 0.40 || sample > average * 2.50)
-		{
-			ResetFixedRefreshTiming();
-			return measured_frame_time;
-		}
-	}
-
-	if (Fixed_refresh_timing.count == fixed_refresh_timing_state::SAMPLE_COUNT)
-		Fixed_refresh_timing.sum -=
-			Fixed_refresh_timing.samples[Fixed_refresh_timing.write];
-	else
-		++Fixed_refresh_timing.count;
-
-	Fixed_refresh_timing.samples[Fixed_refresh_timing.write] = sample;
-	Fixed_refresh_timing.sum += sample;
-	Fixed_refresh_timing.write = (Fixed_refresh_timing.write + 1) %
-		fixed_refresh_timing_state::SAMPLE_COUNT;
-
-	// Warm up on measured time. Once established, the rolling mean removes
-	// compositor return-time jitter while retaining wall-clock time: a genuinely
-	// missed refresh is spread over the following samples instead of discarded.
-	if (Fixed_refresh_timing.count < 12)
-		return measured_frame_time;
-	return static_cast<float>(Fixed_refresh_timing.sum /
-		static_cast<double>(Fixed_refresh_timing.count));
-}
-
 void SetFrameLimitFps(int fps)
 {
 	Frame_limit_fps = fps > 0 ? fps : 0;
 	Min_allowed_frametime = Frame_limit_fps > 0 ? 1.0 / (double)Frame_limit_fps : 0.0;
-	ResetFixedRefreshTiming();
 }
 
 int GetFrameLimitFps()
@@ -3861,20 +3796,12 @@ void GameFrame(void)
 		// interval after a late frame.
 		CalcFrameTime(timer_GetTime64());
 		rend_GetFramePacingInfo(&frame_pacing_info);
-		if (post_present_frame_ready && frame_pacing_info.fixed_refresh_pacing)
+		if (post_present_frame_ready &&
+			frame_pacing_info.latest_present_interval_ms > 0.0 &&
+			frame_pacing_info.latest_present_interval_ms < 1000.0)
 		{
-			Frametime = SmoothFixedRefreshFrameTime(Frametime, true);
-		}
-		else
-		{
-			ResetFixedRefreshTiming();
-			if (post_present_frame_ready &&
-				frame_pacing_info.latest_present_interval_ms > 0.0 &&
-				frame_pacing_info.latest_present_interval_ms < 1000.0)
-			{
-				Frametime = (float)(
-					frame_pacing_info.latest_present_interval_ms / 1000.0);
-			}
+			Frametime = (float)(
+				frame_pacing_info.latest_present_interval_ms / 1000.0);
 		}
 		if (Automated_capture.gameplay_frame_active && !Automated_capture.realtime)
 			Frametime = Automated_capture.fixed_delta;

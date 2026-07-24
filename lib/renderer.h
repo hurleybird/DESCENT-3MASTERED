@@ -35,7 +35,6 @@ struct renderer_frame_pacing_info
 	double latest_present_interval_ms = 0.0;
 	double latest_swap_call_ms = 0.0;
 	double latest_queue_wait_ms = 0.0;
-	bool fixed_refresh_pacing = false;
 	uint64_t latest_present_serial = 0;
 	double latest_gpu_frame_ms = 0.0;
 	uint64_t latest_gpu_frame_serial = 0;
