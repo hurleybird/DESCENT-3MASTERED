@@ -33,6 +33,7 @@
 #include "findintersection.h"
 #include "fireball_external.h"
 #include "weapon.h"
+#include "render.h"
 
 #include <stdlib.h>
 #include <math.h>
@@ -52,6 +53,7 @@ static int EnhancedWeatherRoomForPos(const vector& pos, int fallback_room);
 static bool FindEnhancedWeatherSurfaceHit(const vector* start, const vector* end, int start_room,
 	vector* hit_pos, vector* hit_normal, int* hit_room);
 static bool EnhancedWeatherHasOverheadOccluder();
+static bool ResolveRainExteriorRoom(const vector& pos, int* exterior_room);
 
 // resets the weather so there is nothing happening
 void ResetWeather()
@@ -59,6 +61,43 @@ void ResetWeather()
 	Weather.flags = 0;
 	Weather.last_lightning_evaluation_time = 0;
 	Enhanced_snow_particles.clear();
+}
+
+// Returns an exterior room only when the candidate is genuinely visible from
+// the viewer. This lets rain remain visible through mine portals without
+// creating rain in the mine itself.
+static bool ResolveRainExteriorRoom(const vector& pos, int* exterior_room)
+{
+	if (!Viewer_object || !exterior_room)
+		return false;
+
+	if (OBJECT_OUTSIDE(Viewer_object))
+	{
+		*exterior_room = EnhancedWeatherRoomForPos(pos, Viewer_object->roomnum);
+		return true;
+	}
+	if (!RenderLastMainViewSawTerrain())
+		return false;
+
+	vector start = Viewer_object->pos;
+	vector end = pos;
+	fvi_query fq = {};
+	fvi_info hit_info = {};
+	fq.p0 = &start;
+	fq.p1 = &end;
+	fq.startroom = Viewer_object->roomnum;
+	fq.rad = 0.0f;
+	fq.thisobjnum = OBJNUM(Viewer_object);
+	fq.ignore_obj_list = NULL;
+	// Transparent render portals must not make exterior weather disappear.
+	fq.flags = FQ_TRANSPOINT | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS;
+
+	const int fate = fvi_FindIntersection(&fq, &hit_info);
+	if (fate != HIT_NONE || !ROOMNUM_OUTSIDE(hit_info.hit_room))
+		return false;
+
+	*exterior_room = hit_info.hit_room;
+	return true;
 }
 
 // Makes droplets appear on the windshield, plus makes rain fall in the distance
@@ -135,7 +174,9 @@ void DoRainEffect()
 
 	// Create some rain in the distance
 
-	if (OBJECT_OUTSIDE(Viewer_object))
+	const bool viewer_outside = OBJECT_OUTSIDE(Viewer_object);
+	if (!viewer_outside && !RenderLastMainViewSawTerrain())
+		return;
 	{
 		PSRand rain_rand;
 		rain_rand.seed(Get60HzVisualNoise((uint32_t)Viewer_object->handle, 4));
@@ -162,7 +203,11 @@ void DoRainEffect()
 			// Create falling rain
 			vector rain_velocity = { 0.0f, -620.0f, 0.0f };
 			ApplyEnhancedWeatherGravity(&pos, &rain_velocity, 2.0f);
-			int visnum = VisEffectCreate(VIS_FIREBALL, FADING_LINE_INDEX, Viewer_object->roomnum, &pos);
+			int weather_room = -1;
+			if (!ResolveRainExteriorRoom(pos, &weather_room))
+				continue;
+			int visnum = VisEffectCreate(VIS_FIREBALL, FADING_LINE_INDEX,
+				weather_room, &pos);
 			if (visnum >= 0)
 			{
 				vis_effect* vis = &VisEffects[visnum];
@@ -179,6 +224,9 @@ void DoRainEffect()
 				vis->pos -= (Viewer_object->mtype.phys_info.velocity / 2);
 			}
 		}
+
+		if (!viewer_outside)
+			return;
 
 		float puddle_ages[8] = {};
 		const int puddle_events = Get60HzVisualEventAges(viewer_index,

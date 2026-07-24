@@ -127,6 +127,12 @@ int Flag_automap, Called_from_terrain;
 // Fog zone variables
 float Fog_zone_start = FLT_MAX, Fog_zone_end = FLT_MAX;
 int Must_render_terrain;
+static bool Last_main_mine_view_saw_terrain = false;
+
+bool RenderLastMainViewSawTerrain()
+{
+	return Last_main_mine_view_saw_terrain;
+}
 int Global_buffer_index;
 int No_render_windows_hack = -1;
 constexpr float WALL_PULSE_INCREMENT = .01f;
@@ -1406,6 +1412,8 @@ void BuildRoomListSub(int start_room_num, clip_wnd* wnd, int depth)
 					if (!Called_from_terrain)
 					{
 						Must_render_terrain = 1;
+						if (Rendering_main_view)
+							Last_main_mine_view_saw_terrain = true;
 						RotateAllExternalRooms();
 						// For this external portal, we must check to see what external
 						// rooms are visible from here
@@ -6632,6 +6640,8 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 	Viewer_roomnum = viewer_roomnum;
 	Flag_automap = flag_automap;
 	Called_from_terrain = called_from_terrain;
+	if (Rendering_main_view && !called_from_terrain)
+		Last_main_mine_view_saw_terrain = false;
 
 	//Assume no terrain
 	Must_render_terrain = 0;

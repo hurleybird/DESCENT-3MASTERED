@@ -114,6 +114,11 @@ extern g3Point SolidFogPoints[],AlphaFogPoints[];
 //					called_from_terrain - set if calling this routine from the terrain renderer
 void RenderMine(int viewer_roomnum,int flag_automap=0,int called_from_terrain=0);
 
+// True when the most recent main mine view reached an exterior portal.
+// Consumers can use this as a cheap rejection before doing precise portal
+// visibility work.
+bool RenderLastMainViewSawTerrain();
+
 //Finds what room & face is visible at a given screen x & y
 //Everything must be set up just like for RenderMineRoom(), and presumably is the same as 
 //for the last frame rendered (though it doesn't have to be)
