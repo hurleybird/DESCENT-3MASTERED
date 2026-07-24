@@ -114,6 +114,22 @@ static bool PolymodelUseSoftGlowEffects(const poly_model* pm)
 	return stricmp(pm->name, "pumpingpipelarge.OOF") == 0;
 }
 
+static bool PolymodelFacingUsesSoftIntersection(const poly_model* pm,
+	const char* texture_name)
+{
+	if (!Render_soft_vis_effects || !rend_CanUseNewrender() || !pm ||
+		!texture_name || stricmp(pm->name, "gyro.OOF") != 0)
+	{
+		return false;
+	}
+
+	// The Gyro police bot's red and blue lamps intersect their own housing.
+	// Restrict soft depth intersection to those authored flare textures: its
+	// green facing light and every other model-facing sprite remain legacy-hard.
+	return stricmp(texture_name, "red flare1") == 0 ||
+		stricmp(texture_name, "blue flare1") == 0;
+}
+
 static int Multicolor_texture=-1;
 static bool Polymodel_cockpit_batching = false;
 static bool Polymodel_cockpit_transparent_face_filter_enabled = false;
@@ -2379,15 +2395,16 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 		{
 			if (!FacingPass)
 				goto pop_lighting;
-			
+
 			double facing_effect_start_time = PolymodelPerfNow();
 			vector pos;
 			rend_SetLighting (LS_NONE);
 			rend_SetColorModel (CM_MONO);
 			rend_SetOverlayType (OT_NONE);
 
-			int bm_handle=GetTextureBitmap(pm->textures[sm->faces[0].texnum],0);
-			rend_SetAlphaValue (GameTextures[pm->textures[sm->faces[0].texnum]].alpha*255);
+			const int texture = pm->textures[sm->faces[0].texnum];
+			int bm_handle=GetTextureBitmap(texture,0);
+			rend_SetAlphaValue (GameTextures[texture].alpha*255);
 
 			vm_MakeZero (&pos);
 	
@@ -2396,8 +2413,14 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 			else
 				rend_SetAlphaType (ATF_CONSTANT+ATF_TEXTURE);
 	
-			rend_SetZBufferWriteMask (0);	
+			rend_SetZBufferWriteMask (0);
+			const bool use_soft_intersection =
+				PolymodelFacingUsesSoftIntersection(pm, GameTextures[texture].name);
+			if (use_soft_intersection)
+				rend_SetSoftParticleState(1);
 			g3_DrawBitmap (&pos,sm->rad,(sm->rad*bm_h(bm_handle,0))/bm_w(bm_handle,0),bm_handle);
+			if (use_soft_intersection)
+				rend_SetSoftParticleState(0);
 			RestorePolymodelDepthWriteMask();
 			if (Perf_markers_enabled)
 				Polymodel_perf_facing_effect_count++;
