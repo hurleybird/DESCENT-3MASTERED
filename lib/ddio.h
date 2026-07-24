@@ -89,7 +89,7 @@ longlong timer_GetMSTime();
 #define MOUSE_B7		64
 #define MOUSE_B8		128
 
-#define N_MSEBTNS		8
+#define N_MSEBTNS		9
 
 //	initializes mouse.
 bool ddio_MouseInit();

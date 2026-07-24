@@ -51,6 +51,8 @@ struct t_mse_event
 #define N_DIMSEBTNS 4                     // # of REAL mouse buttons
 #define MSEBTN_WHL_UP (N_DIMSEBTNS)       // button index for mouse wheel up
 #define MSEBTN_WHL_DOWN (N_DIMSEBTNS + 1) // button index for mouse wheel down
+#define MSEBTN_WHL_LEFT (N_DIMSEBTNS + 3) // preserve index 6 for physical button 5
+#define MSEBTN_WHL_RIGHT (N_DIMSEBTNS + 4)
 
 // taken from winuser.h
 #ifndef WHEEL_DELTA
@@ -92,6 +94,7 @@ static t_mse_button_info DIM_buttons;
 static tQueue<t_mse_event, 16> MB_queue;
 
 int wheelAccum = 0;
+int horizontalWheelAccum = 0;
 
 void DDIOShowCursor(BOOL show) 
 {
@@ -144,10 +147,12 @@ void ddio_MouseMode(int mode)
     DDIO_mouse_state.mode = mode;
 }
 
-void ddio_MouseQueueFlush() 
+void ddio_MouseQueueFlush()
 {
     memset(&DIM_buttons, 0, sizeof(DIM_buttons));
     MB_queue.flush();
+    wheelAccum = 0;
+    horizontalWheelAccum = 0;
 }
 
 void ddio_MouseReset() {
@@ -193,6 +198,8 @@ float ddio_MouseBtnDownTime(int btn)
 
     DIM_buttons.is_down[MSEBTN_WHL_UP] = false;
     DIM_buttons.is_down[MSEBTN_WHL_DOWN] = false;
+    DIM_buttons.is_down[MSEBTN_WHL_LEFT] = false;
+    DIM_buttons.is_down[MSEBTN_WHL_RIGHT] = false;
 
     return time;
 }
@@ -228,6 +235,8 @@ int ddio_MouseGetState(int* x, int* y, int* dx, int* dy, int* z, int* dz)
 
     DIM_buttons.is_down[MSEBTN_WHL_UP] = false;
     DIM_buttons.is_down[MSEBTN_WHL_DOWN] = false;
+    DIM_buttons.is_down[MSEBTN_WHL_LEFT] = false;
+    DIM_buttons.is_down[MSEBTN_WHL_RIGHT] = false;
 
     return btn_mask;
 }
@@ -411,7 +420,7 @@ int RawInputHandler(HWnd hWnd, unsigned int msg, WParam wParam, LParam lParam) {
                     MB_queue.send(ev);
                 }
 
-                if (buttons & RI_MOUSE_WHEEL) 
+                if (buttons & RI_MOUSE_WHEEL)
                 {
                     wheelAccum += (int)(short)rawinput->data.mouse.usButtonData;
                     if (wheelAccum >= WHEEL_DELTA) 
@@ -431,6 +440,28 @@ int RawInputHandler(HWnd hWnd, unsigned int msg, WParam wParam, LParam lParam) {
                         DIM_buttons.time_down[MSEBTN_WHL_DOWN] = curtime;
                         DIM_buttons.time_up[MSEBTN_WHL_DOWN] = curtime + .1f;
                         wheelAccum = 0;
+                    }
+                }
+                if (buttons & RI_MOUSE_HWHEEL)
+                {
+                    horizontalWheelAccum += (int)(short)rawinput->data.mouse.usButtonData;
+                    if (horizontalWheelAccum >= WHEEL_DELTA)
+                    {
+                        DIM_buttons.down_count[MSEBTN_WHL_RIGHT]++;
+                        DIM_buttons.up_count[MSEBTN_WHL_RIGHT]++;
+                        DIM_buttons.is_down[MSEBTN_WHL_RIGHT] = true;
+                        DIM_buttons.time_down[MSEBTN_WHL_RIGHT] = curtime;
+                        DIM_buttons.time_up[MSEBTN_WHL_RIGHT] = curtime + .1f;
+                        horizontalWheelAccum = 0;
+                    }
+                    else if (horizontalWheelAccum <= -WHEEL_DELTA)
+                    {
+                        DIM_buttons.down_count[MSEBTN_WHL_LEFT]++;
+                        DIM_buttons.up_count[MSEBTN_WHL_LEFT]++;
+                        DIM_buttons.is_down[MSEBTN_WHL_LEFT] = true;
+                        DIM_buttons.time_down[MSEBTN_WHL_LEFT] = curtime;
+                        DIM_buttons.time_up[MSEBTN_WHL_LEFT] = curtime + .1f;
+                        horizontalWheelAccum = 0;
                     }
                 }
 
@@ -551,7 +582,9 @@ bool InitNewMouse()
 
         DDIO_mouse_state.timer = timer_GetTime();
         DDIO_mouse_state.naxis = 2;
-        DDIO_mouse_state.nbtns = N_DIMSEBTNS + 3; // always have a mousewheel. [ISB] disgusting hack: Can't change mousewheel bindings for old pilots, so make button 5 after the two mouse wheel buttons.
+        // Keep the legacy order intact: buttons 1-4, vertical wheel, physical
+        // button 5, then horizontal wheel left/right.
+        DDIO_mouse_state.nbtns = N_MSEBTNS;
         for (i = 0; i < DDIO_mouse_state.nbtns; i++) 
         {
             DDIO_mouse_state.btn_flags |= (1 << i);
@@ -730,7 +763,8 @@ char Ctltext_MseBtnBindings[N_MSEBTNS][32] = { "mse-l\0\0\0\0\0\0\0\0\0\0\0\0",
                                               "msew-u\0\0\0\0\0\0\0\0\0\0\0",
                                               "msew-d\0\0\0\0\0\0\0\0\0\0\0",
                                               "mse-b5",
-                                              "" };
+                                              "msew-l",
+                                              "msew-r" };
 
 char Ctltext_MseAxisBindings[][32] = {  "mse-X\0\0\0\0\0\0\0\0\0\0\0\0", 
                                         "mse-Y\0\0\0\0\0\0\0\0\0\0\0\0",
