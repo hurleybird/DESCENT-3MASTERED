@@ -481,8 +481,6 @@ inline int RendererSupersamplingFactor(const renderer_preferred_state& state)
 
 inline int RendererMsaaSamples(const renderer_preferred_state& state)
 {
-	if (state.msaa_samples >= 8)
-		return 8;
 	if (state.msaa_samples >= 4)
 		return 4;
 	if (state.msaa_samples >= 2)

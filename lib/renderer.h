@@ -320,7 +320,7 @@ struct renderer_preferred_state
 
 	bool fullscreen; //Informs the window system that fullscreen should be used.
 	ubyte supersampling_factor; //1, 2, or 4. Values above 1 render larger than the window and downscale.
-	ubyte msaa_samples; //0, 2, 4, or 8.
+	ubyte msaa_samples; //0, 2, or 4.
 	bool per_pixel_lighting;
 	bool bloom_enabled;
 	float bloom_threshold;

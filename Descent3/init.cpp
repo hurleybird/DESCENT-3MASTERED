@@ -844,9 +844,7 @@ void LoadGameSettings()
 	Render_preferred_state.msaa_samples = Render_preferred_state.antialised ? 4 : 0;
 	tempint = Render_preferred_state.msaa_samples;
 	Database->read_int("RS_msaa_samples", &tempint);
-	if (tempint >= 8)
-		Render_preferred_state.msaa_samples = 8;
-	else if (tempint >= 4)
+	if (tempint >= 4)
 		Render_preferred_state.msaa_samples = 4;
 	else if (tempint >= 2)
 		Render_preferred_state.msaa_samples = 2;
@@ -857,9 +855,7 @@ void LoadGameSettings()
 	if (msaa_value)
 	{
 		const int requested_samples = atoi(msaa_value);
-		if (requested_samples >= 8)
-			Render_preferred_state.msaa_samples = 8;
-		else if (requested_samples >= 4)
+		if (requested_samples >= 4)
 			Render_preferred_state.msaa_samples = 4;
 		else if (requested_samples >= 2)
 			Render_preferred_state.msaa_samples = 2;

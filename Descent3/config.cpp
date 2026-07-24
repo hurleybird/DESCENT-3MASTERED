@@ -272,8 +272,6 @@ static int SupersamplingIndexToFactor(int index)
 
 static int NormalizeMsaaSamples(int samples)
 {
-	if (samples >= 8)
-		return 8;
 	if (samples >= 4)
 		return 4;
 	if (samples >= 2)
@@ -289,8 +287,6 @@ static int MsaaSamplesToIndex(int samples)
 		return 1;
 	case 4:
 		return 2;
-	case 8:
-		return 3;
 	default:
 		return 0;
 	}
@@ -304,8 +300,6 @@ static int MsaaIndexToSamples(int index)
 		return 2;
 	case 2:
 		return 4;
-	case 3:
-		return 8;
 	default:
 		return 0;
 	}
@@ -1722,7 +1716,6 @@ struct video_menu
 		antialiasing = sheet->AddFirstRadioButton(TXT_OFF);
 		sheet->AddRadioButton("2x");
 		sheet->AddRadioButton("4x");
-		sheet->AddRadioButton("8x");
 		*antialiasing = iTemp;
 
 		sheet->NewGroup("SSAA", 184, 86);

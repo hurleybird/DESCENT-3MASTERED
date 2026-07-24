@@ -4291,8 +4291,8 @@ void GL4Renderer::UpdateFramebuffer(void)
 	if (framebuffer_state_changed)
 	{
 		// Drain current rendering, unbind old targets, then delete every old
-		// target before allocating any replacements. Direct 8x->2x transitions
-		// should behave like 8x->off->2x instead of interleaving old 8x storage
+		// target before allocating any replacements. Direct high-to-low transitions
+		// should pass through off instead of interleaving old multisample storage
 		// with new 2x allocations.
 		glDisable(GL_MULTISAMPLE);
 		glFinish();

@@ -122,9 +122,7 @@ namespace
 		//in upstream resolves; shrink the budget so we trade a bit of AO
 		//resolution for fewer per-sample reads.
 		int samples = (int)RendererMsaaSamples(pref_state);
-		if (samples >= 8)
-			target_pixels /= 4;
-		else if (samples >= 4)
+		if (samples >= 4)
 			target_pixels /= 2;
 		while (scale < 4)
 		{
