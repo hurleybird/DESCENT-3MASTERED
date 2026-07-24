@@ -2532,6 +2532,19 @@ void ReadTerrainChunks(CFILE* fp, int version)
 
 
 	// Generate needed info
+	// Retribution level 1 hides three terrain cells beneath external room 8, but
+	// the room shell covers only the center cell. Restore the two edge quads to
+	// close both cliff seams while leaving the covered center hidden to avoid
+	// overlapping geometry and z-fighting.
+	if (Current_mission.cur_level == 1 &&
+		stricmp(Current_mission.name, "Descent 3: Retribution") == 0)
+	{
+		constexpr int level1_building_left_seam_cell = 134 * TERRAIN_WIDTH + 180;
+		constexpr int level1_building_right_seam_cell = 134 * TERRAIN_WIDTH + 182;
+		Terrain_seg[level1_building_left_seam_cell].flags &= ~TF_INVISIBLE;
+		Terrain_seg[level1_building_right_seam_cell].flags &= ~TF_INVISIBLE;
+	}
+
 	BuildMinMaxTerrain();
 	BuildTerrainNormals();
 	UpdateTerrainLightmaps();
