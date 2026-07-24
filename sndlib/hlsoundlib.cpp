@@ -328,6 +328,12 @@ void hlsSystem::StopAllSounds()
 
 #include "findintersection.h"
 
+static bool SmoothStaticLoopAudibility(const sound_object& sound)
+{
+	return (sound.m_obj_type_flags & SIF_LOOPING) &&
+		!(sound.m_obj_type_flags & SIF_OBJ_UPDATE);
+}
+
 void hlsSystem::BeginSoundFrame(bool f_in_game)
 {
 	bool hwsound_support;							// if this is true, sound_render_system is being used
@@ -472,12 +478,34 @@ void hlsSystem::BeginSoundFrame(bool f_in_game)
 					f_audible = ComputePlayInfo(i, &virtual_pos, &virtual_vel, &adjusted_volume);
 					if (!f_audible)
 					{
-						m_ll_sound_ptr->StopSound(m_sound_objects[i].m_sound_uid, SKT_STOP_IMMEDIATELY);
-						m_sound_objects[i].m_sound_uid = 0;
-						m_sound_objects[i].m_obj_type_flags |= SIF_TOO_FAR;
+						sound_object& sound = m_sound_objects[i];
+						if (SmoothStaticLoopAudibility(sound) &&
+							sound.m_has_last_virtual_state &&
+							sound.m_audibility_gain > 0.0f)
+						{
+							sound.m_audibility_gain = std::max(0.0f,
+								sound.m_audibility_gain - std::min(Frametime, 0.1f) * 3.0f);
+							matrix orient = Identity_matrix;
+							pos_state last_pos;
+							last_pos.velocity = &sound.m_last_virtual_vel;
+							last_pos.position = &sound.m_last_virtual_pos;
+							last_pos.orient = &orient;
+							m_ll_sound_ptr->AdjustSound(sound.m_sound_uid,
+								&last_pos, sound.m_last_audible_volume *
+								sound.m_audibility_gain);
+							if (sound.m_audibility_gain > 0.0f)
+								continue;
+						}
+						m_ll_sound_ptr->StopSound(sound.m_sound_uid, SKT_STOP_IMMEDIATELY);
+						sound.m_sound_uid = 0;
+						sound.m_obj_type_flags |= SIF_TOO_FAR;
 					}
 					else
 					{
+						sound_object& sound = m_sound_objects[i];
+						sound.m_last_virtual_pos = virtual_pos;
+						sound.m_last_virtual_vel = virtual_vel;
+						sound.m_has_last_virtual_state = true;
 						matrix orient = Identity_matrix;
 						pos_state cur_pos;
 						cur_pos.velocity = &virtual_vel;
@@ -719,6 +747,15 @@ bool hlsSystem::ComputePlayInfo(int sound_obj_index, vector* virtual_pos, vector
 		(*adjusted_volume > 0.0f) &&
 		(dir_to_sound * Viewer_object->orient.fvec < -.5))
 		m_sound_objects[sound_obj_index].play_info.sample_skip_interval = 1;
+
+	sound_object& sound = m_sound_objects[sound_obj_index];
+	if (SmoothStaticLoopAudibility(sound))
+	{
+		sound.m_audibility_gain = std::min(1.0f,
+			sound.m_audibility_gain + std::min(Frametime, 0.1f) * 3.0f);
+		sound.m_last_audible_volume = *adjusted_volume;
+		*adjusted_volume *= sound.m_audibility_gain;
+	}
 	
 	* virtual_pos = Viewer_object->pos + (dir_to_sound * dist);
 	return true;
@@ -734,6 +771,10 @@ bool hlsSystem::Emulate3dSound(int sound_obj_index)
 
 	if (f_audible)
 	{
+		sound_object& sound = m_sound_objects[sound_obj_index];
+		sound.m_last_virtual_pos = virtual_pos;
+		sound.m_last_virtual_vel = virtual_vel;
+		sound.m_has_last_virtual_state = true;
 		pos_state cur_pos;
 		matrix orient = Identity_matrix;
 		cur_pos.velocity = &virtual_vel;
@@ -749,11 +790,13 @@ bool hlsSystem::Emulate3dSound(int sound_obj_index)
 	}
 	return f_audible;
 }
+
 // Functions that play a 3d sound -- includes the 2d emulation of 3d sound
 int hlsSystem::Play3dSound(int sound_index, pos_state* cur_pos, float volume, int flags, float offset)
 {
 	return Play3dSound(sound_index, SND_PRIORITY_NORMAL, cur_pos, volume, flags, offset);
 }
+
 // Functions that play a 3d sound -- includes the 2d emulation of 3d sound
 int hlsSystem::Play3dSound(int sound_index, object* cur_obj, float volume, int flags, float offset)
 {
@@ -841,6 +884,11 @@ int hlsSystem::Play3dSound(int sound_index, pos_state* cur_pos, object* cur_obj,
 	}
 	// Set the current sound
 	m_sound_objects[i].m_sound_index = sound_index;
+	m_sound_objects[i].m_audibility_gain = 0.0f;
+	m_sound_objects[i].m_last_virtual_pos = Zero_vector;
+	m_sound_objects[i].m_last_virtual_vel = Zero_vector;
+	m_sound_objects[i].m_last_audible_volume = 0.0f;
+	m_sound_objects[i].m_has_last_virtual_state = false;
 	// Insert the passed flags
 	m_sound_objects[i].m_obj_type_flags = flags;
 	// Determine if the sound is linked to the object
@@ -973,6 +1021,11 @@ int hlsSystem::Play2dSound(int sound_index, int priority, float volume, float pa
 	//		mprintf((0, "5.75k\n"));
 	m_sound_objects[i].m_sound_index = sound_index;
 	m_sound_objects[i].volume_3d = volume;
+	m_sound_objects[i].m_audibility_gain = 0.0f;
+	m_sound_objects[i].m_last_virtual_pos = Zero_vector;
+	m_sound_objects[i].m_last_virtual_vel = Zero_vector;
+	m_sound_objects[i].m_last_audible_volume = 0.0f;
+	m_sound_objects[i].m_has_last_virtual_state = false;
 	m_sound_objects[i].m_sound_uid = m_ll_sound_ptr->PlaySound2d(&m_sound_objects[i].play_info, sound_index,
 		volume * m_master_volume, pan, (Sounds[sound_index].flags & SPF_LOOPED));
 	//ASSERT(m_sound_objects[i].m_sound_uid != -1);

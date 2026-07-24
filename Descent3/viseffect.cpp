@@ -5143,20 +5143,15 @@ void VisEffectMoveOne(vis_effect* vis)
 			float b = (GR_COLOR_BLUE(color)) / 255.0;
 
 
-			if (ROOMNUM_OUTSIDE(vis->roomnum))
+			if (ROOMNUM_OUTSIDE(vis->roomnum) ||
+				(vis->roomnum >= 0 && vis->roomnum <= Highest_room_index &&
+					Rooms[vis->roomnum].used))
 			{
-				int cellnum = CELLNUM(vis->roomnum);
-
-				if (cellnum >= 0 && cellnum < TERRAIN_WIDTH * TERRAIN_DEPTH)
-					ApplyLightingToTerrain(&vis->pos, cellnum, vis->size * scalar * 3, r, g, b);
-				else
-					mprintf((0, "Vis effect not in world!\n"));
+				ApplyLightingToWorld(&vis->pos, vis->roomnum,
+					vis->size * scalar * 3, r, g, b);
 			}
 			else
-			{
-				if (vis->roomnum >= 0 && vis->roomnum <= Highest_room_index && Rooms[vis->roomnum].used)
-					ApplyLightingToRooms(&vis->pos, vis->roomnum, vis->size * scalar * 3, r, g, b);
-			}
+				mprintf((0, "Vis effect not in world!\n"));
 		}
 
 	}

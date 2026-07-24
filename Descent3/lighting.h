@@ -66,6 +66,15 @@ int FindFreeDynamicLightmap (int cl);
 // Applies dynamic lighting to the room faces based on the light coming from
 // an object
 void ApplyLightingToRooms (vector *,int,float,float,float,float,vector *light_direction=NULL,float dot_range=0,
+	bool per_pixel_headlight=false, vector *specular_position=NULL,
+	bool apply_to_objects=true);
+
+// Applies a light consistently across mine/terrain boundaries. Outdoor lights
+// affect both terrain and the nearest connected mine when their radius reaches
+// an entrance.
+void ApplyLightingToWorld(vector *pos, int roomnum, float light_dist,
+	float red_scale, float green_scale, float blue_scale,
+	vector *light_direction=NULL, float dot_range=0,
 	bool per_pixel_headlight=false, vector *specular_position=NULL);
 
 // Clears the used flag for the dynamic lightmaps

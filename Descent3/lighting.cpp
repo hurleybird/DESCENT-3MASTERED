@@ -36,6 +36,8 @@
 #include "objinfo.h"
 #include "Macros.h"
 #include "renderer.h"
+#include "terrain.h"
+#include "BOA.h"
 
 #define NUM_DYNAMIC_CLASSES	7
 #define MAX_DYNAMIC_FACES	2000
@@ -1460,7 +1462,7 @@ void ApplyLightingToObjects(vector* pos, int roomnum, float light_dist, float re
 // Applys dynamic lightmap changes to rooms and room objects.  If light direction is non-null, we are applying a directional light
 void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_scale, float green_scale,
 	float blue_scale, vector* light_direction, float dot_range, bool per_pixel_headlight,
-	vector* specular_position)
+	vector* specular_position, bool apply_to_objects)
 {
 	fvi_face_room_list facelist[MAX_DYNAMIC_FACES];
 	ushort lmilist[MAX_DYNAMIC_FACES];
@@ -1473,7 +1475,9 @@ void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_
 	if (Dedicated_server)
 		return;
 
-	ApplyLightingToObjects(pos, roomnum, light_dist, red_scale, green_scale, blue_scale, light_direction, dot_range);
+	if (apply_to_objects)
+		ApplyLightingToObjects(pos, roomnum, light_dist, red_scale, green_scale,
+			blue_scale, light_direction, dot_range);
 
 	const bool per_pixel_room_lighting = UsePerPixelRoomLighting();
 
@@ -2136,6 +2140,77 @@ void ApplyLightingToTerrain(vector* pos, int cellnum, float light_dist, float re
 		ASSERT(data);
 
 		data[subz * 128 + subx] = color;
+	}
+}
+
+static int FindNearestTerrainConnectedRoom(vector* position, int cellnum,
+	float maximum_distance)
+{
+	if (!position || cellnum < 0 ||
+		cellnum >= TERRAIN_WIDTH * TERRAIN_DEPTH)
+	{
+		return -1;
+	}
+
+	const int region = TERRAIN_REGION(cellnum);
+	if (region < 0 || region >= BOA_num_terrain_regions)
+		return -1;
+
+	int nearest_room = -1;
+	float nearest_distance = maximum_distance;
+	for (int connection = 0; connection < BOA_num_connect[region];
+		++connection)
+	{
+		const int roomnum = BOA_connect[region][connection].roomnum;
+		const int portalnum = BOA_connect[region][connection].portal;
+		if (roomnum < 0 || roomnum > Highest_room_index ||
+			!Rooms[roomnum].used || portalnum < 0 ||
+			portalnum >= Rooms[roomnum].num_portals)
+		{
+			continue;
+		}
+
+		float distance = vm_VectorDistanceQuick(position,
+			&Rooms[roomnum].portals[portalnum].path_pnt);
+		if (distance <= nearest_distance)
+		{
+			nearest_distance = distance;
+			nearest_room = roomnum;
+		}
+	}
+	return nearest_room;
+}
+
+void ApplyLightingToWorld(vector* pos, int roomnum, float light_dist,
+	float red_scale, float green_scale, float blue_scale,
+	vector* light_direction, float dot_range, bool per_pixel_headlight,
+	vector* specular_position)
+{
+	if (!ROOMNUM_OUTSIDE(roomnum))
+	{
+		ApplyLightingToRooms(pos, roomnum, light_dist, red_scale, green_scale,
+			blue_scale, light_direction, dot_range, per_pixel_headlight,
+			specular_position);
+		return;
+	}
+
+	const int cellnum = CELLNUM(roomnum);
+	if (cellnum < 0 || cellnum >= TERRAIN_WIDTH * TERRAIN_DEPTH)
+		return;
+
+	ApplyLightingToTerrain(pos, cellnum, light_dist, red_scale, green_scale,
+		blue_scale, light_direction, dot_range, per_pixel_headlight,
+		specular_position);
+
+	const int connected_room = FindNearestTerrainConnectedRoom(pos, cellnum,
+		light_dist);
+	if (connected_room >= 0)
+	{
+		// ApplyLightingToTerrain already handled nearby objects. This companion
+		// traversal covers only mine faces, avoiding duplicate object lighting.
+		ApplyLightingToRooms(pos, connected_room, light_dist, red_scale,
+			green_scale, blue_scale, light_direction, dot_range,
+			per_pixel_headlight, specular_position, false);
 	}
 }
 

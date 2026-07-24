@@ -77,6 +77,11 @@ public:
 	play_information play_info;
 
 	float volume_3d;  // Used so that 3d sounds can have a base volume (for 2d this is in play_information)
+	float m_audibility_gain;
+	vector m_last_virtual_pos;
+	vector m_last_virtual_vel;
+	float m_last_audible_volume;
+	bool m_has_last_virtual_state;
 
 	union 
 	{
@@ -197,7 +202,6 @@ public:
 	char GetSoundMixer(void);
 
 	bool IsSoundPlaying(int hlsound_uid);
-
 	bool GetDopplerState(void);
 	void SetDopplerState(bool newstate);
 	bool GetReverbState(void);

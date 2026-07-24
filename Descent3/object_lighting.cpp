@@ -139,10 +139,9 @@ void DoObjectLight(object* obj)
 
 			if (scalar > .05)
 			{
-				if (OBJECT_OUTSIDE(obj))
-					ApplyLightingToTerrain(&obj->pos, CELLNUM(obj->roomnum), 40 * scalar, negative_light * 1.0f, negative_light * 0.5f, negative_light * 0.0f);
-				else
-					ApplyLightingToRooms(&obj->pos, obj->roomnum, 40 * scalar, negative_light * 1.0f, negative_light * 0.5f, negative_light * 0.0f);
+				ApplyLightingToWorld(&obj->pos, obj->roomnum, 40 * scalar,
+					negative_light * 1.0f, negative_light * 0.5f,
+					negative_light * 0.0f);
 			}
 
 		}
@@ -182,11 +181,12 @@ void DoObjectLight(object* obj)
 				float dist = vm_VectorDistanceQuick(&hit_info.hit_pnt, &obj->pos);
 
 				// Now light up the hit area
-				if (ROOMNUM_OUTSIDE(hit_info.hit_room))
-					ApplyLightingToTerrain(&hit_info.hit_pnt, CELLNUM(hit_info.hit_room), FAST_HEADLIGHT_SIZE, negative_light * 1.0, negative_light * 1.0, negative_light * 1.0, NULL, 0.0f, true, &obj->pos);
-				else
+				ApplyLightingToWorld(&hit_info.hit_pnt, hit_info.hit_room,
+					FAST_HEADLIGHT_SIZE, negative_light * 1.0,
+					negative_light * 1.0, negative_light * 1.0, NULL,
+					0.0f, true, &obj->pos);
+				if (!ROOMNUM_OUTSIDE(hit_info.hit_room))
 				{
-					ApplyLightingToRooms(&hit_info.hit_pnt, hit_info.hit_room, FAST_HEADLIGHT_SIZE, negative_light * 1.0, negative_light * 1.0, negative_light * 1.0, NULL, 0.0f, true, &obj->pos);
 					// Do stupid easter egg trick
 					face* fp = &Rooms[hit_info.hit_room].faces[hit_info.hit_face[0]];
 					if (Gametime > EASTER_EGG_TIMER && hit_info.hit_type[0] == HIT_WALL && GameTextures[fp->tmap].flags & (TF_PROCEDURAL | TF_WATER_PROCEDURAL))
@@ -199,10 +199,10 @@ void DoObjectLight(object* obj)
 			{
 				// Do slow headlight
 
-				if (OBJECT_OUTSIDE(obj))
-					ApplyLightingToTerrain(&obj->pos, CELLNUM(obj->roomnum), HEADLIGHT_DISTANCE, negative_light * 1.0, negative_light * 1.0, negative_light * 1.0, &obj->orient.fvec, HEADLIGHT_DOT, true);
-				else
-					ApplyLightingToRooms(&obj->pos, obj->roomnum, HEADLIGHT_DISTANCE, negative_light * 1.0, negative_light * 1.0, negative_light * 1.0, &obj->orient.fvec, HEADLIGHT_DOT, true);
+				ApplyLightingToWorld(&obj->pos, obj->roomnum,
+					HEADLIGHT_DISTANCE, negative_light * 1.0,
+					negative_light * 1.0, negative_light * 1.0,
+					&obj->orient.fvec, HEADLIGHT_DOT, true);
 			}
 
 		}
@@ -243,10 +243,11 @@ void DoObjectLight(object* obj)
 		{
 			if (IsLightPointVisible(&obj->pos, Players[slot].light_dist, obj))
 			{
-				if (OBJECT_OUTSIDE(obj))
-					ApplyLightingToTerrain(&obj->pos, CELLNUM(obj->roomnum), Players[slot].light_dist, Players[slot].r * negative_light, Players[slot].g * negative_light, Players[slot].b * negative_light);
-				else
-					ApplyLightingToRooms(&obj->pos, obj->roomnum, Players[slot].light_dist, Players[slot].r * negative_light, Players[slot].g * negative_light, Players[slot].b * negative_light);
+				ApplyLightingToWorld(&obj->pos, obj->roomnum,
+					Players[slot].light_dist,
+					Players[slot].r * negative_light,
+					Players[slot].g * negative_light,
+					Players[slot].b * negative_light);
 			}
 		}
 
@@ -263,10 +264,10 @@ void DoObjectLight(object* obj)
 				if (!IsLightPointVisible(&ballpos, light_size, obj))
 					return;
 
-				if (OBJECT_OUTSIDE(obj))
-					ApplyLightingToTerrain(&ballpos, CELLNUM(obj->roomnum), light_size, Players[slot].ball_r[i] * negative_light, Players[slot].ball_g[i] * negative_light, Players[slot].ball_b[i] * negative_light);
-				else
-					ApplyLightingToRooms(&ballpos, obj->roomnum, light_size, Players[slot].ball_r[i] * negative_light, Players[slot].ball_g[i] * negative_light, Players[slot].ball_b[i] * negative_light);
+				ApplyLightingToWorld(&ballpos, obj->roomnum, light_size,
+					Players[slot].ball_r[i] * negative_light,
+					Players[slot].ball_g[i] * negative_light,
+					Players[slot].ball_b[i] * negative_light);
 
 			}
 		}
@@ -416,10 +417,10 @@ void DoObjectLight(object* obj)
 				return;
 		}
 
-		if (OBJECT_OUTSIDE(obj))
-			ApplyLightingToTerrain(&obj->pos, CELLNUM(obj->roomnum), light_distance * scalar, red * negative_light, green * negative_light, blue * negative_light, direction, li->directional_dot);
-		else
-			ApplyLightingToRooms(&obj->pos, obj->roomnum, light_distance * scalar, red * negative_light, green * negative_light, blue * negative_light, direction, li->directional_dot);
+		ApplyLightingToWorld(&obj->pos, obj->roomnum,
+			light_distance * scalar, red * negative_light,
+			green * negative_light, blue * negative_light, direction,
+			li->directional_dot);
 
 	}
 
