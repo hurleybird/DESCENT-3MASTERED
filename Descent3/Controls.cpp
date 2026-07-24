@@ -383,7 +383,13 @@ void ReadPlayerControls(game_controls *controls)
 	{
 		static bool capture_primary_was_down = false;
 		memset(controls, 0, sizeof(game_controls));
-		if (AutomatedCaptureForcesForwardInput())
+		if (AutomatedCaptureForcesTricordInput())
+		{
+			controls->forward_thrust = LIMIT_FORWARD;
+			controls->sideways_thrust = LIMIT_HORIZ;
+			controls->vertical_thrust = LIMIT_VERT;
+		}
+		else if (AutomatedCaptureForcesForwardInput())
 			controls->forward_thrust = LIMIT_FORWARD;
 		const bool capture_primary_down =
 			AutomatedCaptureForcesPrimaryFireInput();

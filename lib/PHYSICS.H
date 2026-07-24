@@ -50,6 +50,7 @@ extern int PhysicsLinkList[MAX_OBJECTS];
 
 //Simulate a physics object for this frame
 void do_physics_sim(object *obj);
+bool PhysicsSimHadCollision();
 
 // Quick sim for vis stuff
 void do_vis_physics_sim(vis_effect *vis);

@@ -221,6 +221,7 @@ struct automated_capture_state
 	float fixed_delta;
 	bool realtime;
 	bool force_forward;
+	bool force_tricord;
 	bool force_primary_fire;
 	int force_primary_until_frame;
 	bool place_scorch;
@@ -349,6 +350,12 @@ bool AutomatedCaptureForcesForwardInput()
 		Automated_capture.force_forward;
 }
 
+bool AutomatedCaptureForcesTricordInput()
+{
+	return Automated_capture.gameplay_frame_active &&
+		Automated_capture.force_tricord;
+}
+
 bool AutomatedCaptureForcesPrimaryFireInput()
 {
 	return Automated_capture.gameplay_frame_active &&
@@ -467,6 +474,7 @@ static void InitAutomatedCapture()
 	Automated_capture.fixed_delta = 1.0f / 60.0f;
 	Automated_capture.realtime = FindArg("-capture-realtime") != 0;
 	Automated_capture.force_forward = FindArg("-capture-forward") != 0;
+	Automated_capture.force_tricord = FindArg("-capture-tricord") != 0;
 	Automated_capture.force_primary_fire =
 		FindArg("-capture-fire-primary") != 0;
 	Automated_capture.place_scorch = FindArg("-capture-scorch") != 0;
@@ -574,15 +582,17 @@ static void InitAutomatedCapture()
 
 	Automated_capture.enabled = true;
 	Automated_capture.target_frame = (int)target_frame;
-	AutomatedCaptureLog("armed frame=%d output=%s dt=%.9f realtime=%d forward=%d primary=%d",
+	AutomatedCaptureLog("armed frame=%d output=%s dt=%.9f realtime=%d forward=%d tricord=%d primary=%d",
 		Automated_capture.target_frame, Automated_capture.output_path,
 		Automated_capture.fixed_delta, Automated_capture.realtime ? 1 : 0,
 		Automated_capture.force_forward ? 1 : 0,
+		Automated_capture.force_tricord ? 1 : 0,
 		Automated_capture.force_primary_fire ? 1 : 0);
-	mprintf((0, "Automated capture armed: gameplay frame %d -> %s (dt %.6f, realtime %d, forward %d, primary %d).\n",
+	mprintf((0, "Automated capture armed: gameplay frame %d -> %s (dt %.6f, realtime %d, forward %d, tricord %d, primary %d).\n",
 		Automated_capture.target_frame, Automated_capture.output_path,
 		Automated_capture.fixed_delta, Automated_capture.realtime ? 1 : 0,
 		Automated_capture.force_forward ? 1 : 0,
+		Automated_capture.force_tricord ? 1 : 0,
 		Automated_capture.force_primary_fire ? 1 : 0));
 }
 

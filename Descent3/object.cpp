@@ -1287,12 +1287,18 @@ extern int Timedemo_frame;
 float Timedemo_timecount;
 
 static vector Motion_blur_player_control_velocity = {};
+static vector Motion_blur_player_control_delta = {};
+static vector Motion_blur_external_translation_delta = {};
+static vector Motion_blur_external_velocity = {};
 static int Motion_blur_player_control_handle = -1;
 static float Motion_blur_player_control_gametime = -1.0f;
 
 static void ResetMotionBlurPlayerTranslation()
 {
 	Motion_blur_player_control_velocity = {};
+	Motion_blur_player_control_delta = {};
+	Motion_blur_external_translation_delta = {};
+	Motion_blur_external_velocity = {};
 	Motion_blur_player_control_handle = -1;
 	Motion_blur_player_control_gametime = -1.0f;
 	rend_SetMotionBlurPlayerTranslationDelta(NULL);
@@ -1310,13 +1316,32 @@ static void UpdateMotionBlurPlayerTranslation(const object& obj, bool apply_play
 	}
 
 	const vector force = apply_player_thrust ? pi.thrust : vector{};
+	const vector external_start_velocity =
+		pi.velocity - Motion_blur_player_control_velocity;
+	vector external_force = {};
+	if (pi.flags & PF_GRAVITY)
+		external_force.y = Gravity_strength * pi.mass;
+	else if (pi.flags & PF_REVERSE_GRAVITY)
+		external_force.y = -Gravity_strength * pi.mass;
+	if (!ROOMNUM_OUTSIDE(obj.roomnum) && obj.roomnum >= 0 &&
+		!(pi.flags & PF_LOCK_MASK) && Rooms[obj.roomnum].wind != Zero_vector &&
+		pi.drag > 0.0f)
+	{
+		external_force += Rooms[obj.roomnum].wind * pi.drag * 16.0f;
+	}
 	vector player_delta = {};
+	Motion_blur_external_translation_delta = {};
+	Motion_blur_external_velocity = external_start_velocity;
 	if (dt > 0.0f && dt <= 0.25f)
 	{
 		if (pi.mass <= 0.000001f || pi.drag <= 0.000001f)
 		{
 			player_delta = Motion_blur_player_control_velocity * dt + force * (0.5f * dt * dt);
 			Motion_blur_player_control_velocity += force * dt;
+			Motion_blur_external_translation_delta =
+				external_start_velocity * dt +
+				external_force * (0.5f * dt * dt);
+			Motion_blur_external_velocity += external_force * dt;
 		}
 		else
 		{
@@ -1329,11 +1354,44 @@ static void UpdateMotionBlurPlayerTranslation(const object& obj, bool apply_play
 				(float)(mass_over_drag * response);
 			Motion_blur_player_control_velocity =
 				(Motion_blur_player_control_velocity - terminal_velocity) * (float)decay + terminal_velocity;
+			const vector external_terminal_velocity = external_force / pi.drag;
+			Motion_blur_external_translation_delta =
+				external_terminal_velocity * dt +
+				(external_start_velocity - external_terminal_velocity) *
+				(float)(mass_over_drag * response);
+			Motion_blur_external_velocity =
+				(external_start_velocity - external_terminal_velocity) *
+				(float)decay + external_terminal_velocity;
 		}
 	}
 
 	Motion_blur_player_control_gametime = Gametime;
+	Motion_blur_player_control_delta = player_delta;
 	rend_SetMotionBlurPlayerTranslationDelta(&player_delta);
+}
+
+static void FinalizeMotionBlurPlayerTranslation(const object& obj)
+{
+	if (obj.handle != Motion_blur_player_control_handle)
+		return;
+
+	if (PhysicsSimHadCollision() &&
+		(vm_GetMagnitude(&Motion_blur_player_control_delta) > 0.00001f ||
+		 vm_GetMagnitude(&Motion_blur_player_control_velocity) > 0.00001f))
+	{
+		// The free-flight decomposition above is exact until collision response
+		// clips or redirects the requested movement. Preserve the independently
+		// tracked external component, then assign only the realized remainder to
+		// player control so wall-sliding/tri-cording cannot displace the protected
+		// center of the motion-blur mask.
+		const vector actual_delta = obj.pos - obj.last_pos;
+		Motion_blur_player_control_delta =
+			actual_delta - Motion_blur_external_translation_delta;
+		Motion_blur_player_control_velocity =
+			obj.mtype.phys_info.velocity - Motion_blur_external_velocity;
+		rend_SetMotionBlurPlayerTranslationDelta(
+			&Motion_blur_player_control_delta);
+	}
 }
 
 //Do the controls for a player-type object
@@ -1923,6 +1981,8 @@ void ObjDoFrame(object* obj)
 		RTP_STARTINCTIME(mt_physicsframe_time);
 
 		do_physics_sim(obj);
+		if (obj->type == OBJ_PLAYER && obj->id == Player_num)
+			FinalizeMotionBlurPlayerTranslation(*obj);
 		DebugBlockPrint("DP");
 		ObjCheckTriggers(obj);
 

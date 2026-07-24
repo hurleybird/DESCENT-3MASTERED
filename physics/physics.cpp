@@ -83,6 +83,13 @@ int Physics_vis_counter;
 #define PHYSICS_GROUND_TOLERANCE 0.0001f
 #define DAMP_ANG 			1.0f // chrishack -- this is probably too tight and should be an int not a float
 #define MAX_OBJECT_VEL 100000.0f
+
+static bool Last_physics_sim_had_collision = false;
+
+bool PhysicsSimHadCollision()
+{
+	return Last_physics_sim_had_collision;
+}
 int Physics_cheat_flag = 0;
 extern char BounceCheat;
 
@@ -811,6 +818,7 @@ void PhysicsDoSimLinear(const object& obj, const vector& pos, const vector& forc
 //Simulate a physics object for this frame
 void do_physics_sim(object *obj)
 {
+	Last_physics_sim_had_collision = false;
 	//Since we might not call FVI, set this here
 	Fvi_num_recorded_faces = 0;
 
@@ -1236,6 +1244,7 @@ void do_physics_sim(object *obj)
 
 		if(fate != HIT_NONE)
 		{
+			Last_physics_sim_had_collision = true;
 			if(obj->type == OBJ_PLAYER && hit_info.num_hits > 1)
 			{
 				vector n = Zero_vector;
