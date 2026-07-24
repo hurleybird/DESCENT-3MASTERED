@@ -86,6 +86,33 @@ static bool TerrainObjectHasWeaponStreamer(const object* objp)
 {
 	return objp && objp->type == OBJ_WEAPON && (Weapons[objp->id].flags & WF_STREAMER);
 }
+
+static bool EnableTerrainCellClipPlane(int segment)
+{
+	const int clip_plane_id = Terrain_cell_clip_plane[segment];
+	if (clip_plane_id <= 0 || clip_plane_id > Num_terrain_render_clip_planes)
+		return false;
+
+	terrain_render_clip_plane& plane = Terrain_render_clip_planes[clip_plane_id - 1];
+	g3_SetCustomClipPlane(1, &plane.point, &plane.normal);
+	return true;
+}
+
+static void DisableTerrainCellClipPlane()
+{
+	g3_SetCustomClipPlane(0, nullptr, nullptr);
+}
+
+static void RecodeTerrainPointsForCustomClip(g3Point* points, int lod, int point_count)
+{
+	if (!Clip_custom)
+		return;
+
+	const int count = lod == (MAX_TERRAIN_LOD - 1) ? 4 : point_count;
+	for (int i = 0; i < count; ++i)
+		g3_CodePoint(&points[i]);
+}
+
 ubyte Terrain_from_mine = 0;
 ubyte Show_invisible_terrain = 0;
 int Terrain_renderer_mode = TERRAIN_RENDERER_COMPUTE;
@@ -261,6 +288,7 @@ static GLint Terrain_compute_projection_center_uniform = -1;
 static GLint Terrain_compute_projection_half_size_uniform = -1;
 static GLint Terrain_compute_viewport_size_uniform = -1;
 static GLint Terrain_compute_clip_scale_uniform = -1;
+static GLint Terrain_compute_world_clip_planes_uniform = -1;
 static bool Terrain_compute_ready = false;
 static bool Terrain_compute_unavailable = false;
 static size_t Terrain_compute_vertex_capacity = 0;
@@ -346,6 +374,7 @@ static void InvalidateTerrainComputeRendererCache()
 	Terrain_compute_projection_half_size_uniform = -1;
 	Terrain_compute_viewport_size_uniform = -1;
 	Terrain_compute_clip_scale_uniform = -1;
+	Terrain_compute_world_clip_planes_uniform = -1;
 	Terrain_compute_ready = false;
 	Terrain_compute_unavailable = false;
 	Terrain_compute_vertex_capacity = 0;
@@ -1030,6 +1059,7 @@ uniform vec2 terrain_projection_center;
 uniform vec2 terrain_projection_half_size;
 uniform vec2 terrain_viewport_size;
 uniform vec4 terrain_clip_scale;
+uniform vec4 terrain_world_clip_planes[4];
 
 const float TERRAIN_COMPUTE_MIN_Z = 0.000001;
 const int TERRAIN_CLIP_MAX_VERTS = 8;
@@ -1277,11 +1307,71 @@ void ClipTerrainPolyToPlane(inout ClipVertex poly[TERRAIN_CLIP_MAX_VERTS], inout
 	}
 }
 
-bool ClipTerrainTriangle(ClipVertex input_poly[3], out ClipVertex output_poly[TERRAIN_CLIP_MAX_VERTS], out int output_count)
+float TerrainWorldClipPlaneDistance(ClipVertex vertex, vec4 plane)
+{
+	// Match the legacy custom clipper's small overlap tolerance.
+	return dot(vertex.world, plane.xyz) + plane.w + 0.005;
+}
+
+ClipVertex IntersectTerrainWorldClipPlane(ClipVertex inside_vertex, ClipVertex outside_vertex, vec4 plane)
+{
+	float inside_distance = TerrainWorldClipPlaneDistance(inside_vertex, plane);
+	float outside_distance = TerrainWorldClipPlaneDistance(outside_vertex, plane);
+	float denom = inside_distance - outside_distance;
+	float t = (abs(denom) > 0.000001) ? (inside_distance / denom) : 0.0;
+	return MixClipVertex(inside_vertex, outside_vertex, clamp(t, 0.0, 1.0));
+}
+
+void ClipTerrainPolyToWorldPlane(inout ClipVertex poly[TERRAIN_CLIP_MAX_VERTS], inout int count, vec4 plane)
+{
+	ClipVertex output_poly[TERRAIN_CLIP_MAX_VERTS];
+	int output_count = 0;
+	ClipVertex previous = poly[count - 1];
+	bool previous_inside = TerrainWorldClipPlaneDistance(previous, plane) >= 0.0;
+
+	for (int i = 0; i < count; i++)
+	{
+		ClipVertex current = poly[i];
+		bool current_inside = TerrainWorldClipPlaneDistance(current, plane) >= 0.0;
+
+		if (current_inside)
+		{
+			if (!previous_inside)
+				TerrainClipAppend(output_poly, output_count,
+					IntersectTerrainWorldClipPlane(current, previous, plane));
+			TerrainClipAppend(output_poly, output_count, current);
+		}
+		else if (previous_inside)
+		{
+			TerrainClipAppend(output_poly, output_count,
+				IntersectTerrainWorldClipPlane(previous, current, plane));
+		}
+
+		previous = current;
+		previous_inside = current_inside;
+	}
+
+	count = output_count;
+	for (int i = 0; i < TERRAIN_CLIP_MAX_VERTS; i++)
+	{
+		if (i < count)
+			poly[i] = output_poly[i];
+	}
+}
+
+bool ClipTerrainTriangle(ClipVertex input_poly[3], vec4 world_clip_plane,
+	out ClipVertex output_poly[TERRAIN_CLIP_MAX_VERTS], out int output_count)
 {
 	output_count = 3;
 	for (int i = 0; i < 3; i++)
 		output_poly[i] = input_poly[i];
+
+	if (any(notEqual(world_clip_plane.xyz, vec3(0.0))))
+	{
+		ClipTerrainPolyToWorldPlane(output_poly, output_count, world_clip_plane);
+		if (output_count < 3)
+			return false;
+	}
 
 	int code_or = 0;
 	int code_and = 255;
@@ -1344,7 +1434,7 @@ void WriteClippedTriangleFan(uint vertex_base, uint texture_page, uint lightmap_
 void EmitTriangle(uint batch_index, uint batch_output_first_vertex, uint texture_page, uint lightmap_page,
 	vec3 world0, vec3 rotated0, vec3 world1, vec3 rotated1, vec3 world2, vec3 rotated2,
 	vec2 uv0, vec2 uv1, vec2 uv2,
-	vec2 lm0, vec2 lm1, vec2 lm2)
+	vec2 lm0, vec2 lm1, vec2 lm2, vec4 world_clip_plane)
 {
 	vec3 facing_normal = cross(rotated1 - rotated0, rotated2 - rotated1);
 	bool visible = dot(facing_normal, rotated1) < 0.0;
@@ -1370,7 +1460,7 @@ void EmitTriangle(uint batch_index, uint batch_output_first_vertex, uint texture
 
 	ClipVertex clipped_poly[TERRAIN_CLIP_MAX_VERTS];
 	int clipped_count = 0;
-	if (!ClipTerrainTriangle(input_poly, clipped_poly, clipped_count))
+	if (!ClipTerrainTriangle(input_poly, world_clip_plane, clipped_poly, clipped_count))
 		return;
 	uint write_count = ClippedTriangleVertexCount(clipped_count);
 	if (write_count == 0u)
@@ -1391,8 +1481,12 @@ void main()
 	uint rotation = cell.packed.y & 255u;
 	uint lightmap_page = (cell.packed.y >> 8u) & 255u;
 	uint texture_page = cell.packed.y >> 16u;
-	uint batch_index = cell.packed.z;
+	uint batch_index = cell.packed.z & 65535u;
+	uint world_clip_plane_id = cell.packed.z >> 16u;
 	uint batch_output_first_vertex = cell.packed.w;
+	vec4 world_clip_plane = world_clip_plane_id != 0u
+		? terrain_world_clip_planes[world_clip_plane_id - 1u]
+		: vec4(0.0);
 
 	vec3 world0 = CellPosition(segment, cell.height, 0u);
 	vec3 world1 = CellPosition(segment, cell.height, 1u);
@@ -1417,9 +1511,11 @@ void main()
 	vec2 lm3 = LightmapUv(segment, 3u);
 
 	EmitTriangle(batch_index, batch_output_first_vertex, texture_page, lightmap_page,
-		world0, rotated0, world1, rotated1, world3, rotated3, uv0, uv1, uv3, lm0, lm1, lm3);
+		world0, rotated0, world1, rotated1, world3, rotated3, uv0, uv1, uv3, lm0, lm1, lm3,
+		world_clip_plane);
 	EmitTriangle(batch_index, batch_output_first_vertex, texture_page, lightmap_page,
-		world3, rotated3, world1, rotated1, world2, rotated2, uv3, uv1, uv2, lm3, lm1, lm2);
+		world3, rotated3, world1, rotated1, world2, rotated2, uv3, uv1, uv2, lm3, lm1, lm2,
+		world_clip_plane);
 }
 )glsl";
 
@@ -1475,6 +1571,8 @@ void main()
 	Terrain_compute_projection_half_size_uniform = glGetUniformLocation(Terrain_compute_program, "terrain_projection_half_size");
 	Terrain_compute_viewport_size_uniform = glGetUniformLocation(Terrain_compute_program, "terrain_viewport_size");
 	Terrain_compute_clip_scale_uniform = glGetUniformLocation(Terrain_compute_program, "terrain_clip_scale");
+	Terrain_compute_world_clip_planes_uniform =
+		glGetUniformLocation(Terrain_compute_program, "terrain_world_clip_planes");
 
 	glGenBuffers(1, &Terrain_compute_input_buffer);
 	glGenBuffers(1, &Terrain_compute_vertex_buffer);
@@ -1585,6 +1683,7 @@ static void TerrainGpuAppendCell(int segment)
 	work.texture = texseg->tex_index;
 	work.input.packed[0] = (uint32_t)segment;
 	work.input.packed[1] = (uint32_t)texseg->rotation | ((uint32_t)tseg->lm_quad << 8);
+	work.input.packed[2] = (uint32_t)Terrain_cell_clip_plane[segment] << 16;
 
 	work.input.height[0] = TerrainGpuCellHeight(segment + TERRAIN_WIDTH);
 	work.input.height[1] = TerrainGpuCellHeight(segment + TERRAIN_WIDTH + 1);
@@ -1634,7 +1733,8 @@ static void FinalizeTerrainComputeBatches()
 		uint32_t texture_layer = (uint32_t)(Terrain_compute_batches.size() - 1);
 		Terrain_compute_cell_inputs[i].packed[1] =
 			(Terrain_compute_cell_inputs[i].packed[1] & 0x0000ffffu) | (texture_layer << 16);
-		Terrain_compute_cell_inputs[i].packed[2] = texture_layer;
+		Terrain_compute_cell_inputs[i].packed[2] =
+			(Terrain_compute_cell_inputs[i].packed[2] & 0xffff0000u) | texture_layer;
 		Terrain_compute_cell_inputs[i].packed[3] = (uint32_t)batch.first_vertex;
 	}
 
@@ -2244,6 +2344,18 @@ static void SetTerrainComputeViewUniforms()
 		Window_height > 0 ? (float)Window_height : 1.0f);
 	glUniform4f(Terrain_compute_clip_scale_uniform,
 		Window_clip_left, Window_clip_right, Window_clip_bot, Window_clip_top);
+
+	float world_clip_planes[MAX_TERRAIN_RENDER_CLIP_PLANES * 4] = {};
+	for (int i = 0; i < Num_terrain_render_clip_planes; ++i)
+	{
+		const terrain_render_clip_plane& plane = Terrain_render_clip_planes[i];
+		world_clip_planes[i * 4 + 0] = plane.normal.x;
+		world_clip_planes[i * 4 + 1] = plane.normal.y;
+		world_clip_planes[i * 4 + 2] = plane.normal.z;
+		world_clip_planes[i * 4 + 3] = -(plane.normal * plane.point);
+	}
+	glUniform4fv(Terrain_compute_world_clip_planes_uniform,
+		MAX_TERRAIN_RENDER_CLIP_PLANES, world_clip_planes);
 }
 
 static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog_enabled, bool scissor_to_window,
@@ -4488,10 +4600,13 @@ void DisplayTerrainList(int cellcount, bool from_automap)
 
 				bm_handle = GetTextureBitmap(Terrain_tex_seg[Terrain_seg[t].texseg_index].tex_index, 0);
 
+				const bool custom_clip_enabled = EnableTerrainCellClipPlane(t);
 				if (draw_lightmap)
 					on = DrawTerrainTrianglesHardware(seg_to_render, bm_handle, ul, lr);
 				else
 					on = DrawTerrainTrianglesHardwareNoLight(seg_to_render, bm_handle, ul, lr);
+				if (custom_clip_enabled)
+					DisableTerrainCellClipPlane();
 			}
 
 		draw_objects:;
@@ -4550,7 +4665,11 @@ void DisplayTerrainList(int cellcount, bool from_automap)
 				TerrainCellVisible(seg_to_render, &ul, &lr);
 				if (ul == 0 && lr == 0)
 					continue;
+				const int segment = Terrain_list[seg_to_render].segment;
+				const bool custom_clip_enabled = EnableTerrainCellClipPlane(segment);
 				DrawTerrainLightmapsHardware(seg_to_render, ul, lr);
+				if (custom_clip_enabled)
+					DisableTerrainCellClipPlane();
 			}
 		}
 		rend_SetZBias(0);
@@ -4801,6 +4920,8 @@ int DrawTerrainTrianglesHardware(int index, int bm_handle, int upper_left, int l
 		}
 	}
 
+	RecodeTerrainPointsForCustomClip(base, lod, point_count);
+
 	rend_SetOverlayType(OT_BLEND);
 	rend_SetOverlayMap(TerrainLightmaps[tseg->lm_quad]);
 
@@ -5039,6 +5160,8 @@ int DrawTerrainTrianglesHardwareNoLight(int index, int bm_handle, int upper_left
 			}
 		}
 	}
+
+	RecodeTerrainPointsForCustomClip(base, lod, point_count);
 
 #if (defined(EDITOR) || defined(NEWEDITOR))
 	ddgr_color oldcolor;
@@ -5295,6 +5418,8 @@ void DrawTerrainLightmapsHardware(int index, int upper_left, int lower_right)
 			}
 		}
 	}
+
+	RecodeTerrainPointsForCustomClip(base, lod, point_count);
 
 	// Make sure the triangle faces us and if so draw
 	// Upper left triangle

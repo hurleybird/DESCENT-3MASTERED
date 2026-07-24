@@ -231,6 +231,19 @@ void TerrainRenderer_PrecacheLevel();
 extern float Last_terrain_render_time;
 
 extern terrain_segment Terrain_seg[TERRAIN_WIDTH*TERRAIN_DEPTH];
+
+constexpr int MAX_TERRAIN_RENDER_CLIP_PLANES = 4;
+struct terrain_render_clip_plane
+{
+	vector point;
+	vector normal;
+};
+
+// Sparse renderer-only clipping for terrain cells that are only partly
+// covered by external-room geometry. Zero means no extra clip plane.
+extern ubyte Terrain_cell_clip_plane[TERRAIN_WIDTH*TERRAIN_DEPTH];
+extern terrain_render_clip_plane Terrain_render_clip_planes[MAX_TERRAIN_RENDER_CLIP_PLANES];
+extern int Num_terrain_render_clip_planes;
 extern terrain_tex_segment Terrain_tex_seg[TERRAIN_TEX_WIDTH*TERRAIN_TEX_DEPTH];
 
 // first object to render after cell has been rendered (only used for SW renderer)

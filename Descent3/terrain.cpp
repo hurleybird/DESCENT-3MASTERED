@@ -48,6 +48,9 @@
 float VisibleTerrainZ;
 
 terrain_segment Terrain_seg[TERRAIN_WIDTH * TERRAIN_DEPTH];
+ubyte Terrain_cell_clip_plane[TERRAIN_WIDTH * TERRAIN_DEPTH];
+terrain_render_clip_plane Terrain_render_clip_planes[MAX_TERRAIN_RENDER_CLIP_PLANES];
+int Num_terrain_render_clip_planes = 0;
 terrain_tex_segment Terrain_tex_seg[TERRAIN_TEX_WIDTH * TERRAIN_TEX_DEPTH];
 terrain_sky Terrain_sky;
 
@@ -999,12 +1002,14 @@ void ResetTerrain(int force)
 #endif
 			Terrain_seg[i * TERRAIN_WIDTH + t].objects = -1;
 			Terrain_seg[i * TERRAIN_WIDTH + t].flags = 0;
+			Terrain_cell_clip_plane[i * TERRAIN_WIDTH + t] = 0;
 			Terrain_seg[i * TERRAIN_WIDTH + t].lm_quad = ((i / 128) * 2) + (t / 128);
 			Terrain_seg[i * TERRAIN_WIDTH + t].texseg_index = ((i >> 3) * TERRAIN_TEX_WIDTH) + (t >> 3);
 
 			Terrain_dynamic_table[i * TERRAIN_WIDTH + t] = 0xFF;
 		}
 	}
+	Num_terrain_render_clip_planes = 0;
 
 	for (i = 0; i < TERRAIN_TEX_DEPTH; i++)
 	{

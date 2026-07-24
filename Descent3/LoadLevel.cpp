@@ -2532,17 +2532,34 @@ void ReadTerrainChunks(CFILE* fp, int version)
 
 
 	// Generate needed info
-	// Retribution level 1 hides three terrain cells beneath external room 8, but
-	// the room shell covers only the center cell. Restore the two edge quads to
-	// close both cliff seams while leaving the covered center hidden to avoid
-	// overlapping geometry and z-fighting.
+	memset(Terrain_cell_clip_plane, 0, sizeof(Terrain_cell_clip_plane));
+	Num_terrain_render_clip_planes = 0;
+
+	// Retribution level 1 hides three terrain cells beneath external room 8.
+	// Each edge cell is only partly covered by the room shell. Restore those
+	// cells, then clip them to the authored side-wall planes so terrain closes
+	// the exterior cliff seams without extending into the entrance.
 	if (Current_mission.cur_level == 1 &&
-		stricmp(Current_mission.name, "Descent 3: Retribution") == 0)
+		stricmp(Current_mission.name, "Descent 3: Retribution") == 0 &&
+		Rooms[8].used && Rooms[8].num_faces > 50)
 	{
 		constexpr int level1_building_left_seam_cell = 134 * TERRAIN_WIDTH + 180;
 		constexpr int level1_building_right_seam_cell = 134 * TERRAIN_WIDTH + 182;
+		constexpr int level1_building_left_wall_face = 48;
+		constexpr int level1_building_right_wall_face = 50;
+		const face& left_face = Rooms[8].faces[level1_building_left_wall_face];
+		const face& right_face = Rooms[8].faces[level1_building_right_wall_face];
+
 		Terrain_seg[level1_building_left_seam_cell].flags &= ~TF_INVISIBLE;
 		Terrain_seg[level1_building_right_seam_cell].flags &= ~TF_INVISIBLE;
+
+		Terrain_render_clip_planes[0].point = Rooms[8].verts[left_face.face_verts[0]];
+		Terrain_render_clip_planes[0].normal = left_face.normal;
+		Terrain_render_clip_planes[1].point = Rooms[8].verts[right_face.face_verts[0]];
+		Terrain_render_clip_planes[1].normal = right_face.normal;
+		Num_terrain_render_clip_planes = 2;
+		Terrain_cell_clip_plane[level1_building_left_seam_cell] = 1;
+		Terrain_cell_clip_plane[level1_building_right_seam_cell] = 2;
 	}
 
 	BuildMinMaxTerrain();
