@@ -101,11 +101,17 @@ static void RestorePolymodelDepthWriteMask()
 	rend_SetZBufferWriteMask(transparent_pass ? 0 : 1);
 }
 
-static bool PolymodelUseSoftGlowEffects()
+static bool PolymodelUseSoftGlowEffects(const poly_model* pm)
 {
 	// The compatibility renderer has no soft-depth path, so preserve its legacy
 	// radius bias even if the shared preference happens to be enabled.
-	return Render_soft_vis_effects && rend_CanUseNewrender();
+	if (!Render_soft_vis_effects || !rend_CanUseNewrender() || !pm)
+		return false;
+
+	// This asset places large glow planes inside a tight mechanical housing.
+	// Its legacy radius-sized forward bias pulls the lights through the shell;
+	// other polymodel coronas retain their authored hard presentation.
+	return stricmp(pm->name, "pumpingpipelarge.OOF") == 0;
 }
 
 static int Multicolor_texture=-1;
@@ -1777,7 +1783,7 @@ void DrawThrusterEffect (vector *pos,float r,float g,float b,vector *norm,float 
 }
 
 // Draws a glowing cone of light
-void DrawGlowEffect (vector *pos,float r,float g,float b,vector *norm,float size)
+void DrawGlowEffect (poly_model *pm,vector *pos,float r,float g,float b,vector *norm,float size)
 {
 	if (!UseHardware)
 		return;		// No software stuff here!
@@ -1794,7 +1800,7 @@ void DrawGlowEffect (vector *pos,float r,float g,float b,vector *norm,float size
 	ddgr_color color=GR_RGB(r*255,g*255,b*255);
 	int bm_handle=Fireballs[GRADIENT_BALL_INDEX].bm_handle;
 
-	const bool use_soft_intersection = PolymodelUseSoftGlowEffects();
+	const bool use_soft_intersection = PolymodelUseSoftGlowEffects(pm);
 	rend_SetSoftParticleState(use_soft_intersection ? 1 : 0);
 	// With soft intersections enabled, use the glow's real depth instead of
 	// pulling it forward by its full radius through the parent model.
@@ -2359,9 +2365,9 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 			else
 			{
 				if (Polymodel_use_effect && Polymodel_effect.type & PEF_CUSTOM_GLOW)
-					DrawGlowEffect (&zero_pos,Polymodel_effect.glow_r,Polymodel_effect.glow_g,Polymodel_effect.glow_b,&sm->glow_info->normal,sm->glow_info->glow_size);
+					DrawGlowEffect (pm,&zero_pos,Polymodel_effect.glow_r,Polymodel_effect.glow_g,Polymodel_effect.glow_b,&sm->glow_info->normal,sm->glow_info->glow_size);
 				else
-					DrawGlowEffect (&zero_pos,sm->glow_info->glow_r,sm->glow_info->glow_g,sm->glow_info->glow_b,&sm->glow_info->normal,sm->glow_info->glow_size);
+					DrawGlowEffect (pm,&zero_pos,sm->glow_info->glow_r,sm->glow_info->glow_g,sm->glow_info->glow_b,&sm->glow_info->normal,sm->glow_info->glow_size);
 			}
 			if (Perf_markers_enabled)
 				Polymodel_perf_facing_effect_count++;

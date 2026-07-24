@@ -5467,7 +5467,11 @@ void ComputeRoomPulseLight(room* rp)
 
 static bool RoomLightGlowsUseDepthOcclusion()
 {
-	return Render_soft_vis_effects && rend_CanUseNewrender();
+	// Room light coronas predate soft particles and rely on their visibility
+	// query plus legacy depth-bias rules.  Treating them as soft billboards
+	// changes their shape; hard raster occlusion clips them into the emitting
+	// face.  Keep the original path regardless of the soft-particle setting.
+	return false;
 }
 
 struct PreparedRoomLightGlow
