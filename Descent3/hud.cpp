@@ -1691,18 +1691,18 @@ static void HUDRenderVrrStatus()
 	}
 
 	RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, y,
-		"VRR: %s, FreeSync gaming %s (%d-%d Hz), borderless %s [%s]",
-		info.eligible ? "eligible" : "not eligible",
+		"VRR: %s, FreeSync gaming %s (%d-%d Hz) [%s]",
+		info.eligible ? "configured" : "not configured",
 		info.gaming_enabled ? "on" : "off",
 		info.min_refresh_hz, info.max_refresh_hz,
-		info.borderless_supported ? "yes" : "no",
 		info.display_name[0] ? info.display_name : "unnamed display");
 	y += grtext_GetHeight("X") + 2;
 	RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, y,
-		"Present: VSync %s, %s, %d Hz; active state not exposed",
+		"Present: VSync %s, %s, %d Hz; engagement unknown (borderless cap %s)",
 		info.swap_interval != 0 ? "on" : "off",
 		info.fullscreen ? "borderless fullscreen" : "windowed",
-		info.display_refresh_hz);
+		info.display_refresh_hz,
+		info.borderless_supported ? "yes" : "no");
 }
 
 #define HUD_KEYS_NEXT_LINE	hudconty += HUDEnabledControlsLineAdvance()

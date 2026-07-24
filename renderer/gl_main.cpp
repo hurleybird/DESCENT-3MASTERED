@@ -254,16 +254,6 @@ GL4AmdFreeSyncProbe& GL4FreeSyncProbe()
 	return probe;
 }
 
-void GL4FlushDwmPresentQueue()
-{
-	using DwmFlushProc = HRESULT(WINAPI*)();
-	static HMODULE module = LoadLibraryW(L"dwmapi.dll");
-	static DwmFlushProc flush = module ?
-		reinterpret_cast<DwmFlushProc>(GetProcAddress(module, "DwmFlush")) : nullptr;
-	if (flush)
-		flush();
-}
-
 }
 #endif
 
@@ -1810,11 +1800,10 @@ void GL4Renderer::ConfigureFramePacing(int max_frames_in_flight, bool telemetry_
 
 bool GL4Renderer::SchedulePresent(double interval_seconds)
 {
-	// When VSync is pacing at the display rate, do not also wait for an
-	// application deadline immediately before SwapBuffers. Arriving at the
-	// scanout boundary is exactly how an otherwise sustainable frame misses a
-	// refresh and turns into a visible hitch. Keep the software deadline for
-	// caps below the refresh rate; that is still needed for 60-on-120, etc.
+	// Keep an explicitly configured software cap authoritative even when VSync
+	// is enabled. Under VRR and composed presentation SwapBuffers may return
+	// before a scanout boundary, so it cannot be relied upon to enforce that cap.
+	// VSync owns cadence only when the application is genuinely uncapped.
 	int swap_interval = 0;
 #if defined(SDL3)
 	swap_interval = SDL_GL_GetSwapInterval();
@@ -1823,16 +1812,8 @@ bool GL4Renderer::SchedulePresent(double interval_seconds)
 		swap_interval = dwglGetSwapIntervalEXT();
 #endif
 
-	int display_refresh_hz = 0;
-#if defined(WIN32)
-	if (hOpenGLDC)
-		display_refresh_hz = GetDeviceCaps((HDC)hOpenGLDC, VREFRESH);
-#endif
-	const double display_interval = display_refresh_hz > 1 ?
-		1.0 / static_cast<double>(display_refresh_hz) : 0.0;
-	const bool vsync_owns_cadence = swap_interval != 0 &&
-		(interval_seconds <= 0.0 ||
-			(display_interval > 0.0 && interval_seconds <= display_interval * 1.01));
+	const bool vsync_owns_cadence =
+		swap_interval != 0 && interval_seconds <= 0.0;
 
 	if (swap_interval != 0 && !frame_pacing_vrr_eligibility_known)
 	{
@@ -1841,8 +1822,7 @@ bool GL4Renderer::SchedulePresent(double interval_seconds)
 		GL4FreeSyncProbe().Query(&vrr);
 #endif
 		frame_pacing_vrr_eligible = vrr.display_supported &&
-			vrr.gaming_enabled && OpenGL_preferred_state.fullscreen &&
-			vrr.borderless_supported;
+			vrr.gaming_enabled;
 		frame_pacing_vrr_eligibility_known = true;
 	}
 	frame_pacing_fixed_refresh = swap_interval != 0 &&
@@ -1931,10 +1911,12 @@ void GL4Renderer::GetVrrInfo(renderer_vrr_info* info)
 #endif
 	info->fullscreen = OpenGL_preferred_state.fullscreen;
 	// The Win32 "fullscreen" mode is a borderless desktop-sized window, not
-	// an exclusive display-mode switch. Do not claim eligibility unless the
-	// driver explicitly reports support for borderless FreeSync.
-	info->eligible = info->display_supported && info->gaming_enabled &&
-		info->fullscreen && info->borderless_supported;
+	// an exclusive display-mode switch.
+	// ADL can establish monitor capability and whether the driver's gaming use
+	// case is enabled, but its borderless-capability flag is not an observation
+	// of the current application's presentation path. Keep it as diagnostic
+	// detail rather than using it to reject an otherwise configured display.
+	info->eligible = info->display_supported && info->gaming_enabled;
 
 	// AMD ADL reports capability, enabled use cases, and the supported range.
 	// It does not expose whether the current application's most recent present
@@ -2860,12 +2842,6 @@ void GL4Renderer::EndPostPresentFrame()
 		PERF_MARKER_SCOPE("Renderer.Flip.SwapBuffers");
 		GL4PerfPresentState("BeforeSwap", framebuffer_current_draw, post_present_pending_swap);
 		SwapBuffers((HDC)hOpenGLDC);
-		// WGL presents from this borderless window through DWM composition.
-		// SwapBuffers may return with several composed frames queued, producing
-		// high input-to-display latency even though its swap interval is one.
-		// DwmFlush waits only for this process's outstanding surface update.
-		if (frame_pacing_fixed_refresh)
-			GL4FlushDwmPresentQueue();
 	}
 #elif defined(__LINUX__)
 	{
