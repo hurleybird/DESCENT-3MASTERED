@@ -2854,6 +2854,9 @@ void RenderTerrainRooms()
 void RenderAllTerrainObjects()
 {
 	PERF_MARKER_SCOPE("RenderAllTerrainObjects");
+	const float saved_far_clip_z = Far_clip_z;
+	if (Render_extended_draw_distance)
+		g3_SetFarClipZ(saved_far_clip_z * 1.5f);
 	object* obj;
 	int snows[384];
 	int num_snows = 0;
@@ -2933,6 +2936,7 @@ void RenderAllTerrainObjects()
 			}
 		}
 	}
+	g3_SetFarClipZ(saved_far_clip_z);
 #ifndef NEWEDITOR
 	{
 		PERF_MARKER_SCOPE("TerrainObjects.ScanVisEffects");

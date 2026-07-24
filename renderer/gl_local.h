@@ -257,6 +257,7 @@ class GL4Renderer : public IRenderer
 	GLint motionblur_legacy_object_strength = -1;
 	GLint motionblur_center_suppression = -1;
 	GLint motionblur_legacy_object_center_suppression = -1;
+	GLint motionblur_mask_sensitivity = -1;
 	GLint motionblur_sample_count = -1;
 	GLint motionblur_current_projection = -1;
 	GLint motionblur_current_inverse_modelview = -1;

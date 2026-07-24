@@ -691,7 +691,7 @@ void RenderCockpit()
 	SetNormalizedTimeAnim(keyframe, normalized_time, Cockpit_info.model);
 
 	bool display_adjust_active = false;
-	float display_spread = GetCockpitDisplaySpread();
+	float display_spread = Cockpit_alt_mode ? GetCockpitDisplaySpread() : 0.0f;
 	if (display_spread > 0.0001f && Cockpit_info.display_adjust_available)
 	{
 		SetModelAnglesAndPos(Cockpit_info.model, normalized_time);

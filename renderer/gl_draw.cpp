@@ -559,6 +559,9 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 	if (motionblur_legacy_object_center_suppression != -1)
 		glUniform1f(motionblur_legacy_object_center_suppression,
 			legacy_center_suppression);
+	if (motionblur_mask_sensitivity != -1)
+		glUniform1f(motionblur_mask_sensitivity,
+			std::max(0.2f, std::min(OpenGL_preferred_state.pixel_motion_blur_periphery_strength, 2.0f)));
 	if (motionblur_sample_count != -1)
 	{
 		int samples = OpenGL_preferred_state.pixel_motion_blur_samples;

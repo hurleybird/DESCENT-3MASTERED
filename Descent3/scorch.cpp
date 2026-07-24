@@ -241,8 +241,15 @@ struct
 } scorch_uvs[4] = { {0.0,0.0}, {1.0,0.0}, {1.0,1.0}, {0.0,1.0} };
 
 //Values used to get rid of far-away scorches
-#define MAX_VIS_DISTANCE		200		//if mark farther than this, don't draw
-#define FADE_START_DISTANCE	170		//when mark is this far away, start fading
+static float ScorchMaxVisibleDistance()
+{
+	return Render_extended_draw_distance ? 400.0f : 200.0f;
+}
+
+static float ScorchFadeStartDistance()
+{
+	return Render_extended_draw_distance ? 340.0f : 170.0f;
+}
 
 //Draw the scorch(es) for a given face
 void DrawScorches(int roomnum,int facenum)
@@ -283,10 +290,13 @@ void DrawScorches(int roomnum,int facenum)
 
 			//Don't draw mark if too far away, and make smaller those marks that are almost too far
 			float depth = g3_CalcPointDepth(&sp->pos);
-			if (depth > MAX_VIS_DISTANCE)
+			const float max_vis_distance = ScorchMaxVisibleDistance();
+			const float fade_start_distance = ScorchFadeStartDistance();
+			if (depth > max_vis_distance)
 				goto skip_draw;
-			if (depth > FADE_START_DISTANCE)
-				size *= 1.0 - ((depth - FADE_START_DISTANCE) / (MAX_VIS_DISTANCE - FADE_START_DISTANCE));
+			if (depth > fade_start_distance)
+				size *= 1.0f - ((depth - fade_start_distance) /
+					(max_vis_distance - fade_start_distance));
 
 			//Calculate vectors to corners
 			right.x = (float) sp->rx * (size / 127.0);

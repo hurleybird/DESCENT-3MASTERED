@@ -822,6 +822,7 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	motionblur_center_suppression = motionblurshader.FindUniform("center_suppression");
 	motionblur_legacy_object_center_suppression =
 		motionblurshader.FindUniform("legacy_object_center_suppression");
+	motionblur_mask_sensitivity = motionblurshader.FindUniform("mask_sensitivity");
 	motionblur_sample_count = motionblurshader.FindUniform("sample_count");
 	motionblur_current_projection = motionblurshader.FindUniform("current_projection");
 	motionblur_current_inverse_modelview = motionblurshader.FindUniform("current_inverse_modelview");
@@ -843,6 +844,7 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 		motionblur_strength == -1 || motionblur_legacy_object_strength == -1 ||
 		motionblur_center_suppression == -1 ||
 		motionblur_legacy_object_center_suppression == -1 ||
+		motionblur_mask_sensitivity == -1 ||
 		motionblur_sample_count == -1 ||
 		motionblur_current_projection == -1 || motionblur_current_inverse_modelview == -1 ||
 		motionblur_previous_view_projection == -1 || motionblur_has_static_reconstruction == -1 ||

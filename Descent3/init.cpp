@@ -407,6 +407,11 @@ void SaveGameSettings()
 	Database->write("RS_face_probe", Render_face_probe);
 	Database->write("RS_soft_vis_effects", Render_soft_vis_effects);
 	Database->write("RS_enhanced_weather", Render_enhanced_weather);
+	Database->write("RS_hires_skies", Render_hires_skies);
+	Database->write("RS_extended_draw_distance", Render_extended_draw_distance);
+	Database->write("RS_cockpit_enhancement", Cockpit_alt_mode);
+	WRITE_FLOAT_SETTING("RS_motion_blur_sensitivity", Motion_blur_sensitivity_setting);
+	WRITE_FLOAT_SETTING("RS_motion_blur_strength", Motion_blur_strength_setting);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	Database->write("RS_combined_motion_blur", Render_preferred_state.combined_motion_blur);
 	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_strength",
@@ -580,9 +585,9 @@ void LoadGameSettings()
 		strcpy(Game_gauge_usefile,GameArgs[tt_arg+1]);
 	}
 
-	Detail_settings.Specular_lighting = false;
+	Detail_settings.Specular_lighting = true;
 	Detail_settings.Dynamic_lighting = true;
-	Detail_settings.Fast_headlight_on = true;
+	Detail_settings.Fast_headlight_on = false;
 	Detail_settings.Mirrored_surfaces = true;
 	Detail_settings.Scorches_enabled = true;
 	Detail_settings.Weapon_coronas_enabled = true;
@@ -624,7 +629,12 @@ void LoadGameSettings()
 	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_debug_preview = false;
 	Render_soft_vis_effects = false;
-	Render_enhanced_weather = false;
+	Render_enhanced_weather = true;
+	Render_hires_skies = true;
+	Render_extended_draw_distance = true;
+	Cockpit_alt_mode = true;
+	Motion_blur_sensitivity_setting = 0.5f;
+	Motion_blur_strength_setting = 0.5f;
 	ConfigResetPerPixelSpecularSettings();
 	Render_preferred_state.pixel_motion_blur_strength = 0.0f;
 	Render_preferred_state.combined_motion_blur = false;
@@ -940,10 +950,20 @@ void LoadGameSettings()
 	Database->read("RS_soft_vis_effects", &Render_soft_vis_effects);
 	Database->read("RS_enhanced_snow", &Render_enhanced_weather);
 	Database->read("RS_enhanced_weather", &Render_enhanced_weather);
+	Database->read("RS_hires_skies", &Render_hires_skies);
+	Database->read("RS_extended_draw_distance", &Render_extended_draw_distance);
+	Database->read("RS_cockpit_enhancement", &Cockpit_alt_mode);
+	READ_FLOAT_SETTING("RS_motion_blur_sensitivity", Motion_blur_sensitivity_setting);
+	READ_FLOAT_SETTING("RS_motion_blur_strength", Motion_blur_strength_setting);
+	if (Motion_blur_sensitivity_setting < 0.1f) Motion_blur_sensitivity_setting = 0.1f;
+	if (Motion_blur_sensitivity_setting > 1.0f) Motion_blur_sensitivity_setting = 1.0f;
+	if (Motion_blur_strength_setting < 0.1f) Motion_blur_strength_setting = 0.1f;
+	if (Motion_blur_strength_setting > 1.0f) Motion_blur_strength_setting = 1.0f;
 	if (FindArg("-enhanced-weather") || FindArg("-enhanced-snow"))
 		Render_enhanced_weather = true;
 	else if (FindArg("-legacy-weather") || FindArg("-legacy-snow"))
 		Render_enhanced_weather = false;
+
 	READ_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	if (Render_preferred_state.pixel_motion_blur_strength < 0.0f)
 		Render_preferred_state.pixel_motion_blur_strength = 0.0f;
@@ -1183,13 +1203,23 @@ void LoadGameSettings()
 	Database->read("Default_pilot",Default_pilot,&len);
 	//Now that we have read in all the data, set the detail level if it is a predef setting (custom is ignored in function)
 
-	int level;
-	level = DETAIL_LEVEL_VERY_HIGH;
-
-	Database->read_int("PredefDetailSetting",&level);
-	if (FindArg("-render-advanced"))
-		level = DETAIL_LEVEL_VERY_HIGH;
-	ConfigSetDetailLevel(level);
+	// The monolithic 1999 detail preset is retired. Retain its fields for
+	// compatibility, but always establish the highest authored baseline.
+	ConfigSetDetailLevel(DETAIL_LEVEL_VERY_HIGH);
+	// These former detail options are now the renderer's fixed baseline. This
+	// intentionally follows legacy preset/database loading so old profiles
+	// cannot silently disable parts of the remastered presentation.
+	Detail_settings.Specular_lighting = true;
+	Detail_settings.Fast_headlight_on = false;
+	Detail_settings.Mirrored_surfaces = true;
+	Detail_settings.Dynamic_lighting = true;
+	Detail_settings.Fog_enabled = true;
+	Detail_settings.Coronas_enabled = true;
+	Detail_settings.Procedurals_enabled = true;
+	Detail_settings.Object_complexity = OBJECT_COMPLEXITY_MAX;
+	Detail_settings.Powerup_halos = true;
+	Detail_settings.Scorches_enabled = true;
+	Detail_settings.Weapon_coronas_enabled = true;
 
 	// Motion blur
 	const bool no_motion_blur = FindArg("-nomotionblur") != 0;

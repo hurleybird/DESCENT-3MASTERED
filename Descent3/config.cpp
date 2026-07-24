@@ -111,8 +111,11 @@ bool Render_draw_call_stats = false;
 bool Render_face_probe = false;
 bool Render_vrr_diagnostics = false;
 bool Render_soft_vis_effects = false;
-bool Render_enhanced_weather = false;
-bool Render_hires_skies = false;
+bool Render_enhanced_weather = true;
+bool Render_hires_skies = true;
+bool Render_extended_draw_distance = true;
+float Motion_blur_sensitivity_setting = 0.5f;
+float Motion_blur_strength_setting = 0.5f;
 // bool Render_split_specular_textures = false;
 bool Render_split_specular_textures = true;
 float Render_per_pixel_specular_strength = 1.0f;
@@ -152,11 +155,6 @@ static bool ConfigCanUsePerPixelLighting()
 static bool ConfigCanUseAO()
 {
 	return OpenGLProfile == GLPROFILE_CORE;
-}
-
-static bool ConfigShowsLegacyTerrainControls()
-{
-	return OpenGLProfile != GLPROFILE_CORE;
 }
 
 int ConfigNormalizeSupersamplingFactor(int factor)
@@ -683,11 +681,9 @@ void config_gamma()
 #define IDV_FILTERING 18
 #define IDV_DRAW_CALL_STATS 19
 #define IDV_AO_OVERSCAN 20
-#define IDV_ANISOTROPY_OFF 21
-#define IDV_ANISOTROPY_2X 22
-#define IDV_ANISOTROPY_4X 23
-#define IDV_ANISOTROPY_8X 24
-#define IDV_ANISOTROPY_16X 25
+#define IDV_ANISOTROPY 26
+#define IDD_MOTION_BLUR_SENSITIVITY 40
+#define IDD_MOTION_BLUR_STRENGTH 41
 #define UID_RESOLUTION 110
 #define UID_ASPECT 111
 
@@ -1214,14 +1210,18 @@ static void ApplyPixelMotionBlurValues(float legacy_geometry_strength)
 	Use_motion_blur = 0;
 	Render_preferred_state.combined_motion_blur = true;
 	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_PIXEL;
-	Render_preferred_state.pixel_motion_blur_strength = 0.32f;
+	Render_preferred_state.pixel_motion_blur_strength =
+		Motion_blur_strength_setting * 0.64f;
 	Render_preferred_state.combined_motion_blur_legacy_strength = legacy_geometry_strength;
 	Render_preferred_state.combined_motion_blur_legacy_frame_time = 0.03f;
 	Render_preferred_state.combined_motion_blur_legacy_sphere_size = 0.20f;
 	Render_preferred_state.combined_motion_blur_legacy_copy_density = 2.0f;
 	Render_preferred_state.combined_motion_blur_legacy_max_iterations = 24;
 	Render_preferred_state.combined_motion_blur_legacy_alpha_exponent = 2.0f;
-	Render_preferred_state.pixel_motion_blur_legacy_object_strength = 0.32f;
+	Render_preferred_state.pixel_motion_blur_legacy_object_strength =
+		Motion_blur_strength_setting * 0.64f;
+	Render_preferred_state.pixel_motion_blur_periphery_strength =
+		Motion_blur_sensitivity_setting * 2.0f;
 	Render_preferred_state.pixel_motion_blur_center_suppression = 1.0f;
 	Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression = 0.0f;
 	Render_preferred_state.pixel_motion_blur_samples = 17;
@@ -1303,8 +1303,6 @@ struct video_menu
 	bool* show_draw_calls;
 	bool* face_probe;
 	bool* soft_vis_effects;
-	bool* enhanced_snow;
-	bool* hires_skies;
 	bool* motion_vector_debug;
 	bool* ao_overscan;
 
@@ -1316,7 +1314,7 @@ struct video_menu
 	int* antialiasing;
 	int* supersampling;
 	int* ao;
-	int* anisotropy;
+	newuiComboBox* anisotropy;
 
 	int window_width, window_height;
 	int window_aspect;
@@ -1344,16 +1342,7 @@ struct video_menu
 
 		const int maximum = rend_GetMaxAnisotropy();
 		const bool usable = mipmapping && *mipmapping && maximum >= 2;
-		sheet->SetGadgetVisible(IDV_ANISOTROPY_OFF, true);
-		sheet->SetGadgetVisible(IDV_ANISOTROPY_2X, maximum >= 2);
-		sheet->SetGadgetVisible(IDV_ANISOTROPY_4X, maximum >= 4);
-		sheet->SetGadgetVisible(IDV_ANISOTROPY_8X, maximum >= 8);
-		sheet->SetGadgetVisible(IDV_ANISOTROPY_16X, maximum >= 16);
-		sheet->SetGadgetEnabled(IDV_ANISOTROPY_OFF, usable);
-		sheet->SetGadgetEnabled(IDV_ANISOTROPY_2X, usable);
-		sheet->SetGadgetEnabled(IDV_ANISOTROPY_4X, usable);
-		sheet->SetGadgetEnabled(IDV_ANISOTROPY_8X, usable);
-		sheet->SetGadgetEnabled(IDV_ANISOTROPY_16X, usable);
+		sheet->SetGadgetEnabled(IDV_ANISOTROPY, usable);
 	}
 
 	void update_draw_call_title()
@@ -1473,9 +1462,12 @@ struct video_menu
 		}
 		if (filtering_prerequisites_changed)
 			update_anisotropy_visibility();
-		if (anisotropy && sheet->HasChanged(anisotropy))
+		if (anisotropy &&
+			Render_preferred_state.anisotropy !=
+				AnisotropyIndexToFactor(anisotropy->GetCurrentIndex()))
 		{
-			Render_preferred_state.anisotropy = (ubyte)AnisotropyIndexToFactor(*anisotropy);
+			Render_preferred_state.anisotropy =
+				(ubyte)AnisotropyIndexToFactor(anisotropy->GetCurrentIndex());
 			changed = true;
 		}
 		if (per_pixel_lighting && sheet->HasChanged(per_pixel_lighting))
@@ -1559,16 +1551,6 @@ struct video_menu
 			Render_soft_vis_effects = *soft_vis_effects;
 			ui_changed = true;
 		}
-		if (enhanced_snow && sheet->HasChanged(enhanced_snow))
-		{
-			Render_enhanced_weather = *enhanced_snow;
-			ui_changed = true;
-		}
-		if (hires_skies && sheet->HasChanged(hires_skies))
-		{
-			Render_hires_skies = *hires_skies;
-			ui_changed = true;
-		}
 		if (antialiasing && sheet->HasChanged(antialiasing))
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -1633,8 +1615,6 @@ struct video_menu
 		show_draw_calls = NULL;
 		face_probe = NULL;
 		soft_vis_effects = NULL;
-		enhanced_snow = NULL;
-		hires_skies = NULL;
 		motion_vector_debug = NULL;
 		ao_overscan = NULL;
 		fov = NULL;
@@ -1689,20 +1669,26 @@ struct video_menu
 			(short)(Game_frame_limit_fps - 30), &frame_limit_settings);
 
 		// video settings
-		sheet->NewGroup(TXT_TOGGLES, 0, 120);
+		sheet->NewGroup(TXT_TOGGLES, 0, 130);
 		Render_preferred_state.filtering = Render_preferred_state.filtering ? 1 : 0;
 		filtering = sheet->AddLongCheckBox(
 			ConfigFilteringCheckboxTitle(Render_preferred_state.mipping != 0),
 			(Render_preferred_state.filtering != 0), IDV_FILTERING);
 		mipmapping = sheet->AddLongCheckBox(TXT_MIPMAPPING, (Render_preferred_state.mipping != 0));
+		sheet->NewGroup("Aniso", 0, 169);
+		const int maximum_anisotropy = rend_GetMaxAnisotropy();
+		anisotropy = sheet->AddComboBox(IDV_ANISOTROPY, UILB_NOSORT);
+		anisotropy->AddItem(TXT_OFF);
+		if (maximum_anisotropy >= 2) anisotropy->AddItem("2x");
+		if (maximum_anisotropy >= 4) anisotropy->AddItem("4x");
+		if (maximum_anisotropy >= 8) anisotropy->AddItem("8x");
+		if (maximum_anisotropy >= 16) anisotropy->AddItem("16x");
+		sheet->NewGroup(NULL, 0, 199);
 		per_pixel_lighting = sheet->AddLongCheckBox("Per-pixel lighting",
 			ConfigCanUsePerPixelLighting() && Render_preferred_state.per_pixel_lighting);
 		bloom_enabled = sheet->AddLongCheckBox("Bloom", Render_preferred_state.bloom_enabled);
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
-		enhanced_snow = sheet->AddLongCheckBox("Enhanced weather", Render_enhanced_weather);
-
-		sheet->NewGroup("Debug", 0, 210);
-		hires_skies = sheet->AddLongCheckBox("Hi-res skies", Render_hires_skies);
+		sheet->NewGroup("Debug", 0, 270);
 		motion_vector_debug = sheet->AddLongCheckBox("Vector debug", Render_preferred_state.motion_vector_debug_preview);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
@@ -1737,18 +1723,12 @@ struct video_menu
 			IDV_AO_OVERSCAN);
 		sheet->SetGadgetVisible(IDV_AO_OVERSCAN, *ao != 0);
 
-		sheet->NewGroup("Aniso", 184, 232);
-		const int maximum_anisotropy = rend_GetMaxAnisotropy();
 		int selected_anisotropy = Render_preferred_state.anisotropy;
 		if (selected_anisotropy < 1) selected_anisotropy = 1;
 		if (selected_anisotropy > maximum_anisotropy) selected_anisotropy = maximum_anisotropy;
 		Render_preferred_state.anisotropy = (ubyte)selected_anisotropy;
-		anisotropy = sheet->AddFirstRadioButton(TXT_OFF, IDV_ANISOTROPY_OFF);
-		sheet->AddRadioButton("2x", IDV_ANISOTROPY_2X);
-		sheet->AddRadioButton("4x", IDV_ANISOTROPY_4X);
-		sheet->AddRadioButton("8x", IDV_ANISOTROPY_8X);
-		sheet->AddRadioButton("16x", IDV_ANISOTROPY_16X);
-		*anisotropy = AnisotropyFactorToIndex(Render_preferred_state.anisotropy);
+		anisotropy->SetCurrentIndex(
+			AnisotropyFactorToIndex(Render_preferred_state.anisotropy));
 		update_anisotropy_visibility();
 
 
@@ -1763,7 +1743,8 @@ struct video_menu
 		if (mipmapping)
 			Render_preferred_state.mipping = (*mipmapping) ? 1 : 0;
 		if (anisotropy)
-			Render_preferred_state.anisotropy = (ubyte)AnisotropyIndexToFactor(*anisotropy);
+			Render_preferred_state.anisotropy =
+				(ubyte)AnisotropyIndexToFactor(anisotropy->GetCurrentIndex());
 		if (per_pixel_lighting)
 			Render_preferred_state.per_pixel_lighting = ConfigCanUsePerPixelLighting() && *per_pixel_lighting;
 		if (bloom_enabled)
@@ -1802,10 +1783,6 @@ struct video_menu
 			Render_face_probe = *face_probe;
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
-		if (enhanced_snow)
-			Render_enhanced_weather = *enhanced_snow;
-		if (hires_skies)
-			Render_hires_skies = *hires_skies;
 		if (antialiasing)
 		{
 			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
@@ -2388,130 +2365,104 @@ struct details_menu
 	newuiSheet* sheet;
 	newuiMenu* parent_menu;
 
-	int* detail_level;									// detail level radio
-	int* objcomp;											// object complexity radio
-	int* motion_blur;									// motion blur radio
+	int* motion_blur;
 	int motion_blur_applied_index;
-	bool* specmap, * headlight, * mirror,				// check boxes
-		* dynamic, * fog, * coronas, * procedurals,
-		* powerup_halo, * scorches, * weapon_coronas,
-		* cockpit_improvement;
-	short* pixel_err,										// 0-27 (1-28)
-		* rend_dist;											// 0-120 (80-200)
+	bool* cockpit, * weather, * skyboxes, * draw_distance;
+	short* motion_blur_sensitivity;
+	short* motion_blur_strength;
 
-	int* texture_quality;
+	static float SliderValue(short value)
+	{
+		return 0.1f + ((float)value * 0.1f);
+	}
+
+	static short SliderPosition(float value)
+	{
+		int position = (int)floorf(((value - 0.1f) / 0.1f) + 0.5f);
+		if (position < 0) position = 0;
+		if (position > 9) position = 9;
+		return (short)position;
+	}
+
+	bool UsesModernMotionBlur() const
+	{
+		return motion_blur &&
+			(*motion_blur == MOTION_BLUR_UI_NEW || *motion_blur == MOTION_BLUR_UI_COMBO);
+	}
+
+	void UpdateMotionBlurSliderVisibility()
+	{
+		const bool visible = UsesModernMotionBlur();
+		if (motion_blur_sensitivity)
+			sheet->SetGadgetVisible(IDD_MOTION_BLUR_SENSITIVITY, visible);
+		if (motion_blur_strength)
+			sheet->SetGadgetVisible(IDD_MOTION_BLUR_STRENGTH, visible);
+	}
+
+	void ApplyMotionBlurSliders()
+	{
+		if (!UsesModernMotionBlur())
+			return;
+
+		// UI 0.5 is the established presentation. The renderer keeps its native
+		// units so old profiles and command-line presets retain their meaning.
+		const float sensitivity = SliderValue(*motion_blur_sensitivity);
+		const float strength = SliderValue(*motion_blur_strength);
+		Motion_blur_sensitivity_setting = sensitivity;
+		Motion_blur_strength_setting = strength;
+		Render_preferred_state.pixel_motion_blur_periphery_strength = sensitivity * 2.0f;
+		Render_preferred_state.pixel_motion_blur_strength = strength * 0.64f;
+		Render_preferred_state.pixel_motion_blur_legacy_object_strength = strength * 0.64f;
+	}
 
 	// sets the menu up.
 	newuiSheet* setup(newuiMenu* menu)
 	{
-		int iTemp;
 		sheet = menu->AddOption(IDV_DCONFIG, TXT_OPTDETAIL, NEWUIMENU_LARGE);
 		parent_menu = menu;
+		sheet->NewGroup("Enhancements", 0, 0);
+		cockpit = sheet->AddLongCheckBox("Cockpit", Cockpit_alt_mode);
+		weather = sheet->AddLongCheckBox("Weather", Render_enhanced_weather);
+		skyboxes = sheet->AddLongCheckBox("Skyboxes", Render_hires_skies);
+		draw_distance = sheet->AddLongCheckBox("Draw distance", Render_extended_draw_distance);
 
-		// detail level radio
-		Database->read_int("PredefDetailSetting", &Default_detail_level);
-		iTemp = Default_detail_level;
-		sheet->NewGroup(TXT_CFG_PRESETDETAILS, 0, 0);
-		detail_level = sheet->AddFirstRadioButton(TXT_LOW);
-		sheet->AddRadioButton(TXT_CFG_MEDIUM);
-		sheet->AddRadioButton(TXT_CFG_HIGH);
-		sheet->AddRadioButton(TXT_CFG_VERYHIGH);
-		sheet->AddRadioButton(TXT_CFG_CUSTOM);
-		*detail_level = iTemp;
-
-		// toggles
-		sheet->NewGroup(TXT_TOGGLES, 0, 87);
-		specmap = sheet->AddLongCheckBox(TXT_SPECMAPPING, Detail_settings.Specular_lighting);
-		headlight = sheet->AddLongCheckBox(TXT_FASTHEADLIGHT, Detail_settings.Fast_headlight_on);
-		mirror = sheet->AddLongCheckBox(TXT_MIRRORSURF, Detail_settings.Mirrored_surfaces);
-		dynamic = sheet->AddLongCheckBox(TXT_DYNLIGHTING, Detail_settings.Dynamic_lighting);
-		fog = sheet->AddLongCheckBox(TXT_CFG_ENABLEFOG, Detail_settings.Fog_enabled);
-		coronas = sheet->AddLongCheckBox(TXT_CFG_ENABLELIGHTCORONA, Detail_settings.Coronas_enabled);
-		procedurals = sheet->AddLongCheckBox(TXT_CFG_PROCEDURALS, Detail_settings.Procedurals_enabled);
-		powerup_halo = sheet->AddLongCheckBox(TXT_CFG_POWERUPHALOS, Detail_settings.Powerup_halos);
-		scorches = sheet->AddLongCheckBox(TXT_CFG_SCORCHMARKS, Detail_settings.Scorches_enabled);
-		weapon_coronas = sheet->AddLongCheckBox(TXT_CFG_WEAPONEFFECTS, Detail_settings.Weapon_coronas_enabled);
-		cockpit_improvement = sheet->AddLongCheckBox("Cockpit improvement", Cockpit_alt_mode);
-
-		// sliders
-		tSliderSettings slider_set;
-		const bool show_legacy_terrain_controls = ConfigShowsLegacyTerrainControls();
-		pixel_err = NULL;
-		rend_dist = NULL;
-		motion_blur = NULL;
+		sheet->NewGroup("Motion Blur", 0, 84);
 		motion_blur_applied_index = ConfigGetMotionBlurPreset();
-		if (show_legacy_terrain_controls)
-		{
-			sheet->NewGroup(TXT_GEOMETRY, 90, 0);
-			iTemp = MAXIMUM_TERRAIN_DETAIL - Detail_settings.Pixel_error - MINIMUM_TERRAIN_DETAIL;
-			if (iTemp < 0) iTemp = 0;
-			slider_set.min_val.i = MINIMUM_TERRAIN_DETAIL;
-			slider_set.max_val.i = MAXIMUM_TERRAIN_DETAIL;
-			slider_set.type = SLIDER_UNITS_INT;
-			pixel_err = sheet->AddSlider(TXT_TERRDETAIL, MAXIMUM_TERRAIN_DETAIL - MINIMUM_TERRAIN_DETAIL, iTemp, &slider_set);
-
-			slider_set.min_val.i = MINIMUM_RENDER_DIST / 2;
-			slider_set.max_val.i = MAXIMUM_RENDER_DIST / 2;
-			slider_set.type = SLIDER_UNITS_INT;
-			iTemp = (int)(Detail_settings.Terrain_render_distance / ((float)TERRAIN_SIZE)) - MINIMUM_RENDER_DIST;
-			if (iTemp < 0) iTemp = 0;
-			rend_dist = sheet->AddSlider(TXT_RENDDIST, (MAXIMUM_RENDER_DIST - MINIMUM_RENDER_DIST) / 2, iTemp / 2, &slider_set);
-		}
-
-		// object complexity radio
-		if (show_legacy_terrain_controls)
-		{
-			sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, 174, 87);
-			sheet->NewGroup(NULL, 174, 97);
-		}
-		else
-		{
-			sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, 90, 0);
-		}
-		objcomp = sheet->AddFirstRadioButton(TXT_LOW);
-		sheet->AddRadioButton(TXT_CFG_MEDIUM);
-		sheet->AddRadioButton(TXT_CFG_HIGH);
-		sheet->AddRadioButton(TXT_CFG_MAX);
-		*objcomp = Detail_settings.Object_complexity;
-
-		sheet->NewGroup("Motion Blur", show_legacy_terrain_controls ? 174 : 198, show_legacy_terrain_controls ? 152 : 0);
 		motion_blur = sheet->AddFirstRadioButton(TXT_OFF);
 		sheet->AddRadioButton("Old");
-		sheet->AddRadioButton("New");
-		sheet->AddRadioButton("Combo");
+		sheet->AddRadioButton("Modern");
+		sheet->AddRadioButton("Combined");
 		*motion_blur = motion_blur_applied_index;
 
+		tSliderSettings slider_set = {};
+		slider_set.min_val.f = 0.1f;
+		slider_set.max_val.f = 1.0f;
+		slider_set.type = SLIDER_UNITS_FLOAT;
+		sheet->NewGroup(NULL, 96, 84);
+		motion_blur_sensitivity = sheet->AddSlider("Sensitivity", 9,
+			SliderPosition(Motion_blur_sensitivity_setting),
+			&slider_set, IDD_MOTION_BLUR_SENSITIVITY);
+		motion_blur_strength = sheet->AddSlider("Strength", 9,
+			SliderPosition(Motion_blur_strength_setting),
+			&slider_set, IDD_MOTION_BLUR_STRENGTH);
+		UpdateMotionBlurSliderVisibility();
 		return sheet;
 	};
 
 	// retreive values from property sheet here.
 	void finish()
 	{
-		Detail_settings.Coronas_enabled = *coronas;
-		Detail_settings.Dynamic_lighting = *dynamic;
-		Detail_settings.Fast_headlight_on = *headlight;
-		Detail_settings.Fog_enabled = *fog;
-		Detail_settings.Mirrored_surfaces = *mirror;
-		Detail_settings.Object_complexity = *objcomp;
 		if (motion_blur)
 			ConfigApplyMotionBlurPreset(*motion_blur);
+		ApplyMotionBlurSliders();
 		const ubyte old_motion_vector_mode = Render_preferred_state.motion_vector_mode;
 		ConfigFinalizeMotionVectorUse();
 		if (old_motion_vector_mode != Render_preferred_state.motion_vector_mode)
 			rend_SetPreferredState(&Render_preferred_state);
-		if (pixel_err)
-			Detail_settings.Pixel_error = MAXIMUM_TERRAIN_DETAIL - ((*pixel_err) + MINIMUM_TERRAIN_DETAIL);
-		Detail_settings.Powerup_halos = *powerup_halo;
-		Detail_settings.Procedurals_enabled = *procedurals;
-		Detail_settings.Scorches_enabled = *scorches;
-		Detail_settings.Specular_lighting = *specmap;
-		if (rend_dist)
-			Detail_settings.Terrain_render_distance = (((*rend_dist) * 2) + MINIMUM_RENDER_DIST) * ((float)TERRAIN_SIZE);
-		Detail_settings.Weapon_coronas_enabled = *weapon_coronas;
-		Cockpit_alt_mode = *cockpit_improvement;
-
-		Default_detail_level = *detail_level;
-		Database->write("PredefDetailSetting", Default_detail_level);
+		Cockpit_alt_mode = *cockpit;
+		Render_enhanced_weather = *weather;
+		Render_hires_skies = *skyboxes;
+		Render_extended_draw_distance = *draw_distance;
 
 		sheet = NULL;
 	};
@@ -2523,103 +2474,43 @@ struct details_menu
 		{
 			ConfigApplyMotionBlurPreset(*motion_blur);
 			motion_blur_applied_index = *motion_blur;
+			UpdateMotionBlurSliderVisibility();
+			ApplyMotionBlurSliders();
 			rend_SetPreferredState(&Render_preferred_state);
 			sheet->UpdateChanges();
 		}
-		bool cockpit_improvement_changed = sheet->HasChanged(cockpit_improvement);
-		if (cockpit_improvement_changed)
+		bool changed = false;
+		if (sheet->HasChanged(cockpit))
 		{
-			Cockpit_alt_mode = *cockpit_improvement;
+			Cockpit_alt_mode = *cockpit;
+			changed = true;
 		}
-
-		// check here if the detail level currently set should be custom
-		bool changed = sheet->HasChanged(specmap) ||
-			sheet->HasChanged(headlight) ||
-			sheet->HasChanged(mirror) ||
-			sheet->HasChanged(dynamic) ||
-			sheet->HasChanged(fog) ||
-			sheet->HasChanged(coronas) ||
-			sheet->HasChanged(procedurals) ||
-			sheet->HasChanged(powerup_halo) ||
-			sheet->HasChanged(scorches) ||
-			sheet->HasChanged(weapon_coronas) ||
-			sheet->HasChanged(objcomp) ||
-			(pixel_err && sheet->HasChanged(pixel_err)) ||
-			(rend_dist && sheet->HasChanged(rend_dist));
-
+		if (sheet->HasChanged(weather))
+		{
+			Render_enhanced_weather = *weather;
+			changed = true;
+		}
+		if (sheet->HasChanged(skyboxes))
+		{
+			Render_hires_skies = *skyboxes;
+			changed = true;
+		}
+		if (sheet->HasChanged(draw_distance))
+		{
+			Render_extended_draw_distance = *draw_distance;
+			changed = true;
+		}
+		if ((motion_blur_sensitivity && sheet->HasChanged(motion_blur_sensitivity)) ||
+			(motion_blur_strength && sheet->HasChanged(motion_blur_strength)))
+		{
+			ApplyMotionBlurSliders();
+			rend_SetPreferredState(&Render_preferred_state);
+			changed = true;
+		}
 		if (changed)
-		{
-			// enable custom radio button
-			*detail_level = DETAIL_LEVEL_CUSTOM;
-		}
-		else
-		{
-			// check if any preset detail has been selected.
-			if (sheet->HasChanged(detail_level))
-			{
-				set_preset_details(*detail_level);
-			}
-		}
-		if (cockpit_improvement_changed)
 			sheet->UpdateChanges();
-
 	};
-
-	//	sets detail presets
-	void set_preset_details(int setting);
 };
-
-
-//	sets detail presets
-void details_menu::set_preset_details(int setting)
-{
-	tDetailSettings ds;
-
-	switch (setting)
-	{
-	case DETAIL_LEVEL_LOW:			memcpy(&ds, &DetailPresetLow, sizeof(tDetailSettings)); break;
-	case DETAIL_LEVEL_MED:			memcpy(&ds, &DetailPresetMed, sizeof(tDetailSettings)); break;
-	case DETAIL_LEVEL_HIGH:			memcpy(&ds, &DetailPresetHigh, sizeof(tDetailSettings)); break;
-	case DETAIL_LEVEL_VERY_HIGH:	memcpy(&ds, &DetailPresetVHi, sizeof(tDetailSettings)); break;
-	default:
-		return;
-	};
-
-	//now go through all the config items and set to the new values
-	if (pixel_err)
-	{
-		int iTemp = MAXIMUM_TERRAIN_DETAIL - ds.Pixel_error - MINIMUM_TERRAIN_DETAIL;
-		if (iTemp < 0)
-			iTemp = 0;
-		*pixel_err = (short)(iTemp);
-	}
-	else
-	{
-		Detail_settings.Pixel_error = ds.Pixel_error;
-	}
-	if (rend_dist)
-	{
-		int iTemp = (int)((ds.Terrain_render_distance / ((float)TERRAIN_SIZE)) - MINIMUM_RENDER_DIST);
-		if (iTemp < 0) iTemp = 0;
-		iTemp = iTemp / 2;
-		*rend_dist = (short)(iTemp);
-	}
-	else
-	{
-		Detail_settings.Terrain_render_distance = ds.Terrain_render_distance;
-	}
-	*objcomp = ds.Object_complexity;
-	*specmap = ds.Specular_lighting;
-	*headlight = ds.Fast_headlight_on;
-	*mirror = ds.Mirrored_surfaces;
-	*dynamic = ds.Dynamic_lighting;
-	*fog = ds.Fog_enabled;
-	*coronas = ds.Coronas_enabled;
-	*procedurals = ds.Procedurals_enabled;
-	*powerup_halo = ds.Powerup_halos;
-	*scorches = ds.Scorches_enabled;
-	*weapon_coronas = ds.Weapon_coronas_enabled;
-}
 
 //////////////////////////////////////////////////////////////////
 //	new Options menu
