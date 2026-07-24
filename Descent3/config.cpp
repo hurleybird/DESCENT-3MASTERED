@@ -109,6 +109,7 @@ int Game_frame_limit_fps = 0;
 float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
 bool Render_face_probe = false;
+bool Render_vrr_diagnostics = false;
 bool Render_soft_vis_effects = false;
 bool Render_enhanced_weather = false;
 bool Render_hires_skies = false;
@@ -1302,8 +1303,10 @@ struct video_menu
 	bool* mipmapping;
 	bool* per_pixel_lighting;
 	bool* bloom_enabled;
+	bool* vsync;
 	bool* perf_markers;
 	bool* show_fps;
+	bool* vrr_status;
 	bool* show_draw_calls;
 	bool* face_probe;
 	bool* soft_vis_effects;
@@ -1497,6 +1500,11 @@ struct video_menu
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
 			changed = true;
 		}
+		if (vsync && sheet->HasChanged(vsync))
+		{
+			Render_preferred_state.vsync = *vsync;
+			changed = true;
+		}
 		if (ao && sheet->HasChanged(ao))
 		{
 			if (ConfigCanUseAO())
@@ -1540,6 +1548,11 @@ struct video_menu
 				Hud_stat_mask |= STAT_FPS;
 			else
 				Hud_stat_mask &= ~STAT_FPS;
+			ui_changed = true;
+		}
+		if (vrr_status && sheet->HasChanged(vrr_status))
+		{
+			Render_vrr_diagnostics = *vrr_status;
 			ui_changed = true;
 		}
 		if (show_draw_calls && sheet->HasChanged(show_draw_calls))
@@ -1626,8 +1639,10 @@ struct video_menu
 		mipmapping = NULL;
 		per_pixel_lighting = NULL;
 		bloom_enabled = NULL;
+		vsync = NULL;
 		perf_markers = NULL;
 		show_fps = NULL;
+		vrr_status = NULL;
 		show_draw_calls = NULL;
 		face_probe = NULL;
 		soft_vis_effects = NULL;
@@ -1685,6 +1700,7 @@ struct video_menu
 		frame_limit_settings.type = SLIDER_UNITS_INT;
 		frame_limit = sheet->AddSlider("Frame Limit", (short)(frame_limit_max - 30),
 			(short)(Game_frame_limit_fps - 30), &frame_limit_settings);
+		vsync = sheet->AddLongCheckBox("VSync", Render_preferred_state.vsync);
 
 		// video settings
 		sheet->NewGroup(TXT_TOGGLES, 0, 134);
@@ -1704,6 +1720,7 @@ struct video_menu
 		motion_vector_debug = sheet->AddLongCheckBox("Vector debug", Render_preferred_state.motion_vector_debug_preview);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
+		vrr_status = sheet->AddLongCheckBox("VRR status", Render_vrr_diagnostics);
 		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats, IDV_DRAW_CALL_STATS);
 		update_draw_call_title();
 		face_probe = sheet->AddLongCheckBox("Face probe", Render_face_probe);
@@ -1766,6 +1783,8 @@ struct video_menu
 			Render_preferred_state.per_pixel_lighting = ConfigCanUsePerPixelLighting() && *per_pixel_lighting;
 		if (bloom_enabled)
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
+		if (vsync)
+			Render_preferred_state.vsync = *vsync;
 		if (ao)
 		{
 			if (ConfigCanUseAO())
@@ -1792,6 +1811,8 @@ struct video_menu
 			else
 				Hud_stat_mask &= ~STAT_FPS;
 		}
+		if (vrr_status)
+			Render_vrr_diagnostics = *vrr_status;
 		if (show_draw_calls)
 			Render_draw_call_stats = *show_draw_calls;
 		if (face_probe)

@@ -1668,6 +1668,43 @@ static void HUDRenderFaceProbe()
 		fp->normal.x, fp->normal.y, fp->normal.z);
 }
 
+static void HUDRenderVrrStatus()
+{
+	renderer_vrr_info info = {};
+	rend_GetVrrInfo(&info);
+
+	// Keep the diagnostic below the normal top-edge status messages. It is
+	// intentionally separate from the compact FPS counter because it is a
+	// temporary diagnostic, not part of the normal HUD.
+	int y = 45;
+	if (!info.api_available)
+	{
+		RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, y,
+			"VRR: driver status unavailable");
+		return;
+	}
+	if (!info.display_supported)
+	{
+		RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, y,
+			"VRR: display not supported");
+		return;
+	}
+
+	RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, y,
+		"VRR: %s, FreeSync gaming %s (%d-%d Hz), borderless %s [%s]",
+		info.eligible ? "eligible" : "not eligible",
+		info.gaming_enabled ? "on" : "off",
+		info.min_refresh_hz, info.max_refresh_hz,
+		info.borderless_supported ? "yes" : "no",
+		info.display_name[0] ? info.display_name : "unnamed display");
+	y += grtext_GetHeight("X") + 2;
+	RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, y,
+		"Present: VSync %s, %s, %d Hz; active state not exposed",
+		info.swap_interval != 0 ? "on" : "off",
+		info.fullscreen ? "borderless fullscreen" : "windowed",
+		info.display_refresh_hz);
+}
+
 #define HUD_KEYS_NEXT_LINE	hudconty += HUDEnabledControlsLineAdvance()
 
 //	iterate through entire hud item list to draw.
@@ -1728,6 +1765,9 @@ void RenderHUDItems(tStatMask stat_mask)
 	//	show framerate text gauge
 	if (stat_mask & STAT_FPS)
 		RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, 10, "FPS: %.1f", last_avg_fps);
+
+	if (Render_vrr_diagnostics)
+		HUDRenderVrrStatus();
 
 	if (Render_draw_call_stats)
 	{

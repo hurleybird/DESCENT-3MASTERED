@@ -22,8 +22,250 @@
 #include "rtperformance.h"
 #include <math.h>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <thread>
+
+#if defined(WIN32)
+namespace
+{
+constexpr int ADL_OK = 0;
+constexpr int ADL_DISPLAY_CONNECTED = 0x00000001;
+constexpr int ADL_DISPLAY_MAPPED = 0x00000002;
+constexpr int ADL_FREESYNC_USECASE_GAMING = 0x4;
+constexpr int ADL_FREESYNC_CAP_SUPPORTED = 1 << 0;
+constexpr int ADL_FREESYNC_CAP_BORDERLESS = 1 << 6;
+
+struct AdlDisplayId
+{
+	int logical_index;
+	int physical_index;
+	int logical_adapter_index;
+	int physical_adapter_index;
+};
+
+struct AdlDisplayInfo
+{
+	AdlDisplayId display_id;
+	int controller_index;
+	char display_name[256];
+	char manufacturer_name[256];
+	int display_type;
+	int output_type;
+	int connector;
+	int info_mask;
+	int info_value;
+};
+
+struct AdlFreeSyncCap
+{
+	int caps;
+	int min_refresh_micro_hz;
+	int max_refresh_micro_hz;
+	unsigned char label_index;
+	char reserved_chars[3];
+	int reserved[4];
+};
+
+using AdlContext = void*;
+using AdlMallocCallback = void* (__stdcall*)(int);
+using AdlMainCreate = int (*)(AdlMallocCallback, int, AdlContext*);
+using AdlMainDestroy = int (*)(AdlContext);
+using AdlAdapterCountGet = int (*)(AdlContext, int*);
+using AdlDisplayInfoGet = int (*)(AdlContext, int, int*, AdlDisplayInfo**, int);
+using AdlFreeSyncStateGet = int (*)(AdlContext, int, int, int*, int*, int*, int*);
+using AdlFreeSyncCapGet = int (*)(AdlContext, int, int, AdlFreeSyncCap*);
+
+void* __stdcall GL4AdlAllocate(int size)
+{
+	return std::malloc(static_cast<size_t>(size));
+}
+
+class GL4AmdFreeSyncProbe
+{
+public:
+	~GL4AmdFreeSyncProbe()
+	{
+		if (context_ && destroy_)
+			destroy_(context_);
+		if (module_)
+			FreeLibrary(module_);
+	}
+
+	void Query(renderer_vrr_info* info)
+	{
+		if (!info)
+			return;
+
+		const double now = PerfMarkersNow();
+		if (!queried_ || now >= next_query_time_)
+		{
+			Refresh();
+			next_query_time_ = now + 2.0;
+			queried_ = true;
+		}
+
+		info->api_available = api_available_;
+		info->display_supported = display_supported_;
+		info->gaming_enabled = gaming_enabled_;
+		info->borderless_supported = borderless_supported_;
+		info->min_refresh_hz = min_refresh_hz_;
+		info->max_refresh_hz = max_refresh_hz_;
+		snprintf(info->display_name, sizeof(info->display_name), "%s", display_name_);
+	}
+
+private:
+	bool Initialize()
+	{
+		if (initialized_)
+			return api_available_;
+		initialized_ = true;
+
+		module_ = LoadLibraryW(L"atiadlxx.dll");
+		if (!module_)
+			return false;
+
+		auto get = [this](const char* name) {
+			return GetProcAddress(module_, name);
+		};
+		create_ = reinterpret_cast<AdlMainCreate>(get("ADL2_Main_Control_Create"));
+		destroy_ = reinterpret_cast<AdlMainDestroy>(get("ADL2_Main_Control_Destroy"));
+		adapter_count_ = reinterpret_cast<AdlAdapterCountGet>(
+			get("ADL2_Adapter_NumberOfAdapters_Get"));
+		display_info_ = reinterpret_cast<AdlDisplayInfoGet>(
+			get("ADL2_Display_DisplayInfo_Get"));
+		freesync_state_ = reinterpret_cast<AdlFreeSyncStateGet>(
+			get("ADL2_Display_FreeSyncState_Get"));
+		freesync_cap_ = reinterpret_cast<AdlFreeSyncCapGet>(
+			get("ADL2_Display_FreeSync_Cap"));
+		if (!create_ || !destroy_ || !adapter_count_ || !display_info_ ||
+			!freesync_state_)
+		{
+			return false;
+		}
+
+		if (create_(GL4AdlAllocate, 1, &context_) != ADL_OK || !context_)
+			return false;
+
+		api_available_ = true;
+		return true;
+	}
+
+	void Refresh()
+	{
+		display_supported_ = false;
+		gaming_enabled_ = false;
+		borderless_supported_ = false;
+		min_refresh_hz_ = 0;
+		max_refresh_hz_ = 0;
+		display_name_[0] = '\0';
+		if (!Initialize())
+			return;
+
+		int adapter_count = 0;
+		if (adapter_count_(context_, &adapter_count) != ADL_OK ||
+			adapter_count <= 0)
+		{
+			return;
+		}
+
+		bool found_fallback = false;
+		for (int adapter = 0; adapter < adapter_count; ++adapter)
+		{
+			int display_count = 0;
+			AdlDisplayInfo* displays = nullptr;
+			if (display_info_(context_, adapter, &display_count, &displays, 0) != ADL_OK ||
+				!displays)
+			{
+				continue;
+			}
+
+			for (int index = 0; index < display_count; ++index)
+			{
+				const AdlDisplayInfo& display = displays[index];
+				const bool connected = (display.info_value & ADL_DISPLAY_CONNECTED) != 0;
+				const bool mapped = (display.info_value & ADL_DISPLAY_MAPPED) != 0;
+				if (!connected)
+					continue;
+
+				int current = 0;
+				int default_setting = 0;
+				int min_micro_hz = 0;
+				int max_micro_hz = 0;
+				const int logical_adapter = display.display_id.logical_adapter_index;
+				const int logical_display = display.display_id.logical_index;
+				if (logical_adapter < 0 ||
+					freesync_state_(context_, logical_adapter, logical_display,
+						&current, &default_setting, &min_micro_hz, &max_micro_hz) != ADL_OK)
+				{
+					continue;
+				}
+
+				AdlFreeSyncCap cap = {};
+				const bool have_cap = freesync_cap_ &&
+					freesync_cap_(context_, logical_adapter, logical_display, &cap) == ADL_OK;
+				const bool supported = have_cap ?
+					(cap.caps & ADL_FREESYNC_CAP_SUPPORTED) != 0 :
+					max_micro_hz > min_micro_hz && max_micro_hz > 0;
+				if (!found_fallback || (mapped && supported))
+				{
+					found_fallback = true;
+					display_supported_ = supported;
+					gaming_enabled_ = (current & ADL_FREESYNC_USECASE_GAMING) != 0;
+					borderless_supported_ = have_cap &&
+						(cap.caps & ADL_FREESYNC_CAP_BORDERLESS) != 0;
+					min_refresh_hz_ = (min_micro_hz + 500000) / 1000000;
+					max_refresh_hz_ = (max_micro_hz + 500000) / 1000000;
+					snprintf(display_name_, sizeof(display_name_), "%s",
+						display.display_name);
+				}
+				if (mapped && supported)
+					break;
+			}
+			std::free(displays);
+			if (display_supported_)
+				break;
+		}
+	}
+
+	HMODULE module_ = nullptr;
+	AdlContext context_ = nullptr;
+	AdlMainCreate create_ = nullptr;
+	AdlMainDestroy destroy_ = nullptr;
+	AdlAdapterCountGet adapter_count_ = nullptr;
+	AdlDisplayInfoGet display_info_ = nullptr;
+	AdlFreeSyncStateGet freesync_state_ = nullptr;
+	AdlFreeSyncCapGet freesync_cap_ = nullptr;
+	bool initialized_ = false;
+	bool api_available_ = false;
+	bool queried_ = false;
+	bool display_supported_ = false;
+	bool gaming_enabled_ = false;
+	bool borderless_supported_ = false;
+	int min_refresh_hz_ = 0;
+	int max_refresh_hz_ = 0;
+	char display_name_[64] = {};
+	double next_query_time_ = 0.0;
+};
+
+GL4AmdFreeSyncProbe& GL4FreeSyncProbe()
+{
+	static GL4AmdFreeSyncProbe probe;
+	return probe;
+}
+
+void GL4FlushDwmPresentQueue()
+{
+	using DwmFlushProc = HRESULT(WINAPI*)();
+	static HMODULE module = LoadLibraryW(L"dwmapi.dll");
+	static DwmFlushProc flush = module ?
+		reinterpret_cast<DwmFlushProc>(GetProcAddress(module, "DwmFlush")) : nullptr;
+	if (flush)
+		flush();
+}
+
+}
+#endif
 
 static float mat4_identity[16] =
 { 1, 0, 0, 0,
@@ -1552,6 +1794,7 @@ void GL4Renderer::DestroyFramePacingFences()
 	frame_pacing_latest_swap_call_ms = 0.0;
 	frame_pacing_latest_queue_wait_ms = 0.0;
 	frame_pacing_present_deadline = 0.0;
+	frame_pacing_fixed_refresh = false;
 }
 
 void GL4Renderer::ConfigureFramePacing(int max_frames_in_flight, bool telemetry_enabled)
@@ -1567,8 +1810,46 @@ void GL4Renderer::ConfigureFramePacing(int max_frames_in_flight, bool telemetry_
 
 bool GL4Renderer::SchedulePresent(double interval_seconds)
 {
+	// When VSync is pacing at the display rate, do not also wait for an
+	// application deadline immediately before SwapBuffers. Arriving at the
+	// scanout boundary is exactly how an otherwise sustainable frame misses a
+	// refresh and turns into a visible hitch. Keep the software deadline for
+	// caps below the refresh rate; that is still needed for 60-on-120, etc.
+	int swap_interval = 0;
+#if defined(SDL3)
+	swap_interval = SDL_GL_GetSwapInterval();
+#elif defined(WIN32)
+	if (dwglGetSwapIntervalEXT)
+		swap_interval = dwglGetSwapIntervalEXT();
+#endif
+
+	int display_refresh_hz = 0;
+#if defined(WIN32)
+	if (hOpenGLDC)
+		display_refresh_hz = GetDeviceCaps((HDC)hOpenGLDC, VREFRESH);
+#endif
+	const double display_interval = display_refresh_hz > 1 ?
+		1.0 / static_cast<double>(display_refresh_hz) : 0.0;
+	const bool vsync_owns_cadence = swap_interval != 0 &&
+		(interval_seconds <= 0.0 ||
+			(display_interval > 0.0 && interval_seconds <= display_interval * 1.01));
+
+	if (swap_interval != 0 && !frame_pacing_vrr_eligibility_known)
+	{
+		renderer_vrr_info vrr = {};
+#if defined(WIN32)
+		GL4FreeSyncProbe().Query(&vrr);
+#endif
+		frame_pacing_vrr_eligible = vrr.display_supported &&
+			vrr.gaming_enabled && OpenGL_preferred_state.fullscreen &&
+			vrr.borderless_supported;
+		frame_pacing_vrr_eligibility_known = true;
+	}
+	frame_pacing_fixed_refresh = swap_interval != 0 &&
+		!frame_pacing_vrr_eligible;
+
 	frame_pacing_present_deadline = interval_seconds > 0.0 &&
-		frame_pacing_last_present_time > 0.0 ?
+		frame_pacing_last_present_time > 0.0 && !vsync_owns_cadence ?
 		frame_pacing_last_present_time + interval_seconds : 0.0;
 	return true;
 }
@@ -1627,9 +1908,39 @@ void GL4Renderer::GetFramePacingInfo(renderer_frame_pacing_info* info)
 	info->latest_present_interval_ms = frame_pacing_latest_present_interval_ms;
 	info->latest_swap_call_ms = frame_pacing_latest_swap_call_ms;
 	info->latest_queue_wait_ms = frame_pacing_latest_queue_wait_ms;
+	info->fixed_refresh_pacing = frame_pacing_fixed_refresh;
 	info->latest_present_serial = frame_pacing_present_serial;
 	info->latest_gpu_frame_ms = GL4_latest_gpu_frame_ms;
 	info->latest_gpu_frame_serial = GL4_latest_gpu_frame_serial;
+}
+
+void GL4Renderer::GetVrrInfo(renderer_vrr_info* info)
+{
+	if (!info)
+		return;
+	*info = {};
+
+#if defined(WIN32)
+	GL4FreeSyncProbe().Query(info);
+	if (dwglGetSwapIntervalEXT)
+		info->swap_interval = dwglGetSwapIntervalEXT();
+	if (hOpenGLDC)
+		info->display_refresh_hz = GetDeviceCaps((HDC)hOpenGLDC, VREFRESH);
+#elif defined(SDL3)
+	info->swap_interval = SDL_GL_GetSwapInterval();
+#endif
+	info->fullscreen = OpenGL_preferred_state.fullscreen;
+	// The Win32 "fullscreen" mode is a borderless desktop-sized window, not
+	// an exclusive display-mode switch. Do not claim eligibility unless the
+	// driver explicitly reports support for borderless FreeSync.
+	info->eligible = info->display_supported && info->gaming_enabled &&
+		info->fullscreen && info->borderless_supported;
+
+	// AMD ADL reports capability, enabled use cases, and the supported range.
+	// It does not expose whether the current application's most recent present
+	// was scanned out using variable refresh.
+	info->active_state_available = false;
+	info->active = false;
 }
 
 bool GL4Renderer::BeginPostPresentFrame()
@@ -2549,6 +2860,12 @@ void GL4Renderer::EndPostPresentFrame()
 		PERF_MARKER_SCOPE("Renderer.Flip.SwapBuffers");
 		GL4PerfPresentState("BeforeSwap", framebuffer_current_draw, post_present_pending_swap);
 		SwapBuffers((HDC)hOpenGLDC);
+		// WGL presents from this borderless window through DWM composition.
+		// SwapBuffers may return with several composed frames queued, producing
+		// high input-to-display latency even though its swap interval is one.
+		// DwmFlush waits only for this process's outstanding surface update.
+		if (frame_pacing_fixed_refresh)
+			GL4FlushDwmPresentQueue();
 	}
 #elif defined(__LINUX__)
 	{

@@ -276,6 +276,11 @@ public:
 		if (info)
 			*info = {};
 	}
+	virtual void GetVrrInfo(renderer_vrr_info* info)
+	{
+		if (info)
+			*info = {};
+	}
 	virtual bool BeginPostPresentFrame() { return false; }
 	virtual bool IsPostPresentFramePending() const { return false; }
 	virtual void StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags = RF_CLEAR_ZBUFFER) {}

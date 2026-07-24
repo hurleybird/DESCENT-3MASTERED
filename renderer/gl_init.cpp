@@ -470,7 +470,10 @@ int GL4Renderer::Setup(HDC glhdc)
 
 void GL4Renderer::ApplySwapInterval()
 {
-	int interval = 0;
+	frame_pacing_vrr_eligibility_known = false;
+	frame_pacing_fixed_refresh = false;
+
+	int interval = OpenGL_preferred_state.vsync ? 1 : 0;
 	const int swap_interval_arg = FindArg("-swapinterval");
 	const char* swap_interval_value = swap_interval_arg ? GetArg(swap_interval_arg + 1) : nullptr;
 	if (swap_interval_value)

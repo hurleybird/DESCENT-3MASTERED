@@ -35,9 +35,27 @@ struct renderer_frame_pacing_info
 	double latest_present_interval_ms = 0.0;
 	double latest_swap_call_ms = 0.0;
 	double latest_queue_wait_ms = 0.0;
+	bool fixed_refresh_pacing = false;
 	uint64_t latest_present_serial = 0;
 	double latest_gpu_frame_ms = 0.0;
 	uint64_t latest_gpu_frame_serial = 0;
+};
+
+struct renderer_vrr_info
+{
+	bool api_available = false;
+	bool display_supported = false;
+	bool gaming_enabled = false;
+	bool borderless_supported = false;
+	bool fullscreen = false;
+	bool eligible = false;
+	bool active_state_available = false;
+	bool active = false;
+	int min_refresh_hz = 0;
+	int max_refresh_hz = 0;
+	int display_refresh_hz = 0;
+	int swap_interval = 0;
+	char display_name[64] = {};
 };
 
 //	for rend_Init prototype
@@ -345,6 +363,7 @@ struct renderer_preferred_state
 	float afterburner_fov_multiplier;
 	float afterburner_pixel_blur_multiplier;
 	ubyte anisotropy; //1 (off), 2, 4, 8, or 16. Effective only with mipmaps.
+	bool vsync;
 };
 
 enum renderer_ao_class
@@ -745,6 +764,7 @@ void rend_ConfigureFramePacing(int max_frames_in_flight, bool telemetry_enabled)
 bool rend_SchedulePresent(double interval_seconds);
 double rend_WaitForFramePacing();
 void rend_GetFramePacingInfo(renderer_frame_pacing_info* info);
+void rend_GetVrrInfo(renderer_vrr_info* info);
 
 // Sets the argb characteristics of the font characters.  color1 is the upper left and proceeds clockwise
 void rend_SetCharacterParameters (ddgr_color color1,ddgr_color color2,ddgr_color color3,ddgr_color color4);

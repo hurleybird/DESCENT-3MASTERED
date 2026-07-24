@@ -72,6 +72,7 @@ extern int Game_frame_limit_fps;
 extern float Hud_text_scale;
 extern bool Render_draw_call_stats;
 extern bool Render_face_probe;
+extern bool Render_vrr_diagnostics;
 extern bool Render_soft_vis_effects;
 extern bool Render_enhanced_weather;
 extern bool Render_hires_skies;

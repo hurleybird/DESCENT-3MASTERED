@@ -733,7 +733,10 @@ float gameWinController::get_axis_value(sbyte controller, ubyte axis, ct_format 
 			(axis != CT_X_AXIS && axis != CT_Y_AXIS))
 			return val;
 
-		const float frame_time = (std::max)(m_frame_time, 0.000001f);
+		// The returned axis rate is integrated by physics using Frametime. Use
+		// that same interval rather than the independently sampled controller
+		// poll duration; under VSync the two can jitter out of phase.
+		const float frame_time = (std::max)(Frametime, 0.000001f);
 		float rate = axisval /
 			(ctldev->normalizer[axisIndex] * frame_time);
 		if (rate > MOUSE_DEADZONE)

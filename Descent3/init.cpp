@@ -391,6 +391,7 @@ void SaveGameSettings()
 	Database->write("RS_supersampling", Render_preferred_state.supersampling_factor);
 	Database->write("RS_per_pixel_lighting", Render_preferred_state.per_pixel_lighting);
 	Database->write("RS_bloom_enabled", Render_preferred_state.bloom_enabled);
+	Database->write("RS_vsync", Render_preferred_state.vsync);
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_threshold);
 	Database->write("RS_bloom_threshold", tempbuffer, strlen(tempbuffer) + 1);
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_intensity);
@@ -599,6 +600,8 @@ void LoadGameSettings()
 	Render_preferred_state.supersampling_factor = 1;
 	Render_preferred_state.per_pixel_lighting = false;
 	Render_preferred_state.bloom_enabled = false;
+	Render_preferred_state.vsync = false;
+	Render_vrr_diagnostics = FindArg("-vrr-status") != 0;
 	Render_preferred_state.bloom_threshold = 0.75f;
 	Render_preferred_state.bloom_intensity = 0.75f;
 	Render_preferred_state.bloom_spread = 0.75f;
@@ -878,6 +881,7 @@ void LoadGameSettings()
 	else if (FindArg("-perpixellighting") || FindArg("-per-pixel-lighting"))
 		Render_preferred_state.per_pixel_lighting = true;
 	Database->read("RS_bloom_enabled", &Render_preferred_state.bloom_enabled);
+	Database->read("RS_vsync", &Render_preferred_state.vsync);
 	if (FindArg("-nobloom") || FindArg("-no-bloom"))
 		Render_preferred_state.bloom_enabled = false;
 	else if (FindArg("-bloom"))

@@ -807,6 +807,19 @@ void rend_GetFramePacingInfo(renderer_frame_pacing_info* info)
 	renderer_inst->GetFramePacingInfo(info);
 }
 
+void rend_GetVrrInfo(renderer_vrr_info* info)
+{
+	if (!info)
+		return;
+	if (!Renderer_initted)
+	{
+		*info = {};
+		return;
+	}
+
+	renderer_inst->GetVrrInfo(info);
+}
+
 // Sets the argb characteristics of the font characters.  color1 is the upper left and proceeds clockwise
 void rend_SetCharacterParameters(ddgr_color color1, ddgr_color color2, ddgr_color color3, ddgr_color color4)
 {
