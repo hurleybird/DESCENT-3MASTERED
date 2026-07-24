@@ -391,7 +391,6 @@ void SaveGameSettings()
 	Database->write("RS_supersampling", Render_preferred_state.supersampling_factor);
 	Database->write("RS_per_pixel_lighting", Render_preferred_state.per_pixel_lighting);
 	Database->write("RS_bloom_enabled", Render_preferred_state.bloom_enabled);
-	Database->write("RS_vsync", Render_preferred_state.vsync);
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_threshold);
 	Database->write("RS_bloom_threshold", tempbuffer, strlen(tempbuffer) + 1);
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_intensity);
@@ -881,7 +880,9 @@ void LoadGameSettings()
 	else if (FindArg("-perpixellighting") || FindArg("-per-pixel-lighting"))
 		Render_preferred_state.per_pixel_lighting = true;
 	Database->read("RS_bloom_enabled", &Render_preferred_state.bloom_enabled);
-	Database->read("RS_vsync", &Render_preferred_state.vsync);
+	// VSync is intentionally command-line only while borderless presentation
+	// behavior remains under investigation. Ignore the obsolete persisted value.
+	Render_preferred_state.vsync = FindArg("-vsync") != 0;
 	if (FindArg("-nobloom") || FindArg("-no-bloom"))
 		Render_preferred_state.bloom_enabled = false;
 	else if (FindArg("-bloom"))
@@ -1233,9 +1234,10 @@ void LoadGameSettings()
 		Render_hires_skies = true;
 
 	AutomatedCaptureLog(
-		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d msaa=%u ssaa=%u filtering=%d mipping=%d anisotropy=%u per_pixel=%d bloom=%d ao=%d ao_resolution=%u ao_overscan=%u motion_blur=%d combined_blur=%d soft_particles=%d enhanced_weather=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
+		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d vsync=%d msaa=%u ssaa=%u filtering=%d mipping=%d anisotropy=%u per_pixel=%d bloom=%d ao=%d ao_resolution=%u ao_overscan=%u motion_blur=%d combined_blur=%d soft_particles=%d enhanced_weather=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
 		Game_window_res_width, Game_window_res_height, Game_fullscreen ? 1 : 0,
 		DesiredOpenGLProfile, GetFrameLimitFps(),
+		Render_preferred_state.vsync ? 1 : 0,
 		(unsigned)Render_preferred_state.msaa_samples,
 		(unsigned)Render_preferred_state.supersampling_factor,
 		(int)Render_preferred_state.filtering,

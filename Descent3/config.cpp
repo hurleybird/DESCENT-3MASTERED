@@ -1303,7 +1303,6 @@ struct video_menu
 	bool* mipmapping;
 	bool* per_pixel_lighting;
 	bool* bloom_enabled;
-	bool* vsync;
 	bool* perf_markers;
 	bool* show_fps;
 	bool* vrr_status;
@@ -1500,11 +1499,6 @@ struct video_menu
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
 			changed = true;
 		}
-		if (vsync && sheet->HasChanged(vsync))
-		{
-			Render_preferred_state.vsync = *vsync;
-			changed = true;
-		}
 		if (ao && sheet->HasChanged(ao))
 		{
 			if (ConfigCanUseAO())
@@ -1639,7 +1633,6 @@ struct video_menu
 		mipmapping = NULL;
 		per_pixel_lighting = NULL;
 		bloom_enabled = NULL;
-		vsync = NULL;
 		perf_markers = NULL;
 		show_fps = NULL;
 		vrr_status = NULL;
@@ -1700,10 +1693,9 @@ struct video_menu
 		frame_limit_settings.type = SLIDER_UNITS_INT;
 		frame_limit = sheet->AddSlider("Frame Limit", (short)(frame_limit_max - 30),
 			(short)(Game_frame_limit_fps - 30), &frame_limit_settings);
-		vsync = sheet->AddLongCheckBox("VSync", Render_preferred_state.vsync);
 
 		// video settings
-		sheet->NewGroup(TXT_TOGGLES, 0, 134);
+		sheet->NewGroup(TXT_TOGGLES, 0, 120);
 		Render_preferred_state.filtering = Render_preferred_state.filtering ? 1 : 0;
 		filtering = sheet->AddLongCheckBox(
 			ConfigFilteringCheckboxTitle(Render_preferred_state.mipping != 0),
@@ -1715,7 +1707,7 @@ struct video_menu
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
 		enhanced_snow = sheet->AddLongCheckBox("Enhanced weather", Render_enhanced_weather);
 
-		sheet->NewGroup("Debug", 0, 224);
+		sheet->NewGroup("Debug", 0, 210);
 		hires_skies = sheet->AddLongCheckBox("Hi-res skies", Render_hires_skies);
 		motion_vector_debug = sheet->AddLongCheckBox("Vector debug", Render_preferred_state.motion_vector_debug_preview);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
@@ -1783,8 +1775,6 @@ struct video_menu
 			Render_preferred_state.per_pixel_lighting = ConfigCanUsePerPixelLighting() && *per_pixel_lighting;
 		if (bloom_enabled)
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
-		if (vsync)
-			Render_preferred_state.vsync = *vsync;
 		if (ao)
 		{
 			if (ConfigCanUseAO())
