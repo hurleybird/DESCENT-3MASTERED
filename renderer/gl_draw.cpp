@@ -2423,16 +2423,116 @@ bool GL4Renderer::DrawWeatherQuadBatch(int handle, const renderer_weather_quad *
 
 	static std::vector<gl_vertex> vertices;
 	vertices.clear();
-	if (vertices.capacity() < (size_t)count * 6)
-		vertices.reserve((size_t)count * 6);
 
 	const auto transform_to_view = [](const vector& world) {
 		vector view = world - View_position;
 		return view * Unscaled_matrix;
 	};
 
+	// Large 1-bit-alpha legacy particles often occupy only a small, irregular
+	// portion of their authored square. For large projected sprites, replace
+	// the single bounding quad with a cached 8x8 coverage mesh. This preserves
+	// the original texels/filter footprint while preventing empty regions from
+	// invoking the fragment shader at high SSAA resolutions.
+	static std::vector<renderer_weather_quad> expanded_items;
+	expanded_items.clear();
+	expanded_items.reserve(count);
+	for (int item_index = 0; item_index < count; item_index++)
+	{
+		const renderer_weather_quad& source = items[item_index];
+		const vector source_pos = { source.pos[0], source.pos[1], source.pos[2] };
+		const vector center = transform_to_view(source_pos);
+		uint64_t mask = source.alpha_coverage_mask;
+		int covered_tiles = 0;
+		for (uint64_t bits = mask; bits != 0; bits >>= 1)
+			covered_tiles += (int)(bits & 1);
+
+		bool use_coverage_mesh = mask != 0 && covered_tiles < 64 && center.z > 0.0001f;
+		if (use_coverage_mesh)
+		{
+			const float c = fabsf(cosf(source.rotation));
+			const float s = fabsf(sinf(source.rotation));
+			const float half_width = source.width * c + source.height * s;
+			const float half_height = source.width * s + source.height * c;
+			const float projected_width =
+				2.0f * half_width * fabsf(Matrix_scale.x * Window_w2 / center.z);
+			const float projected_height =
+				2.0f * half_height * fabsf(Matrix_scale.y * Window_h2 / center.z);
+			const float rejected_pixels = projected_width * projected_height *
+				(1.0f - covered_tiles / 64.0f);
+			use_coverage_mesh = rejected_pixels >= 50000.0f;
+		}
+
+		if (!use_coverage_mesh)
+		{
+			expanded_items.push_back(source);
+			continue;
+		}
+
+		uint64_t remaining = mask;
+		for (int tile_y = 0; tile_y < 8; tile_y++)
+		{
+			for (int tile_x = 0; tile_x < 8; tile_x++)
+			{
+				const uint64_t first_bit = uint64_t(1) << (tile_y * 8 + tile_x);
+				if ((remaining & first_bit) == 0)
+					continue;
+
+				int tile_width = 1;
+				while (tile_x + tile_width < 8 &&
+					(remaining & (uint64_t(1) << (tile_y * 8 + tile_x + tile_width))) != 0)
+				{
+					tile_width++;
+				}
+				int tile_height = 1;
+				while (tile_y + tile_height < 8)
+				{
+					bool row_complete = true;
+					for (int x = 0; x < tile_width; x++)
+					{
+						if ((remaining & (uint64_t(1) <<
+							((tile_y + tile_height) * 8 + tile_x + x))) == 0)
+						{
+							row_complete = false;
+							break;
+						}
+					}
+					if (!row_complete)
+						break;
+					tile_height++;
+				}
+
+				for (int y = 0; y < tile_height; y++)
+				for (int x = 0; x < tile_width; x++)
+					remaining &= ~(uint64_t(1) <<
+						((tile_y + y) * 8 + tile_x + x));
+
+				const float fx0 = tile_x / 8.0f;
+				const float fy0 = tile_y / 8.0f;
+				const float fx1 = (tile_x + tile_width) / 8.0f;
+				const float fy1 = (tile_y + tile_height) / 8.0f;
+				renderer_weather_quad tile = source;
+				tile.width = source.width * (fx1 - fx0);
+				tile.height = source.height * (fy1 - fy0);
+				tile.center_offset_x += source.width * (fx0 + fx1 - 1.0f);
+				tile.center_offset_y += source.height * (1.0f - fy0 - fy1);
+				tile.u0 = source.u0 + (source.u1 - source.u0) * fx0;
+				tile.u1 = source.u0 + (source.u1 - source.u0) * fx1;
+				tile.v0 = source.v1 + (source.v0 - source.v1) * fy1;
+				tile.v1 = source.v1 + (source.v0 - source.v1) * fy0;
+				tile.alpha_coverage_mask = 0;
+				expanded_items.push_back(tile);
+			}
+		}
+	}
+
+	const renderer_weather_quad* draw_items = expanded_items.data();
+	const int draw_count = (int)expanded_items.size();
+	if (vertices.capacity() < (size_t)draw_count * 6)
+		vertices.reserve((size_t)draw_count * 6);
+
 	const auto append_vertex = [&](const vector& view, float u, float v,
-		const renderer_weather_quad& item) {
+		float blend_u, float blend_v, const renderer_weather_quad& item) {
 		const float z_for_payload = std::max(view.z + Z_bias + item.depth_bias, 0.0001f);
 		const float texw = 1.0f / z_for_payload;
 		gl_vertex vertex = {};
@@ -2447,14 +2547,19 @@ bool GL4Renderer::DrawWeatherQuadBatch(int handle, const renderer_weather_quad *
 		vertex.tex_coord.s = u * texw;
 		vertex.tex_coord.t = v * texw;
 		vertex.tex_coord.w = texw;
+		vertex.tex_coord2.s = blend_u * texw;
+		vertex.tex_coord2.t = blend_v * texw;
+		vertex.tex_coord2.w = texw;
+		vertex.normal.x = item.blend_a;
+		vertex.normal.y = item.blend_frame ? 1.0f : 0.0f;
 		if (soft_particle_draw_enabled)
 			vertex.normal.w = GL4DepthFromEyeZ(view.z + Z_bias + item.depth_bias);
 		vertices.push_back(vertex);
 	};
 
-	for (int i = 0; i < count; i++)
+	for (int i = 0; i < draw_count; i++)
 	{
-		const renderer_weather_quad& item = items[i];
+		const renderer_weather_quad& item = draw_items[i];
 		const vector item_pos = { item.pos[0], item.pos[1], item.pos[2] };
 		if (item.a <= 0.0f || item.width <= 0.0f || item.height <= 0.0f)
 			continue;
@@ -2470,11 +2575,17 @@ bool GL4Renderer::DrawWeatherQuadBatch(int handle, const renderer_weather_quad *
 			vm_TransposeMatrix(&plane_matrix);
 			const float c = cosf(item.rotation);
 			const float s = sinf(item.rotation);
+			const float center_x = item.center_offset_x * c + item.center_offset_y * s;
+			const float center_y = -item.center_offset_x * s + item.center_offset_y * c;
 			vector local[4];
-			local[0] = { -item.width * c - item.height * s, item.width * s - item.height * c, 0.0f };
-			local[1] = { item.width * c - item.height * s, -item.width * s - item.height * c, 0.0f };
-			local[2] = { item.width * c + item.height * s, -item.width * s + item.height * c, 0.0f };
-			local[3] = { -item.width * c + item.height * s, item.width * s + item.height * c, 0.0f };
+			local[0] = { center_x - item.width * c - item.height * s,
+				center_y + item.width * s - item.height * c, 0.0f };
+			local[1] = { center_x + item.width * c - item.height * s,
+				center_y - item.width * s - item.height * c, 0.0f };
+			local[2] = { center_x + item.width * c + item.height * s,
+				center_y - item.width * s + item.height * c, 0.0f };
+			local[3] = { center_x - item.width * c + item.height * s,
+				center_y + item.width * s + item.height * c, 0.0f };
 			for (int c = 0; c < 4; c++)
 			{
 				vector world_offset;
@@ -2497,7 +2608,8 @@ bool GL4Renderer::DrawWeatherQuadBatch(int handle, const renderer_weather_quad *
 			}
 			if (center.z <= 0.0001f)
 				continue;
-			const float radius = std::max(item.width, item.height) * 1.5f;
+			const float radius = std::max(fabsf(item.center_offset_x) + item.width,
+				fabsf(item.center_offset_y) + item.height) * 1.5f;
 			if (center.z > Detail_settings.Terrain_render_distance * Matrix_scale.z ||
 				fabsf(center.x) - radius > center.z || fabsf(center.y) - radius > center.z)
 			{
@@ -2506,11 +2618,17 @@ bool GL4Renderer::DrawWeatherQuadBatch(int handle, const renderer_weather_quad *
 
 			const float c = cosf(item.rotation);
 			const float s = sinf(item.rotation);
+			const float center_x = item.center_offset_x * c + item.center_offset_y * s;
+			const float center_y = -item.center_offset_x * s + item.center_offset_y * c;
 			const vector local[4] = {
-				{ -item.width * c - item.height * s, item.width * s - item.height * c, 0.0f },
-				{ item.width * c - item.height * s, -item.width * s - item.height * c, 0.0f },
-				{ item.width * c + item.height * s, -item.width * s + item.height * c, 0.0f },
-				{ -item.width * c + item.height * s, item.width * s + item.height * c, 0.0f }
+				{ center_x - item.width * c - item.height * s,
+					center_y + item.width * s - item.height * c, 0.0f },
+				{ center_x + item.width * c - item.height * s,
+					center_y - item.width * s - item.height * c, 0.0f },
+				{ center_x + item.width * c + item.height * s,
+					center_y - item.width * s + item.height * c, 0.0f },
+				{ center_x - item.width * c + item.height * s,
+					center_y + item.width * s + item.height * c, 0.0f }
 			};
 			for (int cidx = 0; cidx < 4; cidx++)
 			{
@@ -2534,11 +2652,18 @@ bool GL4Renderer::DrawWeatherQuadBatch(int handle, const renderer_weather_quad *
 
 		const float u[4] = { item.u0, item.u1, item.u1, item.u0 };
 		const float v[4] = { item.v0, item.v0, item.v1, item.v1 };
+		const float blend_u[4] = {
+			item.blend_u0, item.blend_u1, item.blend_u1, item.blend_u0
+		};
+		const float blend_v[4] = {
+			item.blend_v0, item.blend_v0, item.blend_v1, item.blend_v1
+		};
 		const int indices[6] = { 0, 1, 2, 0, 2, 3 };
 		for (int t = 0; t < 6; t++)
 		{
 			const int idx = indices[t];
-			append_vertex(corners[idx], u[idx], v[idx], item);
+			append_vertex(corners[idx], u[idx], v[idx],
+				blend_u[idx], blend_v[idx], item);
 		}
 	}
 
@@ -2558,8 +2683,64 @@ bool GL4Renderer::DrawWeatherQuadBatch(int handle, const renderer_weather_quad *
 	if (override_draw_buffers)
 		GL4UseSceneDrawBuffersForCurrentDraw(include_motion_vectors, include_post_mask,
 			include_ao_class, include_motion_object_ids);
+	const bool frame_blend_batch = std::any_of(expanded_items.begin(),
+		expanded_items.end(), [](const renderer_weather_quad& item) {
+			return item.blend_frame;
+		});
+	if (frame_blend_batch && lastdrawshader >= 0 &&
+		drawshader_fast_additive_bitmap_uniforms[lastdrawshader] != -1)
+	{
+		glUniform1i(drawshader_fast_additive_bitmap_uniforms[lastdrawshader], 2);
+		switch (OpenGL_state.cur_alpha_type)
+		{
+		case AT_SATURATE_TEXTURE:
+		case AT_SATURATE_VERTEX:
+		case AT_SATURATE_CONSTANT_VERTEX:
+		case AT_SATURATE_TEXTURE_VERTEX:
+		case AT_LIGHTMAP_BLEND_SATURATE:
+			glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+			break;
+		case AT_CONSTANT_TEXTURE:
+		case AT_CONSTANT_TEXTURE_VERTEX:
+		case AT_TEXTURE_VERTEX:
+		case AT_CONSTANT_VERTEX:
+		case AT_VERTEX:
+			glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA,
+				GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+			break;
+		default:
+			break;
+		}
+	}
 	rend_RecordDrawCall(draw_call_category);
 	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)vertices.size());
+	if (frame_blend_batch && lastdrawshader >= 0 &&
+		drawshader_fast_additive_bitmap_uniforms[lastdrawshader] != -1)
+	{
+		glUniform1i(drawshader_fast_additive_bitmap_uniforms[lastdrawshader], 0);
+		legacy_draw_uniforms_dirty = true;
+		switch (OpenGL_state.cur_alpha_type)
+		{
+		case AT_SATURATE_TEXTURE:
+		case AT_SATURATE_VERTEX:
+		case AT_SATURATE_CONSTANT_VERTEX:
+		case AT_SATURATE_TEXTURE_VERTEX:
+		case AT_LIGHTMAP_BLEND_SATURATE:
+			glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE,
+				GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+			break;
+		case AT_CONSTANT_TEXTURE:
+		case AT_CONSTANT_TEXTURE_VERTEX:
+		case AT_TEXTURE_VERTEX:
+		case AT_CONSTANT_VERTEX:
+		case AT_VERTEX:
+			glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+				GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+			break;
+		default:
+			break;
+		}
+	}
 	NotifyDepthBufferWrite();
 	if (include_motion_vectors || include_motion_object_ids)
 	{

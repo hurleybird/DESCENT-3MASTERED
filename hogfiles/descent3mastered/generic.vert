@@ -124,9 +124,7 @@ out vec4 out_field_specular_colors[4];
 #endif
 #if defined(USE_TEXTURING)
 out vec3 outuv;
-#if defined(USE_LIGHTMAP)
 out vec3 outuv2;
-#endif
 #endif
 #if defined(USE_FOG)
 out vec3 outpt;
@@ -411,9 +409,7 @@ void main()
 	#endif
 	#if defined(USE_TEXTURING)
 		outuv = uv;
-		#if defined(USE_LIGHTMAP)
-			outuv2 = uv2;
-		#endif
+		outuv2 = uv2;
 	#endif
 	#if defined(USE_FOG)
 		outpt = position;

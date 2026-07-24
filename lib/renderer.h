@@ -464,18 +464,27 @@ struct renderer_weather_quad
 	float plane_normal[3];
 	float width;
 	float height;
+	float center_offset_x;
+	float center_offset_y;
 	float rotation;
 	float depth_bias;
 	float u0;
 	float v0;
 	float u1;
 	float v1;
+	float blend_u0;
+	float blend_v0;
+	float blend_u1;
+	float blend_v1;
 	float r;
 	float g;
 	float b;
 	float a;
+	float blend_a;
+	uint64_t alpha_coverage_mask;
 	bool planar;
 	bool legacy_g3_projection;
+	bool blend_frame;
 };
 
 enum renderer_gpu_scene_mark

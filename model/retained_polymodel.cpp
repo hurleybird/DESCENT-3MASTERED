@@ -338,12 +338,14 @@ bool RetainedPolymodelCanSkipPointRotation(poly_model *pm, bsp_info *sm)
 	return true;
 }
 
-bool RetainedPolymodelStraddlesEyePlane(bsp_info *sm)
+bool RetainedPolymodelNeedsLegacyClip(bsp_info *sm)
 {
 	if (!sm || !sm->verts || sm->nverts <= 0)
 		return false;
 
-	// Most submodels are nowhere near the eye plane. Reject them with the
+	// Retained vertices use GL's z=1 near plane, while legacy g3 accepts any
+	// positive eye-space Z and clips/projectively triangulates the face itself.
+	// Most submodels are nowhere near that boundary, so reject them with the
 	// existing origin-centred model radius before inspecting individual points.
 	const float center_eye_z = -gTransformModelView[14] + Z_bias;
 	const float eye_z_axis_length_sq =
@@ -351,11 +353,10 @@ bool RetainedPolymodelStraddlesEyePlane(bsp_info *sm)
 		gTransformModelView[6] * gTransformModelView[6] +
 		gTransformModelView[10] * gTransformModelView[10];
 	const float eye_extent_sq = sm->rad * sm->rad * eye_z_axis_length_sq;
-	if (center_eye_z * center_eye_z > eye_extent_sq)
+	if (center_eye_z >= 1.0f &&
+		(center_eye_z - 1.0f) * (center_eye_z - 1.0f) > eye_extent_sq)
 		return false;
 
-	bool has_front_vertex = false;
-	bool has_behind_vertex = false;
 	for (int i = 0; i < sm->nverts; i++)
 	{
 		const vector& vertex = sm->verts[i];
@@ -365,9 +366,7 @@ bool RetainedPolymodelStraddlesEyePlane(bsp_info *sm)
 		const float eye_z = -(gTransformModelView[2] * vertex.x +
 			gTransformModelView[6] * vertex.y +
 			gTransformModelView[10] * vertex.z + gTransformModelView[14]) + Z_bias;
-		has_behind_vertex |= eye_z < 0.0f;
-		has_front_vertex |= eye_z >= 0.0f;
-		if (has_front_vertex && has_behind_vertex)
+		if (eye_z < 1.0f)
 			return true;
 	}
 	return false;

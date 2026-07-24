@@ -161,9 +161,7 @@ vec4 SampleLegacyLightmap(vec2 uv)
 #endif
 #if defined(USE_TEXTURING)
 in vec3 outuv;
-#if defined(USE_LIGHTMAP)
 in vec3 outuv2;
-#endif
 #endif
 #if defined(USE_FOG)
 in vec3 outpt;
@@ -399,6 +397,169 @@ void main()
 	velocity = vec2(0.0);
 	motion_object_id = 0u;
 	#if defined(USE_TEXTURING) && !defined(USE_LIGHTMAP)
+	if (fast_additive_bitmap == 2)
+	{
+		vec4 frame0 = texture(colortexture, outuv.xy / outuv.z) * outcolor;
+		bool has_frame1 = outnormal.y > 0.5;
+		vec4 frame1 = has_frame1 ?
+			texture(colortexture, outuv2.xy / outuv2.z) *
+				vec4(outcolor.rgb, outnormal.x) :
+			vec4(0.0);
+
+		if (post_mask_blend_mode != 2 && frame0.a <= 0.0 &&
+			(!has_frame1 || frame1.a <= 0.0))
+		{
+			discard;
+		}
+
+		float particle_fade = 1.0;
+		if (soft_particle_enabled != 0 &&
+			soft_particle_screen_size.x > 0.0 && soft_particle_screen_size.y > 0.0)
+		{
+			ivec2 depth_size = max(ivec2(soft_particle_screen_size), ivec2(1));
+			ivec2 depth_pixel = clamp(ivec2(gl_FragCoord.xy), ivec2(0), depth_size - ivec2(1));
+			float scene_depth = texelFetch(soft_particle_depth, depth_pixel, 0).r;
+			if (scene_depth < 0.9999)
+			{
+				float scene_eye = SoftParticleEyeDepth(scene_depth);
+				float particle_depth = outnormal.w >= 0.0 ? outnormal.w : gl_FragCoord.z;
+				float particle_eye = SoftParticleEyeDepth(particle_depth);
+				particle_fade = clamp((scene_eye - particle_eye) /
+					max(soft_particle_depth_range, 0.0001), 0.0, 1.0);
+			}
+		}
+
+		if (post_mask_blend_mode == 2)
+		{
+			frame0.rgb = mix(vec3(1.0), frame0.rgb, particle_fade);
+			if (has_frame1)
+				frame1.rgb = mix(vec3(1.0), frame1.rgb, particle_fade);
+		}
+		frame0.a *= particle_fade;
+		frame1.a *= particle_fade;
+
+		float room_amount = 0.0;
+		if (room_fog_enabled != 0 && abs(out_room_fog_world_position.w) > 0.00001)
+		{
+			vec3 room_world_position = out_room_fog_world_position.xyz /
+				out_room_fog_world_position.w;
+			room_amount = RoomFogAmount(room_world_position);
+			if (fog_composite_mode == 1)
+			{
+				frame0.rgb *= 1.0 - room_amount;
+				frame1.rgb *= 1.0 - room_amount;
+			}
+			else if (fog_composite_mode == 3)
+			{
+				frame0.rgb = mix(vec3(1.0), frame0.rgb, 1.0 - room_amount);
+				if (has_frame1)
+					frame1.rgb = mix(vec3(1.0), frame1.rgb, 1.0 - room_amount);
+			}
+			else
+			{
+				frame0.rgb = mix(frame0.rgb, room_fog_color, room_amount);
+				if (has_frame1)
+					frame1.rgb = mix(frame1.rgb, room_fog_color, room_amount);
+			}
+		}
+
+		float legacy_fog_amount = 0.0;
+		#if defined(USE_FOG)
+			float fog_start = clamp(1.0 - (1.0 / max(fog.start_dist, 0.0001)), 0.0, 1.0);
+			float fog_end = clamp(1.0 - (1.0 / max(fog.end_dist, 0.0001)), 0.0, 1.0);
+			float fog_depth = clamp(-outpt.z, 0.0, 1.0);
+			legacy_fog_amount = clamp((fog_depth - fog_start) /
+				max(fog_end - fog_start, 0.0001), 0.0, 1.0);
+			if (fog_composite_mode == 1)
+			{
+				frame0.rgb *= 1.0 - legacy_fog_amount;
+				frame1.rgb *= 1.0 - legacy_fog_amount;
+			}
+			else if (fog_composite_mode == 3)
+			{
+				frame0.rgb = mix(vec3(1.0), frame0.rgb, 1.0 - legacy_fog_amount);
+				if (has_frame1)
+					frame1.rgb = mix(vec3(1.0), frame1.rgb, 1.0 - legacy_fog_amount);
+			}
+			else
+			{
+				frame0.rgb = mix(frame0.rgb, fog.color.rgb, legacy_fog_amount);
+				if (has_frame1)
+					frame1.rgb = mix(frame1.rgb, fog.color.rgb, legacy_fog_amount);
+			}
+		#endif
+
+		float suppression0 = clamp(frame0.a, 0.0, 1.0);
+		float suppression1 = has_frame1 ? clamp(frame1.a, 0.0, 1.0) : 0.0;
+		float ao_mask0;
+		float ao_mask1;
+		if (post_mask_blend_mode == 1)
+		{
+			suppression0 *= clamp(max(max(frame0.r, frame0.g), frame0.b), 0.0, 1.0);
+			suppression1 *= clamp(max(max(frame1.r, frame1.g), frame1.b), 0.0, 1.0);
+			ao_mask0 = ao_suppression * suppression0;
+			ao_mask1 = ao_suppression * suppression1;
+		}
+		else if (post_mask_blend_mode == 2)
+		{
+			ao_mask0 = ao_suppression * (1.0 -
+				clamp(dot(frame0.rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0));
+			ao_mask1 = has_frame1 ? ao_suppression * (1.0 -
+				clamp(dot(frame1.rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0)) : 0.0;
+		}
+		else
+		{
+			ao_mask0 = ao_suppression * suppression0;
+			ao_mask1 = ao_suppression * suppression1;
+			if (fog_composite_mode == 0)
+			{
+				ao_mask0 = max(ao_mask0, room_amount * suppression0);
+				ao_mask1 = max(ao_mask1, room_amount * suppression1);
+			}
+		}
+
+		float bloom0 = bloom_suppression *
+			(1.0 - pow(1.0 - suppression0, 3.0));
+		float bloom1 = bloom_suppression *
+			(1.0 - pow(1.0 - suppression1, 3.0));
+		#if defined(USE_FOG)
+			bloom0 = max(bloom0, legacy_fog_amount);
+			bloom1 = has_frame1 ? max(bloom1, legacy_fog_amount) : 0.0;
+		#endif
+
+		if (!has_frame1)
+		{
+			color = post_mask_blend_mode == 2 ? frame0 :
+				vec4(frame0.rgb * frame0.a, frame0.a);
+		}
+		else if (post_mask_blend_mode == 2)
+		{
+			// Destination multiplication composes by multiplying the two
+			// authored frame values.
+			color = vec4(frame0.rgb * frame1.rgb,
+				max(frame0.a, frame1.a));
+		}
+		else
+		{
+			// Reproduce two ordered source-alpha blends with one hardware
+			// blend. Additive RGB is commutative; ordinary alpha keeps the
+			// original frame0-then-frame1 order.
+			float combined_alpha = frame1.a + frame0.a * (1.0 - frame1.a);
+			vec3 premultiplied = post_mask_blend_mode == 1 ?
+				frame0.rgb * frame0.a + frame1.rgb * frame1.a :
+				frame1.rgb * frame1.a +
+					frame0.rgb * frame0.a * (1.0 - frame1.a);
+			// The renderer switches these combined draws to premultiplied
+			// blending. This avoids fixed-point render-target clamping when
+			// two additive frame contributions exceed their union alpha.
+			color = vec4(premultiplied, combined_alpha);
+		}
+		post_mask = vec4(clamp(max(ao_mask0, ao_mask1), 0.0, 1.0),
+			clamp(max(bloom0, bloom1), 0.0, 1.0), 0.0,
+			float(clamp(ao_class_value, 0, 255)) / 255.0);
+		return;
+	}
+
 	if (fast_additive_bitmap != 0)
 	{
 		color = texture(colortexture, outuv.xy / outuv.z) * outcolor;

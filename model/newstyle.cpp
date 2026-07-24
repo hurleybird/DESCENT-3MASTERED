@@ -774,7 +774,11 @@ static bool PolymodelFaceNeedsLegacyClip(bsp_info *sm, const polyface *face)
 
 	ubyte clip_or = 0;
 	for (int corner = 0; corner < face->nverts; corner++)
+	{
 		clip_or |= Robot_points[face->vertnums[corner]].p3_codes;
+		if (Robot_points[face->vertnums[corner]].p3_z < 1.0f)
+			return true;
+	}
 	return clip_or != 0;
 }
 
@@ -2438,7 +2442,7 @@ void RenderSubmodel (poly_model *pm,bsp_info *sm, uint f_render_sub)
 			Polymodel_perf_submodel_draw_count++;
 		double rotate_start_time = PolymodelPerfNow();
 		const bool skip_point_rotation = RetainedPolymodelCanSkipPointRotation(pm, sm) &&
-			!RetainedPolymodelStraddlesEyePlane(sm);
+			!RetainedPolymodelNeedsLegacyClip(sm);
 		RetainedPolymodelPrepareSubmodel(pm, sm, skip_point_rotation);
 		if (!skip_point_rotation)
 			RotateModelPoints (pm,sm);

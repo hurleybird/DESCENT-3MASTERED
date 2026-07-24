@@ -1669,6 +1669,20 @@ struct VisFireballSharedAtlas
 	std::vector<VisFireballAtlasFrame> frames;
 };
 
+struct VisFireballAlphaCrop
+{
+	int width;
+	int height;
+	int bitmap_format;
+	char source_name[BITMAP_NAME_LEN];
+	float x0;
+	float y0;
+	float x1;
+	float y1;
+	uint64_t coverage_mask;
+	bool valid;
+};
+
 static bool VisFireball_batch_valid = false;
 static VisFireballBatchKey VisFireball_batch_key = {};
 static std::vector<VisFireballBatchItem> VisFireball_batch_items;
@@ -1676,6 +1690,7 @@ static bool VisFireball_fast_batch_valid = false;
 static VisFireballBatchKey VisFireball_fast_batch_key = {};
 static std::vector<renderer_weather_quad> VisFireball_fast_batch_items;
 static std::vector<VisFireballSharedAtlas> VisFireball_shared_atlases;
+static std::vector<VisFireballAlphaCrop> VisFireball_alpha_crops(MAX_BITMAPS);
 static bool VisWeather_quad_batch_valid = false;
 static VisWeatherBatchKey VisWeather_quad_batch_key = {};
 static std::vector<VisFireballBatchItem> VisWeather_quad_batch_items;
@@ -1691,6 +1706,117 @@ static std::vector<VisFireballBatchItem> VisMassDriver_batch_items;
 static const bool VIS_FIREBALL_BARRIER_FLUSHES_ENABLED = false;
 static const int VIS_FIREBALL_ATLAS_PADDING = 1;
 static const int VIS_FIREBALL_ATLAS_MAX_DIMENSION = 2048;
+
+static bool VisEffectGetBitmapAlphaCrop(int bitmap_handle, float* x0, float* y0,
+	float* x1, float* y1, uint64_t* coverage_mask)
+{
+	if (!x0 || !y0 || !x1 || !y1 || !coverage_mask ||
+		bitmap_handle <= BAD_BITMAP_HANDLE ||
+		bitmap_handle >= MAX_BITMAPS || !GameBitmaps[bitmap_handle].used)
+	{
+		return false;
+	}
+
+	const int width = bm_w(bitmap_handle, 0);
+	const int height = bm_h(bitmap_handle, 0);
+	if (width <= 0 || height <= 0)
+		return false;
+
+	VisFireballAlphaCrop& crop = VisFireball_alpha_crops[bitmap_handle];
+	if (!crop.valid || crop.width != width || crop.height != height ||
+		crop.bitmap_format != GameBitmaps[bitmap_handle].format ||
+		strncmp(crop.source_name, GameBitmaps[bitmap_handle].name, BITMAP_NAME_LEN) != 0)
+	{
+		ushort* pixels = bm_data(bitmap_handle, 0);
+		if (!pixels)
+			return false;
+
+		int min_x = width;
+		int min_y = height;
+		int max_x = -1;
+		int max_y = -1;
+		const bool alpha_4444 = GameBitmaps[bitmap_handle].format == BITMAP_FORMAT_4444;
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				const ushort pixel = pixels[y * width + x];
+				const bool visible = alpha_4444 ? (pixel & 0xf000) != 0 :
+					(pixel & OPAQUE_FLAG) != 0;
+				if (!visible)
+					continue;
+				min_x = std::min(min_x, x);
+				min_y = std::min(min_y, y);
+				max_x = std::max(max_x, x);
+				max_y = std::max(max_y, y);
+			}
+		}
+
+		crop.width = width;
+		crop.height = height;
+		crop.bitmap_format = GameBitmaps[bitmap_handle].format;
+		strncpy(crop.source_name, GameBitmaps[bitmap_handle].name, BITMAP_NAME_LEN - 1);
+		crop.source_name[BITMAP_NAME_LEN - 1] = '\0';
+		if (max_x < min_x || max_y < min_y)
+		{
+			crop.x0 = crop.y0 = crop.x1 = crop.y1 = 0.0f;
+			crop.coverage_mask = 0;
+		}
+		else
+		{
+			// Keep a full transparent texel around the authored support. This
+			// conservatively preserves the complete bilinear filter footprint
+			// while avoiding the much larger empty rectangle around it.
+			crop.x0 = std::max(0.0f, (min_x - 1.0f) / width);
+			crop.y0 = std::max(0.0f, (min_y - 1.0f) / height);
+			crop.x1 = std::min(1.0f, (max_x + 2.0f) / width);
+			crop.y1 = std::min(1.0f, (max_y + 2.0f) / height);
+			crop.coverage_mask = 0;
+			const float crop_width = crop.x1 - crop.x0;
+			const float crop_height = crop.y1 - crop.y0;
+			for (int y = 0; y < height; y++)
+			{
+				for (int x = 0; x < width; x++)
+				{
+					const ushort pixel = pixels[y * width + x];
+					const bool visible = alpha_4444 ? (pixel & 0xf000) != 0 :
+						(pixel & OPAQUE_FLAG) != 0;
+					if (!visible)
+						continue;
+					const float local_x0 = std::max(0.0f,
+						((x - 0.5f) / width - crop.x0) / crop_width);
+					const float local_y0 = std::max(0.0f,
+						((y - 0.5f) / height - crop.y0) / crop_height);
+					const float local_x1 = std::min(1.0f,
+						((x + 1.5f) / width - crop.x0) / crop_width);
+					const float local_y1 = std::min(1.0f,
+						((y + 1.5f) / height - crop.y0) / crop_height);
+					const int tile_x0 = std::max(0, std::min(7,
+						(int)floorf(local_x0 * 8.0f)));
+					const int tile_y0 = std::max(0, std::min(7,
+						(int)floorf(local_y0 * 8.0f)));
+					const int tile_x1 = std::max(0, std::min(7,
+						(int)ceilf(local_x1 * 8.0f) - 1));
+					const int tile_y1 = std::max(0, std::min(7,
+						(int)ceilf(local_y1 * 8.0f) - 1));
+					for (int tile_y = tile_y0; tile_y <= tile_y1; tile_y++)
+					{
+						for (int tile_x = tile_x0; tile_x <= tile_x1; tile_x++)
+							crop.coverage_mask |= uint64_t(1) << (tile_y * 8 + tile_x);
+					}
+				}
+			}
+		}
+		crop.valid = true;
+	}
+
+	*x0 = crop.x0;
+	*y0 = crop.y0;
+	*x1 = crop.x1;
+	*y1 = crop.y1;
+	*coverage_mask = crop.coverage_mask;
+	return true;
+}
 
 static bool VisEffectHasQueuedBatch()
 {
@@ -2727,6 +2853,7 @@ static bool VisEffectBuildFastFireballBatchItem(vis_effect* vis, VisFireballBatc
 	float v0 = 0.0f;
 	float u1 = 1.0f;
 	float v1 = 1.0f;
+	int source_bitmap_handle = BAD_BITMAP_HANDLE;
 	int blend_bitmap_handle = BAD_BITMAP_HANDLE;
 	int blend_bitmap_width = 0;
 	int blend_bitmap_height = 0;
@@ -2734,16 +2861,19 @@ static bool VisEffectBuildFastFireballBatchItem(vis_effect* vis, VisFireballBatc
 	float blend_v0 = 0.0f;
 	float blend_u1 = 1.0f;
 	float blend_v1 = 1.0f;
+	int blend_source_bitmap_handle = BAD_BITMAP_HANDLE;
 	float frame1_weight = 0.0f;
 
 	auto select_vclip = [&](int vclip_handle, bool loop) {
 		vclip* vc = &GameVClips[vclip_handle];
 		const VisEffectVClipFrameBlend frame_blend =
 			VisEffectCalcVClipFrameBlend(vc, norm_time, loop);
+		source_bitmap_handle = vc->frames[frame_blend.frame0];
 		VisEffectSelectVClipBitmap(vclip_handle, frame_blend.frame0,
 			&bitmap_handle, &bitmap_width, &bitmap_height, &u0, &v0, &u1, &v1);
 		if (frame_blend.has_frame1)
 		{
+			blend_source_bitmap_handle = vc->frames[frame_blend.frame1];
 			VisEffectSelectVClipBitmap(vclip_handle, frame_blend.frame1,
 				&blend_bitmap_handle, &blend_bitmap_width, &blend_bitmap_height,
 				&blend_u0, &blend_v0, &blend_u1, &blend_v1);
@@ -2759,11 +2889,19 @@ static bool VisEffectBuildFastFireballBatchItem(vis_effect* vis, VisFireballBatc
 			select_vclip(GameTextures[texture].bm_handle,
 				(vis->flags & VF_ATTACHED) != 0);
 		else
+		{
+			// Procedural bitmaps can change in place, so their cached alpha
+			// support would immediately become stale. Keep those on the full
+			// quad while static smoke textures use the exact authored bounds.
+			if ((GameTextures[texture].flags & TF_PROCEDURAL) == 0)
+				source_bitmap_handle = GameTextures[texture].bm_handle;
 			VisEffectSelectBitmapForBatch(GameTextures[texture].bm_handle,
 				&bitmap_handle, &bitmap_width, &bitmap_height, &u0, &v0, &u1, &v1);
+		}
 	}
 	else if (fb->type == FT_SPARK)
 	{
+		source_bitmap_handle = fb->bm_handle;
 		VisEffectSelectBitmapForBatch(fb->bm_handle, &bitmap_handle,
 			&bitmap_width, &bitmap_height, &u0, &v0, &u1, &v1);
 	}
@@ -2819,43 +2957,79 @@ static bool VisEffectBuildFastFireballBatchItem(vis_effect* vis, VisFireballBatc
 	const float depth_bias = VisEffectBillboardDepthBias(vis, fb, size, key.soft_particles);
 	const bool planar = (vis->flags & VF_PLANAR) != 0;
 
-	auto fill_item = [&](renderer_weather_quad& output, float out_u0, float out_v0,
-		float out_u1, float out_v1, float alpha) {
+	auto fill_item = [&](renderer_weather_quad& output, int source_handle,
+		float out_u0, float out_v0, float out_u1, float out_v1, float alpha) {
 		output = {};
+		float crop_x0 = 0.0f;
+		float crop_y0 = 0.0f;
+		float crop_x1 = 1.0f;
+		float crop_y1 = 1.0f;
+		uint64_t coverage_mask = 0;
+		VisEffectGetBitmapAlphaCrop(source_handle, &crop_x0, &crop_y0,
+			&crop_x1, &crop_y1, &coverage_mask);
+		const float cropped_u0 = out_u0 + (out_u1 - out_u0) * crop_x0;
+		const float cropped_v0 = out_v0 + (out_v1 - out_v0) * crop_y0;
+		const float cropped_u1 = out_u0 + (out_u1 - out_u0) * crop_x1;
+		const float cropped_v1 = out_v0 + (out_v1 - out_v0) * crop_y1;
 		output.pos[0] = vis->pos.x;
 		output.pos[1] = vis->pos.y;
 		output.pos[2] = vis->pos.z;
 		output.plane_normal[0] = vis->end_pos.x;
 		output.plane_normal[1] = vis->end_pos.y;
 		output.plane_normal[2] = vis->end_pos.z;
-		output.width = size;
-		output.height = height;
+		output.width = size * (crop_x1 - crop_x0);
+		output.height = height * (crop_y1 - crop_y0);
+		output.center_offset_x = size * (crop_x0 + crop_x1 - 1.0f);
+		// Weather quads reverse V to match legacy g3, so texture-space down is
+		// the negative local-Y direction.
+		output.center_offset_y = height * (1.0f - crop_y0 - crop_y1);
 		output.rotation = rotation;
 		output.depth_bias = depth_bias;
 		output.legacy_g3_projection = true;
-		output.u0 = out_u0;
+		output.u0 = cropped_u0;
 		// The compact renderer's weather quad convention predates this path and
 		// enumerates its corners bottom-to-top.  Reverse V here so ordinary
 		// fireballs retain the legacy g3 bitmap orientation without changing
 		// existing weather rendering.
-		output.v0 = out_v1;
-		output.u1 = out_u1;
-		output.v1 = out_v0;
+		output.v0 = cropped_v1;
+		output.u1 = cropped_u1;
+		output.v1 = cropped_v0;
 		output.r = red;
 		output.g = green;
 		output.b = blue;
 		output.a = alpha;
+		output.alpha_coverage_mask = coverage_mask;
 		output.planar = planar;
 	};
 
 	const bool blend_valid = frame1_weight > 0.001f &&
 		blend_bitmap_handle > BAD_BITMAP_HANDLE &&
 		blend_bitmap_width > 0 && blend_bitmap_height > 0;
-	fill_item(item, u0, v0, u1, v1,
+	if (blend_valid && blend_bitmap_handle == bitmap_handle &&
+		blend_bitmap_width == bitmap_width && blend_bitmap_height == bitmap_height)
+	{
+		// Both animation frames live in the same shared atlas. Submit them as
+		// one sprite so the renderer can reproduce the two legacy blend
+		// operations in one fragment invocation. Use the complete authored
+		// frame here: the two animation frames can have different alpha bounds,
+		// while a single quad must cover their union.
+		fill_item(item, BAD_BITMAP_HANDLE, u0, v0, u1, v1,
+			vertex_alpha * (1.0f - frame1_weight));
+		item.blend_u0 = blend_u0;
+		item.blend_v0 = blend_v1;
+		item.blend_u1 = blend_u1;
+		item.blend_v1 = blend_v0;
+		item.blend_a = vertex_alpha * frame1_weight;
+		item.blend_frame = true;
+		return true;
+	}
+
+	fill_item(item, source_bitmap_handle, u0, v0, u1, v1,
 		vertex_alpha * (blend_valid ? 1.0f - frame1_weight : 1.0f));
 	if (blend_valid)
 	{
-		fill_item(blend_item, blend_u0, blend_v0, blend_u1, blend_v1,
+		fill_item(blend_item, blend_source_bitmap_handle,
+			blend_u0, blend_v0, blend_u1, blend_v1,
 			vertex_alpha * frame1_weight);
 		has_blend_item = true;
 	}
