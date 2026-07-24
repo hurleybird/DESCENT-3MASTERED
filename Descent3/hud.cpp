@@ -1681,21 +1681,22 @@ static void HUDRenderVrrStatus()
 	{
 		RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, y,
 			"VRR: driver status unavailable");
-		return;
 	}
-	if (!info.display_supported)
+	else if (!info.display_supported)
 	{
 		RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, y,
-			"VRR: display not supported");
-		return;
+			"VRR: not supported [%s]",
+			info.display_name[0] ? info.display_name : "unnamed display");
 	}
-
-	RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, y,
-		"VRR: %s, FreeSync gaming %s (%d-%d Hz) [%s]",
-		info.eligible ? "configured" : "not configured",
-		info.gaming_enabled ? "on" : "off",
-		info.min_refresh_hz, info.max_refresh_hz,
-		info.display_name[0] ? info.display_name : "unnamed display");
+	else
+	{
+		RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, y,
+			"VRR: %s, FreeSync gaming %s (%d-%d Hz) [%s]",
+			info.eligible ? "configured" : "not configured",
+			info.gaming_enabled ? "on" : "off",
+			info.min_refresh_hz, info.max_refresh_hz,
+			info.display_name[0] ? info.display_name : "unnamed display");
+	}
 	y += grtext_GetHeight("X") + 2;
 	RenderHUDText(HUD_COLOR, HUD_ALPHA, 0, 10, y,
 		"Present: VSync %s, %s, %d Hz; engagement unknown (borderless cap %s)",

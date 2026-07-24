@@ -22,6 +22,7 @@
 #include "rtperformance.h"
 #include <math.h>
 #include <chrono>
+#include <climits>
 #include <cstdlib>
 #include <cstring>
 #include <thread>
@@ -73,6 +74,8 @@ using AdlMainCreate = int (*)(AdlMallocCallback, int, AdlContext*);
 using AdlMainDestroy = int (*)(AdlContext);
 using AdlAdapterCountGet = int (*)(AdlContext, int*);
 using AdlDisplayInfoGet = int (*)(AdlContext, int, int*, AdlDisplayInfo**, int);
+using AdlDisplayPositionGet = int (*)(AdlContext, int, int, int*, int*, int*,
+	int*, int*, int*, int*, int*, int*, int*);
 using AdlFreeSyncStateGet = int (*)(AdlContext, int, int, int*, int*, int*, int*);
 using AdlFreeSyncCapGet = int (*)(AdlContext, int, int, AdlFreeSyncCap*);
 
@@ -92,17 +95,20 @@ public:
 			FreeLibrary(module_);
 	}
 
-	void Query(renderer_vrr_info* info)
+	void Query(renderer_vrr_info* info, int target_x, int target_y)
 	{
 		if (!info)
 			return;
 
 		const double now = PerfMarkersNow();
-		if (!queried_ || now >= next_query_time_)
+		if (!queried_ || now >= next_query_time_ ||
+			target_x != target_x_ || target_y != target_y_)
 		{
-			Refresh();
+			Refresh(target_x, target_y);
 			next_query_time_ = now + 2.0;
 			queried_ = true;
+			target_x_ = target_x;
+			target_y_ = target_y;
 		}
 
 		info->api_available = api_available_;
@@ -134,6 +140,8 @@ private:
 			get("ADL2_Adapter_NumberOfAdapters_Get"));
 		display_info_ = reinterpret_cast<AdlDisplayInfoGet>(
 			get("ADL2_Display_DisplayInfo_Get"));
+		display_position_ = reinterpret_cast<AdlDisplayPositionGet>(
+			get("ADL2_Display_Position_Get"));
 		freesync_state_ = reinterpret_cast<AdlFreeSyncStateGet>(
 			get("ADL2_Display_FreeSyncState_Get"));
 		freesync_cap_ = reinterpret_cast<AdlFreeSyncCapGet>(
@@ -151,7 +159,7 @@ private:
 		return true;
 	}
 
-	void Refresh()
+	void Refresh(int target_x, int target_y)
 	{
 		display_supported_ = false;
 		gaming_enabled_ = false;
@@ -169,7 +177,9 @@ private:
 			return;
 		}
 
+		const bool have_target = target_x != INT_MIN && target_y != INT_MIN;
 		bool found_fallback = false;
+		bool found_target = false;
 		for (int adapter = 0; adapter < adapter_count; ++adapter)
 		{
 			int display_count = 0;
@@ -188,30 +198,57 @@ private:
 				if (!connected)
 					continue;
 
+				const int logical_adapter =
+					display.display_id.logical_adapter_index;
+				const int logical_display =
+					display.display_id.logical_index;
+				if (logical_adapter < 0)
+					continue;
+
+				bool target_match = false;
+				if (have_target && display_position_)
+				{
+					int x = 0;
+					int y = 0;
+					int x_default = 0;
+					int y_default = 0;
+					int min_x = 0;
+					int min_y = 0;
+					int max_x = 0;
+					int max_y = 0;
+					int step_x = 0;
+					int step_y = 0;
+					target_match =
+						display_position_(context_, logical_adapter, logical_display,
+							&x, &y, &x_default, &y_default, &min_x, &min_y,
+							&max_x, &max_y, &step_x, &step_y) == ADL_OK &&
+						x == target_x && y == target_y;
+				}
+
 				int current = 0;
 				int default_setting = 0;
 				int min_micro_hz = 0;
 				int max_micro_hz = 0;
-				const int logical_adapter = display.display_id.logical_adapter_index;
-				const int logical_display = display.display_id.logical_index;
-				if (logical_adapter < 0 ||
+				const bool have_state =
 					freesync_state_(context_, logical_adapter, logical_display,
-						&current, &default_setting, &min_micro_hz, &max_micro_hz) != ADL_OK)
-				{
-					continue;
-				}
+						&current, &default_setting, &min_micro_hz,
+						&max_micro_hz) == ADL_OK;
 
 				AdlFreeSyncCap cap = {};
 				const bool have_cap = freesync_cap_ &&
 					freesync_cap_(context_, logical_adapter, logical_display, &cap) == ADL_OK;
 				const bool supported = have_cap ?
 					(cap.caps & ADL_FREESYNC_CAP_SUPPORTED) != 0 :
-					max_micro_hz > min_micro_hz && max_micro_hz > 0;
-				if (!found_fallback || (mapped && supported))
+					have_state && max_micro_hz > min_micro_hz &&
+						max_micro_hz > 0;
+				const bool use_display = target_match ||
+					(!found_fallback && (!have_target || mapped));
+				if (use_display)
 				{
 					found_fallback = true;
 					display_supported_ = supported;
-					gaming_enabled_ = (current & ADL_FREESYNC_USECASE_GAMING) != 0;
+					gaming_enabled_ = have_state &&
+						(current & ADL_FREESYNC_USECASE_GAMING) != 0;
 					borderless_supported_ = have_cap &&
 						(cap.caps & ADL_FREESYNC_CAP_BORDERLESS) != 0;
 					min_refresh_hz_ = (min_micro_hz + 500000) / 1000000;
@@ -219,11 +256,14 @@ private:
 					snprintf(display_name_, sizeof(display_name_), "%s",
 						display.display_name);
 				}
-				if (mapped && supported)
+				if (target_match)
+				{
+					found_target = true;
 					break;
+				}
 			}
 			std::free(displays);
-			if (display_supported_)
+			if (found_target)
 				break;
 		}
 	}
@@ -234,6 +274,7 @@ private:
 	AdlMainDestroy destroy_ = nullptr;
 	AdlAdapterCountGet adapter_count_ = nullptr;
 	AdlDisplayInfoGet display_info_ = nullptr;
+	AdlDisplayPositionGet display_position_ = nullptr;
 	AdlFreeSyncStateGet freesync_state_ = nullptr;
 	AdlFreeSyncCapGet freesync_cap_ = nullptr;
 	bool initialized_ = false;
@@ -246,12 +287,48 @@ private:
 	int max_refresh_hz_ = 0;
 	char display_name_[64] = {};
 	double next_query_time_ = 0.0;
+	int target_x_ = INT_MIN;
+	int target_y_ = INT_MIN;
 };
 
 GL4AmdFreeSyncProbe& GL4FreeSyncProbe()
 {
 	static GL4AmdFreeSyncProbe probe;
 	return probe;
+}
+
+bool GL4GetWindowMonitorMode(HWND window, int* x, int* y, int* refresh_hz)
+{
+	if (x)
+		*x = INT_MIN;
+	if (y)
+		*y = INT_MIN;
+	if (refresh_hz)
+		*refresh_hz = 0;
+	if (!window)
+		return false;
+
+	const HMONITOR monitor =
+		MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+	MONITORINFOEXA monitor_info = {};
+	monitor_info.cbSize = sizeof(monitor_info);
+	if (!monitor || !GetMonitorInfoA(monitor, &monitor_info))
+		return false;
+
+	if (x)
+		*x = monitor_info.rcMonitor.left;
+	if (y)
+		*y = monitor_info.rcMonitor.top;
+
+	DEVMODEA mode = {};
+	mode.dmSize = sizeof(mode);
+	if (refresh_hz &&
+		EnumDisplaySettingsA(monitor_info.szDevice, ENUM_CURRENT_SETTINGS, &mode) &&
+		mode.dmDisplayFrequency > 1)
+	{
+		*refresh_hz = static_cast<int>(mode.dmDisplayFrequency);
+	}
+	return true;
 }
 
 }
@@ -1819,7 +1896,10 @@ bool GL4Renderer::SchedulePresent(double interval_seconds)
 	{
 		renderer_vrr_info vrr = {};
 #if defined(WIN32)
-		GL4FreeSyncProbe().Query(&vrr);
+		int monitor_x = INT_MIN;
+		int monitor_y = INT_MIN;
+		GL4GetWindowMonitorMode(hOpenGLWnd, &monitor_x, &monitor_y, nullptr);
+		GL4FreeSyncProbe().Query(&vrr, monitor_x, monitor_y);
 #endif
 		frame_pacing_vrr_eligible = vrr.display_supported &&
 			vrr.gaming_enabled;
@@ -1901,11 +1981,13 @@ void GL4Renderer::GetVrrInfo(renderer_vrr_info* info)
 	*info = {};
 
 #if defined(WIN32)
-	GL4FreeSyncProbe().Query(info);
+	int monitor_x = INT_MIN;
+	int monitor_y = INT_MIN;
+	GL4GetWindowMonitorMode(hOpenGLWnd, &monitor_x, &monitor_y,
+		&info->display_refresh_hz);
+	GL4FreeSyncProbe().Query(info, monitor_x, monitor_y);
 	if (dwglGetSwapIntervalEXT)
 		info->swap_interval = dwglGetSwapIntervalEXT();
-	if (hOpenGLDC)
-		info->display_refresh_hz = GetDeviceCaps((HDC)hOpenGLDC, VREFRESH);
 #elif defined(SDL3)
 	info->swap_interval = SDL_GL_GetSwapInterval();
 #endif
