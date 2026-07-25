@@ -106,6 +106,14 @@ bool PlayMovie(const char* moviename)
 		filename[sizeof(filename) - 1] = 0;
 	}
 
+	// Movies are optional data.  Reject a missing file before changing audio,
+	// subtitle, or renderer state so callers can simply continue without it.
+	if (cfexist(filename) == CF_NOT_FOUND)
+	{
+		mprintf((0, "MOVIE: Skipping missing file %s\n", filename));
+		return false;
+	}
+
 	//	start movie.
 #ifdef DEBUG
 	MovieCallbackData.last_frame_time = timer_GetTime();

@@ -2171,11 +2171,11 @@ struct toggles_menu
 		*missile_view = (Missile_camera_window == SVW_LEFT) ? 1 : (Missile_camera_window == SVW_RIGHT) ? 2 : 0;
 
 		sheet->NewGroup(TXT_CONTROL_TOGGLES, 110, 0);
-		joy_enabled = sheet->AddLongCheckBox(TXT_JOYENABLED);
 		mse_enabled = sheet->AddLongCheckBox(TXT_CFG_MOUSEENABLED);
 		const bool wooting_available = WootingAnalogDeviceAvailable();
 		wooting_enabled = sheet->AddLongCheckBox("Wooting Analog KB", false,
 			UID_WOOTING_ANALOG);
+		joy_enabled = sheet->AddLongCheckBox(TXT_JOYENABLED);
 		*joy_enabled = CHECK_FLAG(Current_pilot.read_controller, READF_JOY) ? true : false;
 		*mse_enabled = CHECK_FLAG(Current_pilot.read_controller, READF_MOUSE) ? true : false;
 		*wooting_enabled = wooting_available && Wooting_analog_enabled;

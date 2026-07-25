@@ -131,6 +131,25 @@ int MainMenu()
 
 	char pfilename[_MAX_FNAME];
 	Current_pilot.get_filename(pfilename);
+	if (FindArg("-trace-firstgame"))
+	{
+		const int training_status = Current_pilot.find_mission_data("Pilot Training");
+		AutomatedCaptureLog("trace firstgame begin pilot=%s training_status=%d FirstGame=%d",
+			pfilename, training_status, FirstGame ? 1 : 0);
+		SetGameMode(GM_NONE);
+		DoWaitMessage(true);
+		IsCheater = false;
+		IsRestoredGame = false;
+		PlayerResetShipPermissions(-1, true);
+		const bool started = MenuNewGame();
+		AutomatedCaptureLog("trace firstgame returned started=%d mode=%d function=%d FirstGame=%d",
+			started ? 1 : 0, Game_mode, GetFunctionMode(), FirstGame ? 1 : 0);
+		if (started)
+			return 0;
+		Mem_quick_exit = 1;
+		return 1;
+	}
+
 	const bool automated_capture = FindArg("-capture-frame") ||
 		FindArg("-screenshot-frame");
 	if (automated_capture)
@@ -695,20 +714,19 @@ bool MenuNewGame()
 	{
 
 		FirstGame = true;
+		AutomatedCaptureLog("firstgame training branch entered");
 
-		char temppath[PSFILENAME_LEN * 2];
-		char* moviepath;
-		moviepath = GetMultiCDPath("level1.mve");
-		if (moviepath)
-		{
-			strcpy(temppath, moviepath);
-			PlayMovie(temppath);
-		}
-		Skip_next_movie = true;
+		// Enter training immediately. The Level 1 movie is the campaign's
+		// level-intro movie and will play through the normal mission path after
+		// training; running it synchronously here can make New Game appear hung.
+		Skip_next_movie = false;
 
+		AutomatedCaptureLog("firstgame training mission load begin");
 		if (LoadMission("training.mn3"))
 		{
+			AutomatedCaptureLog("firstgame training mission load complete");
 			CurrentPilotUpdateMissionStatus(true);
+			AutomatedCaptureLog("firstgame pilot mission status updated");
 			// go into game mode.
 			SetGameMode(GM_NORMAL);
 			SetFunctionMode(GAME_MODE);

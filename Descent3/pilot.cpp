@@ -35,6 +35,7 @@
 #include "gamefont.h"
 #include "ConfigItem.h"
 #include "ctlconfig.h"
+#include "CtlCfgElem.h"
 #include "hud.h"
 #include "stringtable.h"
 #include "gametexture.h"
@@ -1092,6 +1093,60 @@ void PilotCopyDefaultControls(pilot* Pilot)
 			if (cfexist(spfilename))
 			{
 				PltCopyKeyConfig(&s_pil, Pilot);
+				if (!stricmp(spfilename, "default mouse.pld"))
+				{
+					LoadControlConfig(Pilot);
+
+					auto set_key_bindings = [](int id, ubyte first, ubyte second)
+					{
+						ct_type types[CTLBINDS_PER_FUNC];
+						ct_config_data data;
+						ubyte flags[CTLBINDS_PER_FUNC];
+						Controller->get_controller_function(id, types, &data, flags);
+
+						tCfgDataParts parts;
+						parse_config_data(&parts, types[0], types[1], data);
+						types[0] = ctKey;
+						types[1] = ctKey;
+						parts.bind_0 = first;
+						parts.bind_1 = second;
+						parts.ctrl_0 = first ? 0 : NULL_CONTROLLER;
+						parts.ctrl_1 = second ? 0 : NULL_CONTROLLER;
+						flags[0] = 0;
+						flags[1] = 0;
+						Controller->set_controller_function(id, types,
+							unify_config_data(&parts), flags);
+					};
+
+					set_key_bindings(ctfFORWARD_THRUSTKEY, KEY_W, NULL_BINDING);
+					set_key_bindings(ctfREVERSE_THRUSTKEY, KEY_S, NULL_BINDING);
+					set_key_bindings(ctfLEFT_THRUSTKEY, KEY_A, NULL_BINDING);
+					set_key_bindings(ctfRIGHT_THRUSTKEY, KEY_D, NULL_BINDING);
+					set_key_bindings(ctfDOWN_THRUSTKEY, KEY_LCTRL, NULL_BINDING);
+					set_key_bindings(ctfUP_THRUSTKEY, KEY_SPACEBAR, NULL_BINDING);
+					set_key_bindings(ctfAFTERBURN_KEY, KEY_LSHIFT, NULL_BINDING);
+					set_key_bindings(ctfFIREPRIMARY_KEY, NULL_BINDING, KEY_RCTRL);
+					set_key_bindings(ctfFIREPRIMARY_KEY2, NULL_BINDING, NULL_BINDING);
+					set_key_bindings(ctfFIRESECONDARY_KEY, NULL_BINDING, NULL_BINDING);
+
+					ct_type pitch_types[CTLBINDS_PER_FUNC];
+					ct_config_data pitch_data;
+					ubyte pitch_flags[CTLBINDS_PER_FUNC];
+					Controller->get_controller_function(ctfPITCH_DOWNAXIS,
+						pitch_types, &pitch_data, pitch_flags);
+					for (int binding = 0; binding < CTLBINDS_PER_FUNC; ++binding)
+					{
+						if (pitch_types[binding] == ctMouseAxis)
+							pitch_flags[binding] |= CTFNF_INVERT;
+					}
+					Controller->set_controller_function(ctfPITCH_DOWNAXIS,
+						pitch_types, pitch_data, pitch_flags);
+
+					for (int axis = 1; axis <= N_MOUSE_AXIS; ++axis)
+						Controller->set_axis_sensitivity(ctMouseAxis, axis, 1.0f);
+					Pilot->mouselook_control = false;
+					SaveControlConfig(Pilot);
+				}
 			}
 			else
 			{
@@ -1137,7 +1192,7 @@ bool PilotChoose(pilot* Pilot, bool presets)
 	sheet->AddText(TXT_COPYCONTOLSC);
 
 	sheet->NewGroup(NULL, 7, 40);
-	pilot_list = sheet->AddListBox(284, 100, IDP_PCLIST);
+	pilot_list = sheet->AddListBox(284, 100, IDP_PCLIST, presets ? UILB_NOSORT : 0);
 	pilot_list->SetCurrentIndex(0);
 	NewPltUpdate(pilot_list, filelist, filecount, 0, nullptr, presets);
 
@@ -1454,7 +1509,7 @@ bool PltDelete(pilot* Pilot)
 	if (pfilename[0] != 0)
 	{
 		ddio_MakePath(filename, User_directory, pfilename, NULL);
-		return (ddio_DeleteFile(pfilename) == 1);
+		return (ddio_DeleteFile(filename) == 1);
 	}
 	else
 	{
@@ -1731,6 +1786,31 @@ char** PltGetPilots(int* count, char* ignore_filename, int display_default_confi
 		}
 	}
 	pltgetname_count = (*count);
+
+	if (display_default_configs == 2 && pltgetname_count > 1)
+	{
+		const char* preferred_presets[] = { "default mouse.pld", "default keyboard.pld" };
+		for (int destination = 0; destination < 2; ++destination)
+		{
+			int source = -1;
+			for (int i = destination; i < pltgetname_count; ++i)
+			{
+				if (!stricmp(pltgetname_list[i], preferred_presets[destination]))
+				{
+					source = i;
+					break;
+				}
+			}
+
+			if (source > destination)
+			{
+				char* entry = pltgetname_list[source];
+				memmove(&pltgetname_list[destination + 1], &pltgetname_list[destination],
+					(source - destination) * sizeof(*pltgetname_list));
+				pltgetname_list[destination] = entry;
+			}
+		}
+	}
 
 	mprintf((0, "Found %d pilots\n", (*count)));
 	return pltgetname_list;
