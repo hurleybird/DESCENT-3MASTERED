@@ -410,8 +410,7 @@ void SaveGameSettings()
 	Database->write("RS_hires_skies", Render_hires_skies);
 	Database->write("RS_extended_draw_distance", Render_extended_draw_distance);
 	Database->write("RS_cockpit_enhancement", Cockpit_alt_mode);
-	WRITE_FLOAT_SETTING("RS_motion_blur_sensitivity", Motion_blur_sensitivity_setting);
-	WRITE_FLOAT_SETTING("RS_motion_blur_strength", Motion_blur_strength_setting);
+	WRITE_FLOAT_SETTING("RS_motion_blur_strength_v2", Motion_blur_strength_setting);
 	WRITE_FLOAT_SETTING("RS_pixel_motion_blur_strength", Render_preferred_state.pixel_motion_blur_strength);
 	Database->write("RS_combined_motion_blur", Render_preferred_state.combined_motion_blur);
 	WRITE_FLOAT_SETTING("RS_combined_motion_blur_legacy_strength",
@@ -633,7 +632,6 @@ void LoadGameSettings()
 	Render_hires_skies = true;
 	Render_extended_draw_distance = true;
 	Cockpit_alt_mode = true;
-	Motion_blur_sensitivity_setting = 0.5f;
 	Motion_blur_strength_setting = 0.5f;
 	ConfigResetPerPixelSpecularSettings();
 	Render_preferred_state.pixel_motion_blur_strength = 0.0f;
@@ -953,10 +951,7 @@ void LoadGameSettings()
 	Database->read("RS_hires_skies", &Render_hires_skies);
 	Database->read("RS_extended_draw_distance", &Render_extended_draw_distance);
 	Database->read("RS_cockpit_enhancement", &Cockpit_alt_mode);
-	READ_FLOAT_SETTING("RS_motion_blur_sensitivity", Motion_blur_sensitivity_setting);
-	READ_FLOAT_SETTING("RS_motion_blur_strength", Motion_blur_strength_setting);
-	if (Motion_blur_sensitivity_setting < 0.1f) Motion_blur_sensitivity_setting = 0.1f;
-	if (Motion_blur_sensitivity_setting > 1.0f) Motion_blur_sensitivity_setting = 1.0f;
+	READ_FLOAT_SETTING("RS_motion_blur_strength_v2", Motion_blur_strength_setting);
 	if (Motion_blur_strength_setting < 0.1f) Motion_blur_strength_setting = 0.1f;
 	if (Motion_blur_strength_setting > 1.0f) Motion_blur_strength_setting = 1.0f;
 	if (FindArg("-enhanced-weather") || FindArg("-enhanced-snow"))

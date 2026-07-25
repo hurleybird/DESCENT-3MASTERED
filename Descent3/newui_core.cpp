@@ -577,6 +577,11 @@ int DoUI()
 	return UI_frame_result;
 }
 
+void ui_RequestForceQuit()
+{
+	UI_frame_result = NEWUIRES_FORCEQUIT;
+}
+
 
 //	does one frame of ui.
 void DoUIFrame()
@@ -590,6 +595,8 @@ void DoUIFrame()
 		DebugBlockPrint("UK");
 		if (UI_callback)
 			(*UI_callback)();
+		if (UI_frame_result != -1)
+			return;
 		DebugBlockPrint("UL");
 
 		if (GetFunctionMode() == MENU_MODE) 
@@ -1471,8 +1478,9 @@ void newuiSheet::Realize()
 
 		case GADGET_STATIC_TXT:
 			text = new UIText;
-			text->Create(m_parent, &UITextItem(MONITOR9_NEWUI_FONT, desc->title, NEWUI_MONITORFONT_COLOR), gx, gy);
-			if (horizontal_align) gx += text->W() + 2;
+			text->Create(m_parent, &UITextItem(MONITOR9_NEWUI_FONT, desc->title, NEWUI_MONITORFONT_COLOR),
+				gx, gy + desc->text_padding);
+			if (horizontal_align) gx += (desc->text_width ? desc->text_width : text->W()) + 2;
 			else gy += text->H();
 			desc->obj.gadget = text;
 			break;
@@ -2381,6 +2389,14 @@ void newuiSheet::AddText(const char* text, ...)
 	gadget->parm.b = false;			// means small text.
 }
 
+void newuiSheet::AddFixedWidthText(const char* text, short width, short vertical_offset)
+{
+	newuiSheet::t_gadget_desc* gadget = AddGadget(-1, GADGET_STATIC_TXT, text);
+	gadget->parm.b = false;
+	gadget->text_width = width;
+	gadget->text_padding = vertical_offset;
+}
+
 
 // adds a static bitmap
 void newuiSheet::AddBitmap(int bm_handle)
@@ -2440,6 +2456,16 @@ newuiComboBox* newuiSheet::AddComboBox(short id, ushort flags)
 	newuiSheet::t_gadget_desc* gadget = AddGadget(id, GADGET_COMBOBOX, NULL);
 	newuiComboBox* cb = new newuiComboBox;
 	cb->Create(m_parent, id, 0, 0, flags);
+	m_parent->RemoveGadget(cb);
+	gadget->internal = cb;
+	return cb;
+}
+
+newuiComboBox* newuiSheet::AddCompactComboBox(short id, short width, short height, ushort flags)
+{
+	newuiSheet::t_gadget_desc* gadget = AddGadget(id, GADGET_COMBOBOX, NULL);
+	newuiCompactComboBox* cb = new newuiCompactComboBox;
+	cb->Create(m_parent, id, 0, 0, width, height, flags);
 	m_parent->RemoveGadget(cb);
 	gadget->internal = cb;
 	return cb;
@@ -2756,6 +2782,13 @@ void newuiArrowButton::Show(bool show)
 	m_hidden = !show;
 }
 
+void newuiArrowButton::SetScaledSize(short width, short height)
+{
+	m_scaled_width = width;
+	m_scaled_height = height;
+	Move(m_X, m_Y, width, height);
+}
+
 
 void newuiArrowButton::OnMouseBtnDown(int btn)
 {
@@ -2821,6 +2854,28 @@ void newuiArrowButton::OnMouseBtnUp(int btn)
 void newuiArrowButton::OnDraw()
 {
 	if (m_hidden) return;
+
+	if (m_scaled_width > 0 && m_scaled_height > 0)
+	{
+		UIBitmapItem* bitmap = (m_State == UI_BTS_ACTIVATED) ? m_litbkg : m_bkg;
+		const ubyte alpha = IsDisabled() ? 128 : 255;
+		if (bitmap->is_chunked())
+			rend_DrawScaledChunkedBitmap(bitmap->get_chunked_bitmap(), 0, 0,
+				m_scaled_width, m_scaled_height, alpha);
+		else
+		{
+			rend_SetOverlayType(OT_NONE);
+			rend_SetLighting(LS_NONE);
+			rend_SetColorModel(CM_MONO);
+			rend_SetZBufferState(0);
+			rend_SetAlphaType(ATF_CONSTANT + ATF_TEXTURE);
+			rend_SetAlphaValue(alpha);
+			rend_SetWrapType(WT_CLAMP);
+			rend_DrawScaledBitmap(0, 0, m_scaled_width, m_scaled_height,
+				bitmap->get_bitmap(), 0.0f, 0.0f, 20.0f / 32.0f, 13.0f / 32.0f);
+		}
+		return;
+	}
 
 	newuiButton::OnDraw();
 }
@@ -4108,7 +4163,6 @@ void newuiComboBox::Create(UIWindow* wnd, short id, short x, short y, ushort fla
 	m_barbmp = Newui_resources.Load(NEWUI_CB_FILE);
 	m_boffs = 12;
 
-	// determine true width and height (snap width and height to 32 pixel boundaries
 	UIGadget::Create(wnd, id, x, y, m_barbmp->width(), m_barbmp->height(), flags);
 }
 
@@ -4687,6 +4741,111 @@ void newuiComboBox::OnDetachFromWindow()
 		m_showup = false;
 	}
 	m_up_btn.Destroy();
+}
+
+void newuiCompactComboBox::Create(UIWindow* wnd, short id, short x, short y,
+	short width, short height, ushort flags)
+{
+	newuiComboBox::Create(wnd, id, x, y, flags);
+	Move(x, y, width, height);
+}
+
+void newuiCompactComboBox::OnDraw()
+{
+	const ubyte alpha = IsDisabled() ? 128 : 255;
+	if (IsDisabled())
+	{
+		m_up_btn.Disable();
+		m_down_btn.Disable();
+	}
+	else
+	{
+		m_up_btn.Enable();
+		m_down_btn.Enable();
+	}
+
+	if (m_barbmp->is_chunked())
+		rend_DrawScaledChunkedBitmap(m_barbmp->get_chunked_bitmap(), 0, 0, m_W, m_H, alpha);
+	else
+	{
+		rend_SetOverlayType(OT_NONE);
+		rend_SetLighting(LS_NONE);
+		rend_SetColorModel(CM_MONO);
+		rend_SetZBufferState(0);
+		rend_SetAlphaType(ATF_CONSTANT + ATF_TEXTURE);
+		rend_SetAlphaValue(alpha);
+		rend_SetWrapType(WT_CLAMP);
+		rend_DrawScaledBitmap(0, 0, m_W, m_H, m_barbmp->get_bitmap(),
+			0.0f, 0.0f, 1.0f, 1.0f);
+	}
+
+	if (m_NumItems > 1)
+	{
+		if (m_Index < (m_NumItems - 1) && !m_showup)
+		{
+			m_showup = true;
+			m_up_btn.Show(true);
+		}
+		if (m_Index > 0 && !m_showdown)
+		{
+			m_showdown = true;
+			m_down_btn.Show(true);
+		}
+	}
+	if (m_Index == (m_NumItems - 1) && m_showup)
+	{
+		m_showup = false;
+		m_up_btn.Show(false);
+	}
+	if (m_Index == 0 && m_showdown)
+	{
+		m_showdown = false;
+		m_down_btn.Show(false);
+	}
+
+	if (m_NumItems && m_Index >= 0 && m_Index < m_NumItems)
+	{
+		UITextItem text(MONITOR9_NEWUI_FONT, m_ItemList[m_Index], NEWUI_MONITORFONT_COLOR);
+		text.set_alpha(alpha);
+		// The monitor font has a generous right side-bearing.  Let its logical
+		// box extend slightly beneath the arrow's transparent margin so the
+		// visible glyphs retain only a tiny gap before the down arrow.
+		const int right_edge = m_W - m_down_btn.W() + 11;
+		text.draw(right_edge - text.width(), (m_H - text.height()) / 2);
+	}
+}
+
+void newuiCompactComboBox::OnAttachToWindow()
+{
+	m_boffs = 3;
+	const short arrow_width = 16;
+	const short arrow_height = 11;
+	const short arrow_y = m_Y + (m_H - arrow_height) / 2;
+	m_up_btn.Create(m_Wnd, -1, NEWUI_ARROW_CBUP, NULL, m_X + 2, arrow_y);
+	m_up_btn.SetScaledSize(arrow_width, arrow_height);
+	m_up_btn.SetFlag(UIF_NOTIFYMASTERSEL);
+	m_showup = true;
+	AttachSlaveGadget(&m_up_btn);
+
+	m_down_btn.Create(m_Wnd, -1, NEWUI_ARROW_CBDOWN, NULL,
+		m_X + m_W - arrow_width - 4, arrow_y);
+	m_down_btn.SetScaledSize(arrow_width, arrow_height);
+	m_down_btn.SetFlag(UIF_NOTIFYMASTERSEL);
+	AttachSlaveGadget(&m_down_btn);
+	m_showdown = true;
+}
+
+void newuiCompactComboBox::OnNotifySelect(UIGadget* gadget)
+{
+	switch (gadget->GetDatum())
+	{
+	case NEWUI_ARROW_CBUP:
+		newuiComboBox::OnKeyDown(KEY_DOWN);
+		break;
+	case NEWUI_ARROW_CBDOWN:
+		newuiComboBox::OnKeyDown(KEY_UP);
+		break;
+	}
 }
 
 

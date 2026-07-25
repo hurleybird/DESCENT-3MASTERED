@@ -3425,6 +3425,14 @@ void StartTerrainSound()
 //The main loop for D3.  It renders, gets input, etc. for one frame
 void GameFrame(void)
 {
+	static bool options_capture_started = false;
+	if (!options_capture_started && FindArg("-capture-options-output"))
+	{
+		options_capture_started = true;
+		extern void OptionsMenu();
+		OptionsMenu();
+	}
+
 	if (Menu_interface_mode || Game_interface_mode == GAME_OPTIONS_INTERFACE)
 	{
 		int menu_frame_limit = GetFrameLimitFps();

@@ -91,6 +91,7 @@ void (*GetUICallback())();
 
 //	does a UI loop:  returns a result value for the current window in focus.
 int DoUI();
+void ui_RequestForceQuit();
 
 // does one frame of UI input (returns result.)
 void DoUIFrame();
@@ -239,8 +240,9 @@ public:
 // adds a slider, set the range for it too., returns two values, short[0] = position, short[1] = range
 	short *AddSlider(const char *title, short range, short init_pos=0, tSliderSettings *settings=NULL, short id=DEFAULT_NEWUID);
 
-//	adds a static text item
+	//	adds a static text item
 	void AddText(const char *text, ...);
+	void AddFixedWidthText(const char *text, short width, short vertical_offset = 0);
 
 // adds a static bitmap
 	void AddBitmap(int bm_handle);
@@ -254,6 +256,7 @@ public:
 
 // adds a listbox
 	newuiComboBox *AddComboBox(short id, ushort flags = 0);
+	newuiComboBox *AddCompactComboBox(short id, short width, short height, ushort flags = 0);
 
 // adds an edit box
 	char *AddEditBox(const char *title, short maxlen=NEWUI_EDIT_BUFLEN, short w=0, short id=DEFAULT_NEWUID, short flags=0, bool return_on_esc=false);
@@ -392,9 +395,10 @@ public:
 class newuiArrowButton: public newuiButton
 {
 public:
-	newuiArrowButton() {};
+	newuiArrowButton() : m_scaled_width(0), m_scaled_height(0) {};
 	
 	void Create(UIWindow *wnd, short id, short type, const char *name, short x, short y);
+	void SetScaledSize(short width, short height);
 	void Show(bool show=true);						// this will activate or deactivate a button.
 
 protected:
@@ -405,6 +409,7 @@ protected:
 private:
 	float m_timer, m_selecttimer;
 	bool m_hidden;
+	short m_scaled_width, m_scaled_height;
 };
 
 
@@ -520,7 +525,7 @@ protected:
 	virtual void OnAttachToWindow();				// when gadget is added to a window (AddGadget is called)
 	virtual void OnDetachFromWindow();			// when gadget is detached from window
 
-private:
+protected:
 	char **m_ItemList;								// list of strings.
 	int *m_Virt2Real;					 				//translates virtual(user) id to real index
 	int *m_Real2Virt;									//translates real index into virtual(user) id
@@ -536,6 +541,18 @@ private:
 	newuiArrowButton m_down_btn;
 	
 	UIBitmapItem *m_barbmp;							// bitmap pieces
+};
+
+class newuiCompactComboBox : public newuiComboBox
+{
+public:
+	void Create(UIWindow *wnd, short id, short x, short y, short width, short height,
+		ushort flags);
+
+protected:
+	virtual void OnDraw();
+	virtual void OnAttachToWindow();
+	virtual void OnNotifySelect(UIGadget *gadget);
 };
 
 

@@ -55,6 +55,7 @@
 #include "gameloop.h"
 #include "renderer.h"
 #include "wooting_analog.h"
+#include "args.h"
 
 #if defined(SDL3)
 #include <SDL3/SDL_video.h>
@@ -114,7 +115,6 @@ bool Render_soft_vis_effects = false;
 bool Render_enhanced_weather = true;
 bool Render_hires_skies = true;
 bool Render_extended_draw_distance = true;
-float Motion_blur_sensitivity_setting = 0.5f;
 float Motion_blur_strength_setting = 0.5f;
 // bool Render_split_specular_textures = false;
 bool Render_split_specular_textures = true;
@@ -682,7 +682,6 @@ void config_gamma()
 #define IDV_DRAW_CALL_STATS 19
 #define IDV_AO_OVERSCAN 20
 #define IDV_ANISOTROPY 26
-#define IDD_MOTION_BLUR_SENSITIVITY 40
 #define IDD_MOTION_BLUR_STRENGTH 41
 #define UID_RESOLUTION 110
 #define UID_ASPECT 111
@@ -1220,8 +1219,7 @@ static void ApplyPixelMotionBlurValues(float legacy_geometry_strength)
 	Render_preferred_state.combined_motion_blur_legacy_alpha_exponent = 2.0f;
 	Render_preferred_state.pixel_motion_blur_legacy_object_strength =
 		Motion_blur_strength_setting * 0.64f;
-	Render_preferred_state.pixel_motion_blur_periphery_strength =
-		Motion_blur_sensitivity_setting * 2.0f;
+	Render_preferred_state.pixel_motion_blur_periphery_strength = 1.0f;
 	Render_preferred_state.pixel_motion_blur_center_suppression = 1.0f;
 	Render_preferred_state.pixel_motion_blur_legacy_object_center_suppression = 0.0f;
 	Render_preferred_state.pixel_motion_blur_samples = 17;
@@ -1337,7 +1335,7 @@ struct video_menu
 
 	void update_anisotropy_visibility()
 	{
-		if (!sheet || !anisotropy)
+		if (!sheet)
 			return;
 
 		const int maximum = rend_GetMaxAnisotropy();
@@ -1675,20 +1673,26 @@ struct video_menu
 			ConfigFilteringCheckboxTitle(Render_preferred_state.mipping != 0),
 			(Render_preferred_state.filtering != 0), IDV_FILTERING);
 		mipmapping = sheet->AddLongCheckBox(TXT_MIPMAPPING, (Render_preferred_state.mipping != 0));
-		sheet->NewGroup("Aniso", 0, 169);
 		const int maximum_anisotropy = rend_GetMaxAnisotropy();
-		anisotropy = sheet->AddComboBox(IDV_ANISOTROPY, UILB_NOSORT);
+		int selected_anisotropy = Render_preferred_state.anisotropy;
+		if (selected_anisotropy < 1) selected_anisotropy = 1;
+		if (selected_anisotropy > maximum_anisotropy) selected_anisotropy = maximum_anisotropy;
+		Render_preferred_state.anisotropy = (ubyte)selected_anisotropy;
+		sheet->NewGroup(NULL, 0, 165, NEWUI_ALIGN_HORIZ);
+		sheet->AddFixedWidthText("Aniso", 37, 2);
+		anisotropy = sheet->AddCompactComboBox(IDV_ANISOTROPY, 120, 16, UILB_NOSORT);
 		anisotropy->AddItem(TXT_OFF);
 		if (maximum_anisotropy >= 2) anisotropy->AddItem("2x");
 		if (maximum_anisotropy >= 4) anisotropy->AddItem("4x");
 		if (maximum_anisotropy >= 8) anisotropy->AddItem("8x");
 		if (maximum_anisotropy >= 16) anisotropy->AddItem("16x");
-		sheet->NewGroup(NULL, 0, 199);
+		anisotropy->SetCurrentIndex(AnisotropyFactorToIndex(selected_anisotropy));
+		sheet->NewGroup(NULL, 0, 183);
 		per_pixel_lighting = sheet->AddLongCheckBox("Per-pixel lighting",
 			ConfigCanUsePerPixelLighting() && Render_preferred_state.per_pixel_lighting);
 		bloom_enabled = sheet->AddLongCheckBox("Bloom", Render_preferred_state.bloom_enabled);
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
-		sheet->NewGroup("Debug", 0, 270);
+		sheet->NewGroup("Debug", 0, 255);
 		motion_vector_debug = sheet->AddLongCheckBox("Vector debug", Render_preferred_state.motion_vector_debug_preview);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
@@ -1723,12 +1727,6 @@ struct video_menu
 			IDV_AO_OVERSCAN);
 		sheet->SetGadgetVisible(IDV_AO_OVERSCAN, *ao != 0);
 
-		int selected_anisotropy = Render_preferred_state.anisotropy;
-		if (selected_anisotropy < 1) selected_anisotropy = 1;
-		if (selected_anisotropy > maximum_anisotropy) selected_anisotropy = maximum_anisotropy;
-		Render_preferred_state.anisotropy = (ubyte)selected_anisotropy;
-		anisotropy->SetCurrentIndex(
-			AnisotropyFactorToIndex(Render_preferred_state.anisotropy));
 		update_anisotropy_visibility();
 
 
@@ -1847,7 +1845,6 @@ struct video_menu
 	{
 		apply_live_settings();
 		update_draw_call_title();
-
 		switch (res)
 		{
 		case IDV_CHANGEWINDOW:
@@ -1952,11 +1949,20 @@ struct video_menu
 static video_menu* Config_active_video_menu = NULL;
 static newuiMenu* Config_active_options_menu = NULL;
 static void (*Config_options_old_ui_callback)() = NULL;
+static const char* Config_options_capture_output = NULL;
+static int Config_options_capture_frames = 0;
 
 static void ConfigOptionsUICallback()
 {
 	if (Config_options_old_ui_callback)
 		(*Config_options_old_ui_callback)();
+
+	if (Config_options_capture_output && ++Config_options_capture_frames >= 5)
+	{
+		rend_SaveScreenshotPNG(Config_options_capture_output);
+		ui_RequestForceQuit();
+		return;
+	}
 
 	if (Config_active_options_menu && Config_active_options_menu->GetCurrentOption() == IDV_VCONFIG &&
 		Config_active_video_menu)
@@ -2368,7 +2374,6 @@ struct details_menu
 	int* motion_blur;
 	int motion_blur_applied_index;
 	bool* cockpit, * weather, * skyboxes, * draw_distance;
-	short* motion_blur_sensitivity;
 	short* motion_blur_strength;
 
 	static float SliderValue(short value)
@@ -2393,8 +2398,6 @@ struct details_menu
 	void UpdateMotionBlurSliderVisibility()
 	{
 		const bool visible = UsesModernMotionBlur();
-		if (motion_blur_sensitivity)
-			sheet->SetGadgetVisible(IDD_MOTION_BLUR_SENSITIVITY, visible);
 		if (motion_blur_strength)
 			sheet->SetGadgetVisible(IDD_MOTION_BLUR_STRENGTH, visible);
 	}
@@ -2406,11 +2409,8 @@ struct details_menu
 
 		// UI 0.5 is the established presentation. The renderer keeps its native
 		// units so old profiles and command-line presets retain their meaning.
-		const float sensitivity = SliderValue(*motion_blur_sensitivity);
 		const float strength = SliderValue(*motion_blur_strength);
-		Motion_blur_sensitivity_setting = sensitivity;
 		Motion_blur_strength_setting = strength;
-		Render_preferred_state.pixel_motion_blur_periphery_strength = sensitivity * 2.0f;
 		Render_preferred_state.pixel_motion_blur_strength = strength * 0.64f;
 		Render_preferred_state.pixel_motion_blur_legacy_object_strength = strength * 0.64f;
 	}
@@ -2420,13 +2420,7 @@ struct details_menu
 	{
 		sheet = menu->AddOption(IDV_DCONFIG, TXT_OPTDETAIL, NEWUIMENU_LARGE);
 		parent_menu = menu;
-		sheet->NewGroup("Enhancements", 0, 0);
-		cockpit = sheet->AddLongCheckBox("Cockpit", Cockpit_alt_mode);
-		weather = sheet->AddLongCheckBox("Weather", Render_enhanced_weather);
-		skyboxes = sheet->AddLongCheckBox("Skyboxes", Render_hires_skies);
-		draw_distance = sheet->AddLongCheckBox("Draw distance", Render_extended_draw_distance);
-
-		sheet->NewGroup("Motion Blur", 0, 84);
+		sheet->NewGroup("Motion Blur", 0, 0);
 		motion_blur_applied_index = ConfigGetMotionBlurPreset();
 		motion_blur = sheet->AddFirstRadioButton(TXT_OFF);
 		sheet->AddRadioButton("Old");
@@ -2438,14 +2432,17 @@ struct details_menu
 		slider_set.min_val.f = 0.1f;
 		slider_set.max_val.f = 1.0f;
 		slider_set.type = SLIDER_UNITS_FLOAT;
-		sheet->NewGroup(NULL, 96, 84);
-		motion_blur_sensitivity = sheet->AddSlider("Sensitivity", 9,
-			SliderPosition(Motion_blur_sensitivity_setting),
-			&slider_set, IDD_MOTION_BLUR_SENSITIVITY);
+		sheet->NewGroup(NULL, 96, 0);
 		motion_blur_strength = sheet->AddSlider("Strength", 9,
 			SliderPosition(Motion_blur_strength_setting),
 			&slider_set, IDD_MOTION_BLUR_STRENGTH);
 		UpdateMotionBlurSliderVisibility();
+
+		sheet->NewGroup("Enhancements", 0, 84);
+		cockpit = sheet->AddLongCheckBox("Cockpit", Cockpit_alt_mode);
+		weather = sheet->AddLongCheckBox("Weather", Render_enhanced_weather);
+		skyboxes = sheet->AddLongCheckBox("Skyboxes", Render_hires_skies);
+		draw_distance = sheet->AddLongCheckBox("Draw distance", Render_extended_draw_distance);
 		return sheet;
 	};
 
@@ -2500,8 +2497,7 @@ struct details_menu
 			Render_extended_draw_distance = *draw_distance;
 			changed = true;
 		}
-		if ((motion_blur_sensitivity && sheet->HasChanged(motion_blur_sensitivity)) ||
-			(motion_blur_strength && sheet->HasChanged(motion_blur_strength)))
+		if (motion_blur_strength && sheet->HasChanged(motion_blur_strength))
 		{
 			ApplyMotionBlurSliders();
 			rend_SetPreferredState(&Render_preferred_state);
@@ -2527,6 +2523,11 @@ void OptionsMenu()
 	sound_menu sound;
 	toggles_menu toggles;
 	hud_menu hud;
+	const int options_capture_arg = FindArg("-capture-options-output");
+	const char* options_capture_output =
+		options_capture_arg ? GetArg(options_capture_arg + 1) : NULL;
+	const bool capture_options =
+		options_capture_output && options_capture_output[0];
 
 	int res = -1, state = 0;								// state = 0, options menu, 1 = controller config, 2 = quitting.
 
@@ -2565,6 +2566,8 @@ void OptionsMenu()
 			Config_active_video_menu = &video;
 			Config_active_options_menu = &menu;
 			Config_options_old_ui_callback = GetUICallback();
+			Config_options_capture_output = capture_options ? options_capture_output : NULL;
+			Config_options_capture_frames = 0;
 			SetUICallback(ConfigOptionsUICallback);
 
 			// run menu
@@ -2607,6 +2610,7 @@ void OptionsMenu()
 
 			SetUICallback(Config_options_old_ui_callback);
 			Config_options_old_ui_callback = NULL;
+			Config_options_capture_output = NULL;
 			Config_active_options_menu = NULL;
 			Config_active_video_menu = NULL;
 
@@ -2618,12 +2622,14 @@ void OptionsMenu()
 			video.finish();
 
 			// write them out and close.
-			PltWriteFile(&Current_pilot);
+			if (!capture_options)
+				PltWriteFile(&Current_pilot);
 
 			menu.Close();
 			menu.Destroy();
 		}
 	}
 
-	SaveGameSettings();
+	if (!capture_options)
+		SaveGameSettings();
 }
