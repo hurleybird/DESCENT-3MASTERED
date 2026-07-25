@@ -222,6 +222,7 @@ struct automated_capture_state
 	bool realtime;
 	bool force_forward;
 	bool force_tricord;
+	bool force_heading;
 	bool force_primary_fire;
 	int force_primary_until_frame;
 	bool place_scorch;
@@ -356,6 +357,12 @@ bool AutomatedCaptureForcesTricordInput()
 		Automated_capture.force_tricord;
 }
 
+bool AutomatedCaptureForcesHeadingInput()
+{
+	return Automated_capture.gameplay_frame_active &&
+		Automated_capture.force_heading;
+}
+
 bool AutomatedCaptureForcesPrimaryFireInput()
 {
 	return Automated_capture.gameplay_frame_active &&
@@ -475,6 +482,7 @@ static void InitAutomatedCapture()
 	Automated_capture.realtime = FindArg("-capture-realtime") != 0;
 	Automated_capture.force_forward = FindArg("-capture-forward") != 0;
 	Automated_capture.force_tricord = FindArg("-capture-tricord") != 0;
+	Automated_capture.force_heading = FindArg("-capture-heading") != 0;
 	Automated_capture.force_primary_fire =
 		FindArg("-capture-fire-primary") != 0;
 	Automated_capture.place_scorch = FindArg("-capture-scorch") != 0;
@@ -582,17 +590,19 @@ static void InitAutomatedCapture()
 
 	Automated_capture.enabled = true;
 	Automated_capture.target_frame = (int)target_frame;
-	AutomatedCaptureLog("armed frame=%d output=%s dt=%.9f realtime=%d forward=%d tricord=%d primary=%d",
+	AutomatedCaptureLog("armed frame=%d output=%s dt=%.9f realtime=%d forward=%d tricord=%d heading=%d primary=%d",
 		Automated_capture.target_frame, Automated_capture.output_path,
 		Automated_capture.fixed_delta, Automated_capture.realtime ? 1 : 0,
 		Automated_capture.force_forward ? 1 : 0,
 		Automated_capture.force_tricord ? 1 : 0,
+		Automated_capture.force_heading ? 1 : 0,
 		Automated_capture.force_primary_fire ? 1 : 0);
-	mprintf((0, "Automated capture armed: gameplay frame %d -> %s (dt %.6f, realtime %d, forward %d, tricord %d, primary %d).\n",
+	mprintf((0, "Automated capture armed: gameplay frame %d -> %s (dt %.6f, realtime %d, forward %d, tricord %d, heading %d, primary %d).\n",
 		Automated_capture.target_frame, Automated_capture.output_path,
 		Automated_capture.fixed_delta, Automated_capture.realtime ? 1 : 0,
 		Automated_capture.force_forward ? 1 : 0,
 		Automated_capture.force_tricord ? 1 : 0,
+		Automated_capture.force_heading ? 1 : 0,
 		Automated_capture.force_primary_fire ? 1 : 0));
 }
 
@@ -653,6 +663,16 @@ static void CaptureAutomatedFrameIfRequested()
 	AutomatedCaptureLog("capture %s frame=%d output=%s",
 		saved ? "saved" : "failed", Automated_capture.gameplay_frame,
 		Automated_capture.output_path);
+	if (Player_object && Player_object->movement_type == MT_PHYSICS)
+	{
+		const physics_info& physics = Player_object->mtype.phys_info;
+		AutomatedCaptureLog(
+			"player rotation rotvel=%.9f,%.9f,%.9f rotthrust=%.9f,%.9f,%.9f mass=%.9f rotdrag=%.9f full_rotthrust=%.9f turn_scalar=%.9f",
+			physics.rotvel.x, physics.rotvel.y, physics.rotvel.z,
+			physics.rotthrust.x, physics.rotthrust.y, physics.rotthrust.z,
+			physics.mass, physics.rotdrag, physics.full_rotthrust,
+			Players[Player_num].turn_scalar);
+	}
 	const int save_arg = FindArg("-capture-save-output");
 	const char* save_path = save_arg ? GetArg(save_arg + 1) : nullptr;
 	if (save_path && save_path[0])

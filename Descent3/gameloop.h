@@ -69,6 +69,7 @@ bool RendererShouldCountMsaaTransitionFrame();
 bool AutomatedCaptureSuppressesInput();
 bool AutomatedCaptureForcesForwardInput();
 bool AutomatedCaptureForcesTricordInput();
+bool AutomatedCaptureForcesHeadingInput();
 bool AutomatedCaptureForcesPrimaryFireInput();
 
 // Writes an opt-in lifecycle trace when DESCENT3MASTERED_CAPTURE_LOG names a file.
