@@ -878,6 +878,19 @@ void LoadGameSettings()
 	if (ssaa_value)
 		tempint = atoi(ssaa_value);
 	Render_preferred_state.supersampling_factor = (ubyte)ConfigNormalizeSupersamplingFactor(tempint);
+	if (Render_preferred_state.supersampling_factor == 4 &&
+		Render_preferred_state.msaa_samples > 0 &&
+		!(msaa_value && ssaa_value))
+	{
+		// The combined video control no longer exposes 4x SSAA with MSAA.
+		// Normalize old persisted combinations while allowing an expert to
+		// request the otherwise-hidden pairing explicitly on the command line.
+		if (msaa_value)
+			Render_preferred_state.supersampling_factor = 2;
+		else
+			Render_preferred_state.msaa_samples = 0;
+	}
+	Render_preferred_state.antialised = Render_preferred_state.msaa_samples > 0;
 	Database->read("RS_per_pixel_lighting", &Render_preferred_state.per_pixel_lighting);
 	if (FindArg("-noperpixellighting") || FindArg("-no-per-pixel-lighting"))
 		Render_preferred_state.per_pixel_lighting = false;

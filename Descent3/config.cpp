@@ -242,32 +242,6 @@ static int ConfigNormalizeAOResolution(int resolution)
 	return resolution;
 }
 
-static int SupersamplingFactorToIndex(int factor)
-{
-	switch (ConfigNormalizeSupersamplingFactor(factor))
-	{
-	case 2:
-		return 1;
-	case 4:
-		return 2;
-	default:
-		return 0;
-	}
-}
-
-static int SupersamplingIndexToFactor(int index)
-{
-	switch (index)
-	{
-	case 1:
-		return 2;
-	case 2:
-		return 4;
-	default:
-		return 1;
-	}
-}
-
 static int NormalizeMsaaSamples(int samples)
 {
 	if (samples >= 4)
@@ -277,30 +251,64 @@ static int NormalizeMsaaSamples(int samples)
 	return 0;
 }
 
-static int MsaaSamplesToIndex(int samples)
+struct SamplingQualityPreset
 {
-	switch (NormalizeMsaaSamples(samples))
-	{
-	case 2:
-		return 1;
-	case 4:
-		return 2;
-	default:
-		return 0;
-	}
+	int ssaa_factor;
+	int msaa_samples;
+	const char* label;
+};
+
+static constexpr SamplingQualityPreset Sampling_quality_presets[] =
+{
+	{ 1, 0, nullptr },
+	{ 1, 2, "1x/2x" },
+	{ 1, 4, "1x/4x" },
+	{ 2, 0, "2x/1x" },
+	{ 2, 2, "2x/2x" },
+	{ 2, 4, "2x/4x" },
+	{ 4, 0, "4x/1x" },
+};
+
+static const char* SamplingQualityLabel(int index)
+{
+	return index == 0 ? TXT_OFF : Sampling_quality_presets[index].label;
 }
 
-static int MsaaIndexToSamples(int index)
+static int SamplingQualityToIndex(int ssaa_factor, int msaa_samples)
 {
-	switch (index)
+	ssaa_factor = ConfigNormalizeSupersamplingFactor(ssaa_factor);
+	msaa_samples = NormalizeMsaaSamples(msaa_samples);
+	for (int i = 0; i < (int)(sizeof(Sampling_quality_presets) /
+		sizeof(Sampling_quality_presets[0])); i++)
 	{
-	case 1:
-		return 2;
-	case 2:
-		return 4;
-	default:
-		return 0;
+		if (Sampling_quality_presets[i].ssaa_factor == ssaa_factor &&
+			Sampling_quality_presets[i].msaa_samples == msaa_samples)
+		{
+			return i;
+		}
 	}
+
+	// The former independent controls allowed 4x SSAA to be combined with
+	// MSAA. Preserve the higher-quality SSAA choice while dropping the
+	// multiplicative MSAA cost when displaying that legacy state.
+	if (ssaa_factor == 4)
+		return 6;
+	return 0;
+}
+
+static void ApplySamplingQualityPreset(int index)
+{
+	const int preset_count = (int)(sizeof(Sampling_quality_presets) /
+		sizeof(Sampling_quality_presets[0]));
+	if (index < 0 || index >= preset_count)
+		index = 0;
+
+	Render_preferred_state.supersampling_factor =
+		(ubyte)Sampling_quality_presets[index].ssaa_factor;
+	Render_preferred_state.msaa_samples =
+		(ubyte)Sampling_quality_presets[index].msaa_samples;
+	Render_preferred_state.antialised =
+		Render_preferred_state.msaa_samples > 0;
 }
 
 #define IDV_VCONFIG			12	//video config
@@ -1309,8 +1317,7 @@ struct video_menu
 	char* buffer;
 	char* aspect_buffer;
 	bool* fullscreen;
-	int* antialiasing;
-	int* supersampling;
+	int* sampling_quality;
 	int* ao;
 	newuiComboBox* anisotropy;
 
@@ -1549,15 +1556,9 @@ struct video_menu
 			Render_soft_vis_effects = *soft_vis_effects;
 			ui_changed = true;
 		}
-		if (antialiasing && sheet->HasChanged(antialiasing))
+		if (sampling_quality && sheet->HasChanged(sampling_quality))
 		{
-			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
-			Render_preferred_state.antialised = Render_preferred_state.msaa_samples > 0;
-			changed = true;
-		}
-		if (supersampling && sheet->HasChanged(supersampling))
-		{
-			Render_preferred_state.supersampling_factor = (ubyte)SupersamplingIndexToFactor(*supersampling);
+			ApplySamplingQualityPreset(*sampling_quality);
 			changed = true;
 		}
 		if (fov && sheet->HasChanged(fov))
@@ -1620,8 +1621,7 @@ struct video_menu
 		buffer = NULL;
 		aspect_buffer = NULL;
 		fullscreen = NULL;
-		antialiasing = NULL;
-		supersampling = NULL;
+		sampling_quality = NULL;
 		ao = NULL;
 		anisotropy = NULL;
 		window_width = window_height = 0;
@@ -1701,27 +1701,26 @@ struct video_menu
 		update_draw_call_title();
 		face_probe = sheet->AddLongCheckBox("Face probe", Render_face_probe);
 
-		sheet->NewGroup("MSAA", 184, 0);
-		int iTemp = MsaaSamplesToIndex(Render_preferred_state.msaa_samples);
-		antialiasing = sheet->AddFirstRadioButton(TXT_OFF);
-		sheet->AddRadioButton("2x");
-		sheet->AddRadioButton("4x");
-		*antialiasing = iTemp;
+		sheet->NewGroup("SSAA/MSAA", 184, 0);
+		sampling_quality = sheet->AddFirstRadioButton(
+			SamplingQualityLabel(0));
+		for (int i = 1; i < (int)(sizeof(Sampling_quality_presets) /
+			sizeof(Sampling_quality_presets[0])); i++)
+		{
+			sheet->AddRadioButton(SamplingQualityLabel(i));
+		}
+		*sampling_quality = SamplingQualityToIndex(
+			Render_preferred_state.supersampling_factor,
+			Render_preferred_state.msaa_samples);
 
-		sheet->NewGroup("SSAA", 184, 86);
-		supersampling = sheet->AddFirstRadioButton(TXT_OFF);
-		sheet->AddRadioButton("2x");
-		sheet->AddRadioButton("4x");
-		*supersampling = SupersamplingFactorToIndex(Render_preferred_state.supersampling_factor);
-
-		sheet->NewGroup("AO", 184, 148);
+		sheet->NewGroup("AO", 184, 118);
 		ao = sheet->AddFirstRadioButton(TXT_OFF);
 		sheet->AddRadioButton(TXT_LOW);
 		sheet->AddRadioButton(TXT_CFG_MEDIUM);
 		sheet->AddRadioButton(TXT_CFG_HIGH);
 		*ao = ConfigCanUseAO() ?
 			AOPresetToIndex(Render_preferred_state.ao_enabled, Render_preferred_state.ao_resolution) : 0;
-		sheet->NewGroup(NULL, 184, 219);
+		sheet->NewGroup(NULL, 184, 189);
 		ao_overscan = sheet->AddCheckBox("Ovrscn",
 			Render_preferred_state.ao_overscan_percent > AO_OVERSCAN_DISABLED_PERCENT,
 			IDV_AO_OVERSCAN);
@@ -1781,13 +1780,8 @@ struct video_menu
 			Render_face_probe = *face_probe;
 		if (soft_vis_effects)
 			Render_soft_vis_effects = *soft_vis_effects;
-		if (antialiasing)
-		{
-			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
-			Render_preferred_state.antialised = Render_preferred_state.msaa_samples > 0;
-		}
-		if (supersampling)
-			Render_preferred_state.supersampling_factor = (ubyte)SupersamplingIndexToFactor(*supersampling);
+		if (sampling_quality)
+			ApplySamplingQualityPreset(*sampling_quality);
 		if (frame_limit)
 		{
 			Game_frame_limit_fps = ConfigNormalizeFrameLimitFps(CALC_SLIDER_INT_VALUE(*frame_limit, 30, ConfigGetFrameLimitMaxFps(), ConfigGetFrameLimitMaxFps() - 30));
