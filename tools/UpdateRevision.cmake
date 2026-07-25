@@ -12,11 +12,14 @@ macro(ret_var VAR)
 	set(${VAR} "${${VAR}}" PARENT_SCOPE)
 endmacro()
 
+get_filename_component(RepoDir "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+
 # Populate variables "Hash", "Tag", and "Timestamp" with relevant information
 # from source repository.  If anything goes wrong return something in "Error."
 function(query_repo_info)
 	execute_process(
-		COMMAND git describe --tags --dirty=-m
+		COMMAND git -c "safe.directory=${RepoDir}" describe --tags --dirty=-m
+		WORKING_DIRECTORY "${RepoDir}"
 		RESULT_VARIABLE Error
 		OUTPUT_VARIABLE Tag
 		ERROR_QUIET
@@ -28,7 +31,8 @@ function(query_repo_info)
 	endif()
 
 	execute_process(
-		COMMAND git log -1 "--format=%ai;%H"
+		COMMAND git -c "safe.directory=${RepoDir}" log -1 "--format=%ai;%H"
+		WORKING_DIRECTORY "${RepoDir}"
 		RESULT_VARIABLE Error
 		OUTPUT_VARIABLE CommitInfo
 		ERROR_QUIET

@@ -3353,15 +3353,12 @@ void UpdateTerrainSound()
 	}
 	else
 	{
-		if (Terrain_sound_fade > 0.0)
-		{
-			//fading out
-			Terrain_sound_fade -= Frametime / FADE_TIME;
-			if (Terrain_sound_fade < 0.0)
-				Terrain_sound_fade = 0.0;
-		}
-		else
+		// Terrain ambience belongs outdoors.  Do not let a restored indoor
+		// position inherit an audible loop from the level's initial spawn
+		// position; entering the terrain will still use the fade-in above.
+		if (Terrain_sound_fade == 0.0f)
 			return;		//already faded out
+		Terrain_sound_fade = 0.0f;
 	}
 
 	//Get player altitude
@@ -3404,18 +3401,17 @@ void ClearTerrainSound()
 //Starts the sound on the terrain
 void StartTerrainSound()
 {
-	//Set to be full on or full off
-	if (OBJECT_OUTSIDE(Player_object))
-		Terrain_sound_fade = 1.0;
-	else
-		Terrain_sound_fade = Frametime / FADE_TIME;	//will fade to zero first time
+	// Restored games apply their final player position after level sounds are
+	// created.  Always start terrain loops silent so that an indoor restore
+	// cannot leak a buffer at the default Play2dSound volume.
+	Terrain_sound_fade = 0.0f;
 
 	//Start the sounds
 	for (int b = 0; b < NUM_TERRAIN_SOUND_BANDS; b++)
 	{
 		terrain_sound_band* tb = &Terrain_sound_bands[b];
 		if (tb->sound_index != -1)
-			Terrain_sound_handles[b] = Sound_system.Play2dSound(tb->sound_index);
+			Terrain_sound_handles[b] = Sound_system.Play2dSound(tb->sound_index, 0.0f);
 	}
 
 	//Set the volumes
