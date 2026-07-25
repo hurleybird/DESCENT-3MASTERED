@@ -1992,6 +1992,7 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 
 	deferred_bloom_composite_pending = false;
 	deferred_bloom_apply_pending = false;
+	deferred_bloom_source_framebuffer = nullptr;
 	deferred_bloom_framebuffer = nullptr;
 	deferred_bloom_protection_mask_texture = 0;
 
@@ -2285,22 +2286,12 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 	{
 		if (bloom_enabled && present_framebuffer->Handle() != 0)
 		{
-			deferred_bloom_source_framebuffer.Update(present_framebuffer->Width(),
-				present_framebuffer->Height(), 0);
-			if (deferred_bloom_source_framebuffer.Handle() != 0)
-			{
-				present_framebuffer->BlitToRaw(deferred_bloom_source_framebuffer.Handle(), 0, 0,
-					deferred_bloom_source_framebuffer.Width(), deferred_bloom_source_framebuffer.Height(),
-					GL_NEAREST);
-				present_framebuffer->BlitDepthTo(deferred_bloom_source_framebuffer.Handle(), 0, 0,
-					deferred_bloom_source_framebuffer.Width(), deferred_bloom_source_framebuffer.Height());
-				deferred_bloom_apply_pending = true;
-				GL4PerfGpuDrain("GPU.Bloom.DeferredSourceCopy");
-			}
-			else
-			{
-				bloom.DestroyFramebuffers();
-			}
+			// The resolved scene target remains immutable while the cockpit is
+			// rendered into its own layer. Keep that target alive by reference
+			// instead of copying its full-resolution color and depth attachments
+			// into a second framebuffer just before deferred bloom consumes it.
+			deferred_bloom_source_framebuffer = present_framebuffer;
+			deferred_bloom_apply_pending = true;
 		}
 		else
 		{
@@ -2724,15 +2715,16 @@ void GL4Renderer::ApplyDeferredBloom(GLuint alpha_occlusion_mask_texture)
 	deferred_bloom_composite_pending = false;
 	deferred_bloom_framebuffer = nullptr;
 
-	if (!OpenGL_preferred_state.bloom_enabled || deferred_bloom_source_framebuffer.Handle() == 0)
+	if (!OpenGL_preferred_state.bloom_enabled || !deferred_bloom_source_framebuffer ||
+		deferred_bloom_source_framebuffer->Handle() == 0)
 	{
 		bloom.DestroyFramebuffers();
 		return;
 	}
 
-	ColorFramebuffer* bloom_framebuffer = bloom.Apply(&deferred_bloom_source_framebuffer,
+	ColorFramebuffer* bloom_framebuffer = bloom.Apply(deferred_bloom_source_framebuffer,
 		OpenGL_preferred_state, OpenGL_state, deferred_display_gamma,
-		deferred_bloom_source_framebuffer.DepthTextureForRead(),
+		deferred_bloom_source_framebuffer->DepthTextureForRead(),
 		deferred_bloom_protection_mask_texture,
 		terrain_fog_reconstruction_enabled, terrain_fog_reconstruction_start,
 		terrain_fog_reconstruction_end,
@@ -2763,7 +2755,8 @@ void GL4Renderer::CompositeDeferredBloomOverPostPresent()
 			glUniform1i(bloom.composite_use_protection_mask,
 				deferred_bloom_protection_mask_texture != 0 ? 1 : 0);
 			GLuint deferred_bloom_depth_texture =
-				deferred_bloom_source_framebuffer.DepthTextureForRead();
+				deferred_bloom_source_framebuffer ?
+				deferred_bloom_source_framebuffer->DepthTextureForRead() : 0;
 			glUniform1i(bloom.composite_use_terrain_fog_protection,
 				terrain_fog_reconstruction_enabled && deferred_bloom_depth_texture != 0 &&
 				deferred_bloom_protection_mask_texture != 0 ? 1 : 0);
@@ -3023,7 +3016,7 @@ void GL4Renderer::CaptureBloomSource()
 		bloom_source_framebuffer.Destroy();
 		bloom_source_resolved_framebuffer.Destroy();
 		bloom_source_downscale_framebuffer.Destroy();
-		deferred_bloom_source_framebuffer.Destroy();
+		deferred_bloom_source_framebuffer = nullptr;
 		ao_composite_framebuffer.Destroy();
 	}
 
@@ -4306,7 +4299,7 @@ void GL4Renderer::UpdateFramebuffer(void)
 		bloom_source_framebuffer.Destroy();
 		bloom_source_resolved_framebuffer.Destroy();
 		bloom_source_downscale_framebuffer.Destroy();
-		deferred_bloom_source_framebuffer.Destroy();
+		deferred_bloom_source_framebuffer = nullptr;
 		ao_composite_framebuffer.Destroy();
 		post_present_framebuffer.Destroy();
 		post_composite_framebuffer.Destroy();
@@ -4427,7 +4420,7 @@ void GL4Renderer::CloseFramebuffer(void)
 	bloom_source_framebuffer.Destroy();
 	bloom_source_resolved_framebuffer.Destroy();
 	bloom_source_downscale_framebuffer.Destroy();
-	deferred_bloom_source_framebuffer.Destroy();
+	deferred_bloom_source_framebuffer = nullptr;
 	ao_composite_framebuffer.Destroy();
 	post_present_framebuffer.Destroy();
 	post_composite_framebuffer.Destroy();
