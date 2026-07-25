@@ -128,9 +128,77 @@ extern bool RenderHUDGetTopLeftTextBottom(int* bottom);
 bool Hud_show_controls = false;
 static bool HUD_score_pending_aux = false;
 
+constexpr int MAX_POST_PROCESS_HUD_TEXT = 64;
+constexpr int MAX_POST_PROCESS_HUD_TEXT_LENGTH = 255;
+
+struct post_process_hud_text
+{
+	char text[MAX_POST_PROCESS_HUD_TEXT_LENGTH + 1];
+	int x;
+	int y;
+	int font;
+	float font_scale;
+	ddgr_color color;
+	ubyte alpha;
+	int flags;
+	bool centered;
+};
+
+static post_process_hud_text Post_process_hud_text[MAX_POST_PROCESS_HUD_TEXT];
+static int Num_post_process_hud_text = 0;
+
 //////////////////////////////////////////////////////////////////////////////
 
 static void RenderHUDItemList(tStatMask stat_mask, int small_filter);
+
+void ResetPostProcessHUDText()
+{
+	Num_post_process_hud_text = 0;
+}
+
+bool HasPostProcessHUDText()
+{
+	return Num_post_process_hud_text > 0;
+}
+
+void QueuePostProcessHUDText(const char* text, int x, int y, bool centered,
+	int font, float font_scale, ddgr_color color, ubyte alpha, int flags)
+{
+	if (!text || !text[0] ||
+		Num_post_process_hud_text >= MAX_POST_PROCESS_HUD_TEXT)
+		return;
+
+	post_process_hud_text& item =
+		Post_process_hud_text[Num_post_process_hud_text++];
+	strncpy(item.text, text, MAX_POST_PROCESS_HUD_TEXT_LENGTH);
+	item.text[MAX_POST_PROCESS_HUD_TEXT_LENGTH] = '\0';
+	item.x = x;
+	item.y = y;
+	item.font = font;
+	item.font_scale = font_scale;
+	item.color = color;
+	item.alpha = alpha;
+	item.flags = flags;
+	item.centered = centered;
+}
+
+void RenderPostProcessHUDText()
+{
+	for (int i = 0; i < Num_post_process_hud_text; ++i)
+	{
+		const post_process_hud_text& item = Post_process_hud_text[i];
+		grtext_SetFont(item.font);
+		grtext_SetFontScale(item.font_scale);
+		grtext_SetColor(item.color);
+		grtext_SetAlpha(item.alpha);
+		grtext_SetFlags(item.flags);
+		const int x = item.centered ?
+			item.x - grtext_GetTextLineWidth(item.text) / 2 : item.x;
+		grtext_Puts(x, item.y, item.text);
+	}
+	grtext_Flush();
+	ResetPostProcessHUDText();
+}
 
 //	initializes hud.
 void InitHUD()
@@ -955,7 +1023,10 @@ void RenderHUDFrame(float zoom)
 
 	bool must_render_cockpit = false;
 	bool render_hud_items_after_world_post = false;
+	bool render_hud_items_before_game_dll = false;
 	bool render_reticle_after_world_post = false;
+	bool render_guided_reticle_after_world_post = false;
+	bool render_zoom_reticle_after_world_post = false;
 	tStatMask post_world_hud_stat_mask = 0;
 	int post_world_hud_window_x = Game_window_x;
 	int post_world_hud_window_y = Game_window_y;
@@ -965,12 +1036,12 @@ void RenderHUDFrame(float zoom)
 	if (Players[Player_num].guided_obj && !Guided_missile_smallview)
 	{
 		if (!Cinematic_inuse)
-			RenderMissileReticle();
+			render_guided_reticle_after_world_post = true;
 	}
 	else if (Players[Player_num].flags & PLAYER_FLAGS_ZOOMED)
 	{
 		if (!Cinematic_inuse)
-			RenderZoomReticle();
+			render_zoom_reticle_after_world_post = true;
 	}
 	else if (!(Players[Player_num].flags & PLAYER_FLAGS_REARVIEW))
 	{
@@ -995,28 +1066,24 @@ void RenderHUDFrame(float zoom)
 		case HUD_LETTERBOX:
 			if (!Cinematic_inuse)
 			{
-				PERF_MARKER_SCOPE("HUD.RenderItems.Immediate");
-				RenderHUDItems(Hud_stat_mask);
+				render_hud_items_after_world_post = true;
+				render_hud_items_before_game_dll = true;
+				post_world_hud_stat_mask = Hud_stat_mask;
 			}
 			break;
 
 		case HUD_OBSERVER:
 			if (!Cinematic_inuse)
 			{
-				PERF_MARKER_SCOPE("HUD.RenderItems.Immediate");
-				RenderHUDItems(Hud_stat_mask);
+				render_hud_items_after_world_post = true;
+				render_hud_items_before_game_dll = true;
+				post_world_hud_stat_mask = Hud_stat_mask;
 			}
 			break;
 
 		default:
 			Int3();
 		}
-	}
-
-	// Do dll stuff
-	{
-		PERF_MARKER_SCOPE("HUD.CallGameDLL");
-		CallGameDLL(EVT_CLIENT_HUD_INTERVAL, &DLLInfo);
 	}
 
 	//	End frame
@@ -1035,7 +1102,16 @@ void RenderHUDFrame(float zoom)
 		Game_window_x = temp_window_x;
 	}
 
-	const bool render_post_world_hud = render_hud_items_after_world_post || render_reticle_after_world_post;
+	// The HUD DLL callback is also presentation-layer rendering. Keeping it in
+	// this pass prevents multiplayer status text and custom HUD elements from
+	// becoming input to motion blur and other world post-processing.
+	const bool render_game_dll_after_world_post = true;
+	const bool render_post_world_hud =
+		render_hud_items_after_world_post ||
+		render_reticle_after_world_post ||
+		render_guided_reticle_after_world_post ||
+		render_zoom_reticle_after_world_post ||
+		render_game_dll_after_world_post;
 	const bool render_cockpit_geometry =
 		must_render_cockpit && IsValidCockpit() && CockpitState() != COCKPIT_STATE_DORMANT;
 
@@ -1057,6 +1133,27 @@ void RenderHUDFrame(float zoom)
 		{
 			PERF_MARKER_SCOPE("HUD.CloseScreenEffectsPostAO");
 			VisEffectRenderCloseScreenEffectsPostAO();
+		}
+		if (HasPostProcessHUDText())
+		{
+			if (post_world_frame)
+			{
+				PERF_MARKER_SCOPE("HUD.StartDeferredTextFrame");
+				rend_StartPostPresentFrame(0, 0, Max_window_w, Max_window_h,
+					RF_CLEAR_ZBUFFER);
+			}
+			else
+			{
+				StartFrame(0, 0, Max_window_w, Max_window_h, false);
+			}
+			{
+				PERF_MARKER_SCOPE("HUD.RenderDeferredText.PostWorld");
+				RenderPostProcessHUDText();
+			}
+			if (post_world_frame)
+				rend_EndFrame();
+			else
+				EndFrame();
 		}
 		if (render_post_world_hud)
 		{
@@ -1082,7 +1179,31 @@ void RenderHUDFrame(float zoom)
 			Game_window_h = post_world_hud_window_h;
 			Game_window_x = post_world_hud_window_x;
 			Game_window_y = post_world_hud_window_y;
-			if (render_hud_items_after_world_post)
+
+			if (render_guided_reticle_after_world_post)
+			{
+				PERF_MARKER_SCOPE("HUD.RenderGuidedReticle.PostWorld");
+				RenderMissileReticle();
+			}
+			else if (render_zoom_reticle_after_world_post)
+			{
+				PERF_MARKER_SCOPE("HUD.RenderZoomReticle.PostWorld");
+				RenderZoomReticle();
+			}
+
+			if (render_hud_items_after_world_post && render_hud_items_before_game_dll)
+			{
+				PERF_MARKER_SCOPE("HUD.RenderItems.PostWorld");
+				RenderHUDItems(post_world_hud_stat_mask);
+			}
+
+			if (render_game_dll_after_world_post)
+			{
+				PERF_MARKER_SCOPE("HUD.CallGameDLL.PostWorld");
+				CallGameDLL(EVT_CLIENT_HUD_INTERVAL, &DLLInfo);
+			}
+
+			if (render_hud_items_after_world_post && !render_hud_items_before_game_dll)
 			{
 				PERF_MARKER_SCOPE("HUD.RenderItems.PostWorld");
 				RenderHUDItems(post_world_hud_stat_mask);
@@ -2490,12 +2611,27 @@ void RenderReticle()
 
 
 //	renders missile reticle
+static void SetReticleHUDTextFont()
+{
+	grtext_SetFont(HUD_FONT);
+	const float font_aspect_y = (float)Game_window_h / Max_window_h;
+	const float extra_scale = Max_window_h > D3M_FONT_SCALE_THRESHOLD ?
+		(float)Max_window_h / D3M_FONT_SCALE_THRESHOLD : 1.0f;
+	float font_scale = extra_scale * ConfigNormalizeHudTextScale(Hud_text_scale);
+	if (font_aspect_y <= 0.60f)
+		font_scale *= 0.60f;
+	else if (font_aspect_y <= 0.80f)
+		font_scale *= 0.80f;
+	grtext_SetFontScale(font_scale);
+}
+
 void RenderMissileReticle()
 {
 	//	Crosshair reticle
 	int cx = Game_window_w / 2;
 	int cy = Game_window_h / 2;
 
+	SetReticleHUDTextFont();
 	RenderHUDTextFlags(HUDTEXT_CENTERED, GR_RED, HUD_ALPHA, 0, 10, cy - 50, TXT_HUD_GUIDED);
 	grtext_Flush();
 
@@ -2516,6 +2652,7 @@ void RenderZoomReticle()
 	int text_height = grfont_GetHeight(HUD_FONT);
 	char str[255];
 
+	SetReticleHUDTextFont();
 	RenderHUDTextFlags(HUDTEXT_CENTERED, GR_RED, HUD_ALPHA, 0, 10, cy - 50, TXT_HUD_ZOOM);
 
 	sprintf(str, TXT_HUD_ZOOM_UNITS, Players[Player_num].zoom_distance);

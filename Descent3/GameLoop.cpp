@@ -2973,6 +2973,7 @@ void GameRenderFrame(void)
 	bool no_render = false;
 	AI_NumRendered = 0;
 	AI_NumHostileAlert = 0;
+	ResetPostProcessHUDText();
 
 	if (Dedicated_server)
 		return;

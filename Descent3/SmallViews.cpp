@@ -38,6 +38,7 @@
 #include "stringtable.h"
 #include "gamefont.h"
 #include "3d.h"
+#include "hud.h"
 
 //How many small views
 #define NUM_SMALL_VIEWS		3
@@ -213,13 +214,14 @@ void RenderSmallWindow(int left, int top, int right, int bot, object* viewer, ve
 
 	//	scale font according to screen size
 	float font_aspect_x = (float)Game_window_w / Max_window_w;
+	float small_view_font_scale;
 
 	if (font_aspect_x <= 0.60f)
-		grtext_SetFontScale(0.60f);
+		small_view_font_scale = 0.60f;
 	else if (font_aspect_x <= 0.80f)
-		grtext_SetFontScale(0.80f);
+		small_view_font_scale = 0.80f;
 	else
-		grtext_SetFontScale(1.0f);
+		small_view_font_scale = 1.0f;
 
 	//Draw either static or 3D
 	if (flags & SVF_STATIC)
@@ -287,13 +289,8 @@ void RenderSmallWindow(int left, int top, int right, int bot, object* viewer, ve
 	//Draw the label
 	if (label[0])
 	{
-		int w = grtext_GetLineWidth(label);
-		grtext_SetFont(HUD_FONT);
-		grtext_SetColor(HUD_COLOR);
-		grtext_SetAlpha(255);
-		grtext_SetFlags(0);
-		grtext_Puts((width - w) / 2, 2, label);
-		grtext_Flush();
+		QueuePostProcessHUDText(label, left + width / 2, top + 2, true,
+			HUD_FONT, small_view_font_scale, HUD_COLOR, 255, 0);
 	}
 
 	//Draw the crosshairs

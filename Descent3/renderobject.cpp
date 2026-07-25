@@ -41,6 +41,7 @@
 #include "findintersection.h"
 #include "grtext.h"
 #include "gamefont.h"
+#include "hud.h"
 #include "config.h"
 #include "viseffect.h"
 #include "game2dll.h"
@@ -2667,17 +2668,23 @@ void DrawPlayerNameOnHud(object* obj)
 	fate = fvi_FindIntersection(&fq, &hit_data);
 	if (fate == HIT_NONE || (fate == HIT_SPHERE_2_POLY_OBJECT && hit_data.hit_object[0] == (obj - Objects)))
 	{
-		int half = Game_window_w / 2;
 		// Draw this name on the hud
 		g3Point pnt;
 		g3_RotatePoint(&pnt, fq.p1);
 		g3_ProjectPoint(&pnt);
-		//	put a centered name string in the text buffer.
-
-		grtext_SetFont(HUD_FONT);
-		grtext_SetColor(color);
-		grtext_CenteredPrintf(pnt.p3_sx - half, pnt.p3_sy, Players[slot].callsign);
-		grtext_Flush();
+		float font_scale;
+		const float font_aspect_x = (float)Game_window_w / Max_window_w;
+		if (font_aspect_x <= 0.60f)
+			font_scale = 0.60f;
+		else if (font_aspect_x <= 0.80f)
+			font_scale = 0.80f;
+		else
+			font_scale = 1.0f;
+		font_scale *= ConfigNormalizeHudTextScale(Hud_text_scale);
+		QueuePostProcessHUDText(Players[slot].callsign,
+			Game_window_x + (int)pnt.p3_sx,
+			Game_window_y + (int)pnt.p3_sy,
+			true, HUD_FONT, font_scale, color, 255, 0);
 	}
 }
 

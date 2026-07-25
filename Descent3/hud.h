@@ -348,6 +348,14 @@ void RenderAuxHUDFrame();
 bool AreHUDMessageConsolesOpen();
 void RenderHUDMessageConsoles();
 
+// Text discovered while rendering world-space or auxiliary views is queued
+// here so it remains a crisp presentation-layer overlay.
+void ResetPostProcessHUDText();
+bool HasPostProcessHUDText();
+void QueuePostProcessHUDText(const char* text, int x, int y, bool centered,
+	int font, float font_scale, ddgr_color color, ubyte alpha, int flags);
+void RenderPostProcessHUDText();
+
 // savegame system hooks
 void SGSHudState(CFILE *fp);
 bool LGSHudState(CFILE *fp);
