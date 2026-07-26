@@ -16,6 +16,7 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "difficulty.h"
+#include "multi.h"
 
 difficulty_profile Singleplayer_difficulty = {
 	DIFFICULTY_ROOKIE,
@@ -30,6 +31,8 @@ difficulty_profile Multiplayer_difficulty = {
 	DIFFICULTY_HOTSHOT,
 	DIFFICULTY_HOTSHOT
 };
+
+gameplay_rules_mode Singleplayer_gameplay_rules = GAMEPLAY_RULES_ENHANCED;
 
 static ubyte ClampDifficulty(ubyte level)
 {
@@ -80,6 +83,31 @@ bool DifficultyProfileIsUniform(const difficulty_profile &profile)
 ubyte DifficultyProfileLegacyLevel(const difficulty_profile &profile)
 {
 	return ClampDifficulty(profile.enemy_hp);
+}
+
+void GameplayRulesSetSingleplayer(gameplay_rules_mode mode)
+{
+	Singleplayer_gameplay_rules =
+		mode == GAMEPLAY_RULES_ENHANCED ? GAMEPLAY_RULES_ENHANCED : GAMEPLAY_RULES_VANILLA;
+}
+
+gameplay_rules_mode GameplayRulesGetSingleplayer()
+{
+	return Singleplayer_gameplay_rules;
+}
+
+gameplay_rules_mode GameplayRulesGetActive()
+{
+	if (Game_mode & GM_MULTI)
+		return MultiProtocolIsEnhanced(Netgame.server_version) ?
+			GAMEPLAY_RULES_ENHANCED : GAMEPLAY_RULES_VANILLA;
+
+	return Singleplayer_gameplay_rules;
+}
+
+bool GameplayRulesAreEnhanced()
+{
+	return GameplayRulesGetActive() == GAMEPLAY_RULES_ENHANCED;
 }
 
 // Notes:

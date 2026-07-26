@@ -867,9 +867,10 @@ static void MultiDifficultySummary(char *buffer)
 {
 	const bool custom = !DifficultyProfileIsUniform(Multiplayer_difficulty);
 	if (Multi_host_protocol == MULTI_PROTOCOL_ENHANCED)
-		sprintf(buffer, "Enhanced - %s (configure...)", custom ? "Custom difficulty" : MultiDifficultyName(Netgame.difficulty));
+		sprintf(buffer, "Enhanced / 3MASTERED - %s (configure...)",
+			custom ? "Custom difficulty" : MultiDifficultyName(Netgame.difficulty));
 	else
-		sprintf(buffer, "D3 1.5 / Piccu compatibility - %s (configure...)", MultiDifficultyName(Netgame.difficulty));
+		sprintf(buffer, "Vanilla / 1.5 - %s (configure...)", MultiDifficultyName(Netgame.difficulty));
 }
 
 static void MultiDifficultyAxisChanged(int index)
@@ -897,13 +898,13 @@ static void MultiDifficultyOptionsMenu()
 	newuiSheet *sheet;
 	bool exit_menu = false;
 
-	window.Create("Difficulty and Compatibility", 0, 0, 384, 416);
+	window.Create("Gameplay Rules and Difficulty", 0, 0, 384, 416);
 	sheet = window.GetSheet();
 
-	sheet->NewGroup("Hosting profile", 0, 0);
+	sheet->NewGroup("Gameplay rules", 0, 0);
 	Multi_diff_protocol_combo = sheet->AddComboBox(100, UILB_NOSORT);
-	Multi_diff_protocol_combo->AddItem("Compatibility (D3 1.5 / Piccu)");
-	Multi_diff_protocol_combo->AddItem("Enhanced");
+	Multi_diff_protocol_combo->AddItem("Vanilla / 1.5");
+	Multi_diff_protocol_combo->AddItem("Enhanced / 3MASTERED");
 	Multi_diff_protocol_combo->SetCurrentIndex(Multi_host_protocol);
 
 	const char *axis_names[4] = {"Enemy AI", "Enemy / projectile speed", "Enemy HP", "Resources"};
@@ -1661,7 +1662,8 @@ void ShowNetgameInfo(network_game* game)
 		sprintf(str, "%s: %s", TXT_PLTDIFFICULT, szdiff);
 	sheet->NewGroup(str, GAME_INFO_COL1, cury); GAME_INFO_GOTO_NEXT_LINE;
 
-	sprintf(str, "Network profile: %s", MultiProtocolIsEnhanced(protocol) ? "Enhanced" : "D3 1.5 / Piccu compatibility");
+	sprintf(str, "Gameplay rules: %s",
+		MultiProtocolIsEnhanced(protocol) ? "Enhanced / 3MASTERED" : "Vanilla / 1.5");
 	sheet->NewGroup(str, GAME_INFO_COL1, cury); GAME_INFO_GOTO_NEXT_LINE;
 
 	if (MultiProtocolIsEnhanced(protocol) && profile && !DifficultyProfileIsUniform(*profile))

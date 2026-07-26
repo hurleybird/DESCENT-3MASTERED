@@ -45,6 +45,7 @@
 #include "AIMain.h"
 #include "config.h"
 #include "viseffect.h"
+#include "difficulty.h"
 
 //#include "samirlog.h"
 #define LOGFILE(_s)
@@ -135,6 +136,67 @@ int Static_weapon_ckpt_names[][2] =
 			// The flares
 				{TXI_WPNC_YELFLARE_1,TXI_WPNC_YELFLARE_2},
 };
+
+static object *WeaponGameplayPlayerParent(object *weapon_obj)
+{
+	if (!weapon_obj || weapon_obj->type != OBJ_WEAPON)
+		return NULL;
+
+	object *parent = ObjGet(weapon_obj->parent_handle);
+	if (parent)
+		parent = ObjGetUltimateParent(parent);
+	return parent && parent->type == OBJ_PLAYER ? parent : NULL;
+}
+
+static bool WeaponGameplayMatchesPlayerSlot(object *weapon_obj, int slot)
+{
+	object *parent = WeaponGameplayPlayerParent(weapon_obj);
+	if (!parent || slot < 0 || slot >= MAX_PLAYER_WEAPONS)
+		return false;
+
+	const ship &player_ship = Ships[Players[parent->id].ship_index];
+	const otype_wb_info &battery = player_ship.static_wb[slot];
+	for (int gunpoint = 0; gunpoint < MAX_WB_GUNPOINTS; ++gunpoint)
+		if (battery.gp_weapon_index[gunpoint] == weapon_obj->id)
+			return true;
+	for (int level = 0; level < MAX_WB_UPGRADES; ++level)
+		if (battery.gp_level_weapon_index[level] == weapon_obj->id)
+			return true;
+	return false;
+}
+
+float WeaponGameplayEnergyUsage(int player_weapon_slot, float authored_usage)
+{
+	if (!GameplayRulesAreEnhanced())
+		return authored_usage;
+
+	if (player_weapon_slot == MICROWAVE_INDEX || player_weapon_slot == EMD_INDEX)
+		return authored_usage * 0.5f;
+	return authored_usage;
+}
+
+float WeaponGameplayDirectDamage(object *weapon_obj, bool target_is_player)
+{
+	if (!weapon_obj || weapon_obj->id < 0 || weapon_obj->id >= MAX_WEAPONS)
+		return 0.0f;
+
+	const weapon &weapon_info = Weapons[weapon_obj->id];
+	float damage = target_is_player ? weapon_info.player_damage : weapon_info.generic_damage;
+	if (!GameplayRulesAreEnhanced())
+		return damage;
+
+	if (WeaponGameplayMatchesPlayerSlot(weapon_obj, NAPALM_INDEX))
+		return damage * (60.0f / 53.0f);
+	if (WeaponGameplayMatchesPlayerSlot(weapon_obj, EMD_INDEX))
+		return damage * (50.0f / 40.0f);
+	return damage;
+}
+
+float WeaponGameplayPlayerHomingScalar(object *weapon_obj)
+{
+	return GameplayRulesAreEnhanced() &&
+		WeaponGameplayMatchesPlayerSlot(weapon_obj, EMD_INDEX) ? 1.25f : 1.0f;
+}
 
 // Sets all weapons to unused
 void InitWeapons()
@@ -663,7 +725,7 @@ bool CheckCanFireWeapon(int slot)
 
 	float ammo_scale = (p_dwb.flags & DWBF_QUAD) != 0 ? 2 : 1;
 
-	if (wb.energy_usage * ammo_scale > 0 && plr.energy <= 0)
+	if (WeaponGameplayEnergyUsage(slot, wb.energy_usage) * ammo_scale > 0 && plr.energy <= 0)
 		return false;
 
 	if (wb.ammo_usage * ammo_scale > 0 && plr.weapon_ammo[slot] <= 0)
@@ -1150,7 +1212,8 @@ int SwitchPlayerWeapon(int weapon_type, int direction)
 				LOGFILE((_logfp, "ammo wpn: switch to new index %d\n", wpn_index));
 				return wpn_index;
 			}
-			else if (!wb->ammo_usage && (plr->energy >= wb->energy_usage))
+			else if (!wb->ammo_usage &&
+				(plr->energy >= WeaponGameplayEnergyUsage(wpn_index, wb->energy_usage)))
 			{
 				(*setwpnfunc)(wpn_index, slot);
 				LOGFILE((_logfp, "energy wpn:switch to new index %d\n", wpn_index));
@@ -1222,7 +1285,8 @@ bool AutoSelectWeapon(int weapon_type, int new_wpn)
 					LOGFILE((_logfp, "keep current ammo weapon...(ind=%d)\n", list_index));
 					return sel_new_wpn;	// the current weapon supercedes the new weapon, (or is the same) so return
 				}
-				else if (!wb->ammo_usage && (plr->energy >= wb->energy_usage))
+				else if (!wb->ammo_usage &&
+					(plr->energy >= WeaponGameplayEnergyUsage(index, wb->energy_usage)))
 				{
 					LOGFILE((_logfp, "keep current energy weapon...(ind=%d)\n", list_index));
 					return sel_new_wpn;	// the current weapon supercedes the new weapon, (or is the same) so return
@@ -1272,7 +1336,8 @@ bool AutoSelectWeapon(int weapon_type, int new_wpn)
 							(*setwpnfunc)(index, slot);
 							break;
 						}
-						else if (!wb->ammo_usage && (plr->energy >= wb->energy_usage)) {
+						else if (!wb->ammo_usage &&
+							(plr->energy >= WeaponGameplayEnergyUsage(index, wb->energy_usage))) {
 							//	we've found an energy weapon to select to!
 							LOGFILE((_logfp, "energy wpn: auto select to new index %d\n", index));
 							(*setwpnfunc)(index, slot);

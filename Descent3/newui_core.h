@@ -92,6 +92,7 @@ void (*GetUICallback())();
 //	does a UI loop:  returns a result value for the current window in focus.
 int DoUI();
 void ui_RequestForceQuit();
+void ui_RequestScreenshotAndForceQuit(const char* filename);
 
 // does one frame of UI input (returns result.)
 void DoUIFrame();
@@ -201,6 +202,7 @@ public:
 // only works if you specified an ID!  Also the sheet must have been realized by now.
 	UIGadget *GetGadget(short id);
 	bool SetGadgetTitle(short id, const char *title);
+	bool SetGroupPosition(const char *title, short x, short y);
 	bool SetGadgetVisible(short id, bool visible);
 	bool SetGadgetEnabled(short id, bool enabled);
 	bool SetGadgetTextAlignment(short id, tNewuiTextAlignment alignment, short padding=0);
@@ -230,6 +232,12 @@ public:
 
 // adds a radio button to current group.  initial state of radio may be set
 	void AddRadioButton(const char *title, short id=DEFAULT_NEWUID);
+
+// adds a medium-width radio button to current group.
+	int *AddFirstMediumRadioButton(const char *title, short id=DEFAULT_NEWUID);
+
+// adds a medium-width radio button to current group.
+	void AddMediumRadioButton(const char *title, short id=DEFAULT_NEWUID);
 
 // adds a radio button to current group.  initial state of radio may be set
 	int *AddFirstLongRadioButton(const char *title, short id=DEFAULT_NEWUID);

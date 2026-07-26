@@ -160,6 +160,8 @@ public:
 	void get_difficulty(ubyte *diff);
 	void set_difficulty_profile(const difficulty_profile &profile);
 	void get_difficulty_profile(difficulty_profile *profile) const;
+	void set_gameplay_rules(gameplay_rules_mode mode);
+	gameplay_rules_mode get_gameplay_rules() const;
 
 	void set_hud_data(ubyte *hmode=NULL,ushort *hstat=NULL,ushort *hgraphicalstat=NULL,int *gw_w=NULL,int *gw_h=NULL);
 	void get_hud_data(ubyte *hmode=NULL,ushort *hstat=NULL,ushort *hgraphicalstat=NULL,int *gw_w=NULL,int *gw_h=NULL);
@@ -230,6 +232,7 @@ private:
 	ushort picture_id;	//pilot picture image id
 	ubyte difficulty;	//difficulty setting for this pilot (DIFFICULTY_*)
 	difficulty_profile difficulty_axes;
+	gameplay_rules_mode gameplay_rules;
 	ubyte hud_mode;		// hud display mode
 	bool profanity_filter_on,audiotaunts;
 

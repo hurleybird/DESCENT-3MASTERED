@@ -29,6 +29,18 @@
 #define DIFFICULTY_ACE			3
 #define DIFFICULTY_INSANE		4
 
+// Gameplay rules belong to one of two independently versioned families.
+// The selected family is a pilot preference in single-player; multiplayer
+// always follows the host's negotiated protocol family.
+enum gameplay_rules_mode : ubyte
+{
+	GAMEPLAY_RULES_VANILLA = 0,
+	GAMEPLAY_RULES_ENHANCED = 1
+};
+
+#define GAMEPLAY_RULES_VANILLA_PROTOCOL_VERSION 10
+#define GAMEPLAY_RULES_ENHANCED_REVISION 2
+
 // A uniform profile is exactly equivalent to the original monolithic
 // difficulty setting.  Multiplayer enhanced sessions may select the four
 // existing dimensions independently; no new scaling curves are introduced.

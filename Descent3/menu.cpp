@@ -131,6 +131,12 @@ int MainMenu()
 
 	char pfilename[_MAX_FNAME];
 	Current_pilot.get_filename(pfilename);
+	if (FindArg("-capture-pilot-output"))
+	{
+		PilotSelect();
+		Mem_quick_exit = 1;
+		return 1;
+	}
 	if (FindArg("-trace-firstgame"))
 	{
 		const int training_status = Current_pilot.find_mission_data("Pilot Training");

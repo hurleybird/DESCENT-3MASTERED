@@ -610,18 +610,22 @@ void HomingTurnTowardObj(object* weapon, object* target)
 
 		weapon->mtype.phys_info.rotthrust.z = 0.0;
 
-		if (!ObjGet(weapon->parent_handle) || ObjGet(weapon->parent_handle)->type != OBJ_PLAYER)
+		object *parent = ObjGet(weapon->parent_handle);
+		if (!parent || parent->type != OBJ_PLAYER)
 			weapon->mtype.phys_info.rotthrust *= Diff_homing_strength[DIFF_SPEED_LEVEL];
+		else
+			weapon->mtype.phys_info.rotthrust *= WeaponGameplayPlayerHomingScalar(weapon);
 	}
 	else
 	{
 		float scalar;
 		vm_NormalizeVector(&dir_to_target);
 
-		if (!ObjGet(weapon->parent_handle) || ObjGet(weapon->parent_handle)->type != OBJ_PLAYER)
+		object *parent = ObjGet(weapon->parent_handle);
+		if (!parent || parent->type != OBJ_PLAYER)
 			scalar = Diff_homing_strength[DIFF_SPEED_LEVEL];
 		else
-			scalar = 1.0f;
+			scalar = WeaponGameplayPlayerHomingScalar(weapon);
 
 		AITurnTowardsDir(weapon, &dir_to_target, weapon->mtype.phys_info.full_rotthrust * scalar);
 		weapon->mtype.phys_info.velocity = weapon->orient.fvec * weapon->mtype.phys_info.full_thrust / weapon->mtype.phys_info.drag;
@@ -2804,6 +2808,7 @@ void FireWeaponFromPlayer(object* objp, int weapon_type, int down_count, bool do
 	int weapon_battery_index = pw->index;
 	ship* ship = &Ships[player->ship_index];
 	otype_wb_info* wb = &ship->static_wb[weapon_battery_index];
+	const float energy_usage = WeaponGameplayEnergyUsage(weapon_battery_index, wb->energy_usage);
 	int fire_on_release = (ship->fire_flags[weapon_battery_index] & (SFF_FUSION | SFF_ZOOM));
 	bool can_fire_now = WBIsBatteryReady(objp, wb, weapon_battery_index);
 	dynamic_wb_info* p_dwb = &objp->dynamic_wb[weapon_battery_index];
@@ -2867,7 +2872,7 @@ void FireWeaponFromPlayer(object* objp, int weapon_type, int down_count, bool do
 				else
 					WBFireBattery(objp, wb, 0, weapon_battery_index, scalar);
 
-				player->energy -= wb->energy_usage * ammo_scalar;
+				player->energy -= energy_usage * ammo_scalar;
 				if (player->energy < 0)
 					player->energy = 0;
 
@@ -2902,7 +2907,7 @@ void FireWeaponFromPlayer(object* objp, int weapon_type, int down_count, bool do
 	}
 
 	//Check for adequate energy
-	if ((wb->energy_usage * ammo_scalar) && (player->energy <= 0)) {
+	if ((energy_usage * ammo_scalar) && (player->energy <= 0)) {
 		AddHUDMessage(TXT_WPNNONRG);
 		if (weapon_type == PW_PRIMARY)
 			StopWeapon(objp, pw, wb);
@@ -2974,9 +2979,9 @@ void FireWeaponFromPlayer(object* objp, int weapon_type, int down_count, bool do
 
 		//If on/off weapon, scale energy by framerate based on "reference" rate of 20 fps.
 		if (wb->flags & WBF_ON_OFF)
-			player->energy -= (wb->energy_usage * ammo_scalar * Frametime / (1.0 / 20.0));
+			player->energy -= (energy_usage * ammo_scalar * Frametime / (1.0 / 20.0));
 		else
-			player->energy -= (wb->energy_usage * ammo_scalar);
+			player->energy -= (energy_usage * ammo_scalar);
 		if (player->energy < 0)
 			player->energy = 0;
 

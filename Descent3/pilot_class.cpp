@@ -41,10 +41,11 @@ void taunt_Enable(bool enable);
 extern float Key_ramp_speed;
 
 
-#define PLT_FILE_VERSION	0x2C	//pilot file version
+#define PLT_FILE_VERSION	0x2D	//pilot file version
 
 
 //pilot file version history
+#define PFV_GAMEPLAY_RULES 0x2D // explicit Vanilla/Enhanced gameplay rules family
 #define PFV_DIFFICULTY_PROFILE 0x2C // four independent difficulty axes
 #define PFV_REARVIEWINFO	0x2B	// (SAMIR) save current state of rear small view.
 #define PFV_SHIPPERMISSIONS	0x2A	// (JEFF) save highest level ship permission in mission data
@@ -101,6 +102,7 @@ void pilot::initialize(void)
 	difficulty_axes.enemy_speed = difficulty;
 	difficulty_axes.enemy_hp = difficulty;
 	difficulty_axes.resources = difficulty;
+	gameplay_rules = GAMEPLAY_RULES_ENHANCED;
 	hud_mode = (ubyte)HUD_COCKPIT;
 	hud_stat = 0;
 	hud_graphical_stat = STAT_STANDARD;
@@ -256,6 +258,12 @@ void pilot::verify(void)
 	if (difficulty_axes.resources >= MAX_DIFFICULTY_LEVELS)
 		difficulty_axes.resources = difficulty;
 	difficulty = difficulty_axes.enemy_hp;
+	if (gameplay_rules != GAMEPLAY_RULES_ENHANCED)
+	{
+		gameplay_rules = GAMEPLAY_RULES_VANILLA;
+		if (!DifficultyProfileIsUniform(difficulty_axes))
+			set_difficulty(difficulty);
+	}
 
 	// kill graphical stat for inventory and reset to text version
 	if (hud_graphical_stat & STAT_INVENTORY)
@@ -311,11 +319,11 @@ int pilot::flush(bool new_file)
 			return PLTW_FILE_CANTOPEN;
 		}
 
-		// Keep pilots readable by 1.5/Piccu builds whenever the extended
-		// difficulty profile is not actually needed.  PFV_DIFFICULTY_PROFILE
-		// adds only the four independent difficulty axes, so a uniform profile
-		// can be represented exactly by the preceding format.
-		file_version = DifficultyProfileIsUniform(difficulty_axes) ? PFV_REARVIEWINFO : PLT_FILE_VERSION;
+		// A Vanilla/1.5 pilot with uniform difficulty remains byte-compatible
+		// with 1.5/Piccu. Enhanced rules require an explicit family byte even
+		// when the difficulty itself is uniform.
+		file_version = gameplay_rules == GAMEPLAY_RULES_VANILLA ?
+			PFV_REARVIEWINFO : PLT_FILE_VERSION;
 		cf_WriteInt(file, file_version);
 
 		write_name(file);
@@ -512,6 +520,7 @@ void pilot::commit_state() const
 {
 	::ingame_difficulty = difficulty;
 	DifficultySetSingleplayerProfile(difficulty_axes);
+	GameplayRulesSetSingleplayer(gameplay_rules);
 
 	for (int wpn = 0; wpn < MAX_PRIMARY_WEAPONS; wpn++)
 		SetAutoSelectPrimaryWpnIdx(wpn, PrimarySelectList[wpn]);
@@ -793,6 +802,20 @@ void pilot::get_difficulty_profile(difficulty_profile *profile) const
 {
 	if (profile)
 		*profile = difficulty_axes;
+}
+
+void pilot::set_gameplay_rules(gameplay_rules_mode mode)
+{
+	gameplay_rules = mode == GAMEPLAY_RULES_ENHANCED ?
+		GAMEPLAY_RULES_ENHANCED : GAMEPLAY_RULES_VANILLA;
+	if (gameplay_rules == GAMEPLAY_RULES_VANILLA && !DifficultyProfileIsUniform(difficulty_axes))
+		set_difficulty(difficulty_axes.enemy_hp);
+	write_pending = true;
+}
+
+gameplay_rules_mode pilot::get_gameplay_rules() const
+{
+	return gameplay_rules;
 }
 
 
@@ -1204,6 +1227,8 @@ void pilot::write_difficulty(CFILE* file)
 		cf_WriteByte(file, difficulty_axes.enemy_hp);
 		cf_WriteByte(file, difficulty_axes.resources);
 	}
+	if (file_version >= PFV_GAMEPLAY_RULES)
+		cf_WriteByte(file, gameplay_rules);
 }
 
 
@@ -1218,10 +1243,14 @@ void pilot::read_difficulty(CFILE* file, bool skip)
 		profile.enemy_hp = cf_ReadByte(file);
 		profile.resources = cf_ReadByte(file);
 	}
+	gameplay_rules_mode rules = file_version >= PFV_GAMEPLAY_RULES ?
+		(gameplay_rules_mode)cf_ReadByte(file) :
+		(file_version >= PFV_DIFFICULTY_PROFILE ? GAMEPLAY_RULES_ENHANCED : GAMEPLAY_RULES_VANILLA);
 	if (!skip)
 	{
 		difficulty = temp;
 		difficulty_axes = profile;
+		gameplay_rules = rules;
 	}
 }
 

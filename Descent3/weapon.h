@@ -156,6 +156,12 @@ extern const char *Static_weapon_names[];
 extern int Static_weapon_names_msg[];
 extern int Static_weapon_ckpt_names[][2];
 
+// Gameplay-rule adjustments are resolved at use time so the authored weapon
+// tables, robot weapons, and compatibility-protocol checksums remain untouched.
+float WeaponGameplayEnergyUsage(int player_weapon_slot, float authored_usage);
+float WeaponGameplayDirectDamage(object *weapon_obj, bool target_is_player);
+float WeaponGameplayPlayerHomingScalar(object *weapon_obj);
+
 // Sets all weapons to unused
 void InitWeapons ();
 

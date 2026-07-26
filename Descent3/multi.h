@@ -44,7 +44,7 @@ extern bool Multi_bail_ui_menu;
 //Patch 1.1!
 //#define MULTI_VERSION	6
 //Patch 1.3
-#define MULTI_COMPATIBILITY_VERSION	10
+#define MULTI_COMPATIBILITY_VERSION	GAMEPLAY_RULES_VANILLA_PROTOCOL_VERSION
 #endif
 
 // Keep the official protocol lineage in its own namespace.  The enhanced
@@ -53,7 +53,7 @@ extern bool Multi_bail_ui_menu;
 #define MULTI_VERSION MULTI_COMPATIBILITY_VERSION
 #define MULTI_ENHANCED_DISCRIMINATOR 0xD301
 #define MULTI_ENHANCED_FAMILY_MAGIC 0x44335850u // Permanent "D3XP" wire family
-#define MULTI_ENHANCED_REVISION 1
+#define MULTI_ENHANCED_REVISION GAMEPLAY_RULES_ENHANCED_REVISION
 
 enum multi_protocol_mode
 {

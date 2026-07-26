@@ -1811,10 +1811,10 @@ void collide_generic_and_weapon( object * robotobj, object * weapon, vector *col
 
 	if (electrical)
 	{
-		damage_to_apply=Weapons[weapon->id].generic_damage*Frametime;
+		damage_to_apply=WeaponGameplayDirectDamage(weapon, false)*Frametime;
 	}
 	else
-		damage_to_apply=Weapons[weapon->id].generic_damage;
+		damage_to_apply=WeaponGameplayDirectDamage(weapon, false);
 
 	// Factor in multiplier
 	damage_to_apply*=weapon->ctype.laser_info.multiplier;
@@ -1892,9 +1892,9 @@ void collide_player_and_weapon( object * playerobj, object * weapon, vector *col
 		CreateRobotSpawnFromWeapon (weapon);
 
 	if (electrical)
-		damage_to_apply=Weapons[weapon->id].player_damage*Frametime;
+		damage_to_apply=WeaponGameplayDirectDamage(weapon, true)*Frametime;
 	else
-		damage_to_apply=Weapons[weapon->id].player_damage;
+		damage_to_apply=WeaponGameplayDirectDamage(weapon, true);
 
 	// Factor in multiplier
 	damage_to_apply*=weapon->ctype.laser_info.multiplier;

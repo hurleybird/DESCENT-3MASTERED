@@ -55,6 +55,7 @@
 #include "dedicated_server.h"
 #include "init.h"
 #include "gameloop.h"
+#include "args.h"
 
 //some general defines
 #define	IDP_SAVE	10
@@ -237,6 +238,8 @@ bool VerifyPilotData(pilot* Pilot)
 #define IDP_DIFFICULTY_HOTSHOT 0x5D
 #define IDP_DIFFICULTY_ACE 0x5E
 #define IDP_DIFFICULTY_INSANE 0x5F
+#define IDP_RULES_VANILLA 0x60
+#define IDP_RULES_ENHANCED 0x61
 
 struct pilot_select_menu
 {
@@ -273,11 +276,22 @@ struct pilot_edit_menu
 {
 	newuiSheet* sheet;
 
+	int* gameplay_rules;
 	int* difficulty;
 	bool* profanity;
 	bool* audiotaunts;
 	char* pilot_name;
 	char* difficulty_axis_labels[MAX_DIFFICULTY_LEVELS];
+
+	void set_rules_layout(gameplay_rules_mode mode)
+	{
+		const bool enhanced = mode == GAMEPLAY_RULES_ENHANCED;
+		const short custom_row_offset = enhanced ? 0 : -12;
+		sheet->SetGadgetVisible(IDP_CUSTOMDIFFICULTY, enhanced);
+		sheet->SetGroupPosition(TXT_CONTROLSCONFIG, 55, 122 + custom_row_offset);
+		sheet->SetGroupPosition(TXT_MULTIPLAYERCONFIG, 55, 159 + custom_row_offset);
+		sheet->SetGroupPosition(TXT_MISCELLANEOUS, 55, 196 + custom_row_offset);
+	}
 
 	newuiSheet* setup(newuiMenu* menu)
 	{
@@ -287,8 +301,16 @@ struct pilot_edit_menu
 		sheet->NewGroup(NULL, 5, 0);
 		pilot_name = sheet->AddChangeableText(64);
 
+		// Gameplay rules are independent of rendering enhancements.
+		sheet->NewGroup("GAMEPLAY RULES", 55, 12, NEWUI_ALIGN_HORIZ);
+		gameplay_rules = sheet->AddFirstMediumRadioButton("Vanilla", IDP_RULES_VANILLA);
+		sheet->AddMediumRadioButton("Enhanced", IDP_RULES_ENHANCED);
+		sheet->SetGadgetTextAlignment(IDP_RULES_VANILLA, NEWUI_TEXT_ALIGN_CENTER, 3);
+		sheet->SetGadgetTextAlignment(IDP_RULES_ENHANCED, NEWUI_TEXT_ALIGN_CENTER, 3);
+		*gameplay_rules = GAMEPLAY_RULES_ENHANCED;
+
 		// difficulty
-		sheet->NewGroup(TXT_PLTDIFFICULT, 55, 12);
+		sheet->NewGroup(TXT_PLTDIFFICULT, 55, 37);
 #if 1 //ndef DEMO
 		difficulty = sheet->AddFirstLongRadioButton(TXT_TRAINEE, IDP_DIFFICULTY_TRAINEE);
 		sheet->AddLongRadioButton(TXT_ROOKIE, IDP_DIFFICULTY_ROOKIE);
@@ -307,25 +329,24 @@ struct pilot_edit_menu
 		sheet->AddLongRadioButton(TXT_HOTSHOT);
 		*difficulty = 0;
 #endif
-		const int difficulty_label_y[MAX_DIFFICULTY_LEVELS] = {23, 35, 47, 59, 71};
+		const int difficulty_label_y[MAX_DIFFICULTY_LEVELS] = {48, 60, 72, 84, 96};
 		for (int level = 0; level < MAX_DIFFICULTY_LEVELS; ++level)
 		{
 			sheet->NewGroup(NULL, 55, difficulty_label_y[level]);
 			difficulty_axis_labels[level] = sheet->AddRightAlignedChangeableText(48, 156, 5);
 			difficulty_axis_labels[level][0] = '\0';
 		}
-		sheet->NewGroup(TXT_CONTROLSCONFIG, 55, 104);
+		sheet->NewGroup(TXT_CONTROLSCONFIG, 55, 122);
 		sheet->AddLongButton(TXT_CPYKEYCONF, IDP_COPYCONTROLS);
-		sheet->AddLongButton(TXT_CUSTKEYB, IDP_CONFIGKEYB);
-		sheet->AddLongButton(TXT_CUSTGAMEC, IDP_CONFIGCONT);
+		sheet->AddLongButton(TXT_OPTCONFIG, IDP_CONFIGKEYB);
 
-		sheet->NewGroup(TXT_MULTIPLAYERCONFIG, 55, 155);
+		sheet->NewGroup(TXT_MULTIPLAYERCONFIG, 55, 159);
 #if (!defined(OEM) && !defined(DEMO))
 		sheet->AddLongButton(TXT_SELPILOTPIC, IDP_CHOOSEPIC);
 #endif
 		sheet->AddLongButton(TXT_SHIPCUSTOMIZE, IDP_SHIPCONFIG);
 
-		sheet->NewGroup(TXT_MISCELLANEOUS, 55, 198);
+		sheet->NewGroup(TXT_MISCELLANEOUS, 55, 196);
 		profanity = sheet->AddLongCheckBox(TXT_PROFFILTER);
 		audiotaunts = sheet->AddLongCheckBox(TXT_AUDIOTAUNTS);
 
@@ -450,6 +471,7 @@ void PilotListSelectChangeCallback(int index)
 	pilot* Pilot = &working_pilot;
 	char name[PILOT_STRING_SIZE];
 	ubyte difficulty;
+	gameplay_rules_mode gameplay_rules;
 	bool profanity, audiotaunts;
 	bool in_edit = false;
 	char fullpath[MAX_PATH];
@@ -477,10 +499,12 @@ void PilotListSelectChangeCallback(int index)
 			//which keeps us from bringing deleted pilots
 			//back from the dead.
 			difficulty = *PilotChooseDialogInfo.edit->difficulty;
+			gameplay_rules = (gameplay_rules_mode)*PilotChooseDialogInfo.edit->gameplay_rules;
 			profanity = *PilotChooseDialogInfo.edit->profanity;
 			audiotaunts = *PilotChooseDialogInfo.edit->audiotaunts;
 
 			Pilot->set_profanity_filter(profanity);
+			Pilot->set_gameplay_rules(gameplay_rules);
 			difficulty_profile profile;
 			Pilot->get_difficulty_profile(&profile);
 			if (difficulty >= 0 && difficulty < MAX_DIFFICULTY_LEVELS &&
@@ -507,10 +531,13 @@ void PilotListSelectChangeCallback(int index)
 	Pilot->get_difficulty(&difficulty);
 	difficulty_profile difficulty_axes;
 	Pilot->get_difficulty_profile(&difficulty_axes);
+	gameplay_rules = Pilot->get_gameplay_rules();
 	Pilot->get_profanity_filter(&profanity);
 	Pilot->get_audiotaunts(&audiotaunts);
+	*PilotChooseDialogInfo.edit->gameplay_rules = gameplay_rules;
 	PilotDifficultyDisplay(difficulty_axes, PilotChooseDialogInfo.edit->difficulty,
 		PilotChooseDialogInfo.edit->difficulty_axis_labels);
+	PilotChooseDialogInfo.edit->set_rules_layout(gameplay_rules);
 	*PilotChooseDialogInfo.edit->profanity = profanity;
 	*PilotChooseDialogInfo.edit->audiotaunts = audiotaunts;
 
@@ -537,6 +564,21 @@ void selectcb(newuiMenu* menu, short id, void* data)
 		menu->SetFocusOnGadget(select->pilot_list);
 }
 
+static const char* Pilot_capture_output = NULL;
+static int Pilot_capture_frames = 0;
+static void (*Pilot_capture_old_ui_callback)() = NULL;
+
+static void PilotCaptureUICallback()
+{
+	if (Pilot_capture_old_ui_callback)
+		(*Pilot_capture_old_ui_callback)();
+
+	if (Pilot_capture_output && ++Pilot_capture_frames >= 5)
+	{
+		ui_RequestScreenshotAndForceQuit(Pilot_capture_output);
+	}
+}
+
 void PilotSelect(void)
 {
 	newuiMenu menu;
@@ -554,6 +596,9 @@ void PilotSelect(void)
 
 	int res = -1;
 	bool done = false;
+	const int capture_arg = FindArg("-capture-pilot-output");
+	const char* capture_output = capture_arg ? GetArg(capture_arg + 1) : NULL;
+	const bool capture_pilot = capture_output && capture_output[0];
 
 	ddio_MakePath(fullpath, User_directory, Default_pilot, NULL);
 	if (cfexist(fullpath) != CF_NOT_FOUND)
@@ -605,6 +650,16 @@ void PilotSelect(void)
 
 	Current_pilot.get_filename(pfilename);
 	NewPltUpdate(select.pilot_list, filelist, filecount, 0, pfilename);
+	if (capture_pilot)
+	{
+		if (FindArg("-capture-pilot-enhanced"))
+		{
+			working_pilot.set_gameplay_rules(GAMEPLAY_RULES_ENHANCED);
+			*edit.gameplay_rules = GAMEPLAY_RULES_ENHANCED;
+			edit.set_rules_layout(GAMEPLAY_RULES_ENHANCED);
+		}
+		menu.SetCurrentOption(IDP_EDIT);
+	}
 
 	//if we get here than there is at least one pilot already
 	char old_file[MAX_PATH];
@@ -620,11 +675,23 @@ void PilotSelect(void)
 	DoWaitMessage(false);
 
 	menu.Open();
+	if (capture_pilot)
+	{
+		Pilot_capture_output = capture_output;
+		Pilot_capture_frames = 0;
+		Pilot_capture_old_ui_callback = GetUICallback();
+		SetUICallback(PilotCaptureUICallback);
+	}
 
 	// run menu
 	do
 	{
 		res = menu.DoUI();
+		if (capture_pilot && res == NEWUIRES_FORCEQUIT)
+		{
+			done = true;
+			break;
+		}
 
 		switch (res)
 		{
@@ -795,6 +862,8 @@ void PilotSelect(void)
 		{
 			if (!filecount)
 				break;
+			if (working_pilot.get_gameplay_rules() != GAMEPLAY_RULES_ENHANCED)
+				break;
 			// Radio buttons select on mouse-down and normally unlock on mouse-up.
 			// Release the parent before opening the modal, whose window would
 			// otherwise consume that mouse-up and leave the parent locked.
@@ -816,6 +885,24 @@ void PilotSelect(void)
 				working_pilot.get_difficulty_profile(&profile);
 			PilotDifficultyDisplay(profile, PilotChooseDialogInfo.edit->difficulty,
 				PilotChooseDialogInfo.edit->difficulty_axis_labels);
+			PilotChooseDialogInfo.edit->sheet->UpdateChanges();
+		}break;
+
+		case IDP_RULES_VANILLA:
+		case IDP_RULES_ENHANCED:
+		{
+			if (!filecount)
+				break;
+			PilotChooseDialogInfo.edit->sheet->UpdateReturnValues();
+			const gameplay_rules_mode mode =
+				res == IDP_RULES_ENHANCED ? GAMEPLAY_RULES_ENHANCED : GAMEPLAY_RULES_VANILLA;
+			working_pilot.set_gameplay_rules(mode);
+			*PilotChooseDialogInfo.edit->gameplay_rules = mode;
+			difficulty_profile profile;
+			working_pilot.get_difficulty_profile(&profile);
+			PilotDifficultyDisplay(profile, PilotChooseDialogInfo.edit->difficulty,
+				PilotChooseDialogInfo.edit->difficulty_axis_labels);
+			PilotChooseDialogInfo.edit->set_rules_layout(mode);
 			PilotChooseDialogInfo.edit->sheet->UpdateChanges();
 		}break;
 
@@ -856,7 +943,6 @@ void PilotSelect(void)
 
 		}break;
 
-		case IDP_CONFIGCONT:
 		case IDP_CONFIGKEYB:
 		{
 			if (!filecount)
@@ -875,10 +961,9 @@ void PilotSelect(void)
 			PltReadFile(&Current_pilot, true, true);
 			Current_pilot.commit_state();
 			//configure the current pilot
-			if (res == IDP_CONFIGKEYB)
-				CtlConfig(CTLCONFIG_KEYBOARD);
-			else
-				CtlConfig(CTLCONFIG_CONTROLLER);
+			// The same tabbed controls menu used by F2 contains keyboard,
+			// controller, and weapon-selection pages.
+			CtlConfig(CTLCONFIG_KEYBOARD);
 			//now save the current_pilot out to disk
 			PltWriteFile(&Current_pilot, false);
 
@@ -930,12 +1015,20 @@ void PilotSelect(void)
 
 	} while (!done);
 
+	if (capture_pilot)
+	{
+		SetUICallback(Pilot_capture_old_ui_callback);
+		Pilot_capture_old_ui_callback = NULL;
+		Pilot_capture_output = NULL;
+	}
+
 	PltClearList();
 	PltGetPilotsFree();
 	Current_pilot.get_difficulty(&ingame_difficulty);
 	difficulty_profile active_difficulty;
 	Current_pilot.get_difficulty_profile(&active_difficulty);
 	DifficultySetSingleplayerProfile(active_difficulty);
+	GameplayRulesSetSingleplayer(Current_pilot.get_gameplay_rules());
 
 	// get settings
 	select.finish();

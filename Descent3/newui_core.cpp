@@ -333,11 +333,12 @@ class newuiRadioButton : public newuiButton, public UIRadioButton
 public:
 	newuiRadioButton();
 
-	void Create(UIWindow* wnd, UIRadioButton* prev_rb, short id, const char* name, short x, short y, bool is_long = false);
+	void Create(UIWindow* wnd, UIRadioButton* prev_rb, short id, const char* name, short x, short y,
+		bool is_long = false, short display_width = 0);
 
 protected:
 	virtual void OnDraw();							// this will use the newuiButton drawing scheme
-	virtual void OnDestroy() { newuiButton::OnDestroy(); };
+	virtual void OnDestroy();
 	virtual void OnFormat() { newuiButton::OnFormat(); };
 	virtual void OnKeyDown(int key) { UIRadioButton::OnKeyDown(key); };
 	virtual void OnKeyUp(int key) { UIRadioButton::OnKeyUp(key); };
@@ -345,6 +346,12 @@ protected:
 	virtual void OnMouseBtnUp(int btn) { UIRadioButton::OnMouseBtnUp(btn); };
 	virtual void OnLostFocus() { newuiButton::OnLostFocus(); };
 	virtual void OnGainFocus() { newuiButton::OnGainFocus(); };
+
+private:
+	int m_medium_bkg_handle;
+	int m_medium_lit_handle;
+	UIBitmapItem* m_medium_bkg;
+	UIBitmapItem* m_medium_lit;
 };
 
 
@@ -553,6 +560,8 @@ void newuiCore_ReleaseBitmaps()
 
 
 // does a UI loop
+static const char* UI_screenshot_and_quit_filename = NULL;
+
 int DoUI()
 {
 	// this should poll UI_frame_result.
@@ -580,6 +589,11 @@ int DoUI()
 void ui_RequestForceQuit()
 {
 	UI_frame_result = NEWUIRES_FORCEQUIT;
+}
+
+void ui_RequestScreenshotAndForceQuit(const char* filename)
+{
+	UI_screenshot_and_quit_filename = filename;
 }
 
 
@@ -616,6 +630,13 @@ void DoUIFrame()
 		DebugBlockPrint("UM");
 		UI_frame_result = ui_DoFrame();
 		DebugBlockPrint("UN");
+
+		if (UI_screenshot_and_quit_filename)
+		{
+			rend_SaveScreenshotPNG(UI_screenshot_and_quit_filename);
+			UI_screenshot_and_quit_filename = NULL;
+			UI_frame_result = NEWUIRES_FORCEQUIT;
+		}
 	}
 
 	if (UI_input.printscreen) 
@@ -1533,7 +1554,7 @@ void newuiSheet::Realize()
 		case GADGET_RADIO:
 			if (first_radio_index == -1) first_radio_index = i;
 			radio = new newuiRadioButton;
-			radio->Create(m_parent, prev_radio, desc->id, desc->title, gx, gy, false);
+			radio->Create(m_parent, prev_radio, desc->id, desc->title, gx, gy, false, desc->text_width);
 			radio->SetTextAlignment(desc->text_alignment, desc->text_padding);
 			if (m_gadgetlist[first_radio_index].parm.i == (i - first_radio_index))
 				radio->Activate();
@@ -1571,7 +1592,7 @@ void newuiSheet::Realize()
 		case GADGET_LRADIO:
 			if (first_radio_index == -1) first_radio_index = i;
 			radio = new newuiRadioButton;
-			radio->Create(m_parent, prev_radio, desc->id, desc->title, gx, gy, true);
+			radio->Create(m_parent, prev_radio, desc->id, desc->title, gx, gy, true, desc->text_width);
 			radio->SetTextAlignment(desc->text_alignment, desc->text_padding);
 			if (m_gadgetlist[first_radio_index].parm.i == (i - first_radio_index))
 				radio->Activate();
@@ -2137,6 +2158,47 @@ bool newuiSheet::SetGadgetTitle(short id, const char* title)
 	return false;
 }
 
+bool newuiSheet::SetGroupPosition(const char* title, short x, short y)
+{
+	if (!title)
+		return false;
+
+	for (int i = 0; i < m_ngadgets; ++i)
+	{
+		t_gadget_desc* group = &m_gadgetlist[i];
+		if ((group->type != GADGET_GROUP && group->type != GADGET_HGROUP) ||
+			!group->title || strcmp(group->title, title))
+			continue;
+
+		const int dx = x - group->parm.s[0];
+		const int dy = y - group->parm.s[1];
+		group->parm.s[0] = x;
+		group->parm.s[1] = y;
+		if (!m_realized || (!dx && !dy))
+			return true;
+
+		for (int j = i; j < m_ngadgets; ++j)
+		{
+			t_gadget_desc* desc = &m_gadgetlist[j];
+			if (j != i && (desc->type == GADGET_GROUP || desc->type == GADGET_HGROUP))
+				break;
+
+			UIGadget* gadget = GadgetForDesc(desc);
+			if (gadget)
+				gadget->Move(gadget->X() + dx, gadget->Y() + dy,
+					gadget->W(), gadget->H());
+			if (desc->type == GADGET_CHANGEABLE_TXT)
+			{
+				desc->realized_x += dx;
+				desc->realized_y += dy;
+			}
+		}
+		return true;
+	}
+
+	return false;
+}
+
 bool newuiSheet::SetGadgetVisible(short id, bool visible)
 {
 	for (int i = 0; i < m_ngadgets; i++)
@@ -2159,7 +2221,7 @@ bool newuiSheet::SetGadgetVisible(short id, bool visible)
 		if (visible)
 		{
 			if (!gadget->GetWindow())
-				m_parent->AddGadget(gadget);
+				m_parent->AddGadget(gadget, true);
 		}
 		else if (gadget->GetWindow())
 		{
@@ -2332,6 +2394,24 @@ void newuiSheet::AddRadioButton(const char* title, short id)
 {
 	newuiSheet::t_gadget_desc* gadget = AddGadget(id, GADGET_RADIO, title);
 	gadget->parm.i = -1;
+}
+
+// adds a medium-width radio button to current group.
+int* newuiSheet::AddFirstMediumRadioButton(const char* title, short id)
+{
+	newuiSheet::t_gadget_desc* gadget = AddGadget(id, GADGET_RADIO, title);
+	gadget->parm.i = 0;
+	gadget->text_width = 84;
+	return &gadget->parm.i;
+}
+
+
+// adds a medium-width radio button to current group.
+void newuiSheet::AddMediumRadioButton(const char* title, short id)
+{
+	newuiSheet::t_gadget_desc* gadget = AddGadget(id, GADGET_RADIO, title);
+	gadget->parm.i = -1;
+	gadget->text_width = 84;
 }
 
 
@@ -2519,7 +2599,6 @@ void newuiButton::SetTextAlignment(tNewuiTextAlignment alignment, short padding)
 	m_text_padding = padding;
 }
 
-
 void newuiButton::Create(UIWindow* menu, short id, const char* name, short x, short y, short flags)
 {
 	UIButton::Create(menu, id, &UITextItem(""), x, y, 10, 8, flags | UIF_FIT);
@@ -2615,6 +2694,8 @@ void newuiButton::OnDraw()
 			x = m_text_padding;
 		else if (m_text_alignment == NEWUI_TEXT_ALIGN_RIGHT)
 			x = m_W - m_text->width() - m_text_padding;
+		else
+			x += m_text_padding;
 		m_text->draw(x, (m_H - m_text->height()) / 2);
 	}
 }
@@ -2910,18 +2991,120 @@ void newuiCheckBox::OnDraw()
 //////////////////////////////////////////////////////////////////////////////
 //	CLASS a new radio button
 
+static int newui_CreateExpandedButtonBitmap(int source_handle, int target_width)
+{
+	const int source_width = bm_w(source_handle, 0);
+	const int height = bm_h(source_handle, 0);
+	const int fixed_edge_width = 16;
+	if (source_width <= fixed_edge_width * 2 || target_width <= source_width)
+		return -1;
+
+	int target_handle = bm_AllocBitmap(target_width, height, 0);
+	if (target_handle < 0)
+		return -1;
+
+	const ushort* source = bm_data(source_handle, 0);
+	ushort* target = bm_data(target_handle, 0);
+	const int source_middle_width = source_width - fixed_edge_width * 2;
+	const int target_middle_width = target_width - fixed_edge_width * 2;
+
+	for (int y = 0; y < height; ++y)
+	{
+		for (int x = 0; x < target_width; ++x)
+		{
+			int source_x;
+			if (x < fixed_edge_width)
+				source_x = x;
+			else if (x >= target_width - fixed_edge_width)
+				source_x = source_width - (target_width - x);
+			else
+				source_x = fixed_edge_width +
+					((x - fixed_edge_width) * source_middle_width) / target_middle_width;
+			target[y * target_width + x] = source[y * source_width + source_x];
+		}
+	}
+
+	return target_handle;
+}
+
+static int newui_CreateMediumButtonBitmap(const char* filename, int target_width)
+{
+	// NewUI chunks all non-square UI art, so its cached UIBitmapItem does not
+	// expose a single source bitmap. Load a temporary source solely while
+	// constructing this gadget's wider, edge-preserving copy.
+	const int source_handle = bm_AllocLoadFileBitmap(IGNORE_TABLE(filename), 0);
+	if (source_handle < 0)
+		return -1;
+
+	const int target_handle = newui_CreateExpandedButtonBitmap(source_handle, target_width);
+	bm_FreeBitmap(source_handle);
+	return target_handle;
+}
+
 newuiRadioButton::newuiRadioButton()
+	: m_medium_bkg_handle(-1),
+	  m_medium_lit_handle(-1),
+	  m_medium_bkg(NULL),
+	  m_medium_lit(NULL)
 {
 }
 
 
-void newuiRadioButton::Create(UIWindow* wnd, UIRadioButton* prev_rb, short id, const char* name, short x, short y, bool is_long)
+void newuiRadioButton::Create(UIWindow* wnd, UIRadioButton* prev_rb, short id, const char* name, short x, short y,
+	bool is_long, short display_width)
 {
 	m_bkg = Newui_resources.Load(is_long ? NEWUI_LBTN_FILE : NEWUI_BTN_FILE);
 	m_litbkg = Newui_resources.Load(is_long ? NEWUI_LCHKBTNLIT_FILE : NEWUI_CHKBTNLIT_FILE);
 
 	UIRadioButton::Create(wnd, prev_rb, id, &UITextItem(""), x, y, 10, 8, UIF_FIT);
 	newuiButton::InitStates(name, is_long);
+
+	if (display_width > 0 && !is_long)
+	{
+		m_medium_bkg_handle = newui_CreateMediumButtonBitmap(NEWUI_BTN_FILE, display_width);
+		m_medium_lit_handle = newui_CreateMediumButtonBitmap(NEWUI_CHKBTNLIT_FILE, display_width);
+		if (m_medium_bkg_handle >= 0 && m_medium_lit_handle >= 0)
+		{
+			m_medium_bkg = new UIBitmapItem(m_medium_bkg_handle);
+			m_medium_lit = new UIBitmapItem(m_medium_lit_handle);
+			SetStateItem(UI_BTS_DISABLED, m_medium_bkg);
+			SetStateItem(UI_BTS_INACTIVE, m_medium_bkg);
+			SetStateItem(UI_BTS_HILITE, m_medium_bkg);
+			SetStateItem(UI_BTS_ACTIVATED, m_medium_lit);
+			OnFormat();
+		}
+	}
+}
+
+void newuiRadioButton::OnDestroy()
+{
+	SetStateItem(UI_BTS_DISABLED, m_bkg);
+	SetStateItem(UI_BTS_INACTIVE, m_bkg);
+	SetStateItem(UI_BTS_HILITE, m_bkg);
+	SetStateItem(UI_BTS_ACTIVATED, m_litbkg);
+
+	if (m_medium_bkg)
+	{
+		delete m_medium_bkg;
+		m_medium_bkg = NULL;
+	}
+	if (m_medium_lit)
+	{
+		delete m_medium_lit;
+		m_medium_lit = NULL;
+	}
+	if (m_medium_bkg_handle >= 0)
+	{
+		bm_FreeBitmap(m_medium_bkg_handle);
+		m_medium_bkg_handle = -1;
+	}
+	if (m_medium_lit_handle >= 0)
+	{
+		bm_FreeBitmap(m_medium_lit_handle);
+		m_medium_lit_handle = -1;
+	}
+
+	newuiButton::OnDestroy();
 }
 
 

@@ -318,7 +318,7 @@ void msafe_GetValue(int type, msafe_struct* mstruct)
 		object* objp = ObjGet(mstruct->objhandle);
 		if (!objp || (objp->type != OBJ_WEAPON))
 			return;
-		mstruct->amount = Weapons[objp->id].generic_damage * objp->ctype.laser_info.multiplier;
+		mstruct->amount = WeaponGameplayDirectDamage(objp, false) * objp->ctype.laser_info.multiplier;
 		break;
 	}
 	case MSAFE_OBJECT_COUNT_TYPE:

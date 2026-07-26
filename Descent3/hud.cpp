@@ -2485,9 +2485,10 @@ inline ushort reticle_mask(object* pobj, otype_wb_info* static_wb, int wb_index)
 		if (Players[pobj->id].weapon_ammo[wb_index] == 0)
 			return 0;
 	}
-	else if (static_wb->energy_usage)
+	else if (WeaponGameplayEnergyUsage(wb_index, static_wb->energy_usage))
 	{
-		if (Players[pobj->id].energy < static_wb->energy_usage)
+		if (Players[pobj->id].energy <
+			WeaponGameplayEnergyUsage(wb_index, static_wb->energy_usage))
 			return 0;
 	}
 

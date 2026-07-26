@@ -26,6 +26,7 @@ extern ubyte ingame_difficulty;
 
 extern difficulty_profile Singleplayer_difficulty;
 extern difficulty_profile Multiplayer_difficulty;
+extern gameplay_rules_mode Singleplayer_gameplay_rules;
 
 void DifficultySetSingleplayer(ubyte level);
 void DifficultySetSingleplayerProfile(const difficulty_profile &profile);
@@ -33,6 +34,10 @@ void DifficultySetMultiplayer(ubyte level);
 void DifficultySetMultiplayerProfile(const difficulty_profile &profile);
 bool DifficultyProfileIsUniform(const difficulty_profile &profile);
 ubyte DifficultyProfileLegacyLevel(const difficulty_profile &profile);
+void GameplayRulesSetSingleplayer(gameplay_rules_mode mode);
+gameplay_rules_mode GameplayRulesGetSingleplayer();
+gameplay_rules_mode GameplayRulesGetActive();
+bool GameplayRulesAreEnhanced();
 
 // Single-player continues to use the pilot's monolithic setting.  A uniform
 // multiplayer profile therefore executes precisely the same table lookups as

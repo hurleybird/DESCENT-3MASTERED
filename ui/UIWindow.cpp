@@ -225,7 +225,7 @@ void UIWindow::Destroy()
 
 //	interface functions
 // adds a UIObject to the interface's draw list.
-void UIWindow::AddGadget(UIGadget *gadget)
+void UIWindow::AddGadget(UIGadget *gadget, bool preserve_focus)
 {
 	ASSERT(IsCreated());
 	ASSERT(gadget->IsCreated());
@@ -242,12 +242,14 @@ void UIWindow::AddGadget(UIGadget *gadget)
 		m_GadgetTail = gadget;
 	}
 
-	if (m_GadgetCur) {
+	if (m_GadgetCur && !preserve_focus) {
 		m_GadgetCur->LostFocus();
 		m_GadgetCur = NULL;
 	}
-	m_ResetCurGadget = true;
-	m_CurGadgetInGroup = false;
+	if (!preserve_focus) {
+		m_ResetCurGadget = true;
+		m_CurGadgetInGroup = false;
+	}
 
 	gadget->m_Wnd = this;
 
