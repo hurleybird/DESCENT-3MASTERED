@@ -2562,6 +2562,23 @@ void ReadTerrainChunks(CFILE* fp, int version)
 		Terrain_cell_clip_plane[level1_building_right_seam_cell] = 2;
 	}
 
+	// Retribution level 3 marks the two portals behind the temple lava falls
+	// as visible fog faces. The legacy fog path consequently draws the opaque
+	// GrayRock portal polygons again as translucent red overlays. Keep the
+	// authored portals and their collision/connectivity, but suppress only
+	// those two decorative boundary faces from rendering.
+	if (Current_mission.cur_level == 3 &&
+		stricmp(Current_mission.name, "Descent 3: Retribution") == 0 &&
+		Rooms[2].used && Rooms[2].num_faces > 457)
+	{
+		constexpr int level3_lava_fog_portal_faces[] = { 456, 457 };
+		for (const int face_index : level3_lava_fog_portal_faces)
+		{
+			if (Rooms[2].faces[face_index].portal_num >= 0)
+				Rooms[2].faces[face_index].flags |= FF_FLOATING_TRIG;
+		}
+	}
+
 	BuildMinMaxTerrain();
 	BuildTerrainNormals();
 	UpdateTerrainLightmaps();
