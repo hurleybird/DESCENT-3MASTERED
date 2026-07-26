@@ -9,6 +9,19 @@ release.
 This project does **not** include the commercial Descent 3 game data. A legally
 obtained installation of Descent 3 is required.
 
+## Noteable enhancements
+
+- Modern motion blur via per-pixel motion vectors
+- Ambient occlusion
+- Soft particles
+- Bloom
+- Per-pixel lighting
+- Supersampling anti-aliasing
+- 3D HRTF positional audio
+- Ultra-widescreen support
+- High (>60FPS) framerate
+- Native Wooting analog keyboard support
+
 ## Goals
 
 The broad, non-exclusive goals of the engine are:
