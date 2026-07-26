@@ -2188,7 +2188,7 @@ struct toggles_menu
 		ddio_ff_GetInfo(&ff_found, NULL);
 		sheet->NewGroup(TXT_ADJUSTCONTROLSETTINGS, 110, 140);
 		sheet->AddLongButton(TXT_JOYSENSBTN, UID_SHORTCUT_JOYSETTINGS);
-		sheet->AddLongButton(TXT_KEYRAMPING, UID_SHORTCUT_KEYSETTINGS);
+		sheet->AddLongButton("Keyboard", UID_SHORTCUT_KEYSETTINGS);
 
 		if (ff_found)
 		{

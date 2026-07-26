@@ -62,8 +62,6 @@
 #define MOUSE_DEADZONE 0.00f
 
 static float WinControllerTimer = 0.0f;
-static longlong g_last_frame_timer_ms = -1;
-static float g_accum_frame_time = 0.0f;
 
 lnxgameController::lnxgameController(int num_funcs, ct_function *funcs) : gameController(num_funcs,funcs)
 {
@@ -75,8 +73,6 @@ lnxgameController::lnxgameController(int num_funcs, ct_function *funcs) : gameCo
 	m_Suspended = 0;
 	m_frame_timer_ms = -1;
 	m_frame_time = 1.0f;
-	g_last_frame_timer_ms = -1;
-	g_accum_frame_time = 0.0f;
 
 	lnxgameController::flush();
 }
@@ -88,9 +84,6 @@ lnxgameController::~lnxgameController() {}
 //	reading.
 void lnxgameController::suspend() { m_Suspended = 1; }
 void lnxgameController::resume() { m_Suspended = 0; m_frame_timer_ms = -1; m_frame_time = 1.0f;}
-
-#define CONTROLLER_POLLING_TIME	50
-#define MOUSE_POLLING_TIME	(1.0f/20.0f)
 
 //	this functions polls the controllers if needed.  some systems may not need to implement
 //	this function.
@@ -105,18 +98,11 @@ void lnxgameController::poll()
 	if (m_frame_timer_ms == -1) {
 	// don't poll this frame.
 		m_frame_timer_ms = cur_frame_timer_ms;
-		g_last_frame_timer_ms = cur_frame_timer_ms;
-		g_accum_frame_time = 0.0f;
 		return;
 	}
 
 	m_frame_time = (float)((cur_frame_timer_ms - m_frame_timer_ms)/1000.0);
 	m_frame_timer_ms = cur_frame_timer_ms;
-	g_accum_frame_time += m_frame_time;
-
-	if(g_accum_frame_time>=MOUSE_POLLING_TIME){
-		g_accum_frame_time = 0.0f;
-	}
 	
 	for (int ctl = 0; ctl < m_NumControls; ctl++)
 	{
@@ -815,7 +801,6 @@ void lnxgameController::extctl_getpos(int id)
 
 	joy_GetRawPos((tJoystick)id, &ji);
 
-	//if(g_accum_frame_time == 0.0f) {
 		m_ExtCtlStates[id].x = (int)ji.x;
 		m_ExtCtlStates[id].y = (int)ji.y;
 		m_ExtCtlStates[id].z = (int)ji.z;
@@ -879,8 +864,6 @@ void lnxgameController::mouse_geteval()
 	if (!m_MouseActive) {
 		return;
 	}
-
-	if(g_accum_frame_time!=0.0f) return;
 
 	btnmask = (unsigned)ddio_MouseGetState(&x,&y,&dx,&dy);
 

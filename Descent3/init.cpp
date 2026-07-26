@@ -164,7 +164,6 @@ const float kAnglesPerDegree             = 65536.0f / 360.0f;
 int CD_inserted = 0;
 float Mouselook_sensitivity = kAnglesPerDegree * kDefaultMouselookSensitivity;
 float Mouse_sensitivity     = 1.0f;
-bool Mouse_limitpolling = false;
 
 int IsLocalOk(void)
 {
@@ -499,9 +498,9 @@ void SaveGameSettings()
 	if(D3Force_gain>1.0f) D3Force_gain = 1.0f;
 	force_gain = (ubyte)((100.0f * D3Force_gain)+0.5f);
 	Database->write("ForceFeedbackGain",force_gain);
-	// [ISB] Don't want to change pilot format so this is database for now
-	Database->write("LimitMousePolling", Mouse_limitpolling);
 	Database->write("NativeWootingAnalog", Wooting_analog_enabled);
+	WRITE_FLOAT_SETTING("WootingAnalogStartDeadzone", Wooting_analog_start_deadzone);
+	WRITE_FLOAT_SETTING("WootingAnalogEndDeadzone", Wooting_analog_end_deadzone);
 
 #ifndef RELEASE			// never save this value out in release.
 	Database->write("SoundMixer", Sound_mixer);
@@ -1093,10 +1092,19 @@ void LoadGameSettings()
 	Database->read("ForceFeedbackGain",&force_gain,sizeof(force_gain));
 	if(force_gain>100) force_gain = 100;
 	D3Force_gain = ((float)force_gain)/100.0f;
-	Database->read("LimitMousePolling", &Mouse_limitpolling);
 	tempint = 0;
 	Database->read_int("NativeWootingAnalog", &tempint);
 	Wooting_analog_enabled = tempint != 0;
+	READ_FLOAT_SETTING("WootingAnalogStartDeadzone", Wooting_analog_start_deadzone);
+	READ_FLOAT_SETTING("WootingAnalogEndDeadzone", Wooting_analog_end_deadzone);
+	if (Wooting_analog_start_deadzone < 0.0f)
+		Wooting_analog_start_deadzone = 0.0f;
+	if (Wooting_analog_start_deadzone > 0.25f)
+		Wooting_analog_start_deadzone = 0.25f;
+	if (Wooting_analog_end_deadzone < 0.0f)
+		Wooting_analog_end_deadzone = 0.0f;
+	if (Wooting_analog_end_deadzone > 0.25f)
+		Wooting_analog_end_deadzone = 0.25f;
 	// Explicit test/troubleshooting overrides. These affect only Wooting input;
 	// neither option changes windowing or automated-capture behavior.
 	if (FindArg("-wooting-analog"))

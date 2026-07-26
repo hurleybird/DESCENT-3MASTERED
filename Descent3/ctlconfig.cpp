@@ -29,6 +29,7 @@
 #include "D3ForceFeedback.h"
 #include "hlsoundlib.h"
 #include "ddio.h"
+#include "wooting_analog.h"
 #include <string.h>
 
 //////////////////////////////////////////////////////////////////////////////
@@ -968,7 +969,6 @@ int weapon_select_dialog(int wpn, bool is_secondary)
 	return retval;
 }
 
-extern bool Mouse_limitpolling;
 void joystick_settings_dialog()
 {
 	newuiTiledWindow wnd;
@@ -987,7 +987,6 @@ void joystick_settings_dialog()
 	bool *joy_enabled;
 	bool *mse_enabled;
 	int *msectl;
-	int* mousepolllimit;
 	
 	wnd.Create(TXT_JOYMOUSESETTINGS, 0,0,480,384);
 	sheet = wnd.GetSheet();
@@ -1034,11 +1033,6 @@ void joystick_settings_dialog()
 	sheet->AddLongRadioButton(TXT_MOUSELOOK);
 	*msectl = Current_pilot.mouselook_control ? 1 : 0;
 	y += 50;
-	sheet->NewGroup("Mouse poll limit", 210, y);
-	mousepolllimit = sheet->AddFirstLongRadioButton("Unlimited");
-	sheet->AddLongRadioButton("Original (20hz)");
-	*mousepolllimit = Mouse_limitpolling ? 1 : 0;
-	y += 50;
 // force feedback stuff
 	ddio_ff_GetInfo(&ff_found, NULL);
 	if (ff_found) {
@@ -1079,7 +1073,6 @@ void joystick_settings_dialog()
 			Controller->set_axis_sensitivity(ctMouseAxis, i+1, val);
 		}
 		Current_pilot.mouselook_control = (*msectl) ? true : false;
-		Mouse_limitpolling = !!*mousepolllimit;
 	// force feedback stuff
 		if (ff_enabled) 
 		{
@@ -1107,6 +1100,8 @@ void joystick_settings_dialog()
 
 #define CFG_KEY_RAMP_MAX			1.0f
 #define CFG_KEY_RAMP_RANGE			20
+#define CFG_WOOTING_DEADZONE_MAX	0.25f
+#define CFG_WOOTING_DEADZONE_RANGE	25
 void key_settings_dialog()
 {
 	newuiTiledWindow wnd;
@@ -1115,6 +1110,8 @@ void key_settings_dialog()
 	short curpos;
 	tSliderSettings slider_set;
 	short *key_ramp_speed;
+	short *analog_start_deadzone;
+	short *analog_end_deadzone;
 	wnd.Create(TXT_KEYSETTINGS, 0,0,384,256);
 	sheet = wnd.GetSheet();
 	sheet->NewGroup(NULL, 0, 30);
@@ -1122,7 +1119,19 @@ void key_settings_dialog()
 	slider_set.max_val.f = CFG_KEY_RAMP_MAX;
 	slider_set.type = SLIDER_UNITS_FLOAT;
 	curpos = CALC_SLIDER_POS_FLOAT(Key_ramp_speed, &slider_set, CFG_KEY_RAMP_RANGE);
-	key_ramp_speed = sheet->AddSlider(TXT_KEYRAMPINGTIME, CFG_KEY_RAMP_RANGE, curpos, &slider_set);
+	key_ramp_speed = sheet->AddSlider("Digital ramp time (s)", CFG_KEY_RAMP_RANGE,
+		curpos, &slider_set);
+	sheet->NewGroup(NULL, 0, 62);
+	slider_set.max_val.f = CFG_WOOTING_DEADZONE_MAX;
+	slider_set.type = SLIDER_UNITS_FRACTION_PERCENT;
+	curpos = CALC_SLIDER_POS_FLOAT(Wooting_analog_start_deadzone, &slider_set,
+		CFG_WOOTING_DEADZONE_RANGE);
+	analog_start_deadzone = sheet->AddSlider("Wooting start",
+		CFG_WOOTING_DEADZONE_RANGE, curpos, &slider_set);
+	curpos = CALC_SLIDER_POS_FLOAT(Wooting_analog_end_deadzone, &slider_set,
+		CFG_WOOTING_DEADZONE_RANGE);
+	analog_end_deadzone = sheet->AddSlider("Wooting end",
+		CFG_WOOTING_DEADZONE_RANGE, curpos, &slider_set);
 	sheet->NewGroup(NULL, 180, 160, NEWUI_ALIGN_HORIZ);
 	sheet->AddButton(TXT_OK, UID_OK);
 	sheet->AddButton(TXT_CANCEL, UID_CANCEL);
@@ -1136,6 +1145,12 @@ void key_settings_dialog()
 	while (res != UID_OK && res != UID_CANCEL);
 	if (res == UID_OK) {
 		Key_ramp_speed = CALC_SLIDER_FLOAT_VALUE(*key_ramp_speed, 0.0f, CFG_KEY_RAMP_MAX, CFG_KEY_RAMP_RANGE);
+		Wooting_analog_start_deadzone = CALC_SLIDER_FLOAT_VALUE(
+			*analog_start_deadzone, 0.0f, CFG_WOOTING_DEADZONE_MAX,
+			CFG_WOOTING_DEADZONE_RANGE);
+		Wooting_analog_end_deadzone = CALC_SLIDER_FLOAT_VALUE(
+			*analog_end_deadzone, 0.0f, CFG_WOOTING_DEADZONE_MAX,
+			CFG_WOOTING_DEADZONE_RANGE);
 	}
 	wnd.Close();
 	wnd.Destroy();

@@ -3337,6 +3337,11 @@ void newuiSlider::OnDraw()
 		case SLIDER_UNITS_PERCENT:
 			sprintf(str, "%d%%", (int)((percent_full * 100.0f) + 0.5f));
 			break;
+		case SLIDER_UNITS_FRACTION_PERCENT:
+			sprintf(str, "%d%%", (int)(((m_unit_settings.min_val.f +
+				(m_unit_settings.max_val.f - m_unit_settings.min_val.f) *
+				percent_full) * 100.0f) + 0.5f));
+			break;
 		default:
 			Int3();
 			str[0] = 0;

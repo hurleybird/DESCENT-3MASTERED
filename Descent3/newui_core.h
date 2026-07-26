@@ -134,6 +134,7 @@ enum tNewuiTextAlignment
 #define SLIDER_UNITS_INT		0
 #define SLIDER_UNITS_PERCENT	1
 #define SLIDER_UNITS_FLOAT		2
+#define SLIDER_UNITS_FRACTION_PERCENT	3
 
 // used optionally for sliders.
 struct tSliderSettings

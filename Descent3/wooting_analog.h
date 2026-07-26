@@ -14,6 +14,8 @@
 #include "pstypes.h"
 
 extern bool Wooting_analog_enabled;
+extern float Wooting_analog_start_deadzone;
+extern float Wooting_analog_end_deadzone;
 
 // Initializes the optional Wooting SDK when support is enabled. Failure is
 // non-fatal; the normal digital keyboard path remains active.

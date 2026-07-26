@@ -41,14 +41,11 @@
 
 extern float Mouselook_sensitivity;
 extern float Mouse_sensitivity;
-extern bool Mouse_limitpolling;
 
 #define JOY_DEADZONE	0.20f
 #define MOUSE_DEADZONE 0.00f
 
 static float WinControllerTimer = 0.0f;
-static longlong g_last_frame_timer_ms = -1;
-static float g_accum_frame_time = 0.0f;
 
 
 //	Functions to create and destroy a game controller object.
@@ -82,8 +79,6 @@ gameSDLController::gameSDLController(int num_funcs, ct_function* funcs, char* re
 	m_frame_timer_ms = -1;
 	m_frame_timer = -.001;
 	m_frame_time = 1.0f;
-	g_last_frame_timer_ms = -1;
-	g_accum_frame_time = 0.0f;
 
 	gameSDLController::flush();
 }
@@ -98,9 +93,6 @@ gameSDLController::~gameSDLController()
 //	DDIO does handle the mouse, but we need to poll this information
 //	DDIO does handle to joystick or external controls but we also need to poll this information
 
-#define CONTROLLER_POLLING_TIME		50
-#define MOUSE_POLLING_TIME				(1.0f/20.0f)
-
 void gameSDLController::poll(bool force)
 {
 	if (m_Suspended)
@@ -112,19 +104,12 @@ void gameSDLController::poll(bool force)
 	{
 		// don't poll this frame.
 		m_frame_timer_ms = cur_frame_timer * 1000;
-		g_last_frame_timer_ms = cur_frame_timer * 1000;
-		g_accum_frame_time = 0.0f;
 		return;
 	}
 
 	m_frame_time = (cur_frame_timer - m_frame_timer);
 	m_frame_timer = cur_frame_timer;
 	m_frame_timer_ms = cur_frame_timer * 1000;
-	g_accum_frame_time += m_frame_time;
-
-	if (g_accum_frame_time >= MOUSE_POLLING_TIME) {
-		g_accum_frame_time = 0.0f;
-	}
 
 	for (int ctl = 0; ctl < m_NumControls; ctl++)
 	{
@@ -137,41 +122,6 @@ void gameSDLController::poll(bool force)
 			mouse_geteval();
 		}
 	}
-
-	/*longlong cur_frame_timer_ms;
-
-	if (m_Suspended)
-		return;
-
-	cur_frame_timer_ms = timer_GetMSTime();
-	if (m_frame_timer_ms == -1) {
-		// don't poll this frame.
-		m_frame_timer_ms = cur_frame_timer_ms;
-		g_last_frame_timer_ms = cur_frame_timer_ms;
-		g_accum_frame_time = 0.0f;
-		return;
-	}
-
-	m_frame_time = (float)((cur_frame_timer_ms - m_frame_timer_ms) / 1000.0);
-	m_frame_timer_ms = cur_frame_timer_ms;
-	g_accum_frame_time += m_frame_time;
-
-	if (g_accum_frame_time >= MOUSE_POLLING_TIME) {
-		g_accum_frame_time = 0.0f;
-	}
-
-	for (int ctl = 0; ctl < m_NumControls; ctl++)
-	{
-		if (m_ControlList[ctl].id >= CTID_EXTCONTROL0)
-		{
-			extctl_getpos(m_ControlList[ctl].id);
-		}
-		else if (m_ControlList[ctl].id == CTID_MOUSE)
-		{
-			mouse_geteval();
-		}
-	}*/
-
 
 }
 
@@ -1292,7 +1242,6 @@ void gameSDLController::extctl_getpos(int id)
 
 	joy_GetRawPos((tJoystick)id, &ji);
 
-	//	if (g_accum_frame_time == 0.0f) {
 	m_ExtCtlStates[id].x = (int)ji.x;
 	m_ExtCtlStates[id].y = (int)ji.y;
 	m_ExtCtlStates[id].z = (int)ji.z;
@@ -1350,9 +1299,6 @@ void gameSDLController::extctl_geteval(int id)
 void gameSDLController::mouse_geteval()
 {
 	if (!m_MouseActive)
-		return;
-
-	if (Mouse_limitpolling && g_accum_frame_time != 0.0f)
 		return;
 
 	int x, y, dx, dy;

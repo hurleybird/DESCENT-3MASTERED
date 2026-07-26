@@ -26,11 +26,12 @@
 #endif
 
 bool Wooting_analog_enabled = false;
+float Wooting_analog_start_deadzone = 0.0f;
+float Wooting_analog_end_deadzone = 0.0f;
 
 namespace
 {
 constexpr int kMaximumAnalogKeys = 256;
-constexpr float kAnalogDeadzone = 0.02f;
 constexpr unsigned int kScanCodeSet1Mode = 1;
 
 uint16_t Analog_codes[kMaximumAnalogKeys] = {};
@@ -300,9 +301,13 @@ bool WootingAnalogGetKeyValue(ubyte key, float *value)
 
 	if (raw_value > 1.0f)
 		raw_value = 1.0f;
-	float adjusted = 0.0f;
-	if (raw_value > kAnalogDeadzone)
-		adjusted = (raw_value - kAnalogDeadzone) / (1.0f - kAnalogDeadzone);
+	const float start_deadzone = std::min(std::max(
+		Wooting_analog_start_deadzone, 0.0f), 0.25f);
+	const float end_deadzone = std::min(std::max(
+		Wooting_analog_end_deadzone, 0.0f), 0.25f);
+	const float analog_range = 1.0f - start_deadzone - end_deadzone;
+	const float adjusted = std::min(std::max(
+		(raw_value - start_deadzone) / analog_range, 0.0f), 1.0f);
 	if (value)
 		*value = adjusted;
 	return true;
