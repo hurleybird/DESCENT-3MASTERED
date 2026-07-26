@@ -375,8 +375,14 @@ void SaveGameSettings()
 	sprintf(tempbuffer,"%f",Render_preferred_state.gamma);
 	Database->write("RS_gamma",tempbuffer,strlen(tempbuffer)+1);
 
-	sprintf(tempbuffer,"%f",Sound_system.GetMasterVolume());
-	Database->write("SND_mastervol",tempbuffer,strlen(tempbuffer)+1);
+	// -nosound is a per-run harness/runtime mute, not a user preference.
+	// Persisting the live zero volume would silently erase the user's SFX
+	// setting whenever an automated background run shuts down.
+	if (!FindArg("-nosound"))
+	{
+		sprintf(tempbuffer,"%f",Sound_system.GetMasterVolume());
+		Database->write("SND_mastervol",tempbuffer,strlen(tempbuffer)+1);
+	}
 
 	sprintf(tempbuffer,"%f",D3MusicGetVolume());
 	Database->write("MUS_mastervol",tempbuffer,strlen(tempbuffer)+1);
