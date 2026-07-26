@@ -28,8 +28,8 @@ The broad, non-exclusive goals of the engine are:
 **On resolution:** The recommended way to play 3MASTERED is at a relatively low
 base resolution (eg. 720p) combined with at least 2x SSAA. Whatever the people at
 Nightdive may think, the vast majority of old games do *not* look good at high
-resolutions, which have the habit of exposing inconsistent asset quality, Descent 3
-being no exception. On the othe side of the equation, edge aliasing and pixel crawl are never pleasant. A low base resolution combined with supersampling solves both at once.
+resolutions, which have the habit of exposing low/inconsistent asset quality, Descent 3
+being no exception. On the other side of the equation, edge aliasing and pixel crawl are never pleasant. A low base resolution combined with supersampling solves both problems.
 
 **On performance:** Many of the modern post-processing effects in 3MASTERED are
 not cheap. They are often *more* expensive than similar implementations found in modern
