@@ -35,7 +35,7 @@ struct msn_urls
 
 //Function prototypes
 void msn_DoAskForURL(ubyte *indata,network_address *net_addr);
-void msn_DoCurrMsnURLs(ubyte *data,network_address *net_addr);
+void msn_DoCurrMsnURLs(ubyte *data,int len,network_address *net_addr);
 int msn_CheckGetMission(network_address *net_addr,char *filename);
 int msn_ShowDownloadChoices(msn_urls *urls);
 int msn_DownloadWithStatus(char *url,char *filename);

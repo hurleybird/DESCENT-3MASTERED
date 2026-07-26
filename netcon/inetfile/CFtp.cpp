@@ -53,9 +53,16 @@ void FTPObjThread( void * obj )
 
 void CFtpGet::AbortGet()
 {
+	if (!m_ThreadStarted)
+		return;
 	m_Aborting = true;
-	while(!m_Aborted) ; //Wait for the thread to end
-	fclose(LOCALFILE);
+	if (m_ListenSock != INVALID_SOCKET)
+		shutdown(m_ListenSock, 2);
+	if (m_DataSock != INVALID_SOCKET)
+		shutdown(m_DataSock, 2);
+	if (m_ControlSock != INVALID_SOCKET)
+		shutdown(m_ControlSock, 2);
+	while(!m_Aborted) Sleep(10); //Wait for the thread to end
 }
 
 CFtpGet::CFtpGet(const char *URL, const char *localfile, const char *Username,const char *Password)
@@ -70,11 +77,13 @@ CFtpGet::CFtpGet(const char *URL, const char *localfile, const char *Username,co
 	m_iBytesTotal = 0;
 	m_Aborting = false;
 	m_Aborted = false;
+	m_ThreadStarted = false;
 
 	LOCALFILE = fopen(localfile,"wb");
 	if(NULL == LOCALFILE)
 	{
 		m_State = FTP_STATE_CANT_WRITE_FILE;
+		m_Aborted = true;
 		return;
 	}
 
@@ -99,6 +108,9 @@ CFtpGet::CFtpGet(const char *URL, const char *localfile, const char *Username,co
 	{
 		int iWinsockErr = WSAGetLastError();
 		m_State = FTP_STATE_SOCKET_ERROR;
+		fclose(LOCALFILE);
+		LOCALFILE = nullptr;
+		m_Aborted = true;
 		return;
 	}
 	else
@@ -113,6 +125,9 @@ CFtpGet::CFtpGet(const char *URL, const char *localfile, const char *Username,co
 			//Couldn't bind the socket
 			int iWinsockErr = WSAGetLastError();
 			m_State = FTP_STATE_SOCKET_ERROR;
+			fclose(LOCALFILE);
+			LOCALFILE = nullptr;
+			m_Aborted = true;
 			return;
 		}
 
@@ -122,6 +137,9 @@ CFtpGet::CFtpGet(const char *URL, const char *localfile, const char *Username,co
 			//Couldn't listen on the socket
 			int iWinsockErr = WSAGetLastError();
 			m_State = FTP_STATE_SOCKET_ERROR;
+			fclose(LOCALFILE);
+			LOCALFILE = nullptr;
+			m_Aborted = true;
 			return;
 		}
 	}
@@ -129,6 +147,9 @@ CFtpGet::CFtpGet(const char *URL, const char *localfile, const char *Username,co
 	if(INVALID_SOCKET == m_ControlSock)
 	{
 		m_State = FTP_STATE_SOCKET_ERROR;
+		fclose(LOCALFILE);
+		LOCALFILE = nullptr;
+		m_Aborted = true;
 		return;
 	}
 	//Parse the URL
@@ -146,13 +167,16 @@ CFtpGet::CFtpGet(const char *URL, const char *localfile, const char *Username,co
 	if(strchr(pURL,':'))
 	{
 		m_State = FTP_STATE_URL_PARSING_ERROR;
+		fclose(LOCALFILE);
+		LOCALFILE = nullptr;
+		m_Aborted = true;
 		return;
 	}
 	//read the filename by searching backwards for a /
 	//then keep reading until you find the first /
 	//when you found it, you have the host and dir
 	const char *filestart = NULL;
-	const char *dirstart;
+	const char *dirstart = NULL;
 	for(int i = strlen(pURL);i>=0;i--)
 	{
 		if(pURL[i]== '/')
@@ -172,6 +196,9 @@ CFtpGet::CFtpGet(const char *URL, const char *localfile, const char *Username,co
 	if((dirstart==NULL) || (filestart==NULL))
 	{
 		m_State = FTP_STATE_URL_PARSING_ERROR;
+		fclose(LOCALFILE);
+		LOCALFILE = nullptr;
+		m_Aborted = true;
 		return;
 	}
 	else
@@ -183,12 +210,18 @@ CFtpGet::CFtpGet(const char *URL, const char *localfile, const char *Username,co
 	}
 	//At this point we should have a nice host,dir and filename
 
+	m_State = FTP_STATE_CONNECTING;
 #ifdef WIN32	
-	if(NULL==_beginthread(FTPObjThread,0,this))
+	const uintptr_t thread_handle = _beginthread(FTPObjThread,0,this);
+	if(thread_handle == static_cast<uintptr_t>(-1L))
 	{
 		m_State = FTP_STATE_INTERNAL_ERROR;
+		fclose(LOCALFILE);
+		LOCALFILE = nullptr;
+		m_Aborted = true;
 		return;
 	}
+	m_ThreadStarted = true;
 #elif defined(__LINUX__)
 //	pthread_t thread;
 
@@ -197,24 +230,33 @@ CFtpGet::CFtpGet(const char *URL, const char *localfile, const char *Username,co
 	if(!inet_LoadThreadLib())
 	{
 		m_State = FTP_STATE_INTERNAL_ERROR;
+		fclose(LOCALFILE);
+		LOCALFILE = nullptr;
+		m_Aborted = true;
 		return;
 	}
 
 //	if(df_pthread_create(&thread,NULL,FTPObjThread,this)!=0)
     thread = SDL_CreateThread(FTPObjThread, this);
-    if (thread == NULL)
+	if (thread == NULL)
 	{
 		m_State = FTP_STATE_INTERNAL_ERROR;
+		fclose(LOCALFILE);
+		LOCALFILE = nullptr;
+		m_Aborted = true;
 		return;
 	}
+	m_ThreadStarted = true;
 #endif
-	m_State = FTP_STATE_CONNECTING;
 }
 
 
 
 CFtpGet::~CFtpGet()
 {
+	if (m_ThreadStarted && !m_Aborted)
+		AbortGet();
+
 	if(m_ListenSock != INVALID_SOCKET)
 	{
 		shutdown(m_ListenSock,2);
@@ -254,13 +296,13 @@ int CFtpGet::GetStatus()
 
 unsigned int CFtpGet::GetBytesIn()
 {
-	return m_iBytesIn;
+	return m_iBytesIn.load();
 }
 
 unsigned int CFtpGet::GetTotalBytes()
 {
 
-	return m_iBytesTotal;
+	return m_iBytesTotal.load();
 }
 
 //This function does all the work -- connects on a blocking socket
@@ -268,19 +310,22 @@ unsigned int CFtpGet::GetTotalBytes()
 //and then the cwd command, the port command then get and finally the quit
 void CFtpGet::WorkerThread()
 {
+	bool received = false;
 	ConnectControlSocket();
-	if(m_State != FTP_STATE_LOGGING_IN)
+	if(m_State == FTP_STATE_LOGGING_IN)
 	{
-		return;
+		LoginHost();
+		if(m_State == FTP_STATE_LOGGED_IN)
+			received = GetFile() != 0;
 	}
-	LoginHost();
-	if(m_State != FTP_STATE_LOGGED_IN)
-	{
-		return;
-	}
-	GetFile();
 
-	//We are all done now, and state has the current state.
+	if (LOCALFILE)
+	{
+		fclose(LOCALFILE);
+		LOCALFILE = nullptr;
+	}
+	if (received)
+		m_State = FTP_STATE_FILE_RECEIVED;
 	m_Aborted = true;
 	
 
@@ -359,10 +404,7 @@ unsigned int CFtpGet::GetFile()
 	if(m_Aborting)
 		return 0;
 
-	ReadDataChannel();
-	
-	m_State = FTP_STATE_FILE_RECEIVED;
-	return 1;
+	return ReadDataChannel();
 }
 
 unsigned int CFtpGet::IssuePort()
@@ -617,7 +659,6 @@ unsigned int CFtpGet::ReadDataChannel()
 			//Write sDataBuffer, nBytesRecv
     	}
 	}while (nBytesRecv > 0);
-	fclose(LOCALFILE);							
 	// Close the file and check for error returns.
 	if (nBytesRecv == SOCKET_ERROR)
 	{ 
@@ -627,8 +668,6 @@ unsigned int CFtpGet::ReadDataChannel()
 	}
 	else
 	{
-		//done!
-		m_State = FTP_STATE_FILE_RECEIVED;
 		return 1;
 	}
 }	

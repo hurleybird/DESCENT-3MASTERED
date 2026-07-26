@@ -56,6 +56,8 @@
 #ifndef _CFTP_HEADER_
 #define _CFTP_HEADER_
 
+#include <atomic>
+
 #define FTP_STATE_INTERNAL_ERROR		0
 #define FTP_STATE_SOCKET_ERROR		1
 #define FTP_STATE_URL_PARSING_ERROR	2
@@ -104,12 +106,13 @@ protected:
 	unsigned int ReadDataChannel();
 	void FlushControlChannel();
 
-	unsigned int m_iBytesIn;
-	unsigned int m_iBytesTotal;
-	unsigned int m_State;
+	std::atomic_uint m_iBytesIn;
+	std::atomic_uint m_iBytesTotal;
+	std::atomic_uint m_State;
 
-	bool m_Aborting;
-	bool m_Aborted;
+	std::atomic_bool m_Aborting;
+	std::atomic_bool m_Aborted;
+	bool m_ThreadStarted;
 
 	char m_szUserName[100];
 	char m_szPassword[100];

@@ -1262,6 +1262,8 @@ void MultiGameOptionsMenu(int alloptions)
 	// Vanilla keeps the original monolithic difficulty list. Enhanced games
 	// expose the four established difficulty axes through a focused dialog.
 	const bool enhanced_host = Multi_host_protocol == MULTI_PROTOCOL_ENHANCED;
+	if (enhanced_host)
+		diff_y += 30;
 	UITextItem diff_title_text(TXT_PLTDIFFICULT, UICOL_WINDOW_TITLE);
 	UIText diff_title;
 	diff_title.Create(&main_wnd, &diff_title_text, MULTI_OPT_TOGGLES_X, diff_y, 0); diff_y += 15;

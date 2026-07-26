@@ -39,6 +39,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <limits.h>
+#include <stdint.h>
 #include "zlib.h"
 #include "unzip.h"
 
@@ -242,10 +244,20 @@ bool ZIP::OpenZip(const char* zipfile)
 	m_zipfile_comment_length = get_buffer_short(m_ecd+ECD_ECOML);
 	m_zipfile_comment = m_ecd+ECD_ECOM;
 
-	// make sure there is no disk spanning
-	if((m_number_of_this_disk != m_number_of_disk_start_cent_dir) ||
+	// Validate the classic (non-Zip64), single-disk central directory before
+	// using any archive-provided offset or allocation size.
+	const uint64_t central_directory_end =
+		static_cast<uint64_t>(m_offset_to_start_of_cent_dir) + m_size_of_cent_dir;
+	if(m_end_of_cent_dir_sig != 0x06054b50 ||
+		m_ecd_length < ECD_ECOM ||
+		static_cast<unsigned>(ECD_ECOM + m_zipfile_comment_length) > m_ecd_length ||
+		m_number_of_this_disk != 0 ||
+		m_number_of_disk_start_cent_dir != 0 ||
+		(m_number_of_this_disk != m_number_of_disk_start_cent_dir) ||
 		(m_total_entries_cent_dir_this_disk != m_total_entries_cent_dir) ||
-		(m_total_entries_cent_dir < 1))
+		(m_total_entries_cent_dir < 1) ||
+		m_size_of_cent_dir < ZIPCD_CFN ||
+		central_directory_end > static_cast<uint64_t>(m_length))
 	{
 		free(m_ecd);
 		fclose(m_fp);
@@ -326,6 +338,10 @@ zipentry* ZIP::ReadNextZipEntry(void)
 	// make sure we aren't at the end
 	if(m_cd_pos >= m_size_of_cent_dir)
 		return NULL;
+	if(m_size_of_cent_dir - m_cd_pos < ZIPCD_CFN)
+		return NULL;
+	if(get_buffer_int(m_cd+m_cd_pos+ZIPCD_CENSIG) != 0x02014b50)
+		return NULL;
 
 	m_ent.cent_file_header_sig		= get_buffer_int(m_cd+m_cd_pos+ZIPCD_CENSIG);
 	m_ent.version_made_by			= *(m_cd+m_cd_pos+ZIPCD_CVER);
@@ -348,7 +364,10 @@ zipentry* ZIP::ReadNextZipEntry(void)
 	m_ent.offset_lcl_hdr_frm_frst_disk = get_buffer_int(m_cd+m_cd_pos+ZIPCD_OFST);
 
 	// Make sure the filename isn't too long
-    if(m_cd_pos + ZIPCD_CFN + m_ent.filename_length > m_size_of_cent_dir)
+	const uint64_t next_entry =
+		static_cast<uint64_t>(m_cd_pos) + ZIPCD_CFN +
+		m_ent.filename_length + m_ent.extra_field_length + m_ent.file_comment_length;
+    if(next_entry > m_size_of_cent_dir)
     {
         return NULL;
     }
@@ -362,7 +381,7 @@ zipentry* ZIP::ReadNextZipEntry(void)
 	m_ent.name[m_ent.filename_length] = '\0';
 
 	// skip to next entry in central dir
-	m_cd_pos += ZIPCD_CFN + m_ent.filename_length + m_ent.extra_field_length + m_ent.file_comment_length;
+	m_cd_pos = static_cast<unsigned>(next_entry);
 
 	return &m_ent;
 }
@@ -407,11 +426,6 @@ int ZIP::ReadFile(zipentry *ent,char *data)
 		if(ent->version_needed_to_extract>0x14)
 		{
 			return -3;
-		}
-
-		if(ent->os_needed_to_extract!=0x00)
-		{
-			return -4;
 		}
 
 		if(ent->disk_number_start!=m_number_of_this_disk)
@@ -483,12 +497,6 @@ int ZIP::ExtractFile(zipentry *ent,const char *filename)
 			return -3;
 		}
 
-		if(ent->os_needed_to_extract!=0x00)
-		{
-			fclose(output);
-			return -4;
-		}
-
 		if(ent->disk_number_start!=m_number_of_this_disk)
 		{
 			fclose(output);
@@ -540,7 +548,7 @@ int ZIP::ReadZipDataToFile(zipentry* ent,FILE *file)
 		return -2;
 
 	ubyte data[DATA_CHUNK_SIZE];
-	int size_remaining,amount;
+	unsigned int size_remaining,amount;
 	size_remaining = ent->compressed_size;
 
 	while(size_remaining>0)
@@ -565,7 +573,6 @@ int ZIP::ReadZipDataToFile(zipentry* ent,FILE *file)
 int ZIP::SeekToCompressedData(zipentry* ent)
 {
 	char buf[LFH_NAME];
-	long offset;
 
 	if (fseek(m_fp, ent->offset_lcl_hdr_frm_frst_disk, SEEK_SET)!=0) {
 		return -1;
@@ -574,13 +581,22 @@ int ZIP::SeekToCompressedData(zipentry* ent)
 	if (fread(buf, LFH_NAME, 1, m_fp)!=1) {
 		return -1;
 	}
+	if (get_buffer_int(buf + LFH_LOCSIG) != 0x04034b50) {
+		return -1;
+	}
 
 	ushort filename_length = get_buffer_short (buf+LFH_FNLN);
 	ushort extra_field_length = get_buffer_short (buf+LFH_XTRALN);
 
-	offset = ent->offset_lcl_hdr_frm_frst_disk + LFH_NAME + filename_length + extra_field_length;
+	const uint64_t offset =
+		static_cast<uint64_t>(ent->offset_lcl_hdr_frm_frst_disk) +
+		LFH_NAME + filename_length + extra_field_length;
+	if (offset > static_cast<uint64_t>(LONG_MAX) ||
+		offset + ent->compressed_size > static_cast<uint64_t>(m_length)) {
+		return -1;
+	}
 
-	if(fseek(m_fp, offset, SEEK_SET) != 0)
+	if(fseek(m_fp, static_cast<long>(offset), SEEK_SET) != 0)
 	{
 		return -1;
 	}
@@ -630,7 +646,10 @@ int ZIP::InflateFile(FILE* in_file,unsigned in_size,ubyte* out_data,unsigned out
 		d_stream.avail_in = fread(in_buffer, 1, min(in_size, INFLATE_INPUT_BUFFER_MAX), in_file);
 		in_size -= d_stream.avail_in;
 		if(in_size == 0)
+		{
+			in_buffer[d_stream.avail_in] = 0;
 			d_stream.avail_in++; // add dummy byte at end of compressed data
+		}
 
         err = inflate(&d_stream, Z_NO_FLUSH);
         if (err == Z_STREAM_END)
@@ -722,7 +741,10 @@ int ZIP::InflateFileToFile(FILE* in_file,unsigned in_size,FILE *file,unsigned ou
 			d_stream.avail_in = fread(in_buffer, 1, min(in_size, DATA_CHUNK_SIZE), in_file);
 			in_size -= d_stream.avail_in;
 			if(in_size == 0)
+			{
+				in_buffer[d_stream.avail_in] = 0;
 				d_stream.avail_in++; // add dummy byte at end of compressed data
+			}
 		}
 
         err = inflate(&d_stream, Z_NO_FLUSH);
@@ -738,8 +760,8 @@ int ZIP::InflateFileToFile(FILE* in_file,unsigned in_size,FILE *file,unsigned ou
 					free (in_buffer);
 					return -2;
 				}
-				break;
 			}
+			break;
 		}
 		if (err != Z_OK)
 		{
@@ -781,12 +803,15 @@ int ZIP::InflateFileToFile(FILE* in_file,unsigned in_size,FILE *file,unsigned ou
 int CompareZipFileName(const char* zipfile, const char* file)
 {
 	const char* s1 = file;
-	const char* s2 = strrchr(zipfile,'/');
-	if (s2)
-		++s2;
-	else
-		s2 = zipfile;
-	while (*s1 && toupper(*s1)==toupper(*s2)) {
+	const char* forward = strrchr(zipfile, '/');
+	const char* backward = strrchr(zipfile, '\\');
+	const char* s2 = zipfile;
+	if (forward && (!backward || forward > backward))
+		s2 = forward + 1;
+	else if (backward)
+		s2 = backward + 1;
+	while (*s1 && toupper(static_cast<unsigned char>(*s1)) ==
+		toupper(static_cast<unsigned char>(*s2))) {
 		++s1;
 		++s2;
 	}

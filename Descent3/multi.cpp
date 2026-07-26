@@ -9312,7 +9312,7 @@ void MultiProcessData (ubyte *data,int len,int slot,network_address *from_addr)
 			msn_DoAskForURL(data,from_addr);
 			break;
 		case MP_CUR_MSN_URLS:
-			msn_DoCurrMsnURLs(data,from_addr);
+			msn_DoCurrMsnURLs(data,len,from_addr);
 			break;
 		case MP_REQUEST_TO_FIRE:
 			ACCEPT_CONDITION (NETSEQ_PLAYING,NETSEQ_PLAYING);

@@ -79,11 +79,11 @@ bool inet_LoadThreadLib(void)
 
 void InetGetFile::AbortGet()
 {
-	if(m_bUseHTTP)
+	if(m_bUseHTTP && http)
 	{
 		http->AbortGet();
 	}
-	else
+	else if(ftp)
 	{
 		ftp->AbortGet();
 	}
@@ -92,6 +92,7 @@ void InetGetFile::AbortGet()
 InetGetFile::InetGetFile(const char *URL, const char *localfile, char *proxyip, short proxyport)
 {
 	m_HardError = 0;
+	m_bUseHTTP = false;
 	http = nullptr;
 	ftp = nullptr;
 	if(URL == nullptr || localfile == nullptr)
@@ -132,6 +133,7 @@ InetGetFile::InetGetFile(const char *URL, const char *localfile, char *proxyip, 
 InetGetFile::InetGetFile(const char *URL, const char *localfile)
 {
 	m_HardError = 0;
+	m_bUseHTTP = false;
 	http = nullptr;
 	ftp = nullptr;
 	if(URL == nullptr || localfile == nullptr)
@@ -210,6 +212,10 @@ BOOL InetGetFile::IsReceiving()
 	{
 		state = ftp->GetStatus();
 	}
+	else
+	{
+		return false;
+	}
 	if(state == FTP_STATE_RECEIVING)
 	{
 		return true;
@@ -230,6 +236,10 @@ BOOL InetGetFile::IsFileReceived()
 	else if(ftp)
 	{
 		state = ftp->GetStatus();
+	}
+	else
+	{
+		return false;
 	}
 	if(state == FTP_STATE_FILE_RECEIVED)
 	{

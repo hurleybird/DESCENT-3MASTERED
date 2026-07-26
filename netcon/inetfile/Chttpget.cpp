@@ -81,11 +81,13 @@ int HTTPObjThread( void * obj )
 
 void ChttpGet::AbortGet()
 {
+	if (!m_ThreadStarted)
+		return;
 #ifdef WIN32
 	OutputDebugString("Aborting....\n");
 #endif
 	m_Aborting = true;
-	while(!m_Aborted) Sleep(50); //Wait for the thread to end
+	while(!m_Aborted) Sleep(10); //Wait for the thread to end
 #ifdef WIN32
 	OutputDebugString("Aborted....\n");
 #endif
@@ -192,6 +194,7 @@ void ChttpGet::GetFile(const char *URL,const char *localfile)
 	m_State = HTTP_STATE_STARTUP;;
 	m_Aborting = false;
 	m_Aborted = false;
+	m_ThreadStarted = false;
 
 	strncpy(m_URL,URL,MAX_URL_LEN-1);
 	m_URL[MAX_URL_LEN-1] = 0;
@@ -200,40 +203,58 @@ void ChttpGet::GetFile(const char *URL,const char *localfile)
 	if(NULL == LOCALFILE)
 	{
 		m_State = HTTP_STATE_CANT_WRITE_FILE;
+		m_Aborted = true;
 		return;
 	}
 	
+#ifndef WIN32
 	PrepSocket(URL);
+#endif
 
 #ifdef WIN32
-	if(NULL==_beginthread(HTTPObjThread,0,this))
+	const uintptr_t thread_handle = _beginthread(HTTPObjThread,0,this);
+	if(thread_handle == static_cast<uintptr_t>(-1L))
 	{
+		fclose(LOCALFILE);
+		LOCALFILE = nullptr;
 		m_State = HTTP_STATE_INTERNAL_ERROR;
+		m_Aborted = true;
 		return;
 	}
+	m_ThreadStarted = true;
 #elif defined(__LINUX__)
 //	pthread_t thread;
     SDL_Thread *thread;
 
 	if(!inet_LoadThreadLib())
 	{
+		fclose(LOCALFILE);
+		LOCALFILE = nullptr;
 		m_State = HTTP_STATE_INTERNAL_ERROR;
+		m_Aborted = true;
 		return;
 	}
 
 //	if(df_pthread_create(&thread,NULL,HTTPObjThread,this)!=0)
     thread = SDL_CreateThread(HTTPObjThread, this);
-    if (thread == NULL)
+	if (thread == NULL)
 	{
+		fclose(LOCALFILE);
+		LOCALFILE = nullptr;
 		m_State = HTTP_STATE_INTERNAL_ERROR;
+		m_Aborted = true;
 		return;
 	}
+	m_ThreadStarted = true;
 #endif
 }
 
 
 ChttpGet::~ChttpGet()
 {
+	if (m_ThreadStarted && !m_Aborted)
+		AbortGet();
+
 	if(m_DataSock != INVALID_SOCKET)
 	{
 		shutdown(m_DataSock,2);
@@ -252,12 +273,12 @@ int ChttpGet::GetStatus()
 
 unsigned int ChttpGet::GetBytesIn()
 {
-	return m_iBytesIn;
+	return m_iBytesIn.load();
 }
 
 unsigned int ChttpGet::GetTotalBytes()
 {
-	return m_iBytesTotal;
+	return m_iBytesTotal.load();
 }
 
 void ChttpGet::WorkerThread()
@@ -268,12 +289,20 @@ void ChttpGet::WorkerThread()
 	BOOL bResult;
 	DWORD dwBytesRead = 1;
 	char buf[1024];
+	auto finish = [this](unsigned int state)
+	{
+		if (LOCALFILE)
+		{
+			fclose(LOCALFILE);
+			LOCALFILE = nullptr;
+		}
+		m_State = state;
+	};
 
 	hInternetSession = InternetOpen("Descent3", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
 	if (!hInternetSession)
 	{
-		m_State = HTTP_STATE_UNKNOWN_ERROR;
-		fclose(LOCALFILE);
+		finish(HTTP_STATE_UNKNOWN_ERROR);
 		return;
 	}
 
@@ -281,11 +310,11 @@ void ChttpGet::WorkerThread()
 	if (!hURL)
 	{
 		DWORD err = GetLastError();
-		m_State = err == ERROR_INTERNET_NAME_NOT_RESOLVED ? HTTP_STATE_HOST_NOT_FOUND :
+		const unsigned int state = err == ERROR_INTERNET_NAME_NOT_RESOLVED ? HTTP_STATE_HOST_NOT_FOUND :
 			err == ERROR_INTERNET_CANNOT_CONNECT ? HTTP_STATE_CANT_CONNECT :
 			err == ERROR_FILE_NOT_FOUND ? HTTP_STATE_FILE_NOT_FOUND : HTTP_STATE_UNKNOWN_ERROR;
 		InternetCloseHandle(hInternetSession);
-		fclose(LOCALFILE);
+		finish(state);
 		return;
 	}
 
@@ -295,19 +324,19 @@ void ChttpGet::WorkerThread()
 	if (!HttpQueryInfo(hURL, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER, &dwStatusCode, &dwStatusCodeSize, NULL))
 	{
 		DWORD err = GetLastError();
-		m_State = HTTP_STATE_UNKNOWN_ERROR;
 		InternetCloseHandle(hURL);
 		InternetCloseHandle(hInternetSession);
-		fclose(LOCALFILE);
+		finish(HTTP_STATE_UNKNOWN_ERROR);
 		return;
 	}
 
 	if (dwStatusCode != 200)
 	{
-		m_State = dwStatusCode == 404 ? HTTP_STATE_FILE_NOT_FOUND : HTTP_STATE_UNKNOWN_ERROR;
+		const unsigned int state =
+			dwStatusCode == 404 ? HTTP_STATE_FILE_NOT_FOUND : HTTP_STATE_UNKNOWN_ERROR;
 		InternetCloseHandle(hURL);
 		InternetCloseHandle(hInternetSession);
-		fclose(LOCALFILE);
+		finish(state);
 		return;
 	}
 
@@ -321,22 +350,27 @@ void ChttpGet::WorkerThread()
 
 	for (; dwBytesRead > 0;)
 	{
+		if (m_Aborting)
+		{
+			InternetCloseHandle(hURL);
+			InternetCloseHandle(hInternetSession);
+			finish(HTTP_STATE_RECV_FAILED);
+			return;
+		}
 		if (!InternetReadFile(hURL, buf, (DWORD)sizeof(buf), &dwBytesRead))
 		{
 			DWORD err = GetLastError();
 			mprintf((0,"InternetReadFile error %d\n", err));
-			m_State = HTTP_STATE_RECV_FAILED;
 			InternetCloseHandle(hURL);
 			InternetCloseHandle(hInternetSession);
-			fclose(LOCALFILE);
+			finish(HTTP_STATE_RECV_FAILED);
 			return;
 		}
 		if (fwrite(buf, 1, dwBytesRead, LOCALFILE) != dwBytesRead)
 		{
-			m_State = HTTP_STATE_CANT_WRITE_FILE;
 			InternetCloseHandle(hURL);
 			InternetCloseHandle(hInternetSession);
-			fclose(LOCALFILE);
+			finish(HTTP_STATE_CANT_WRITE_FILE);
 			return;
 		}
 		m_iBytesIn += dwBytesRead;
@@ -345,8 +379,7 @@ void ChttpGet::WorkerThread()
 	InternetCloseHandle(hURL);
 	InternetCloseHandle(hInternetSession);
 
-	m_State = HTTP_STATE_FILE_RECEIVED;
-	fclose(LOCALFILE);
+	finish(HTTP_STATE_FILE_RECEIVED);
 #else
 	char szCommand[1000];
 	char *p;

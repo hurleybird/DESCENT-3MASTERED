@@ -19,6 +19,8 @@
 #ifndef _CHTTPGET_HEADER_
 #define _CHTTPGET_HEADER_
 
+#include <atomic>
+
 #define HTTP_STATE_INTERNAL_ERROR		0
 #define HTTP_STATE_SOCKET_ERROR			1
 #define HTTP_STATE_URL_PARSING_ERROR	2
@@ -49,15 +51,15 @@ public:
 	unsigned int GetTotalBytes();
 	void AbortGet();
 	void WorkerThread();
-	bool m_Aborted;
+	std::atomic_bool m_Aborted;
 
 protected:
 	int ConnectSocket();
 	char *GetHTTPLine();
 	unsigned int ReadDataChannel();
-	unsigned int m_iBytesIn;
-	unsigned int m_iBytesTotal;
-	unsigned int m_State;
+	std::atomic_uint m_iBytesIn;
+	std::atomic_uint m_iBytesTotal;
+	std::atomic_uint m_State;
 	bool m_ProxyEnabled;
 	char *m_ProxyIP;
 	char m_URL[MAX_URL_LEN];
@@ -69,7 +71,8 @@ protected:
 	char m_szDir[_MAX_PATH];
 	char m_szFilename[_MAX_PATH];
 	
-	bool m_Aborting;
+	std::atomic_bool m_Aborting;
+	bool m_ThreadStarted;
 
 
 	SOCKET m_DataSock;
