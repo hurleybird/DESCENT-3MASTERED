@@ -3374,12 +3374,17 @@ void UpdateTerrainSound()
 	}
 	else
 	{
-		// Terrain ambience belongs outdoors.  Do not let a restored indoor
-		// position inherit an audible loop from the level's initial spawn
-		// position; entering the terrain will still use the fade-in above.
-		if (Terrain_sound_fade == 0.0f)
+		if (Terrain_sound_fade > 0.0f)
+		{
+			// Match the outdoor fade-in while transitioning back indoors.
+			// StartTerrainSound still creates the loop at zero volume, so an
+			// indoor restore cannot leak ambience before this path runs.
+			Terrain_sound_fade -= Frametime / FADE_TIME;
+			if (Terrain_sound_fade < 0.0f)
+				Terrain_sound_fade = 0.0f;
+		}
+		else
 			return;		//already faded out
-		Terrain_sound_fade = 0.0f;
 	}
 
 	//Get player altitude
