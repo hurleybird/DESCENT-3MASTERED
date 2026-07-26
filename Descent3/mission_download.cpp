@@ -32,6 +32,7 @@
 #include "grtext.h"
 #include "Mission.h"
 #include "mission_download.h"
+#include "gameloop.h"
 #include "renderer.h"
 #include "inetgetfile.h"
 #include "unzip.h"
@@ -239,8 +240,19 @@ static bool msn_ValidateDownloadedMission(const char* filename)
 	return GetMissionInfo(filename, &mission_info) && mission_info.multi;
 }
 
-int msn_DownloadWithStatus(char* url, char* filename)
+enum class msn_download_result
 {
+	failed,
+	succeeded,
+	cancelled
+};
+
+static bool msn_BuildArchiveFallbackURL(const char* source_url,
+	const char* mission_filename, char* output, size_t output_size);
+
+static msn_download_result msn_DownloadWithStatusInternal(char* url, char* filename)
+{
+	AutomatedCaptureLog("mission download begin url=%s filename=%s", url, filename);
 	char qualfile[_MAX_PATH*2];
 	char finalfile[_MAX_PATH*2];
 	float last_refresh;
@@ -269,10 +281,7 @@ int msn_DownloadWithStatus(char* url, char* filename)
 
 	ddio_MakePath(finalfile, D3MissionsDir, filename, NULL);
 	if (!ddio_GetTempFileName(D3MissionsDir, "d3m", qualfile))
-	{
-		DoMessageBox(TXT_ERROR, TXT_FMTCANTDNLD, MSGBOX_OK);
-		return 0;
-	}
+		return msn_download_result::failed;
 	InetGetFile *getmsnfile;
 	if(Proxy_server[0])
 	{
@@ -301,6 +310,7 @@ int msn_DownloadWithStatus(char* url, char* filename)
 
 	int exit_menu=0;
 	int ret=0;
+	bool cancelled = false;
 
 	menu_wnd.Create(10,10,MSN_DWNLD_STATUS_W,MSN_DWNLD_STATUS_H,UIF_PROCESS_ALL | UIF_CENTER);
 	texts[0].Create (&menu_wnd,&title_text,0,8,UIF_CENTER);
@@ -344,6 +354,8 @@ int msn_DownloadWithStatus(char* url, char* filename)
 				{
 					ret = msn_ExtractZipFile(qualfile,filename);
 					ddio_DeleteFile(qualfile);
+					AutomatedCaptureLog("mission download zip result=%d url=%s",
+						ret, url);
 				}
 				else if (!ddio_RenameFile(qualfile, finalfile))
 				{
@@ -366,10 +378,11 @@ int msn_DownloadWithStatus(char* url, char* filename)
 			if(getmsnfile->IsFileError())
 			{
 				//File transfer Error!
-				DoMessageBox(TXT_ERROR,TXT_FMTCANTDNLD,MSGBOX_OK);
 				//Delete the file that didn't finish!
 				ddio_DeleteFile(qualfile);
 				mprintf((0,"Couldn't download the file! Error: %d\n",getmsnfile->GetErrorCode()));
+				AutomatedCaptureLog("mission download transport failed error=%d url=%s",
+					getmsnfile->GetErrorCode(), url);
 				exit_menu = 1;
 				ret = 0;
 			}
@@ -436,13 +449,40 @@ int msn_DownloadWithStatus(char* url, char* filename)
 			ddio_DeleteFile(qualfile);
 			exit_menu = 1;
 			ret = 0;
+			cancelled = true;
 			break;
 		}
 	}
 	menu_wnd.Close();
 	menu_wnd.Destroy();
 	delete getmsnfile;
-	return ret;
+	if (cancelled)
+	{
+		AutomatedCaptureLog("mission download cancelled url=%s", url);
+		return msn_download_result::cancelled;
+	}
+	AutomatedCaptureLog("mission download complete result=%d url=%s", ret, url);
+	return ret ? msn_download_result::succeeded : msn_download_result::failed;
+}
+
+int msn_DownloadWithStatus(char* url, char* filename)
+{
+	msn_download_result result = msn_DownloadWithStatusInternal(url, filename);
+	if (result == msn_download_result::failed)
+	{
+		char fallback_url[MAX_MISSION_URL_LEN];
+		if (msn_BuildArchiveFallbackURL(url, filename, fallback_url,
+			sizeof(fallback_url)) && stricmp(fallback_url, url))
+		{
+			mprintf((0, "Mission URL failed; trying archive fallback %s\n",
+				fallback_url));
+			AutomatedCaptureLog("mission download archive fallback url=%s", fallback_url);
+			result = msn_DownloadWithStatusInternal(fallback_url, filename);
+		}
+	}
+	if (result == msn_download_result::failed)
+		DoMessageBox(TXT_ERROR, TXT_FMTCANTDNLD, MSGBOX_OK);
+	return result == msn_download_result::succeeded ? 1 : 0;
 }
 
 
@@ -577,6 +617,62 @@ void msn_DoCurrMsnURLs(ubyte* data, int len, network_address* net_addr)
 	Got_url = 1;
 }
 
+static bool msn_BuildArchiveFallbackURL(const char* source_url,
+	const char* mission_filename, char* output, size_t output_size)
+{
+	static const char archive_base[] =
+		"https://sectorgame.com/d3/downloads/files/";
+	char package_name[_MAX_FNAME] = {};
+
+	if (source_url)
+	{
+		const char* package_start = strrchr(source_url, '/');
+		package_start = package_start ? package_start + 1 : source_url;
+		const char* package_end = package_start + strlen(package_start);
+		const char* query = strchr(package_start, '?');
+		const char* fragment = strchr(package_start, '#');
+		if (query && query < package_end)
+			package_end = query;
+		if (fragment && fragment < package_end)
+			package_end = fragment;
+
+		const size_t package_length = static_cast<size_t>(package_end - package_start);
+		if (package_length > 0 && package_length < sizeof(package_name))
+		{
+			memcpy(package_name, package_start, package_length);
+			package_name[package_length] = '\0';
+		}
+	}
+
+	const char* package_extension = strrchr(package_name, '.');
+	if (!package_extension || stricmp(package_extension, ".zip"))
+	{
+		if (!mission_filename || !mission_filename[0])
+			return false;
+
+		const char* mission_start = strrchr(mission_filename, '/');
+		const char* mission_backslash = strrchr(mission_filename, '\\');
+		if (mission_backslash && (!mission_start || mission_backslash > mission_start))
+			mission_start = mission_backslash;
+		mission_start = mission_start ? mission_start + 1 : mission_filename;
+
+		const size_t mission_length = strlen(mission_start);
+		if (mission_length == 0 || mission_length >= sizeof(package_name))
+			return false;
+		memcpy(package_name, mission_start, mission_length + 1);
+
+		char* mission_extension = strrchr(package_name, '.');
+		if (mission_extension)
+			*mission_extension = '\0';
+		if (strlen(package_name) + strlen(".zip") >= sizeof(package_name))
+			return false;
+		strcat(package_name, ".zip");
+	}
+
+	const int written = snprintf(output, output_size, "%s%s", archive_base, package_name);
+	return written > 0 && static_cast<size_t>(written) < output_size;
+}
+
 //Check if a file exists.
 //If it does, return true
 //If it doesn't attempt to download it. On success return true
@@ -611,9 +707,7 @@ int msn_CheckGetMission(network_address* net_addr, char* filename)
 			//Get the item that was selected!
 			mprintf((0, "Downloading missions file from %s\n", murls->URL[sel]));
 			if (msn_DownloadWithStatus(murls->URL[sel], filename))
-			{
 				return 1;
-			}
 		}
 	}
 	else
