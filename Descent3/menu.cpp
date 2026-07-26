@@ -44,6 +44,8 @@
 bool Directplay_lobby_launched_game = false;
 #endif
 #include "multi_dll_mgr.h"
+#include "multi_server.h"
+#include "difficulty.h"
 #include "d3music.h"
 #include "newui_core.h"
 #include <string.h>
@@ -382,6 +384,79 @@ bool ProcessCommandLine()
 		SetGameMode(GM_NORMAL);
 		SetFunctionMode(RESTORE_GAME_MODE);
 		SetUICallback(DEFAULT_UICALLBACK);
+		return true;
+	}
+
+	// Multiplayer host capture harness. This follows the normal server startup
+	// path while avoiding interactive menus, so weapon and renderer diagnostics
+	// can cover multiplayer-only behavior in a silent background run.
+	const int host_mission_arg = FindArg("-capture-host-mission");
+	const char* host_mission = host_mission_arg ?
+		GetArg(host_mission_arg + 1) : nullptr;
+	if (host_mission && host_mission[0])
+	{
+		const int host_script_arg = FindArg("-capture-host-script");
+		const char* host_script = host_script_arg ?
+			GetArg(host_script_arg + 1) : "Anarchy";
+		if (!host_script || !host_script[0])
+			host_script = "Anarchy";
+
+		MultiSetHostProtocol(MULTI_PROTOCOL_COMPATIBILITY);
+		DifficultySetMultiplayer(2);
+		Netgame.difficulty = 2;
+		Netgame.max_players = 8;
+		Netgame.packets_per_second = 30;
+		Netgame.respawn_time = 60;
+		Netgame.flags = NF_RANDOMIZE_RESPAWN;
+		strcpy(Netgame.name, "Automated Host");
+		strcpy(Netgame.connection_name, "Direct TCP~IP");
+		strncpy(Netgame.mission, host_mission,
+			sizeof(Netgame.mission) - 1);
+		Netgame.mission[sizeof(Netgame.mission) - 1] = '\0';
+		strncpy(Netgame.scriptname, host_script,
+			sizeof(Netgame.scriptname) - 1);
+		Netgame.scriptname[sizeof(Netgame.scriptname) - 1] = '\0';
+
+		if (!LoadMultiDLL(Netgame.connection_name))
+		{
+			AutomatedCaptureLog("network capture host connector failed");
+			SetFunctionMode(QUIT_MODE);
+			return true;
+		}
+		CallMultiDLL(MT_AUTO_START);
+		if (!MultiDLLGameStarting || !LoadMission(Netgame.mission))
+		{
+			AutomatedCaptureLog("network capture host setup failed mission=%s script=%s",
+				Netgame.mission, Netgame.scriptname);
+			SetFunctionMode(QUIT_MODE);
+			return true;
+		}
+		int level = 1;
+		const int level_arg = FindArg("-missionlevel");
+		if (level_arg)
+			level = atoi(GetArg(level_arg + 1));
+		if (level < 1 || level > Current_mission.num_levels)
+		{
+			AutomatedCaptureLog("network capture host invalid level=%d count=%d",
+				level, Current_mission.num_levels);
+			SetFunctionMode(QUIT_MODE);
+			return true;
+		}
+		Current_mission.cur_level = level;
+		strcpy(Netgame.mission_name, GetMissionName(Netgame.mission));
+		int teams = CheckMissionForScript(Netgame.mission,
+			Netgame.scriptname, -1);
+		if (teams < 0)
+		{
+			AutomatedCaptureLog("network capture host incompatible mission=%s script=%s",
+				Netgame.mission, Netgame.scriptname);
+			SetFunctionMode(QUIT_MODE);
+			return true;
+		}
+		MultiStartServer(1, Netgame.scriptname, teams);
+		SetFunctionMode(GAME_MODE);
+		AutomatedCaptureLog("network capture host accepted mission=%s level=%d script=%s",
+			Netgame.mission, level, Netgame.scriptname);
 		return true;
 	}
 

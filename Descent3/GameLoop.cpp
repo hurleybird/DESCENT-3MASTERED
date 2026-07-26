@@ -229,6 +229,7 @@ struct automated_capture_state
 	bool scorch_placed;
 	int force_primary_slot;
 	bool force_primary_alt;
+	bool grant_primary_weapon;
 	bool primary_slot_applied;
 	bool reload_performed;
 	int reload_frame;
@@ -503,6 +504,8 @@ static void InitAutomatedCapture()
 	Automated_capture.reload_frame = -1;
 	Automated_capture.force_primary_alt =
 		FindArg("-capture-primary-alt") != 0;
+	Automated_capture.grant_primary_weapon =
+		FindArg("-capture-grant-primary") != 0;
 	const int primary_slot_arg = FindArg("-capture-primary-slot");
 	if (primary_slot_arg)
 	{
@@ -611,6 +614,13 @@ static void BeginAutomatedCaptureFrame()
 	InitAutomatedCapture();
 	Automated_capture.gameplay_frame_active = false;
 	Automated_capture.capture_pending = false;
+	if (FindArg("-capture-host-mission") &&
+		Game_interface_mode == GAME_DLL_INTERFACE)
+	{
+		// A one-player automated host does not need the interactive DMFC
+		// "wait for players" screen.
+		Game_interface_mode = GAME_INTERFACE;
+	}
 
 	uint32_t gates = 0;
 	if (!Automated_capture.enabled) gates |= 1u << 0;
@@ -637,6 +647,12 @@ static void BeginAutomatedCaptureFrame()
 	if (!Automated_capture.primary_slot_applied &&
 		Automated_capture.force_primary_slot >= 0)
 	{
+		if (Automated_capture.grant_primary_weapon && Player_num >= 0)
+		{
+			Players[Player_num].weapon_flags |=
+				HAS_FLAG(Automated_capture.force_primary_slot);
+			Players[Player_num].energy = INITIAL_ENERGY;
+		}
 		SelectWeapon(Automated_capture.force_primary_slot);
 		if (Automated_capture.force_primary_alt)
 			SelectWeapon(Automated_capture.force_primary_slot);

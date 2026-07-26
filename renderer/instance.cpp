@@ -32,6 +32,30 @@ constexpr int MAX_INSTANCE_DEPTH = 35; //[ISB] extra instances since I might use
 static InstanceContext sInstanceStack[MAX_INSTANCE_DEPTH];
 static int sInstanceDepth = 0;
 
+void g3_SetPointPreRotFromView(g3Point *point)
+{
+	// A point's view-space coordinates are unchanged by g3's nested instance
+	// transforms. Reconstruct against the root camera so consumers such as
+	// world-space room fog receive world coordinates rather than model-local
+	// coordinates while a polymodel instance is active.
+	const vector& root_view_position =
+		sInstanceDepth > 0 ? sInstanceStack[0].m_viewPosition : View_position;
+	const matrix& root_unscaled_matrix =
+		sInstanceDepth > 0 ? sInstanceStack[0].m_unscaledMatrix : Unscaled_matrix;
+
+	vector unscaled_view = point->p3_vec;
+	unscaled_view.x /= Matrix_scale.x;
+	unscaled_view.y /= Matrix_scale.y;
+	unscaled_view.z /= Matrix_scale.z;
+	matrix inverse_view = ~root_unscaled_matrix;
+	point->p3_vecPreRot = root_view_position + (unscaled_view * inverse_view);
+	point->p3_specular_normal_valid = 0;
+	point->p3_specular_field_valid = 0;
+	point->p3_specular_field_count = 0;
+	point->p3_motion_world_valid = 0;
+	point->p3_motion_prev_world_valid = 0;
+}
+
 //instance at specified point with specified orientation
 void g3_StartInstanceMatrix( vector *pos, matrix *orient )
 {

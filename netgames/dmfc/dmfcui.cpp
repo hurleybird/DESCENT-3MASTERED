@@ -774,6 +774,16 @@ void DMFCBase::DoDMFCUIWaitForPlayers(bool clients_wait)
 	if(IAmDedicatedServer())
 		return;
 
+	const char *automated_host = getenv(
+		"DESCENT3MASTERED_CAPTURE_AUTO_HOST");
+	if(automated_host && automated_host[0] &&
+		strcmp(automated_host, "0") != 0)
+	{
+		DISABLE_FLAGS(m_iProtectedFlags, DMFC_PRF_PAUSETIME);
+		MakeClientsWait(false);
+		return;
+	}
+
 	wfpi.last_update = 0;
 	int i;
 	for(i=0;i<DLLMAX_PLAYERS;i++)

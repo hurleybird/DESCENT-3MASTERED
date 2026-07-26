@@ -52,6 +52,8 @@ void MultiDoServerFrame ();
 
 // Set the local machine as a server
 void MultiStartServer (int playing,char *scriptname,int dedicated_server_num_teams=-1);
+int CheckMissionForScript(char *mission, char *script,
+	int dedicated_server_num_teams = -1);
 
 // Disconnects all players that haven't been heard from in a while
 // Server only
