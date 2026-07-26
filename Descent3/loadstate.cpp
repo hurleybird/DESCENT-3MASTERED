@@ -25,6 +25,7 @@
 #include "gameloop.h"
 #include "game.h"
 #include "object.h"
+#include "object_lighting.h"
 #include "objinfo.h"
 #include "gametexture.h"
 #include "bitmap.h"
@@ -48,6 +49,7 @@
 #include "matcen.h"
 #include "pilot.h"
 #include "marker.h"
+#include "manage.h"
 #include "d3music.h"
 #include "weather.h"
 #include "cockpit.h"
@@ -68,6 +70,69 @@ int Times_game_restored = 0;
 
 gs_tables *gs_Xlates = NULL;
 //int Gamesave_read_version=0;
+
+namespace
+{
+constexpr int GS_XLATE_NAME_LEN = 64;
+
+struct gs_xlate_names
+{
+	short obji_count;
+	short model_count;
+	short door_count;
+	short ship_count;
+	short weapon_count;
+	short texture_count;
+	char obji[MAX_OBJECT_IDS][GS_XLATE_NAME_LEN];
+	char model[MAX_POLY_MODELS][GS_XLATE_NAME_LEN];
+	char door[MAX_DOORS][GS_XLATE_NAME_LEN];
+	char ship[MAX_SHIPS][GS_XLATE_NAME_LEN];
+	char weapon[MAX_WEAPONS][GS_XLATE_NAME_LEN];
+	char texture[MAX_TEXTURES][GS_XLATE_NAME_LEN];
+	char bitmap[MAX_BITMAPS][GS_XLATE_NAME_LEN];
+};
+
+gs_xlate_names *gs_XlateNames = NULL;
+
+void ResolveXlateTables()
+{
+#define RESOLVE_XLATE_TABLE(_dest, _names, _count, _max, _find, _missing) \
+	do { \
+		for (int xlate_i = 0; xlate_i < (_max); xlate_i++) { \
+			int xlate_index = -1; \
+			if (xlate_i < (_count) && (_names)[xlate_i][0]) \
+				xlate_index = _find((_names)[xlate_i]); \
+			(_dest)[xlate_i] = xlate_index < 0 ? (_missing) : xlate_index; \
+		} \
+	} while (0)
+
+	RESOLVE_XLATE_TABLE(gs_Xlates->obji_indices, gs_XlateNames->obji,
+		gs_XlateNames->obji_count, MAX_OBJECT_IDS, FindObjectIDName, 0);
+	RESOLVE_XLATE_TABLE(gs_Xlates->model_handles, gs_XlateNames->model,
+		gs_XlateNames->model_count, MAX_POLY_MODELS, FindPolyModelName, -1);
+	RESOLVE_XLATE_TABLE(gs_Xlates->door_handles, gs_XlateNames->door,
+		gs_XlateNames->door_count, MAX_DOORS, FindDoorName, 0);
+	RESOLVE_XLATE_TABLE(gs_Xlates->ship_handles, gs_XlateNames->ship,
+		gs_XlateNames->ship_count, MAX_SHIPS, FindShipName, 0);
+	RESOLVE_XLATE_TABLE(gs_Xlates->wpn_handles, gs_XlateNames->weapon,
+		gs_XlateNames->weapon_count, MAX_WEAPONS, FindWeaponName, 0);
+	RESOLVE_XLATE_TABLE(gs_Xlates->tex_handles, gs_XlateNames->texture,
+		gs_XlateNames->texture_count, MAX_TEXTURES, FindTextureName, 0);
+	RESOLVE_XLATE_TABLE(gs_Xlates->bm_handles, gs_XlateNames->bitmap,
+		MAX_BITMAPS, MAX_BITMAPS, bm_FindBitmapName, 0);
+
+#undef RESOLVE_XLATE_TABLE
+
+	for (int i = 0; i < gs_XlateNames->model_count; i++)
+	{
+		if (gs_XlateNames->model[i][0] && gs_Xlates->model_handles[i] < 0)
+		{
+			AutomatedCaptureLog("loadgame missing polymodel xlate slot=%d name=%s",
+				i, gs_XlateNames->model[i]);
+		}
+	}
+}
+}
 
 
 void IncreaseRestoreCount(const char *file)
@@ -129,6 +194,8 @@ int LoadGameState(const char *pathname)
 	
 START_VERIFY_SAVEFILE(fp);
 	gs_Xlates = new gs_tables;
+	gs_XlateNames = new gs_xlate_names;
+	memset(gs_XlateNames, 0, sizeof(*gs_XlateNames));
 
 // read in header and do version check.
 	cf_ReadBytes((ubyte *)desc, sizeof(desc), fp);
@@ -164,6 +231,7 @@ START_VERIFY_SAVEFILE(fp);
 //	must load mission and initialize level before reading in other data.
 	retval = LGSMission(path, curlevel);
 	if (retval != LGS_OK) goto loadsg_error;
+	ResolveXlateTables();
 
 	Current_mission.game_state_flags = cf_ReadInt(fp);
 	//Increase count for how many times this file was restored
@@ -252,6 +320,8 @@ START_VERIFY_SAVEFILE(fp);
 loadsg_error:
 	delete gs_Xlates;
 	gs_Xlates = nullptr;
+	delete gs_XlateNames;
+	gs_XlateNames = nullptr;
 
 	END_VERIFY_SAVEFILE(fp, "Total load");	
 	cfclose(fp);
@@ -304,15 +374,22 @@ savesg_error:
 
 
 //////////////////////////////////////////////////////////////////////////////
-#define BUILD_XLATE_TABLE(_table, _maxtable, _fn)	do { gs_ReadShort(fp, num); for (i = 0; i < num; i++) {	cf_ReadString(name, sizeof(name), fp); index = _fn(name); _table[i] = (index == -1) ? 0 : index;} for (;i < _maxtable; i++) _table[i] = 0; } while (0)
+#define READ_XLATE_NAMES(_names, _count, _max) do { \
+	gs_ReadShort(fp, num); \
+	if (num < 0 || num > (_max)) return LGS_CORRUPTLEVEL; \
+	(_count) = num; \
+	for (i = 0; i < num; i++) \
+		cf_ReadString((_names)[i], GS_XLATE_NAME_LEN, fp); \
+} while (0)
 
-#define BUILD_MINI_XLATE_TABLE(_table, _fn) memset(_table, 0, sizeof(_table)); \
+#define READ_MINI_XLATE_NAMES(_names, _max) \
 	do { \
 		gs_ReadShort(fp, i); \
 		cf_ReadString(name, sizeof(name), fp); \
 		if (i == -1 && name[0] == 0) break; \
-		index = _fn(name); \
-		_table[i] = (index==-1) ? 0 : index; \
+		if (i < 0 || i >= (_max)) return LGS_CORRUPTLEVEL; \
+		strncpy((_names)[i], name, GS_XLATE_NAME_LEN - 1); \
+		(_names)[i][GS_XLATE_NAME_LEN - 1] = 0; \
 	} while(1)
 
 
@@ -321,29 +398,29 @@ int LGSXlateTables(CFILE *fp)
 {
 START_VERIFY_SAVEFILE(fp);
 	int retval = LGS_OK;
-	short i, num,index;
+	short i, num;
 	char name[64];
 
 //	load object info translation table
-	BUILD_XLATE_TABLE(gs_Xlates->obji_indices, MAX_OBJECT_IDS, FindObjectIDName);
+	READ_XLATE_NAMES(gs_XlateNames->obji, gs_XlateNames->obji_count, MAX_OBJECT_IDS);
 
 //	load polymodel translation list.
-	BUILD_XLATE_TABLE(gs_Xlates->model_handles, MAX_POLY_MODELS, FindPolyModelName);
+	READ_XLATE_NAMES(gs_XlateNames->model, gs_XlateNames->model_count, MAX_POLY_MODELS);
 
 // load doar translation list.
-	BUILD_XLATE_TABLE(gs_Xlates->door_handles, MAX_DOORS, FindDoorName);
+	READ_XLATE_NAMES(gs_XlateNames->door, gs_XlateNames->door_count, MAX_DOORS);
 
 // load ship translation list.
-	BUILD_XLATE_TABLE(gs_Xlates->ship_handles, MAX_SHIPS, FindShipName);
+	READ_XLATE_NAMES(gs_XlateNames->ship, gs_XlateNames->ship_count, MAX_SHIPS);
 
 // build weapon translation list
-	BUILD_XLATE_TABLE(gs_Xlates->wpn_handles, MAX_WEAPONS, FindWeaponName);
+	READ_XLATE_NAMES(gs_XlateNames->weapon, gs_XlateNames->weapon_count, MAX_WEAPONS);
 
 // read in limited texture name list.  
-	BUILD_XLATE_TABLE(gs_Xlates->tex_handles, MAX_TEXTURES, FindTextureName);
+	READ_XLATE_NAMES(gs_XlateNames->texture, gs_XlateNames->texture_count, MAX_TEXTURES);
 
 // read in limited bitmap name list.  this is a slightly diff format than above to save space
-	BUILD_MINI_XLATE_TABLE(gs_Xlates->bm_handles, bm_FindBitmapName);
+	READ_MINI_XLATE_NAMES(gs_XlateNames->bitmap, MAX_BITMAPS);
 
 END_VERIFY_SAVEFILE(fp, "Xlate load");
 	return retval;
@@ -358,6 +435,12 @@ int LGSMission(const char *msnname, int level)
 	FreeScriptsForLevel();
 
 	Osiris_DisableCreateEvents();
+	// Loading a save can switch missions without returning through PlayGame().
+	// Pop the current mission's add-on pages while its MN3 is still open, before
+	// LoadMission() closes it.  Otherwise page overlays (including replacement
+	// ship and object models) leak into the mission restored by the save.
+	AutomatedCaptureLog("loadgame clearing addon tables count=%d", Num_addon_tables);
+	mng_ClearAddonTables();
 	if (LoadMission((const char *)msnname)) 
 	{
 		SetCurrentLevel(level);
@@ -723,6 +806,24 @@ int LGSObjects(CFILE *fp, int version)
 	int roomnum;
 	int i, j, highest_index;
 	int max_terr;
+	bool level_lightmapped[MAX_OBJECTS] = {};
+	ubyte level_object_type[MAX_OBJECTS] = {};
+	short level_object_id[MAX_OBJECTS] = {};
+	int level_object_model[MAX_OBJECTS];
+	for (i = 0; i < MAX_OBJECTS; i++)
+	{
+		level_object_model[i] = -1;
+		if (Objects[i].type != OBJ_NONE &&
+			Objects[i].lighting_render_type == LRT_LIGHTMAPS)
+		{
+			level_lightmapped[i] = true;
+			level_object_type[i] = Objects[i].type == OBJ_DUMMY ?
+				Objects[i].dummy_type : Objects[i].type;
+			level_object_id[i] = Objects[i].id;
+			if (Objects[i].render_type == RT_POLYOBJ)
+				level_object_model[i] = Objects[i].rtype.pobj_info.model_num;
+		}
+	}
 
 	matrix *objmat = (matrix *) mem_malloc(sizeof(*objmat) * MAX_OBJECTS);
 
@@ -891,6 +992,7 @@ START_VERIFY_SAVEFILE(fp);
 		}
 		
 		op = &Objects[i];
+		const int level_model_num = level_object_model[i];
 		op->lighting_render_type = l_rend_type;
 
 		
@@ -1182,7 +1284,147 @@ START_VERIFY_SAVEFILE(fp);
 			{	
 			// the paging mess.  must update size of object accordingly.
 				sindex = (short)op->rtype.pobj_info.model_num;
-				new_model = (sindex > -1) ? gs_Xlates->model_handles[sindex] : -1;
+				new_model = (sindex >= 0 && sindex < MAX_POLY_MODELS) ?
+					gs_Xlates->model_handles[sindex] : -1;
+				const bool same_authored_lightmapped_object =
+					level_lightmapped[i] && l_rend_type == LRT_LIGHTMAPS &&
+					level_object_type[i] == type && level_object_id[i] == op->id &&
+					level_model_num >= 0 && level_model_num < MAX_POLY_MODELS &&
+					Poly_models[level_model_num].used;
+				if (same_authored_lightmapped_object &&
+					new_model != level_model_num)
+				{
+					// A level-authored lightmap object's UV allocation is bound
+					// to the polymodel loaded with the target level.  Old saves
+					// can contain a stale/reused numeric model slot (for
+					// example, a Vauss clip translated to an industrial door).
+					// Keep the target mission's model when the same authored
+					// object still occupies this slot; named replacement media
+					// remains supported because it was already selected while
+					// the target mission and its add-on pages were loaded.
+					AutomatedCaptureLog(
+						"loadgame restored authored lightmap model object=%d saved=%d resolved=%d level=%d",
+						i, sindex, new_model, level_model_num);
+					new_model = level_model_num;
+				}
+				if (new_model >= 0)
+				{
+					bool constrained_model_family = false;
+					bool model_matches_object = false;
+					int authoritative_model = -1;
+					switch (type)
+					{
+					case OBJ_DOOR:
+						constrained_model_family = true;
+						authoritative_model = door->model_handle;
+						model_matches_object = new_model == door->model_handle;
+						break;
+					case OBJ_ROBOT:
+					case OBJ_POWERUP:
+					case OBJ_BUILDING:
+					case OBJ_CLUTTER:
+						constrained_model_family = true;
+						authoritative_model = obji->render_handle;
+						model_matches_object =
+							new_model == obji->render_handle ||
+							new_model == obji->med_render_handle ||
+							new_model == obji->lo_render_handle;
+						break;
+					case OBJ_WEAPON:
+						constrained_model_family = true;
+						authoritative_model = wpn->fire_image_handle;
+						model_matches_object = new_model == wpn->fire_image_handle;
+						break;
+					case OBJ_PLAYER:
+						constrained_model_family = true;
+						authoritative_model = shp->model_handle;
+						model_matches_object =
+							new_model == shp->model_handle ||
+							new_model == shp->med_render_handle ||
+							new_model == shp->lo_render_handle;
+						break;
+					default:
+						break;
+					}
+					if (constrained_model_family && !model_matches_object &&
+						authoritative_model >= 0 &&
+						authoritative_model < MAX_POLY_MODELS &&
+						Poly_models[authoritative_model].used)
+					{
+						// Save files carry a numeric polymodel slot plus a
+						// global name table. Mission-local page churn can leave
+						// that slot naming an unrelated model by save time.
+						// The supported object APIs do not permit an arbitrary
+						// model-family swap, so reject cross-family mappings
+						// while preserving authored high/medium/low variants.
+						AutomatedCaptureLog(
+							"loadgame rejected cross-family model object=%d type=%d id=%d saved=%d resolved=%d authoritative=%d",
+							i, type, op->id, sindex, new_model,
+							authoritative_model);
+						new_model = authoritative_model;
+					}
+				}
+				if (new_model < 0)
+				{
+					// An empty/missing model-table name cannot safely preserve
+					// a numeric slot across a mission reload: that slot may now
+					// contain unrelated media. Prefer the target level or the
+					// object's managed page, and reserve numeric fallback for
+					// unconstrained render-only object types such as debris.
+					int fallback_model = level_model_num;
+					if (fallback_model < 0 || fallback_model >= MAX_POLY_MODELS ||
+						!Poly_models[fallback_model].used)
+					{
+						switch (type)
+						{
+						case OBJ_DOOR:
+							fallback_model = door->model_handle;
+							break;
+						case OBJ_ROBOT:
+						case OBJ_POWERUP:
+						case OBJ_BUILDING:
+						case OBJ_CLUTTER:
+							fallback_model = obji->render_handle;
+							break;
+						case OBJ_WEAPON:
+							fallback_model = wpn->fire_image_handle;
+							break;
+						case OBJ_PLAYER:
+							fallback_model = shp->model_handle;
+							break;
+						default:
+							break;
+						}
+					}
+					if ((fallback_model < 0 ||
+							fallback_model >= MAX_POLY_MODELS ||
+							!Poly_models[fallback_model].used) &&
+						sindex >= 0 && sindex < MAX_POLY_MODELS &&
+						Poly_models[sindex].used)
+					{
+						fallback_model = sindex;
+					}
+					new_model = fallback_model;
+					AutomatedCaptureLog(
+						"loadgame missing model fallback object=%d type=%d id=%d saved=%d level=%d fallback=%d model=%s name=%s",
+						i, type, op->id, sindex, level_model_num, new_model,
+						(new_model >= 0 && new_model < MAX_POLY_MODELS) ?
+							Poly_models[new_model].name : "<invalid>",
+						op->name ? op->name : "<unnamed>");
+				}
+				if (new_model < 0 || new_model >= MAX_POLY_MODELS ||
+					!Poly_models[new_model].used)
+				{
+					AutomatedCaptureLog(
+						"loadgame using legacy placeholder model object=%d type=%d saved=%d name=%s",
+						i, type, sindex, op->name ? op->name : "<unnamed>");
+					// Legacy saves can contain unnamed, mission-local model
+					// slots that cannot be translated by name. Preserve the
+					// historical visible placeholder rather than leaving a
+					// dangling handle; typed objects above still recover their
+					// authoritative current model.
+					new_model = 0;
+				}
 				if( (new_model != op->rtype.pobj_info.model_num) || (Poly_models[new_model].flags & PMF_NOT_RESIDENT))
 				{
 					switch (type) 
@@ -1204,14 +1446,36 @@ START_VERIFY_SAVEFILE(fp);
 					}
 				}
 				op->rtype.pobj_info.model_num = new_model;
+				if (type == OBJ_PLAYER)
+				{
+					AutomatedCaptureLog("loadgame player model object=%d handle=%d name=%s",
+						i, new_model, Poly_models[new_model].name);
+				}
+				if (!ObjectLightmapsMatchPolymodel(op))
+				{
+					AutomatedCaptureLog(
+						"loadgame cleared stale object lightmaps object=%d model=%d name=%s lightmap_models=%d model_submodels=%d",
+						i, new_model, Poly_models[new_model].name,
+						op->lm_object.num_models, Poly_models[new_model].n_models);
+					ClearObjectLightmaps(op);
+				}
 
 				sindex = (short)op->rtype.pobj_info.dying_model_num;
-				new_model = (sindex > -1) ? gs_Xlates->model_handles[sindex] : -1;
+				new_model = (sindex >= 0 && sindex < MAX_POLY_MODELS) ?
+					gs_Xlates->model_handles[sindex] : -1;
+				if (new_model < 0 && type == OBJ_PLAYER)
+					new_model = shp->dying_model_handle;
 				if (new_model != op->rtype.pobj_info.dying_model_num)
 				{
 					switch (type)
 					{
-					case OBJ_PLAYER: PageInPolymodel (new_model, OBJ_PLAYER, &shp->size); op->size = shp->size; break;
+					case OBJ_PLAYER:
+						if (new_model >= 0)
+						{
+							PageInPolymodel(new_model, OBJ_PLAYER, &shp->size);
+							op->size = shp->size;
+						}
+						break;
 					}
 				}
 				op->rtype.pobj_info.dying_model_num = new_model;

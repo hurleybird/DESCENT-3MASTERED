@@ -429,48 +429,105 @@ void DoObjectLight(object* obj)
 // Frees all the memory associated with this objects lightmap
 void ClearObjectLightmaps(object* obj)
 {
-	int Mnum, Fnum;
-
 	if (obj->lm_object.used == 1)
 	{
 		RetainedPolymodelInvalidateLightmapObject(&obj->lm_object);
 		obj->lm_object.used = 0;
-		poly_model* pm = &Poly_models[obj->rtype.pobj_info.model_num];
-		ASSERT(pm->n_models < MAX_SUBOBJECTS);
-
 		mprintf((1, "CLEAR %d %s", obj->handle, obj->name));
 
-		int faceCount = 0;
-		for (Mnum = 0; Mnum < pm->n_models; Mnum++) {
-			if (!IsNonRenderableSubmodel(pm, Mnum)) {
-				mprintf((1, " %X\n", obj->lm_object.lightmap_faces[Mnum][0].u2));
-				mem_free(obj->lm_object.lightmap_faces[Mnum][0].u2);
+		// The model assigned to an object can change while its level-authored
+		// lightmap allocation still describes the previous model. Free from the
+		// allocation's stored layout rather than indexing through the current
+		// polymodel, which may have different submodel and face counts.
+		float* uvblock = NULL;
+		const int num_models = obj->lm_object.num_models < MAX_SUBOBJECTS ?
+			obj->lm_object.num_models : MAX_SUBOBJECTS;
+		for (int model_num = 0; model_num < num_models; model_num++)
+		{
+			if (obj->lm_object.num_faces[model_num] > 0 &&
+				obj->lm_object.lightmap_faces[model_num])
+			{
+				uvblock = obj->lm_object.lightmap_faces[model_num][0].u2;
 				break;
 			}
 		}
-		for (Mnum = 0; Mnum < pm->n_models; Mnum++)
+		mprintf((1, " %p\n", static_cast<void*>(uvblock)));
+		if (uvblock)
+			mem_free(uvblock);
+
+		for (int model_num = 0; model_num < num_models; model_num++)
 		{
-			if (IsNonRenderableSubmodel(pm, Mnum))
-				continue;
-
-			for (Fnum = 0; Fnum < pm->submodel[Mnum].num_faces; Fnum++)
+			lightmap_object_face* faces = obj->lm_object.lightmap_faces[model_num];
+			const int num_faces = obj->lm_object.num_faces[model_num] > 0 ?
+				obj->lm_object.num_faces[model_num] : 0;
+			for (int face_num = 0; faces && face_num < num_faces; face_num++)
 			{
-				lightmap_object_face* lof = &obj->lm_object.lightmap_faces[Mnum][Fnum];
-
-				if (lof->lmi_handle != BAD_LMI_INDEX) {
+				lightmap_object_face* lof = &faces[face_num];
+				if (lof->lmi_handle >= 0 &&
+					lof->lmi_handle < MAX_LIGHTMAP_INFOS)
+				{
 					FreeLightmapInfo(lof->lmi_handle);
 					lof->lmi_handle = BAD_LMI_INDEX;
 				}
 				lof->num_verts = 0;
 			}
 
-			if (obj->lm_object.num_faces[Mnum]) {
-				mem_free(obj->lm_object.lightmap_faces[Mnum]);
-				obj->lm_object.lightmap_faces[Mnum] = NULL;
+			if (faces)
+				mem_free(faces);
+			obj->lm_object.lightmap_faces[model_num] = NULL;
+			obj->lm_object.num_faces[model_num] = 0;
+		}
+		for (int model_num = num_models; model_num < MAX_SUBOBJECTS; model_num++)
+		{
+			obj->lm_object.lightmap_faces[model_num] = NULL;
+			obj->lm_object.num_faces[model_num] = 0;
+		}
+		obj->lm_object.num_models = 0;
+	}
+}
+
+bool ObjectLightmapsMatchPolymodel(const object* obj)
+{
+	if (!obj || obj->lm_object.used == 0)
+		return true;
+	if (obj->render_type != RT_POLYOBJ)
+		return false;
+
+	const int model_num = obj->rtype.pobj_info.model_num;
+	if (model_num < 0 || model_num >= MAX_POLY_MODELS)
+		return false;
+	poly_model* pm = &Poly_models[model_num];
+	if (!pm->used || (pm->flags & PMF_NOT_RESIDENT) ||
+		pm->n_models < 0 || pm->n_models > MAX_SUBOBJECTS ||
+		obj->lm_object.num_models != pm->n_models)
+	{
+		return false;
+	}
+
+	for (int submodel_num = 0; submodel_num < pm->n_models; submodel_num++)
+	{
+		const bsp_info* sm = &pm->submodel[submodel_num];
+		const int expected_faces =
+			IsNonRenderableSubmodel(pm, submodel_num) ? 0 : sm->num_faces;
+		if (obj->lm_object.num_faces[submodel_num] != expected_faces)
+			return false;
+
+		const lightmap_object_face* faces =
+			obj->lm_object.lightmap_faces[submodel_num];
+		if ((expected_faces > 0) != (faces != NULL))
+			return false;
+		for (int face_num = 0; face_num < expected_faces; face_num++)
+		{
+			if (faces[face_num].num_verts != sm->faces[face_num].nverts ||
+				!faces[face_num].u2 || !faces[face_num].v2 ||
+				faces[face_num].lmi_handle == BAD_LMI_INDEX ||
+				faces[face_num].lmi_handle >= MAX_LIGHTMAP_INFOS)
+			{
+				return false;
 			}
-			obj->lm_object.num_faces[Mnum] = 0;
 		}
 	}
+	return true;
 }
 
 // Frees all the memory associated with lightmap objects

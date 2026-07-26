@@ -30,6 +30,10 @@ void ClearAllObjectLightmaps (int terrain);
 // Frees all the memory associated with this objects lightmap
 void ClearObjectLightmaps (object *obj);
 
+// Returns false when an object's authored lightmap layout no longer matches
+// the polymodel currently assigned to it.
+bool ObjectLightmapsMatchPolymodel(const object *obj);
+
 // Sets up the memory to be used by an object for lightmaps
 void SetupObjectLightmapMemory (object *obj);
 
