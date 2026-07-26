@@ -164,10 +164,31 @@ ushort Network_game_protocols[MAX_NETWORK_GAMES];
 difficulty_profile Network_game_difficulty_profiles[MAX_NETWORK_GAMES];
 
 multi_protocol_mode Multi_host_protocol = MULTI_PROTOCOL_COMPATIBILITY;
+static bool Multi_host_protocol_locked = false;
 
 void MultiSetHostProtocol(multi_protocol_mode mode)
 {
+	if (Multi_host_protocol_locked)
+		return;
+
 	Multi_host_protocol = mode == MULTI_PROTOCOL_ENHANCED ? MULTI_PROTOCOL_ENHANCED : MULTI_PROTOCOL_COMPATIBILITY;
+}
+
+void MultiSelectHostProtocol(multi_protocol_mode mode)
+{
+	Multi_host_protocol = mode == MULTI_PROTOCOL_ENHANCED ?
+		MULTI_PROTOCOL_ENHANCED : MULTI_PROTOCOL_COMPATIBILITY;
+	Multi_host_protocol_locked = true;
+}
+
+bool MultiHostProtocolSelectionLocked()
+{
+	return Multi_host_protocol_locked;
+}
+
+void MultiClearHostProtocolSelection()
+{
+	Multi_host_protocol_locked = false;
 }
 
 ushort MultiGetHostProtocolVersion()

@@ -2537,6 +2537,7 @@ void MultiResetSettings()
 	Netgame.max_players = 8;
 	Netgame.difficulty = 2;
 	DifficultySetMultiplayer(Netgame.difficulty);
+	MultiClearHostProtocolSelection();
 	MultiSetHostProtocol(MULTI_PROTOCOL_COMPATIBILITY);
 
 	// Clear MOTD

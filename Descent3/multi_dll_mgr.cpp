@@ -288,6 +288,7 @@ void GetMultiAPI(multi_api* api)
 	api->fp[110] = (int*)CheckGetD3M;
 	api->fp[111] = (int*)ddio_GetTempFileName;
 	api->fp[112] = (int*)gspy_GetGamePort;
+	api->fp[113] = (int*)MultiChooseHostRules;
 
 	// Variable pointers
 	api->vp[0] = (int*)&Player_num;

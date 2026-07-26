@@ -660,6 +660,9 @@ msn_CheckGetMission_fp DLLmsn_CheckGetMission;
 typedef void (*MultiGameOptionsMenu_fp) (int alloptions);
 MultiGameOptionsMenu_fp DLLMultiGameOptionsMenu;
 
+typedef bool (*MultiChooseHostRules_fp) (void);
+MultiChooseHostRules_fp DLLMultiChooseHostRules;
+
 //Loads a dynamic module into memory for use.  
 //Returns true on success, false otherwise
 //typedef bool (*mod_LoadModule_fp)(module *handle,char *modfilename,int flags=MODF_NOW);
@@ -941,6 +944,9 @@ char dll_text[MAX_DLLS][_MAX_PATH];
 
 int StartMultiplayerGameMenu ()
 {
+	if (!DLLMultiChooseHostRules())
+		return 0;
+
 	void * game_name_text = DLLCreateNewUITextItem(TXT(10), UICOL_TEXT_NORMAL,-1);//TXT_LC_GAMENAME
 	void * mission_name_text = DLLCreateNewUITextItem(TXT(11), UICOL_TEXT_NORMAL,-1);//TXT_LC_MSNNAME
 	void * script_name_text = DLLCreateNewUITextItem(TXT(12), UICOL_TEXT_NORMAL,-1);//TXT_LC_SCRIPTNAME

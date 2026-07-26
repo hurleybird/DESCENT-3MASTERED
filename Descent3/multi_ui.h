@@ -32,6 +32,7 @@ extern int MultiDLLGameStarting;
 void MultiDoConfigLoad(void);
 void MultiDoConfigSave(void);
 void MultiGameOptionsMenu (int alloptions);
+bool MultiChooseHostRules(void);
 int ReturnMultiplayerGameMenu(void);
 int MultiLevelSelection(void);
 bool DoPlayerMouselookCheck(unsigned int flags);

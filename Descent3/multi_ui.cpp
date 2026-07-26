@@ -851,9 +851,7 @@ void MultiDoConfigLoad(void)
 #define DIFF_OPTIONS_HS_ID	31
 #define SHIP_ALLOW_HS_ID	0xdd
 
-static newuiComboBox *Multi_diff_protocol_combo = NULL;
 static newuiComboBox *Multi_diff_axis_combos[4] = {NULL, NULL, NULL, NULL};
-static bool Multi_diff_syncing = false;
 
 static const char *MultiDifficultyName(int level)
 {
@@ -866,30 +864,52 @@ static const char *MultiDifficultyName(int level)
 static void MultiDifficultySummary(char *buffer)
 {
 	const bool custom = !DifficultyProfileIsUniform(Multiplayer_difficulty);
-	if (Multi_host_protocol == MULTI_PROTOCOL_ENHANCED)
-		sprintf(buffer, "Enhanced / 3MASTERED - %s (configure...)",
-			custom ? "Custom difficulty" : MultiDifficultyName(Netgame.difficulty));
-	else
-		sprintf(buffer, "Vanilla / 1.5 - %s (configure...)", MultiDifficultyName(Netgame.difficulty));
+	sprintf(buffer, "Enhanced / 3MASTERED - %s (configure...)",
+		custom ? "Custom difficulty" : MultiDifficultyName(Netgame.difficulty));
 }
 
-static void MultiDifficultyAxisChanged(int index)
+bool MultiChooseHostRules()
 {
-	if (Multi_diff_syncing || !Multi_diff_protocol_combo ||
-		Multi_diff_protocol_combo->GetCurrentIndex() != MULTI_PROTOCOL_COMPATIBILITY)
-		return;
+	newuiTiledWindow window;
+	newuiSheet* sheet;
+	bool exit_menu = false;
+	bool accepted = false;
 
-	Multi_diff_syncing = true;
-	for (int i = 0; i < 4; ++i)
-		if (Multi_diff_axis_combos[i] && Multi_diff_axis_combos[i]->GetCurrentIndex() != index)
-			Multi_diff_axis_combos[i]->SetCurrentIndex(index);
-	Multi_diff_syncing = false;
-}
+	window.Create("Host Gameplay Rules", 0, 0, 320, 208);
+	sheet = window.GetSheet();
 
-static void MultiDifficultyProtocolChanged(int index)
-{
-	if (index == MULTI_PROTOCOL_COMPATIBILITY && Multi_diff_axis_combos[0])
-		MultiDifficultyAxisChanged(Multi_diff_axis_combos[0]->GetCurrentIndex());
+	sheet->NewGroup("Gameplay rules", 30, 12);
+	int* rules = sheet->AddFirstLongRadioButton("Vanilla / 1.5");
+	sheet->AddLongRadioButton("Enhanced / 3MASTERED");
+	*rules = Multi_host_protocol == MULTI_PROTOCOL_ENHANCED ? 1 : 0;
+
+	sheet->NewGroup(NULL, 30, 94, NEWUI_ALIGN_HORIZ);
+	sheet->AddButton(TXT_OK, UID_OK);
+	sheet->AddButton(TXT_CANCEL, UID_CANCEL);
+
+	window.Open();
+	while (!exit_menu)
+	{
+		const int result = window.DoUI();
+		if (result == UID_OK)
+		{
+			const multi_protocol_mode mode =
+				*rules == 1 ? MULTI_PROTOCOL_ENHANCED : MULTI_PROTOCOL_COMPATIBILITY;
+			MultiSelectHostProtocol(mode);
+			if (mode == MULTI_PROTOCOL_COMPATIBILITY)
+				DifficultySetMultiplayer(Netgame.difficulty);
+			accepted = true;
+			exit_menu = true;
+		}
+		else if (result == UID_CANCEL)
+		{
+			exit_menu = true;
+		}
+	}
+
+	window.Close();
+	window.Destroy();
+	return accepted;
 }
 
 static void MultiDifficultyOptionsMenu()
@@ -898,17 +918,11 @@ static void MultiDifficultyOptionsMenu()
 	newuiSheet *sheet;
 	bool exit_menu = false;
 
-	window.Create("Gameplay Rules and Difficulty", 0, 0, 384, 416);
+	window.Create("Enhanced Difficulty", 0, 0, 384, 360);
 	sheet = window.GetSheet();
 
-	sheet->NewGroup("Gameplay rules", 0, 0);
-	Multi_diff_protocol_combo = sheet->AddComboBox(100, UILB_NOSORT);
-	Multi_diff_protocol_combo->AddItem("Vanilla / 1.5");
-	Multi_diff_protocol_combo->AddItem("Enhanced / 3MASTERED");
-	Multi_diff_protocol_combo->SetCurrentIndex(Multi_host_protocol);
-
 	const char *axis_names[4] = {"Enemy AI", "Enemy / projectile speed", "Enemy HP", "Resources"};
-	const int axis_y[4] = {54, 106, 158, 210};
+	const int axis_y[4] = {0, 52, 104, 156};
 	const ubyte axis_values[4] = {
 		Multiplayer_difficulty.enemy_ai,
 		Multiplayer_difficulty.enemy_speed,
@@ -923,11 +937,9 @@ static void MultiDifficultyOptionsMenu()
 		for (int level = 0; level < MAX_DIFFICULTY_LEVELS; ++level)
 			Multi_diff_axis_combos[axis]->AddItem(MultiDifficultyName(level));
 		Multi_diff_axis_combos[axis]->SetCurrentIndex(axis_values[axis]);
-		Multi_diff_axis_combos[axis]->SetSelectChangeCallback(MultiDifficultyAxisChanged);
 	}
-	Multi_diff_protocol_combo->SetSelectChangeCallback(MultiDifficultyProtocolChanged);
 
-	sheet->NewGroup(NULL, 0, 274, NEWUI_ALIGN_HORIZ);
+	sheet->NewGroup(NULL, 0, 220, NEWUI_ALIGN_HORIZ);
 	sheet->AddButton(TXT_OK, UID_OK);
 	sheet->AddButton(TXT_CANCEL, UID_CANCEL);
 
@@ -943,16 +955,8 @@ static void MultiDifficultyOptionsMenu()
 			profile.enemy_hp = Multi_diff_axis_combos[2]->GetCurrentIndex();
 			profile.resources = Multi_diff_axis_combos[3]->GetCurrentIndex();
 
-			multi_protocol_mode mode = (multi_protocol_mode)Multi_diff_protocol_combo->GetCurrentIndex();
-			if (mode == MULTI_PROTOCOL_COMPATIBILITY && !DifficultyProfileIsUniform(profile))
-			{
-				DoMessageBox(TXT_ERROR, "Compatibility games require one uniform difficulty.", MSGBOX_OK);
-				continue;
-			}
-
 			DifficultySetMultiplayerProfile(profile);
 			Netgame.difficulty = DifficultyProfileLegacyLevel(Multiplayer_difficulty);
-			MultiSetHostProtocol(mode);
 			exit_menu = true;
 		}
 		else if (result == UID_CANCEL)
@@ -963,7 +967,6 @@ static void MultiDifficultyOptionsMenu()
 
 	window.Close();
 	window.Destroy();
-	Multi_diff_protocol_combo = NULL;
 	for (int i = 0; i < 4; ++i)
 		Multi_diff_axis_combos[i] = NULL;
 }
@@ -1256,18 +1259,55 @@ void MultiGameOptionsMenu(int alloptions)
 	mlook_y = cury;
 	cury += 20;
 
-	// Difficulty and network-compatibility settings live in a focused dialog;
-	// five selectors do not fit legibly in this already dense options page.
+	// Vanilla keeps the original monolithic difficulty list. Enhanced games
+	// expose the four established difficulty axes through a focused dialog.
+	const bool enhanced_host = Multi_host_protocol == MULTI_PROTOCOL_ENHANCED;
 	UITextItem diff_title_text(TXT_PLTDIFFICULT, UICOL_WINDOW_TITLE);
 	UIText diff_title;
 	diff_title.Create(&main_wnd, &diff_title_text, MULTI_OPT_TOGGLES_X, diff_y, 0); diff_y += 15;
+
+	UITextItem trainee(TXT_TRAINEE, GR_LIGHTGRAY);
+	UITextItem rookie(TXT_ROOKIE, GR_LIGHTGRAY);
+	UITextItem hotshot(TXT_HOTSHOT, GR_LIGHTGRAY);
+	UITextItem ace(TXT_ACE, GR_LIGHTGRAY);
+	UITextItem insane(TXT_INSANE, GR_LIGHTGRAY);
+	NewUIListBox diff_list;
+
 	char diff_summary[160];
-	MultiDifficultySummary(diff_summary);
+	if (enhanced_host)
+		MultiDifficultySummary(diff_summary);
+	else
+		diff_summary[0] = '\0';
 	UITextItem diff_options_off(diff_summary, UICOL_HOTSPOT_LO);
 	UITextItem diff_options_on(diff_summary, UICOL_HOTSPOT_HI);
 	UIHotspot diff_options_hs;
-	diff_options_hs.Create(&main_wnd, DIFF_OPTIONS_HS_ID, 0, &diff_options_off, &diff_options_on,
-		MULTI_OPT_TOGGLES_X, diff_y, 240, 30, UIF_FIT);
+
+	if (enhanced_host)
+	{
+		diff_options_hs.Create(&main_wnd, DIFF_OPTIONS_HS_ID, 0,
+			&diff_options_off, &diff_options_on,
+			MULTI_OPT_TOGGLES_X, diff_y, 240, 30, UIF_FIT);
+	}
+	else
+	{
+		diff_list.SetSelectedColor(UICOL_LISTBOX_HI);
+		diff_list.SetHiliteColor(UICOL_LISTBOX_HI);
+		diff_list.Create(&main_wnd, DIFF_LIST_ID,
+			MULTI_OPT_TOGGLES_X, diff_y, 160, 96, UILB_NOSORT);
+		diff_list.AddItem(&trainee);
+		diff_list.AddItem(&rookie);
+		diff_list.AddItem(&hotshot);
+		diff_list.AddItem(&ace);
+		diff_list.AddItem(&insane);
+		switch (Netgame.difficulty)
+		{
+		case DIFFICULTY_TRAINEE: diff_list.SelectItem(&trainee); break;
+		case DIFFICULTY_ROOKIE: diff_list.SelectItem(&rookie); break;
+		case DIFFICULTY_ACE: diff_list.SelectItem(&ace); break;
+		case DIFFICULTY_INSANE: diff_list.SelectItem(&insane); break;
+		default: diff_list.SelectItem(&hotshot); break;
+		}
+	}
 
 
 
@@ -1393,7 +1433,7 @@ void MultiGameOptionsMenu(int alloptions)
 			DoMultiAllowed();
 			main_wnd.Open();
 		}
-		else if (res == DIFF_OPTIONS_HS_ID)
+		else if (enhanced_host && res == DIFF_OPTIONS_HS_ID)
 		{
 			main_wnd.Close();
 			MultiDifficultyOptionsMenu();
@@ -1536,6 +1576,15 @@ void MultiGameOptionsMenu(int alloptions)
 				val = 300;
 
 			Netgame.respawn_time = val;
+
+			if (!enhanced_host)
+			{
+				const int selected_difficulty = diff_list.GetSelectedIndex();
+				Netgame.difficulty =
+					selected_difficulty >= 0 && selected_difficulty < MAX_DIFFICULTY_LEVELS ?
+					selected_difficulty : DIFFICULTY_HOTSHOT;
+				DifficultySetMultiplayer(Netgame.difficulty);
+			}
 
 			exit_menu = 1;
 		}

@@ -63,6 +63,9 @@ enum multi_protocol_mode
 
 extern multi_protocol_mode Multi_host_protocol;
 void MultiSetHostProtocol(multi_protocol_mode mode);
+void MultiSelectHostProtocol(multi_protocol_mode mode);
+bool MultiHostProtocolSelectionLocked();
+void MultiClearHostProtocolSelection();
 ushort MultiGetHostProtocolVersion();
 bool MultiProtocolIsEnhanced(ushort version);
 

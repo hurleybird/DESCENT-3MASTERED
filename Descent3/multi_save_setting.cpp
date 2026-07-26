@@ -299,6 +299,11 @@ int MultiLoadSettings(char* filename)
 				cfclose(cf);
 				return 0;
 			}
+			if (MultiHostProtocolSelectionLocked() &&
+				Multi_host_protocol == MULTI_PROTOCOL_COMPATIBILITY)
+			{
+				continue;
+			}
 			if (strcmpi(toklabel, "DIFFICULTY_AI") == 0)
 				Multiplayer_difficulty.enemy_ai = value;
 			else if (strcmpi(toklabel, "DIFFICULTY_SPEED") == 0)
@@ -318,6 +323,11 @@ int MultiLoadSettings(char* filename)
 	if (Multi_host_protocol == MULTI_PROTOCOL_COMPATIBILITY &&
 		!DifficultyProfileIsUniform(Multiplayer_difficulty))
 	{
+		if (MultiHostProtocolSelectionLocked())
+		{
+			DifficultySetMultiplayer(Netgame.difficulty);
+			return 1;
+		}
 		mprintf((0, "Compatibility multiplayer profile requires uniform difficulty axes.\n"));
 		return 0;
 	}
