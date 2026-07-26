@@ -600,6 +600,14 @@ void ui_RequestScreenshotAndForceQuit(const char* filename)
 //	does one frame of ui.
 void DoUIFrame()
 {
+	// A frame result belongs only to the UI frame that produced it.  Most
+	// modal loops reset this before entering, but connector modules call the
+	// single-frame PollUI API directly after a parent menu has returned an
+	// ID.  Clear that stale ID before callbacks get a chance to request a new
+	// result; otherwise TCP/IP/Tracker can interpret the parent UID_OK as an
+	// immediate Join on every poll.
+	UI_frame_result = -1;
+
 	if (Multi_bail_ui_menu)
 	{
 		UI_frame_result = NEWUIRES_FORCEQUIT;
@@ -2221,7 +2229,7 @@ bool newuiSheet::SetGadgetVisible(short id, bool visible)
 		if (visible)
 		{
 			if (!gadget->GetWindow())
-				m_parent->AddGadget(gadget, true);
+				m_parent->AddGadgetPreserveFocus(gadget);
 		}
 		else if (gadget->GetWindow())
 		{

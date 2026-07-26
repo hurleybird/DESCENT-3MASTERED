@@ -874,6 +874,7 @@ private:
 	void UntrapKey(int key);
 	void LockFocusOnGadget(UIGadget *gadget);	// forces a particular gadget into focus, always until unlocked.
 	void UnlockFocusOnGadget();
+	void AddGadgetInternal(UIGadget *gadget, bool preserve_focus);
 
 protected:
 	ddgr_color GetBackColor() const {
@@ -909,7 +910,8 @@ public:
 	void ResetAcceleratorKey();
 
 //	gadget management
-	void AddGadget(UIGadget *gadget, bool preserve_focus=false);	// adds a gadget to the gadget list
+	void AddGadget(UIGadget *gadget);			// adds a gadget to the gadget list
+	void AddGadgetPreserveFocus(UIGadget *gadget);	// reattaches a hidden gadget without resetting focus
 	void RemoveGadget(UIGadget *gadget);		// removes a gadget from the list.
 	UIGadget *GetGadgetFromID(int id);			// returns the gadget pointer given an id if in window
 	void SetFocusOnGadget(UIGadget *gadget, bool key=false);
