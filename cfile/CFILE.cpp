@@ -80,6 +80,7 @@ ext_entry extensions[MAX_EXTENSIONS];
 int N_extensions;
 library *Libraries=NULL;
 int lib_handle=0;
+static int Library_search_exclusion_handle = 0;
 void cf_Close();
 
 struct open_cfile_node
@@ -244,6 +245,13 @@ void cf_CloseLibrary(int handle)
 	}
 }
 
+int cf_SetLibrarySearchExclusion(int handle)
+{
+	int previous = Library_search_exclusion_handle;
+	Library_search_exclusion_handle = handle;
+	return previous;
+}
+
 //Closes down the CFILE system, freeing up all data, etc.
 void cf_Close()
 {
@@ -396,6 +404,12 @@ CFILE *open_file_in_lib(const char *filename)
 	lib = Libraries;
 	while (lib) 
 	{
+		if (lib->handle == Library_search_exclusion_handle)
+		{
+			lib = lib->next;
+			continue;
+		}
+
 		int i;
 		//Do binary search for the file
 		int first = 0, last = lib->nfiles-1, c,found=0;

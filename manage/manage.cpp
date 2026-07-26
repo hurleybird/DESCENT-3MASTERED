@@ -51,6 +51,7 @@
 #include "vclip.h"
 #include "polymodel.h"
 int Old_table_method=0;
+static int Addon_restore_resource_library_exclusion = 0;
 void mng_WriteNewUnknownPage (CFILE *outfile);
 //	This is for levels
 char LocalLevelsDir[TABLE_NAME_LEN];
@@ -2535,6 +2536,12 @@ void mng_PopAddonPages()
 			// Free this data, then read the old stuff back in
 			mng_FreePagetypePrimitives (addondata->Addon_tracklocks[i].pagetype,addondata->Addon_tracklocks[i].name,0);
 			char *name=addondata->Addon_tracklocks[i].name;
+			// A mission HOG can replace a stock primitive with the same filename
+			// as the page beneath it.  When restoring the main table, do not let
+			// bare filename lookup immediately reload from the HOG being popped.
+			// Previous add-on layers remain searchable until their own pop.
+			int previous_library_exclusion = cf_SetLibrarySearchExclusion(
+				Loading_addon_table == -1 ? Addon_restore_resource_library_exclusion : 0);
 			switch (addondata->Addon_tracklocks[i].pagetype)
 			{
 				case PAGETYPE_TEXTURE:
@@ -2634,6 +2641,7 @@ void mng_PopAddonPages()
 					Int3(); // bad type in list? Get Jason
 					break;
 			}
+			cf_SetLibrarySearchExclusion(previous_library_exclusion);
 		
 		}
 		else
@@ -2646,8 +2654,10 @@ void mng_PopAddonPages()
 	Loading_addon_table=-1;
 }
 // Simply sets no addon data to be loaded
-void mng_ClearAddonTables ()
+void mng_ClearAddonTables (int resource_library_exclusion)
 {
+	int previous_resource_library_exclusion = Addon_restore_resource_library_exclusion;
+	Addon_restore_resource_library_exclusion = resource_library_exclusion;
 	int count = Num_addon_tables;
 	while(count>0)
 	{
@@ -2663,6 +2673,11 @@ void mng_ClearAddonTables ()
 
 		count--;
 	}
+	int previous_library_exclusion =
+		cf_SetLibrarySearchExclusion(resource_library_exclusion);
+	bm_RestoreAddonBitmapOverlays();
+	cf_SetLibrarySearchExclusion(previous_library_exclusion);
+	Addon_restore_resource_library_exclusion = previous_resource_library_exclusion;
 }
 // Push the given table file as an addon table file
 // returns true on success
@@ -2856,6 +2871,7 @@ void mng_LoadAddonPages ()
 	if (Num_addon_tables==0)
 		return;	// No addons to load
 
+	bm_BeginAddonBitmapCapture();
 	Loading_locals=0;
 
 	int c;
@@ -2871,6 +2887,7 @@ void mng_LoadAddonPages ()
 		if (!infile)
 		{
 			mprintf ((0,"Couldn't addon table file (%s) to read pages!\n",addon->AddOnTableFilename));
+			bm_EndAddonBitmapCapture();
 			return;
 		}		
 		Loading_addon_table=c;
@@ -2924,6 +2941,7 @@ void mng_LoadAddonPages ()
 
 	Loading_locals=0;
 	Loading_addon_table=-1;
+	bm_EndAddonBitmapCapture();
 
 	mng_CompileAddonPages();
 

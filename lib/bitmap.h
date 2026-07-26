@@ -100,6 +100,14 @@ void bm_FreeBitmap (int handle);
 // Returns -1 if something is wrong
 int bm_AllocLoadFileBitmap (const char *filename,int mipped,int format=BITMAP_FORMAT_1555);
 
+// Mission add-ons can reuse stock bitmap filenames. The legacy bitmap loader
+// replaces an existing same-name handle in place, so unrelated stock pages
+// sharing that handle also see the replacement. Track those overlays while
+// add-on pages load and restore their underlying images when the add-on exits.
+void bm_BeginAddonBitmapCapture();
+void bm_EndAddonBitmapCapture();
+void bm_RestoreAddonBitmapOverlays();
+
 // Loads a bitmap through the legacy bitmap system while retaining an RGBA8
 // copy of ordinary 24/32-bit TGA source data for renderers that support it.
 // OGF and other legacy sources continue to use their native 16-bit format.

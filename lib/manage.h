@@ -93,7 +93,9 @@ extern int Num_addon_tables;
 void mng_PopAddonPages();
 
 // Simply sets no addon data to be loaded
-void mng_ClearAddonTables ();
+// resource_library_exclusion prevents restored base pages from resolving
+// primitives out of the mission archive that is being removed.
+void mng_ClearAddonTables (int resource_library_exclusion = 0);
 
 // Push the given table file as an addon table file
 // returns true on success

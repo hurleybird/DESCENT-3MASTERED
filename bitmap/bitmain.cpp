@@ -45,6 +45,67 @@ ubyte Bitmaps_initted = 0;
 static ubyte *Bitmap_truecolor_data[MAX_BITMAPS] = {};
 static size_t Bitmap_truecolor_size[MAX_BITMAPS] = {};
 
+struct addon_bitmap_overlay
+{
+	char filename[PSPATHNAME_LEN];
+	int mipped;
+	int format;
+};
+
+static addon_bitmap_overlay Addon_bitmap_overlays[MAX_BITMAPS];
+static int Num_addon_bitmap_overlays = 0;
+static int Addon_bitmap_capture_depth = 0;
+
+static void bm_RecordAddonBitmapOverlay(const char *filename, int mipped, int format)
+{
+	if (Addon_bitmap_capture_depth <= 0 || !filename || !filename[0])
+		return;
+
+	for (int i = 0; i < Num_addon_bitmap_overlays; i++)
+	{
+		if (!stricmp(Addon_bitmap_overlays[i].filename, filename))
+		{
+			Addon_bitmap_overlays[i].mipped |= mipped;
+			Addon_bitmap_overlays[i].format = format;
+			return;
+		}
+	}
+
+	if (Num_addon_bitmap_overlays >= MAX_BITMAPS)
+		return;
+
+	addon_bitmap_overlay &overlay = Addon_bitmap_overlays[Num_addon_bitmap_overlays++];
+	strncpy(overlay.filename, filename, sizeof(overlay.filename) - 1);
+	overlay.filename[sizeof(overlay.filename) - 1] = 0;
+	overlay.mipped = mipped;
+	overlay.format = format;
+}
+
+void bm_BeginAddonBitmapCapture()
+{
+	Addon_bitmap_capture_depth++;
+}
+
+void bm_EndAddonBitmapCapture()
+{
+	if (Addon_bitmap_capture_depth > 0)
+		Addon_bitmap_capture_depth--;
+}
+
+void bm_RestoreAddonBitmapOverlays()
+{
+	const int overlay_count = Num_addon_bitmap_overlays;
+	Num_addon_bitmap_overlays = 0;
+	Addon_bitmap_capture_depth = 0;
+
+	for (int i = 0; i < overlay_count; i++)
+	{
+		const addon_bitmap_overlay &overlay = Addon_bitmap_overlays[i];
+		if (cfexist(overlay.filename))
+			bm_AllocLoadFileBitmap(overlay.filename, overlay.mipped, overlay.format);
+	}
+}
+
 static void bm_FreeTrueColorData(int handle)
 {
 	if (handle < 0 || handle >= MAX_BITMAPS || !Bitmap_truecolor_data[handle])
@@ -542,6 +603,7 @@ int bm_AllocLoadFileBitmap(const char* fname, int mipped, int format)
 	// bitmaps handle	
 	if ((n = bm_TestName(filename)) != -1)
 	{
+		bm_RecordAddonBitmapOverlay(filename, mipped, format);
 		mprintf((1, "Found duplicate bitmap %s.\n", GameBitmaps[n].name));
 		old_used = GameBitmaps[n].used;
 		GameBitmaps[n].used = 1;

@@ -67,6 +67,10 @@ int cf_OpenLibrary(const char *libname);
 //Parameters:  handle: the handle returned by cf_OpenLibrary()
 void cf_CloseLibrary(int handle);
 
+// Excludes one HOG from normal filename-based lookup. Explicit
+// cf_OpenFileInLibrary() calls are unaffected. Returns the previous handle.
+int cf_SetLibrarySearchExclusion(int handle);
+
 //Specify a directory to look in for files
 //if ext==NULL, look in this directory for all files.  If ext is non-null,
 //it is a NULL-terminated list of file extensions.  If extensions are

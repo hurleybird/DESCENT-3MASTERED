@@ -237,7 +237,7 @@ void PlayGame()
 	//	close down any systems not needed outside game.
 
 	// we must pop the pages before closing the mission, since we need to have the mn3 hog file open
-	mng_ClearAddonTables();
+	mng_ClearAddonTables(Current_mission.mn3_handle);
 
 	ResetMission();
 	CloseGameScript();

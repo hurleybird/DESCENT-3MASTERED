@@ -440,7 +440,7 @@ int LGSMission(const char *msnname, int level)
 	// LoadMission() closes it.  Otherwise page overlays (including replacement
 	// ship and object models) leak into the mission restored by the save.
 	AutomatedCaptureLog("loadgame clearing addon tables count=%d", Num_addon_tables);
-	mng_ClearAddonTables();
+	mng_ClearAddonTables(Current_mission.mn3_handle);
 	if (LoadMission((const char *)msnname)) 
 	{
 		SetCurrentLevel(level);
