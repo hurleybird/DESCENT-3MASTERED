@@ -773,8 +773,10 @@ LRESULT WINAPI MyWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			break;
 
 		case WM_CLOSE:
-			DestroyWindow(hWnd);
-			return 0;
+			// Give the application-specific window procedure a chance to
+			// perform an orderly shutdown.  Unhandled closes still reach
+			// DefWindowProc, which destroys the window normally.
+			break;
 
 		case WM_DESTROY:
 		//	get window handle and clear it.

@@ -590,10 +590,21 @@ int hlsSystem::Update2dSound(int hlsound_uid, float volume, float pan)
 }
 bool hlsSystem::ComputePlayInfo(int sound_obj_index, vector* virtual_pos, vector* virtual_vel, float* adjusted_volume)
 {
-	//[ISB] Need to figure out why this happens
-	ASSERT(Viewer_object != nullptr);
-	if (!Viewer_object)
-		return false; 
+	// Spatial audio has no meaningful result while a level listener is being
+	// created or torn down.  In particular, a deleted object retains a stable
+	// address but has type OBJ_NONE and roomnum -1; passing that room through
+	// BOA_INDEX would interpret it as terrain cell 0x7fffffff.
+	if (!Viewer_object || Viewer_object->type == OBJ_NONE)
+		return false;
+
+	const int listener_room = Viewer_object->roomnum;
+	if ((!ROOMNUM_OUTSIDE(listener_room) &&
+			(listener_room < 0 || listener_room > Highest_room_index)) ||
+		(ROOMNUM_OUTSIDE(listener_room) &&
+			CELLNUM(listener_room) >= TERRAIN_WIDTH * TERRAIN_DEPTH))
+	{
+		return false;
+	}
 
 	int sound_seg;
 	int ear_seg;
@@ -634,7 +645,7 @@ bool hlsSystem::ComputePlayInfo(int sound_obj_index, vector* virtual_pos, vector
 	}
 
 	sound_seg = BOA_INDEX(sound_seg);
-	ear_seg = BOA_INDEX(Viewer_object->roomnum);
+	ear_seg = BOA_INDEX(listener_room);
 	if (!BOA_IsSoundAudible(sound_seg, ear_seg))
 		return false;
 

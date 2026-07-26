@@ -211,6 +211,13 @@ public:
 
 		switch (msg)
 		{
+		case WM_CLOSE:
+			if (ShouldConfirmAltF4QuitInGame())
+			{
+				RequestAltF4QuitConfirmation();
+				return 0;
+			}
+			break;
 		case WM_SYSKEYDOWN:
 			if (wParam == VK_F4 && ShouldConfirmAltF4QuitInGame())
 			{
