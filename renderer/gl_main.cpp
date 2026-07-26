@@ -1,5 +1,5 @@
 /*
-* DESCENT 3MASTERED
+* Descent 3MASTERED
 * Copyright (C) 2024 Parallax Software
 * Copyright (C) 2024 SaladBadger
 *

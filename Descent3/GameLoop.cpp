@@ -877,7 +877,7 @@ void PerfMarkersSetEnabled(bool enabled)
 	Perf_marker_force_reason[0] = '\0';
 	Perf_markers_enabled = true;
 
-	fprintf(Perf_marker_file, "# " ENGINE_NAME_NO_SPACE " perf markers\n");
+	fprintf(Perf_marker_file, "# " ENGINE_NAME " perf markers\n");
 	fprintf(Perf_marker_file, "# frame\tstart_ms\tduration_ms\tdepth\tmarker\n");
 }
 

@@ -1,5 +1,5 @@
 /*
-* DESCENT 3MASTERED
+* Descent 3MASTERED
 * Copyright (C) 2024 SaladBadger
 *
 * This program is free software: you can redistribute it and/or modify
@@ -39,9 +39,9 @@
 #include "ddio.h"
 
 #ifdef WIN32
-#define REGISTRY_FILENAME ENGINE_NAME_NO_SPACE".registry"
+#define REGISTRY_FILENAME ENGINE_NAME ".registry"
 #else
-#define REGISTRY_FILENAME "."ENGINE_NAME_NO_SPACE"Registry"
+#define REGISTRY_FILENAME "." ENGINE_NAME "Registry"
 #endif
 
 //Construction and destruction.

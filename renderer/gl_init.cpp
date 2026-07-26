@@ -1,5 +1,5 @@
 /*
-* DESCENT 3MASTERED
+* Descent 3MASTERED
 * Copyright (C) 2024 Parallax Software
 * Copyright (C) 2024 SaladBadger
 *
@@ -537,7 +537,7 @@ void GL4Renderer::GetInformation()
 	mprintf((0, "OpenGL Vendor: %s\n", glGetString(GL_VENDOR)));
 	mprintf((0, "OpenGL Renderer: %s\n", glGetString(GL_RENDERER)));
 	mprintf((0, "OpenGL Version: %s\n", version ? version : "unknown"));
-	mprintf((0, ENGINE_NAME_NO_SPACE " GL core path requested 4.5, got %d.%d (%s)\n",
+	mprintf((0, ENGINE_NAME " GL core path requested 4.5, got %d.%d (%s)\n",
 		RendererOpenGLMajorVersion, RendererOpenGLMinorVersion, RendererOpenGLVersionString));
 }
 

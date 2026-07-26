@@ -1,7 +1,7 @@
 /*
 * Descent 3
 * Copyright (C) 2024 Parallax Software
-* DESCENT 3MASTERED branding and version definitions
+* Descent 3MASTERED branding and version definitions
 * Copyright (C) 2026 Jeff Graw
 *
 * This program is free software: you can redistribute it and/or modify
@@ -20,11 +20,10 @@
 
 #pragma once
 
-#define ENGINE_NAME "DESCENT 3MASTERED"
-#define ENGINE_NAME_NO_SPACE "Descent3Mastered"
-#define ENGINE_EXECUTABLE_NAME ENGINE_NAME_NO_SPACE ".exe"
+#define ENGINE_NAME "Descent 3MASTERED"
+#define ENGINE_EXECUTABLE_NAME ENGINE_NAME ".exe"
 
-// This is the product version of DESCENT 3MASTERED.  Keep it independent of
+// This is the product version of Descent 3MASTERED.  Keep it independent of
 // D3_MAJORVER/D3_MINORVER: those values describe the legacy Descent 3 protocol
 // and data compatibility level and must not be repurposed as release branding.
 #define ENGINE_VERSION_MAJOR 0

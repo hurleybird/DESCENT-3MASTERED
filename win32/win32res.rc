@@ -1,5 +1,5 @@
 /* 
-* DESCENT 3MASTERED
+* Descent 3MASTERED
 * Copyright (C) 2024 SaladBadger
 *
 * This program is free software: you can redistribute it and/or modify
@@ -34,12 +34,12 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "FileDescription", "DESCENT 3MASTERED"
+            VALUE "FileDescription", "Descent 3MASTERED"
             VALUE "FileVersion", "0.9"
-            VALUE "InternalName", "Descent3Mastered"
-            VALUE "LegalCopyright", "Descent 3 source Copyright (C) Parallax Software; DESCENT 3MASTERED changes Copyright (C) 2026 Jeff Graw and contributors"
-            VALUE "OriginalFilename", "Descent3Mastered.exe"
-            VALUE "ProductName", "DESCENT 3MASTERED"
+            VALUE "InternalName", "Descent 3MASTERED"
+            VALUE "LegalCopyright", "Descent 3 source Copyright (C) Parallax Software; Descent 3MASTERED changes Copyright (C) 2026 Jeff Graw and contributors"
+            VALUE "OriginalFilename", "Descent 3MASTERED.exe"
+            VALUE "ProductName", "Descent 3MASTERED"
             VALUE "ProductVersion", "0.9"
         END
     END

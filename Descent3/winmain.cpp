@@ -242,7 +242,7 @@ public:
 static void MigrateLegacyRegistrySettings()
 {
 	constexpr const char* legacy_path = "SOFTWARE\\Outrage\\Descent3";
-	constexpr const char* product_path = "SOFTWARE\\Outrage\\Descent3Mastered";
+	constexpr const char* product_path = "SOFTWARE\\Outrage\\Descent 3MASTERED";
 	HKEY key = nullptr;
 	if (RegOpenKeyExA(HKEY_CURRENT_USER, product_path, 0, KEY_READ, &key) == ERROR_SUCCESS)
 	{
@@ -298,7 +298,7 @@ oeD3Win32Database::oeD3Win32Database():
 	lstrcat(m_Basepath, "\\Descent3_OEM");
 #else
 	MigrateLegacyRegistrySettings();
-	lstrcat(m_Basepath, "\\Descent3Mastered");
+	lstrcat(m_Basepath, "\\Descent 3MASTERED");
 #endif
 		
 	

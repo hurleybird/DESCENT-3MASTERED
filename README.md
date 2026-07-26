@@ -1,10 +1,10 @@
-# DESCENT 3MASTERED
+# Descent 3MASTERED
 
 **An unofficial, preservation-first modernization of Descent 3.**
 
 Current development release: **0.9**
 
-DESCENT 3MASTERED keeps the original game, missions, mechanics, and overall
+Descent 3MASTERED keeps the original game, missions, mechanics, and overall
 presentation intact while rebuilding the technology around them for modern
 systems. The aim is closer to a careful modern remaster than a remake: improve
 performance, fidelity, compatibility, and usability without redesigning the
@@ -84,7 +84,7 @@ not the focus of current development.
 
 ## Installation
 
-The safest approach is to create a separate directory for DESCENT 3MASTERED and
+The safest approach is to create a separate directory for Descent 3MASTERED and
 copy the required data from an existing Descent 3 installation. Do not test a
 development build directly over the only copy of your original installation.
 
@@ -109,12 +109,12 @@ the relevant stock multiplayer missions, including `missions/Fury.mn3` and
 `missions/bedlam.mn3`. The `movies` directory is optional.
 
 Release archives should be extracted into that directory after the retail data
-has been copied. Development builds must include `Descent3Mastered.exe`,
+has been copied. Development builds must include `Descent 3MASTERED.exe`,
 `descent3mastered.hog`, `descent3mastered-win.hog`, the runtime DLLs, game
 modules, and legacy Osiris bridge components—not only the main executable.
 
 By default, pilots, saves, screenshots, and other user-generated files are kept
-under `Saved Games\DESCENT 3MASTERED`. On first launch, existing files from
+under `Saved Games\Descent 3MASTERED`. On first launch, existing files from
 `Saved Games\Piccu Engine` are copied into the new directory without deleting
 the source or overwriting newer files. Portable installations use the marker
 `descent3mastered_portable`; the old `piccu_portable` marker remains recognized
@@ -147,14 +147,14 @@ be assumed to build or run correctly.
 ## Reporting issues
 
 Please report reproducible problems through the
-[DESCENT 3MASTERED issue tracker](https://github.com/hurleybird/DESCENT-3MASTERED/issues).
+[Descent 3MASTERED issue tracker](https://github.com/hurleybird/DESCENT-3MASTERED/issues).
 Include the affected mission/save, relevant video settings, GPU and driver, and
 whether the issue reproduces with advanced effects disabled. Screenshots taken
 with the engine's built-in capture facility are preferred.
 
 ## Lineage and independence
 
-DESCENT 3MASTERED descends from the official Descent 3 source release and from
+Descent 3MASTERED descends from the official Descent 3 source release and from
 Piccu Engine, which also incorporated work from InjectD3 and other community
 efforts. It is now an independent project with substantially different renderer,
 platform, compatibility, and design goals. Piccu Engine remains an important
@@ -169,7 +169,7 @@ licenses in their source or distribution directories.
 
 Acknowledgements include:
 
-- Project lead and DESCENT 3MASTERED development: Jeff Graw (hurleybird).
+- Project lead and Descent 3MASTERED development: Jeff Graw (hurleybird).
 - Outrage Entertainment and the original Descent 3 developers.
 - The official Descent 3 source-release contributors.
 - Piccu Engine, InjectD3, and their contributors.
@@ -178,5 +178,5 @@ Acknowledgements include:
 - OpenAL Soft for the audio runtime.
 - Wooting for the Analog SDK.
 
-DESCENT 3MASTERED is an unofficial community project and is not affiliated with
+Descent 3MASTERED is an unofficial community project and is not affiliated with
 or endorsed by the original game's publishers or rights holders.

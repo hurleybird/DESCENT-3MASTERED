@@ -29,7 +29,7 @@ function(add_hog_file HOG_NAME HOG_SRC_DIR)
 endfunction()
 
 IF (UNIX)
-SET (D3_GAMEDIR "~/Descent3Mastered/")
+SET (D3_GAMEDIR "~/Descent 3MASTERED/")
 
   SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wno-write-strings -m32")
   SET(CMAKE_CXX_COMPILER "g++")
@@ -51,7 +51,7 @@ IF (UNIX AND NOT APPLE)
 ENDIF()
 
 IF (APPLE)
-	SET(D3_GAMEDIR "~/Descent3Mastered")
+	SET(D3_GAMEDIR "~/Descent 3MASTERED")
   MESSAGE("Building for MAC OSX")
   ADD_DEFINITIONS( -DMONO -D_DEBUG -D__LINUX__ -DLINUX -D_MAX_PATH=260 -D_MAX_FNAME=256 -D_REENRANT -DMACOSX=1 -D_USE_OGL_ACTIVE_TEXTURES)
   SET(PLATFORM_INCLUDES "lib/linux" ${SDL_INCLUDE_DIR} "/usr/X11/include" )
@@ -59,7 +59,7 @@ ENDIF()
 
 IF (WIN32)
 	set(USE_SDL OFF CACHE BOOL "Builds with SDL rather than the Win32 code.")
-	SET(D3_GAMEDIR "c:/games/DESCENT 3MASTERED/")
+	SET(D3_GAMEDIR "c:/games/Descent 3MASTERED/")
 	if (CMAKE_SIZEOF_VOID_P EQUAL 8)
 		set(OPENAL_ARCH_DIR "Win64")
 	else()
@@ -256,6 +256,7 @@ SET (DESCENT3_SOURCES
 ENDIF()
 
 add_executable(Descent3Mastered ${DESCENT3_SOURCES})
+set_target_properties(Descent3Mastered PROPERTIES OUTPUT_NAME "Descent 3MASTERED")
 	
 IF (WIN32)
 	if (USE_SDL) #for convenience SDL will compile as a console app, and dump mono there

@@ -21,7 +21,7 @@ SOFTWARE.
 */
 
 //hogdir: takes a directory from the command line and packages it into a hog
-//file for usage in <s>ICDP</s><s>Neptune</s><s>Piccu Engine</s>DESCENT 3MASTERED.
+//file for usage in <s>ICDP</s><s>Neptune</s><s>Piccu Engine</s>Descent 3MASTERED.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -199,7 +199,7 @@ void add_dir(const char* directory)
 	{
 		if (entry.is_regular_file())
 		{
-			// DESCENT 3MASTERED should eventually support UTF-8 throughout.
+			// Descent 3MASTERED should eventually support UTF-8 throughout.
 			std::string filename = entry.path().filename().u8string();
 
 			if (filename.size() >= FILENAME_LEN)
