@@ -548,6 +548,7 @@ void ShaderProgram::CreateCommonBindings(int bindindex)
 	m_dynamic_light_dot_ranges = glGetUniformLocation(m_name, "dynamic_light_dot_ranges[0]");
 	m_dynamic_light_directional = glGetUniformLocation(m_name, "dynamic_light_directional[0]");
 	m_last_dynamic_light_count = -1;
+	m_last_dynamic_lighting_valid = false;
 
 	ClearBinding();
 }
@@ -675,6 +676,7 @@ void ShaderProgram::Destroy()
 	glDeleteProgram(m_name);
 	m_name = 0;
 	m_last_dynamic_light_count = -1;
+	m_last_dynamic_lighting_valid = false;
 }
 
 void ShaderProgram::Use()
@@ -703,6 +705,29 @@ void ShaderProgram::ApplyDynamicLighting(int count, const float* face_normal, co
 		m_last_dynamic_light_count = 0;
 		return;
 	}
+	DynamicLightingState state = {};
+	const bool cacheable = count <= DYNAMIC_LIGHT_CACHE_CAPACITY;
+	if (cacheable)
+	{
+		memcpy(state.face_normal, face_normal, sizeof(state.face_normal));
+		memcpy(state.positions, positions, count * sizeof(state.positions[0]));
+		memcpy(state.colors, colors, count * sizeof(state.colors[0]));
+		memcpy(state.radii, radii, count * sizeof(state.radii[0]));
+		memcpy(state.specular_positions, specular_positions,
+			count * sizeof(state.specular_positions[0]));
+		memcpy(state.specular_radii, specular_radii, count * sizeof(state.specular_radii[0]));
+		memcpy(state.specular_scalars, specular_scalars,
+			count * sizeof(state.specular_scalars[0]));
+		memcpy(state.falloffs, falloffs, count * sizeof(state.falloffs[0]));
+		memcpy(state.directions, directions, count * sizeof(state.directions[0]));
+		memcpy(state.dot_ranges, dot_ranges, count * sizeof(state.dot_ranges[0]));
+		memcpy(state.directional, directional, count * sizeof(state.directional[0]));
+		if (m_last_dynamic_light_count == count && m_last_dynamic_lighting_valid &&
+			memcmp(&m_last_dynamic_lighting, &state, sizeof(state)) == 0)
+		{
+			return;
+		}
+	}
 
 	glUniform1i(m_dynamic_light_count, count);
 	if (m_dynamic_face_normal != -1)
@@ -729,6 +754,15 @@ void ShaderProgram::ApplyDynamicLighting(int count, const float* face_normal, co
 		glUniform1iv(m_dynamic_light_directional, count, directional);
 
 	m_last_dynamic_light_count = count;
+	if (cacheable)
+	{
+		m_last_dynamic_lighting = state;
+		m_last_dynamic_lighting_valid = true;
+	}
+	else
+	{
+		m_last_dynamic_lighting_valid = false;
+	}
 }
 
 void ShaderProgram::ClearBinding()

@@ -63,6 +63,23 @@ struct ShaderDefinition
 
 class ShaderProgram
 {
+	static constexpr int DYNAMIC_LIGHT_CACHE_CAPACITY =
+		RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS;
+	struct DynamicLightingState
+	{
+		GLfloat face_normal[3];
+		GLfloat positions[DYNAMIC_LIGHT_CACHE_CAPACITY][3];
+		GLfloat colors[DYNAMIC_LIGHT_CACHE_CAPACITY][3];
+		GLfloat radii[DYNAMIC_LIGHT_CACHE_CAPACITY];
+		GLfloat specular_positions[DYNAMIC_LIGHT_CACHE_CAPACITY][3];
+		GLfloat specular_radii[DYNAMIC_LIGHT_CACHE_CAPACITY];
+		GLfloat specular_scalars[DYNAMIC_LIGHT_CACHE_CAPACITY];
+		GLfloat falloffs[DYNAMIC_LIGHT_CACHE_CAPACITY];
+		GLfloat directions[DYNAMIC_LIGHT_CACHE_CAPACITY][3];
+		GLfloat dot_ranges[DYNAMIC_LIGHT_CACHE_CAPACITY];
+		GLint directional[DYNAMIC_LIGHT_CACHE_CAPACITY];
+	};
+
 	GLuint m_name;
 	GLint m_dynamic_light_count = -1;
 	GLint m_dynamic_face_normal = -1;
@@ -77,6 +94,8 @@ class ShaderProgram
 	GLint m_dynamic_light_dot_ranges = -1;
 	GLint m_dynamic_light_directional = -1;
 	int m_last_dynamic_light_count = -1;
+	DynamicLightingState m_last_dynamic_lighting = {};
+	bool m_last_dynamic_lighting_valid = false;
 
 	//CreateCommonBindings will find common uniforms and set their default bindings.
 	//This includes the common block, which must be named "common",
