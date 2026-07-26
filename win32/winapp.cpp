@@ -465,8 +465,10 @@ unsigned oeWin32Application::defer()
 	do
 	{
 		result = defer_block();
+		++num_defers;
 	}
-	while ((result == DEFER_PROCESS_ACTIVE) || (result == DEFER_PROCESS_INPUT_IDLE) && ++num_defers < 6);
+	while ((result == DEFER_PROCESS_ACTIVE || result == DEFER_PROCESS_INPUT_IDLE) &&
+		num_defers < 6);
 
 	return 0;
 }

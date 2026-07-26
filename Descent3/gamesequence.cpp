@@ -1872,6 +1872,7 @@ void PageInAllData()
 	if (Terrain_sky.textured)
 	{
 		PageInLevelTexture(Terrain_sky.dome_texture);
+		PageInHighResolutionSky();
 	}
 	LoadLevelProgress(LOAD_PROGRESS_PAGING_DATA, PAGED_IN_CALC);
 	for (i = 0; i < Terrain_sky.num_satellites; i++)

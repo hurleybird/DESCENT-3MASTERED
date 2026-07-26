@@ -134,6 +134,30 @@ void ResolveXlateTables()
 }
 }
 
+void LGSAllocateXlateTables()
+{
+	delete gs_Xlates;
+	gs_Xlates = new gs_tables;
+	delete gs_XlateNames;
+	gs_XlateNames = new gs_xlate_names;
+	memset(gs_XlateNames, 0, sizeof(*gs_XlateNames));
+}
+
+void LGSResolveXlateTables()
+{
+	ASSERT(gs_Xlates != nullptr);
+	ASSERT(gs_XlateNames != nullptr);
+	ResolveXlateTables();
+}
+
+void LGSFreeXlateTables()
+{
+	delete gs_Xlates;
+	gs_Xlates = nullptr;
+	delete gs_XlateNames;
+	gs_XlateNames = nullptr;
+}
+
 
 void IncreaseRestoreCount(const char *file)
 {
@@ -193,9 +217,7 @@ int LoadGameState(const char *pathname)
 
 	
 START_VERIFY_SAVEFILE(fp);
-	gs_Xlates = new gs_tables;
-	gs_XlateNames = new gs_xlate_names;
-	memset(gs_XlateNames, 0, sizeof(*gs_XlateNames));
+	LGSAllocateXlateTables();
 
 // read in header and do version check.
 	cf_ReadBytes((ubyte *)desc, sizeof(desc), fp);
@@ -231,7 +253,7 @@ START_VERIFY_SAVEFILE(fp);
 //	must load mission and initialize level before reading in other data.
 	retval = LGSMission(path, curlevel);
 	if (retval != LGS_OK) goto loadsg_error;
-	ResolveXlateTables();
+	LGSResolveXlateTables();
 
 	Current_mission.game_state_flags = cf_ReadInt(fp);
 	//Increase count for how many times this file was restored
@@ -318,10 +340,7 @@ START_VERIFY_SAVEFILE(fp);
 	}
 
 loadsg_error:
-	delete gs_Xlates;
-	gs_Xlates = nullptr;
-	delete gs_XlateNames;
-	gs_XlateNames = nullptr;
+	LGSFreeXlateTables();
 
 	END_VERIFY_SAVEFILE(fp, "Total load");	
 	cfclose(fp);

@@ -302,6 +302,7 @@ extern void ResetTerrain(int force=0);
 extern int GetVisibleTerrain(vector *,matrix *);
 extern void DisplayTerrainList (int,bool from_automap=0);
 extern int CheckToRenderSky (int);
+void PageInHighResolutionSky();
 
 //left,top,right,bot are optional parameters.  Omiting them (or setting them to -1) will
 //render to the whole screen.  Passing valid values will only render tiles visible in the

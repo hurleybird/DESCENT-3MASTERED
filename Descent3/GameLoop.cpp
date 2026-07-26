@@ -313,7 +313,8 @@ static void AutomatedFramePerfLog(int gameplay_frame, double frame_start_interva
 	double pacing_wait_ms, double simulation_ms, double render_ms, double present_ms,
 	double tail_ms, double cap_wait_ms, double total_ms, float frame_time_ms,
 	double work_ms, double effective_interval_ms,
-	const renderer_frame_pacing_info& pacing_info, const tRendererStats& renderer_stats)
+	double previous_defer_ms, const renderer_frame_pacing_info& pacing_info,
+	const tRendererStats& renderer_stats)
 {
 	const char* path = GetEngineEnvironmentValue(ENGINE_ENV_FRAME_PERF_LOG,
 		ENGINE_LEGACY_ENV_FRAME_PERF_LOG);
@@ -325,13 +326,13 @@ static void AutomatedFramePerfLog(int gameplay_frame, double frame_start_interva
 		return;
 	if (!wrote_header)
 	{
-		fputs("gameplay_frame\tframe_start_interval_ms\tpacing_wait_ms\tsimulation_ms\trender_ms\tpresent_ms\ttail_ms\tcap_wait_ms\ttotal_ms\tframetime_ms\twork_ms\teffective_interval_ms\tpresent_interval_ms\tswap_call_ms\tqueue_depth\tqueued_frames\tgpu_frame_ms\tgpu_frame_serial\tpolygons\tvertices\ttexture_uploads\n", file);
+		fputs("gameplay_frame\tframe_start_interval_ms\tpacing_wait_ms\tsimulation_ms\trender_ms\tpresent_ms\ttail_ms\tcap_wait_ms\ttotal_ms\tframetime_ms\twork_ms\teffective_interval_ms\tdefer_ms\tpresent_interval_ms\tswap_call_ms\tqueue_depth\tqueued_frames\tgpu_frame_ms\tgpu_frame_serial\tpolygons\tvertices\ttexture_uploads\n", file);
 		wrote_header = true;
 	}
-	fprintf(file, "%d\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\t%d\t%.3f\t%llu\t%d\t%d\t%d\n",
+	fprintf(file, "%d\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\t%d\t%.3f\t%llu\t%d\t%d\t%d\n",
 		gameplay_frame, frame_start_interval_ms, pacing_wait_ms, simulation_ms,
 		render_ms, present_ms, tail_ms, cap_wait_ms, total_ms, frame_time_ms,
-		work_ms, effective_interval_ms,
+		work_ms, effective_interval_ms, previous_defer_ms,
 		pacing_info.latest_present_interval_ms, pacing_info.latest_swap_call_ms,
 		pacing_info.configured_queue_depth, pacing_info.queued_frames,
 		pacing_info.latest_gpu_frame_ms,
@@ -3488,6 +3489,7 @@ void GameFrame(void)
 		AutomatedFramePerfEnabled();
 	const double automated_perf_frame_begin = automated_perf_active ? timer_GetTime64() : 0.0;
 	static double automated_perf_previous_frame_begin = 0.0;
+	static double automated_perf_previous_defer_ms = 0.0;
 	const double automated_perf_frame_start_interval_ms = automated_perf_active &&
 		automated_perf_previous_frame_begin > 0.0 ?
 		(automated_perf_frame_begin - automated_perf_previous_frame_begin) * 1000.0 : 0.0;
@@ -3957,14 +3959,24 @@ void GameFrame(void)
 			(automated_perf_cap_end - automated_perf_cap_begin) * 1000.0,
 			(automated_perf_cap_end - automated_perf_frame_begin) * 1000.0,
 			Frametime * 1000.0f, frame_pacing_work_ms,
-			frame_pacing_effective_interval_ms,
+			frame_pacing_effective_interval_ms, automated_perf_previous_defer_ms,
 			frame_pacing_info, renderer_stats);
 	}
 
 	EndAutomatedCaptureFrame();
 
 	if (!is_game_idle)
+	{
+		const double defer_start = automated_perf_active ? timer_GetTime64() : 0.0;
 		Descent->defer();
+		if (automated_perf_active)
+			automated_perf_previous_defer_ms =
+				(timer_GetTime64() - defer_start) * 1000.0;
+	}
+	else if (automated_perf_active)
+	{
+		automated_perf_previous_defer_ms = 0.0;
+	}
 }
 
 

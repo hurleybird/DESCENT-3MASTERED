@@ -612,13 +612,12 @@ int DemoReadHeader()
 	FrameCount = frame_count;
 	Demo_next_frame = demo_gametime;
 
-	if (gs_Xlates)
-		delete (gs_Xlates);
-	gs_Xlates = new gs_tables;
+	LGSAllocateXlateTables();
 
 	try
 	{
 		LGSXlateTables(Demo_cfp);
+		LGSResolveXlateTables();
 
 		LGSRooms(Demo_cfp);
 
@@ -1374,8 +1373,7 @@ void DemoAbort(bool deletefile)
 	if (Demo_flags != DF_NONE)
 	{
 		//We're done with the xlate table, so free it
-		delete (gs_Xlates);
-		gs_Xlates = NULL;
+		LGSFreeXlateTables();
 
 		cfclose(Demo_cfp);
 		Demo_flags = DF_NONE;

@@ -157,7 +157,10 @@ bool GetGameStateInfo(const char *pathname, char *description, int *bm_handle=NU
 
 ///////////////////////////////////////////////////////////////////////////////
 //	reads in translation tables
+void LGSAllocateXlateTables();
 int LGSXlateTables(CFILE *fp);
+void LGSResolveXlateTables();
+void LGSFreeXlateTables();
 
 //	loads in level's mission and level.
 int LGSMission(const char *msnname, int level);

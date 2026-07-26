@@ -55,6 +55,7 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain, b
 #include <string.h>
 #include <stdlib.h>
 #include "config.h"
+#include "dedicated_server.h"
 #include "gameloop.h"
 #include "postrender.h"
 #include "Macros.h"
@@ -178,6 +179,22 @@ static int GetHighResolutionSkyBitmap(short texture_handle, int fallback_bitmap)
 	}
 
 	return fallback_bitmap;
+}
+
+void PageInHighResolutionSky()
+{
+	if (Dedicated_server || !Render_hires_skies || !Terrain_sky.textured)
+		return;
+
+	const int fallback_bitmap = GetTextureBitmap(Terrain_sky.dome_texture, 0);
+	const int bitmap_handle =
+		GetHighResolutionSkyBitmap(Terrain_sky.dome_texture, fallback_bitmap);
+	if (bitmap_handle != fallback_bitmap &&
+		bitmap_handle != BAD_BITMAP_HANDLE &&
+		GameBitmaps[bitmap_handle].cache_slot == -1)
+	{
+		rend_PreUploadTextureToCard(bitmap_handle, MAP_TYPE_BITMAP);
+	}
 }
 
 // Last time terrain was rendered
@@ -2668,11 +2685,29 @@ void TerrainRenderer_PrecacheLevel()
 
 	EnsureTerrainComputeVertexCapacity(
 		Terrain_compute_cell_inputs.size() * TERRAIN_COMPUTE_VERTS_PER_CELL);
+
+	// Linking a compute program does not necessarily force the driver to finish
+	// its hardware-specific compilation.  Execute the same dispatch used by the
+	// first outdoor frame while the level loading screen is still active, so an
+	// indoor-to-terrain portal cannot inherit that one-time driver hitch.
+	glUseProgram(Terrain_compute_program);
+	SetTerrainComputeViewUniforms();
 	BindTerrainComputeInputBuffer();
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, Terrain_compute_vertex_buffer);
+	PrepareTerrainComputeIndirectCommands();
+	const GLuint groups =
+		(GLuint)((Terrain_compute_cell_inputs.size() + 127) / 128);
+	glDispatchCompute(groups, 1, 1);
+	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT |
+		GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT |
+		GL_COMMAND_BARRIER_BIT |
+		GL_BUFFER_UPDATE_BARRIER_BIT);
+	glFinish();
 	EnsureTerrainPipelinesReady();
 
 	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
 	glActiveTexture(GL_TEXTURE0);
+	rendTEMP_ClearShaderBinding();
 	rend_ClearBoundTextures();
 	rendTEMP_UnbindVertexBuffer();
 }
