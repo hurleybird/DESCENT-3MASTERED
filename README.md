@@ -2,12 +2,12 @@
 
 **A light remastering of Descent 3.**
 
-Descent 3MASTERED (pronounced threemastered. Get it?) is a new engine for Descent 3, forked from PiccuEngine (itself downstream of the initial 1.5 source code release)
+Descent 3MASTERED (pronounced threemastered... get it?) is a new engine for Descent 3, forked from PiccuEngine (itself downstream from the initial 1.5 source code release)
 
 This project does **not** include the commercial Descent 3 game data. A legally
 obtained installation of Descent 3 is required.
 
-The broad, non-exsluive goals of the engine are:
+**The broad, non-exsluive goals of the engine are:**
 
 1) Produce the best resolved, most stable image, enhancing rather than supplanting the original art direction.
 2) Add new features that improve the game experience (eg. 3D positional audio, Wooting analog keyboard support)
