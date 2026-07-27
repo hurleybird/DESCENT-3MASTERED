@@ -491,6 +491,10 @@ void lnxgameController::enable_function(int id, bool enable)
 bool lnxgameController::get_packet(int id, ct_packet *packet, ct_format alt_format)
 {
 	float val= (float)0.0;
+	float analog_axis_sum = 0.0f;
+	bool saw_analog_axis = false;
+	bool mouse_axis_contributed = false;
+	bool non_mouse_axis_contributed = false;
 	int i;
 
 	ASSERT(id < CT_MAX_ELEMENTS);
@@ -511,11 +515,15 @@ bool lnxgameController::get_packet(int id, ct_packet *packet, ct_format alt_form
 	{
 		ubyte value = m_ElementList[id].value[i];
 		sbyte controller = m_ElementList[id].ctl[i];
+		const ct_type binding_type = m_ElementList[id].ctype[i];
+		const bool summed_axis_binding =
+			alt_format == ctAnalog &&
+			(binding_type == ctAxis || binding_type == ctMouseAxis);
 
 		if (controller == -1 || m_ControlList[controller].id == CTID_INVALID) {
 			continue;
 		}
-		switch (m_ElementList[id].ctype[i])
+		switch (binding_type)
 		{
 		case ctKey:
 			if (value) {
@@ -525,7 +533,8 @@ bool lnxgameController::get_packet(int id, ct_packet *packet, ct_format alt_form
 			break;
 
 		case ctMouseAxis:
-			packet->flags |= CTPK_MOUSE;
+			if (!summed_axis_binding)
+				packet->flags |= CTPK_MOUSE;
 		case ctAxis:
 			val = get_axis_value(controller, value, alt_format,(m_ElementList[id].flags[i] & CTFNF_INVERT)?true:false);
 			if (m_ElementList[id].flags[i] & CTFNF_INVERT) {
@@ -557,12 +566,38 @@ bool lnxgameController::get_packet(int id, ct_packet *packet, ct_format alt_form
 			Int3();
 			val = 0.0f;
 		}
+
+		if (summed_axis_binding)
+		{
+			saw_analog_axis = true;
+			analog_axis_sum += val;
+			if (val != 0.0f)
+			{
+				if (binding_type == ctMouseAxis)
+					mouse_axis_contributed = true;
+				else
+					non_mouse_axis_contributed = true;
+			}
+			val = 0.0f;
+			continue;
+		}
 		
 		if (val) 
 			break;
 	}
 
 skip_packet_read:
+	if (saw_analog_axis && val == 0.0f)
+	{
+		if (analog_axis_sum < -1.0f) analog_axis_sum = -1.0f;
+		if (analog_axis_sum > 1.0f) analog_axis_sum = 1.0f;
+		val = analog_axis_sum;
+
+		// CTPK_MOUSE controls mouse-specific slide inversion. A mixed result
+		// must not apply that transform to its joystick contribution.
+		if (mouse_axis_contributed && !non_mouse_axis_contributed)
+			packet->flags |= CTPK_MOUSE;
+	}
 	if (val) packet->flags |= CTPK_ELEMENTACTIVE;
 
 	packet->value = val;
