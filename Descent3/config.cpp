@@ -1692,6 +1692,7 @@ struct video_menu
 			ConfigCanUsePerPixelLighting() && Render_preferred_state.per_pixel_lighting);
 		bloom_enabled = sheet->AddLongCheckBox("Bloom", Render_preferred_state.bloom_enabled);
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
+#ifndef RELEASE
 		sheet->NewGroup("Debug", 0, 255);
 		motion_vector_debug = sheet->AddLongCheckBox("Vector debug", Render_preferred_state.motion_vector_debug_preview);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
@@ -1700,6 +1701,7 @@ struct video_menu
 		show_draw_calls = sheet->AddLongCheckBox("Show draw calls", Render_draw_call_stats, IDV_DRAW_CALL_STATS);
 		update_draw_call_title();
 		face_probe = sheet->AddLongCheckBox("Face probe", Render_face_probe);
+#endif
 
 		sheet->NewGroup("SSAA/MSAA", 184, 0);
 		sampling_quality = sheet->AddFirstRadioButton(

@@ -3870,10 +3870,13 @@ void DrawAtmosphereBlend(vector* pos, angle rotAngle, float w, float h, int bm, 
 	rotPoints[3].p3_v = 1.0f;
 
 	// and draw!!
-	rend_SetLighting(LS_NONE);
+	rend_SetLighting(LS_GOURAUD);
 	rend_SetFlatColor(Terrain_sky.sky_color);
-	rend_SetAlphaType(AT_TEXTURE_VERTEX);
-	rend_SetTextureType(TT_FLAT);
+	rend_SetAlphaType(AT_SATURATE_TEXTURE_VERTEX);
+	// Use the satellite bitmap as the atmosphere quad's coverage mask.
+	// TT_FLAT discards the texture and blends sky color across the entire
+	// rectangle, exposing the satellite's square boundary.
+	rend_SetTextureType(TT_PERSPECTIVE);
 	g3_DrawPoly(4, pntList, bm);
 }
 

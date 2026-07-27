@@ -386,20 +386,10 @@ void mmInterface::OnDestroy()
 void mmInterface::CopyrightText()
 {
 	int i;
-	std::string typestr = "";
-
-	if (PROGRAM(beta))
-		typestr += "Beta ";
-
-	if (Program_version.version_type == DEVELOPMENT_VERSION)
-		typestr += "Dev ";
-	else if (Program_version.version_type == RELEASE_VERSION)
-		typestr += "Ver ";
-
-	std::string engstr = ENGINE_NAME " v" ENGINE_VERSION_STRING;
+	std::string engstr = "3MASTERED v" ENGINE_VERSION_STRING;
 	char compatibility_version[64];
-	snprintf(compatibility_version, sizeof(compatibility_version), "%sD3 compatibility v%d.%d",
-		typestr.c_str(), Program_version.major, Program_version.minor);
+	snprintf(compatibility_version, sizeof(compatibility_version), "D3 v%d.%d",
+		Program_version.major, Program_version.minor);
 
 	//Get 7 character hash
 	char hashbuf[8];
