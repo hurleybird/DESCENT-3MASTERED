@@ -175,7 +175,8 @@ void DoRainEffect()
 	// Create some rain in the distance
 
 	const bool viewer_outside = OBJECT_OUTSIDE(Viewer_object);
-	if (!viewer_outside && !RenderLastMainViewSawTerrain())
+	if (!viewer_outside &&
+		(!Render_enhanced_weather || !RenderLastMainViewSawTerrain()))
 		return;
 	{
 		PSRand rain_rand;
