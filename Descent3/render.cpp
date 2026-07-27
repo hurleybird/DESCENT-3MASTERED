@@ -4671,7 +4671,7 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 
 	if (face_cc.cc_and)
 	{
-		if (spec_face && UseSmoothSpecularForFace(fp))
+		if (!Render_mirror_for_room && spec_face && UseSmoothSpecularForFace(fp))
 		{
 			fp->flags |= FF_SPEC_INVISIBLE;
 			UpdateSpecularFace(rp, fp);
@@ -4945,7 +4945,7 @@ void RenderFace(room* rp, int facenum)
 	}
 	if (face_cc.cc_and)	// This entire face is off the screen
 	{
-		if (spec_face && UseSmoothSpecularForFace(fp))
+		if (!Render_mirror_for_room && spec_face && UseSmoothSpecularForFace(fp))
 		{
 			fp->flags |= FF_SPEC_INVISIBLE;
 			UpdateSpecularFace(rp, fp);

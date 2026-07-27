@@ -204,6 +204,7 @@ int GetPrecomputedMineSpecularSourceCount(int roomnum, int facenum, bool split_m
 int GetPrecomputedMineSpecularFieldSourceCount(int roomnum, int facenum);
 int GetPrecomputedMineSpecularNormalCount(int roomnum, int facenum);
 
-extern int Num_specular_faces_to_render,Num_fog_faces_to_render;
+extern int Num_specular_faces_to_render, Num_real_specular_faces_to_render,
+	Num_fog_faces_to_render;
 
 #endif

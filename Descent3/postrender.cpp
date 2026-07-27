@@ -154,6 +154,7 @@ void DrawPostrenderFace(int roomnum, int facenum, bool change_z)
 		PERF_MARKER_SCOPE("PostRenderFace.Specular");
 		RenderSpecularFacesFlat(rp);
 		Num_specular_faces_to_render = 0;
+		Num_real_specular_faces_to_render = 0;
 	}
 
 	if (Num_fog_faces_to_render > 0)
