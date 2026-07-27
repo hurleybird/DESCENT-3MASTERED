@@ -79,6 +79,9 @@ gameSDLController::gameSDLController(int num_funcs, ct_function* funcs, char* re
 	m_frame_timer_ms = -1;
 	m_frame_timer = -.001;
 	m_frame_time = 1.0f;
+	m_mouse_rate_pending[0] = m_mouse_rate_pending[1] = 0.0f;
+	m_mouse_rate_cache[0] = m_mouse_rate_cache[1] = 0.0f;
+	m_mouse_rate_cached[0] = m_mouse_rate_cached[1] = false;
 
 	gameSDLController::flush();
 }
@@ -138,6 +141,9 @@ void gameSDLController::resume()
 	m_frame_timer_ms = -1;
 	m_frame_timer = -.001;
 	m_frame_time = 1.0f;
+	m_mouse_rate_pending[0] = m_mouse_rate_pending[1] = 0.0f;
+	m_mouse_rate_cache[0] = m_mouse_rate_cache[1] = 0.0f;
+	m_mouse_rate_cached[0] = m_mouse_rate_cached[1] = false;
 }
 
 
@@ -148,6 +154,9 @@ void gameSDLController::flush()
 
 	ddio_KeyFlush();
 	ddio_MouseQueueFlush();
+	m_mouse_rate_pending[0] = m_mouse_rate_pending[1] = 0.0f;
+	m_mouse_rate_cache[0] = m_mouse_rate_cache[1] = 0.0f;
+	m_mouse_rate_cached[0] = m_mouse_rate_cached[1] = false;
 
 	// does real flush
 	mask_controllers(false, false);
@@ -698,20 +707,30 @@ float gameSDLController::get_axis_value(sbyte controller, ubyte axis, ct_format 
 			(axis != CT_X_AXIS && axis != CT_Y_AXIS))
 			return val;
 
+		if (m_mouse_rate_cached[axisIndex])
+			return m_mouse_rate_cache[axisIndex];
+
 		// axisval contains displacement accumulated between controller polls, so
 		// normalize it by that same interval. Frametime can instead describe a
 		// queued/presented frame and diverge from the input sampling window.
 		const float frame_time = (std::max)(m_frame_time, 0.000001f);
-		float rate = axisval /
-			(ctldev->normalizer[axisIndex] * frame_time);
-		if (rate > MOUSE_DEADZONE)
-			rate = (rate - MOUSE_DEADZONE) / (1.0f - MOUSE_DEADZONE);
-		else if (rate < -MOUSE_DEADZONE)
-			rate = (rate + MOUSE_DEADZONE) / (1.0f - MOUSE_DEADZONE);
-		else
-			rate = 0.0f;
-		rate *= ctldev->sensmod[axisIndex] * ctldev->sens[axisIndex];
-		return (std::max)(-1.0f, (std::min)(rate, 1.0f));
+		const float frame_capacity =
+			ctldev->normalizer[axisIndex] * frame_time;
+		const float scaled_delta =
+			axisval * ctldev->sensmod[axisIndex] * ctldev->sens[axisIndex];
+		float& pending = m_mouse_rate_pending[axisIndex];
+
+		const float max_pending =
+			(std::max)(frame_capacity,
+				ctldev->normalizer[axisIndex] * FRAMETIME_AT_60FPS);
+		pending = (std::max)(-max_pending,
+			(std::min)(pending + scaled_delta, max_pending));
+		const float limited_delta = (std::max)(-frame_capacity,
+			(std::min)(pending, frame_capacity));
+		pending -= limited_delta;
+		m_mouse_rate_cache[axisIndex] = limited_delta / frame_capacity;
+		m_mouse_rate_cached[axisIndex] = true;
+		return m_mouse_rate_cache[axisIndex];
 	};
 
 	ct_packet key_slide1, key_bank;
@@ -737,6 +756,7 @@ float gameSDLController::get_axis_value(sbyte controller, ubyte axis, ct_format 
 
 		if ((axis == CT_X_AXIS) && (ctldev->id == CTID_MOUSE) && (val != 0.0f))
 		{
+			m_mouse_rate_pending[axisIndex] = 0.0f;
 			if (!(Players[Player_num].controller_bitflags & PCBF_HEADINGLEFT) && val < 0.0f)
 			{
 				val = 0.0f;
@@ -764,6 +784,7 @@ float gameSDLController::get_axis_value(sbyte controller, ubyte axis, ct_format 
 
 		if ((axis == CT_Y_AXIS) && (ctldev->id == CTID_MOUSE) && (val != 0.0f))
 		{
+			m_mouse_rate_pending[axisIndex] = 0.0f;
 			if (!(Players[Player_num].controller_bitflags & PCBF_PITCHUP) && val < 0.0f)
 			{
 				val = 0.0f;
@@ -1342,6 +1363,7 @@ void gameSDLController::mouse_geteval()
 	m_MseState.m_deltaX = dx;
 	m_MseState.m_deltaY = dy;
 	m_MseState.m_deltaZ = 0;
+	m_mouse_rate_cached[0] = m_mouse_rate_cached[1] = false;
 	m_MseState.m_absX = x;
 	m_MseState.m_absY = y;
 	m_MseState.m_buttonMask = btnmask;

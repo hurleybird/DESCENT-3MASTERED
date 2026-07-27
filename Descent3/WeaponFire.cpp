@@ -2813,6 +2813,7 @@ void FireWeaponFromPlayer(object* objp, int weapon_type, int down_count, bool do
 	bool can_fire_now = WBIsBatteryReady(objp, wb, weapon_battery_index);
 	dynamic_wb_info* p_dwb = &objp->dynamic_wb[weapon_battery_index];
 	float ammo_scalar = 1.0;
+	const bool starting_new_burst = pw->firing_time == 0.0f;
 
 	if (p_dwb->flags & DWBF_QUAD)
 		ammo_scalar = 2.0;
@@ -2840,9 +2841,16 @@ void FireWeaponFromPlayer(object* objp, int weapon_type, int down_count, bool do
 		return;
 	}
 
-	//Check for weapon stopped firing
-	if ((down_count == 0) && (down_time == 0))
+	// A button released since the previous control sample can still report the
+	// fraction of the frame for which it was held.  That residual time is not
+	// a second activation: only a new down edge or the current held state keeps
+	// a normal weapon firing.  Preserve the residual charge time for weapons
+	// which intentionally fire on release.
+	if ((down_count == 0) && !down_state)
 	{
+		if (fire_on_release && down_time > 0.0f)
+			pw->firing_time += down_time;
+
 		if (ship->fire_flags[weapon_battery_index] & SFF_ZOOM)
 			DoZoomEffect(pw, 0);
 
@@ -2976,6 +2984,14 @@ void FireWeaponFromPlayer(object* objp, int weapon_type, int down_count, bool do
 		}
 		else
 			WBFireBattery(objp, wb, 0, weapon_battery_index);
+
+		// Continuous fire deliberately preserves sub-frame scheduling
+		// overshoot, but a released and re-pressed input starts a new burst.
+		// Anchor that burst to the shot's actual simulation time so repeated
+		// clicks cannot borrow the previous burst's cadence phase and produce
+		// an interval shorter than the authored fire wait.
+		if (starting_new_burst)
+			p_dwb->last_fire_time = Gametime;
 
 		//If on/off weapon, scale energy by framerate based on "reference" rate of 20 fps.
 		if (wb->flags & WBF_ON_OFF)

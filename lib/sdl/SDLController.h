@@ -202,6 +202,9 @@ private:
 	longlong m_frame_timer_ms;
 	float m_frame_time;
 	float m_frame_timer;
+	float m_mouse_rate_pending[2];
+	float m_mouse_rate_cache[2];
+	bool m_mouse_rate_cached[2];
 
 //	note id is id value from controller in control list.
 	void extctl_getpos(int id);

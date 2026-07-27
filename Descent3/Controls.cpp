@@ -703,6 +703,7 @@ void DoWeapons(game_controls *controls)
 	controls->fire_primary_down_time = 0;
 	controls->fire_primary_down_state = false;
 	controls->fire_secondary_down_count = 0;
+	controls->fire_secondary_down_state = false;
 	controls->fire_secondary_down_time = 0;
 	controls->fire_flare_down_count = 0;
 
@@ -721,7 +722,11 @@ void DoWeapons(game_controls *controls)
 void DoKeyboardWeapons(game_controls *controls)
 {
 	ct_packet fire_primary_key_time;
+	ct_packet fire_primary_key_count;
+	ct_packet fire_primary_key_state;
 	ct_packet fire_secondary_key_time;
+	ct_packet fire_secondary_key_count;
+	ct_packet fire_secondary_key_state;
 	ct_packet fire_flare_key_count;
 	ct_packet automap_key;
 	ct_packet cycle_prim_up, cycle_prim_down;
@@ -730,7 +735,11 @@ void DoKeyboardWeapons(game_controls *controls)
 
 //	read controls
 	Controller->get_packet(ctfFIREPRIMARY_KEY, &fire_primary_key_time);
+	Controller->get_packet(ctfFIREPRIMARY_KEY, &fire_primary_key_count, ctDownCount);
+	Controller->get_packet(ctfFIREPRIMARY_KEY, &fire_primary_key_state, ctDigital);
 	Controller->get_packet(ctfFIRESECONDARY_KEY, &fire_secondary_key_time);
+	Controller->get_packet(ctfFIRESECONDARY_KEY, &fire_secondary_key_count, ctDownCount);
+	Controller->get_packet(ctfFIRESECONDARY_KEY, &fire_secondary_key_state, ctDigital);
 	Controller->get_packet(ctfFIREFLARE_KEY, &fire_flare_key_count);
 	Controller->get_packet(ctfAUTOMAP_KEY, &automap_key);
 	Controller->get_packet(ctfWPNSEL_PCYCLEKEY, &cycle_prim_up);
@@ -739,17 +748,22 @@ void DoKeyboardWeapons(game_controls *controls)
 	Controller->get_packet(ctfWPNSEL_SCYCLEDOWNKEY, &cycle_sec_down);
 
 //	weapon fire
-	if (fire_primary_key_time.value > 0) 
+	if (fire_primary_key_count.value > 0 || fire_primary_key_state.value ||
+		fire_primary_key_time.value > 0)
 	{
-		controls->fire_primary_down_state = true;
-		controls->fire_primary_down_count = 1;
-		controls->fire_primary_down_time = fire_primary_key_time.value;
+		controls->fire_primary_down_state |= fire_primary_key_state.value != 0;
+		controls->fire_primary_down_count += (int)fire_primary_key_count.value;
+		if (fire_primary_key_time.value > controls->fire_primary_down_time)
+			controls->fire_primary_down_time = fire_primary_key_time.value;
 	}
 
-	if (fire_secondary_key_time.value > 0) 
+	if (fire_secondary_key_count.value > 0 || fire_secondary_key_state.value ||
+		fire_secondary_key_time.value > 0)
 	{
-		controls->fire_secondary_down_count = 1;
-		controls->fire_secondary_down_time = fire_secondary_key_time.value;
+		controls->fire_secondary_down_state |= fire_secondary_key_state.value != 0;
+		controls->fire_secondary_down_count += (int)fire_secondary_key_count.value;
+		if (fire_secondary_key_time.value > controls->fire_secondary_down_time)
+			controls->fire_secondary_down_time = fire_secondary_key_time.value;
 	}
 
 	//flare
@@ -776,8 +790,8 @@ void DoKeyboardWeapons(game_controls *controls)
 
 void DoControllerWeapons(game_controls *controls)
 {
-	ct_packet fire_primary_count, fire_primary_time;
-	ct_packet fire_secondary_count, fire_secondary_time;
+	ct_packet fire_primary_count, fire_primary_time, fire_primary_state;
+	ct_packet fire_secondary_count, fire_secondary_time, fire_secondary_state;
 	ct_packet fire_flare_count;
 	ct_packet cycle_prim_up, cycle_prim_down;
 	ct_packet cycle_sec_up, cycle_sec_down;
@@ -787,8 +801,10 @@ void DoControllerWeapons(game_controls *controls)
 //	read controls
 	Controller->get_packet(ctfFIREPRIMARY_BUTTON, &fire_primary_time);
 	Controller->get_packet(ctfFIREPRIMARY_BUTTON, &fire_primary_count, ctDownCount);
+	Controller->get_packet(ctfFIREPRIMARY_BUTTON, &fire_primary_state, ctDigital);
 	Controller->get_packet(ctfFIRESECONDARY_BUTTON, &fire_secondary_time);
 	Controller->get_packet(ctfFIRESECONDARY_BUTTON, &fire_secondary_count, ctDownCount);
+	Controller->get_packet(ctfFIRESECONDARY_BUTTON, &fire_secondary_state, ctDigital);
 	Controller->get_packet(ctfFIREFLARE_BUTTON, &fire_flare_count, ctDownCount);
 	Controller->get_packet(ctfWPNSEL_PCYCLEBTN, &cycle_prim_up);
 	Controller->get_packet(ctfWPNSEL_PCYCLEDOWNBTN, &cycle_prim_down);
@@ -797,16 +813,21 @@ void DoControllerWeapons(game_controls *controls)
 	Controller->get_packet(ctfAUTOMAP_BUTTON, &automap_key);
 
 //	weapon fire
-	if (fire_primary_count.value > 0 || fire_primary_time.value) 
+	if (fire_primary_count.value > 0 || fire_primary_state.value ||
+		fire_primary_time.value)
 	{
-		controls->fire_primary_down_state = true;
-		controls->fire_primary_down_count = (int)fire_primary_count.value;
-		controls->fire_primary_down_time = fire_primary_time.value;
+		controls->fire_primary_down_state |= fire_primary_state.value != 0;
+		controls->fire_primary_down_count += (int)fire_primary_count.value;
+		if (fire_primary_time.value > controls->fire_primary_down_time)
+			controls->fire_primary_down_time = fire_primary_time.value;
 	}
-	if (fire_secondary_count.value > 0 || fire_secondary_time.value) 
+	if (fire_secondary_count.value > 0 || fire_secondary_state.value ||
+		fire_secondary_time.value)
 	{
-		controls->fire_secondary_down_count = (int)fire_secondary_count.value;
-		controls->fire_secondary_down_time = fire_secondary_time.value;
+		controls->fire_secondary_down_state |= fire_secondary_state.value != 0;
+		controls->fire_secondary_down_count += (int)fire_secondary_count.value;
+		if (fire_secondary_time.value > controls->fire_secondary_down_time)
+			controls->fire_secondary_down_time = fire_secondary_time.value;
 	}
 
 	//Flare
