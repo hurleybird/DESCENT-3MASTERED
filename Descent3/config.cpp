@@ -743,11 +743,6 @@ static void ConfigSetNativeAspect(int display_width, int display_height)
 	if (display_width <= 0 || display_height <= 0)
 		return;
 
-	const long long width = display_width;
-	const long long height = display_height;
-	if (width * 4 <= height * 5 || width * 9 >= height * 21)
-		return;
-
 	const int divisor = ConfigGreatestCommonDivisor(display_width, display_height);
 	const int aspect_width = display_width / divisor;
 	const int aspect_height = display_height / divisor;
