@@ -689,7 +689,7 @@ int PASCAL HandledWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR szCmdLine,
 	}
 	else
 	{
-		int temp;
+		int temp = Game_fullscreen ? 1 : 0;
 		int window_x = 0;
 		int window_y = 0;
 		const bool has_window_position =

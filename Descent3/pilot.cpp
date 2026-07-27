@@ -1186,6 +1186,9 @@ void PilotCopyDefaultControls(pilot* Pilot)
 			if (cfexist(spfilename))
 			{
 				PltCopyKeyConfig(&s_pil, Pilot);
+				Pilot->key_ramping = 0.35f;
+				for (int axis = 0; axis < N_MOUSE_AXIS; ++axis)
+					Pilot->mouse_sensitivity[axis] = 0.5f;
 				if (!stricmp(spfilename, "default mouse.pld"))
 				{
 					LoadControlConfig(Pilot);
@@ -1236,7 +1239,7 @@ void PilotCopyDefaultControls(pilot* Pilot)
 						pitch_types, pitch_data, pitch_flags);
 
 					for (int axis = 1; axis <= N_MOUSE_AXIS; ++axis)
-						Controller->set_axis_sensitivity(ctMouseAxis, axis, 1.0f);
+						Controller->set_axis_sensitivity(ctMouseAxis, axis, 0.5f);
 					Pilot->mouselook_control = false;
 					SaveControlConfig(Pilot);
 				}

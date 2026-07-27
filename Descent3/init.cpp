@@ -493,7 +493,7 @@ void SaveGameSettings()
 	// Write out force feedback
 	Database->write("EnableJoystickFF",D3Use_force_feedback);
 	Database->write("ForceFeedbackAutoCenter",D3Force_auto_center);
-	ubyte force_gain;
+	ubyte force_gain = 100;
 	if(D3Force_gain<0.0f) D3Force_gain = 0.0f;
 	if(D3Force_gain>1.0f) D3Force_gain = 1.0f;
 	force_gain = (ubyte)((100.0f * D3Force_gain)+0.5f);
@@ -563,7 +563,7 @@ void LoadGameSettings()
 	char tempbuffer[TEMPBUFFERSIZE],*stoptemp;
 	int templen = TEMPBUFFERSIZE;
 	int tempint;
-	int saved_motion_blur_mode = MOTION_BLUR_UI_COMBO;
+	int saved_motion_blur_mode = MOTION_BLUR_UI_NEW;
 	bool saved_motion_blur_mode_present = false;
 	bool saved_combined_motion_blur_present = false;
 	int saved_motion_blur_type = 0;
@@ -597,30 +597,30 @@ void LoadGameSettings()
 	Detail_settings.Weapon_coronas_enabled = true;
 	Render_preferred_state.mipping = true;
 	Render_preferred_state.filtering = true;
-	Render_preferred_state.anisotropy = 1;
+	Render_preferred_state.anisotropy = 8;
 	Render_preferred_state.bit_depth = 16;
 	Render_preferred_bitdepth = 16;
-	Default_player_terrain_leveling = 2;
-	Default_player_room_leveling = 2;
+	Default_player_terrain_leveling = 1;
+	Default_player_room_leveling = 1;
 	Render_preferred_state.gamma = 1.0;
-	Render_preferred_state.antialised = false;
-	Render_preferred_state.msaa_samples = 0;
-	Render_preferred_state.supersampling_factor = 1;
-	Render_preferred_state.per_pixel_lighting = false;
-	Render_preferred_state.bloom_enabled = false;
+	Render_preferred_state.antialised = true;
+	Render_preferred_state.msaa_samples = 2;
+	Render_preferred_state.supersampling_factor = 2;
+	Render_preferred_state.per_pixel_lighting = true;
+	Render_preferred_state.bloom_enabled = true;
 	Render_preferred_state.vsync = false;
 	Render_vrr_diagnostics = FindArg("-vrr-status") != 0;
 	Render_preferred_state.bloom_threshold = 0.75f;
 	Render_preferred_state.bloom_intensity = 0.75f;
 	Render_preferred_state.bloom_spread = 0.75f;
-	Render_preferred_state.ao_enabled = false;
-	Render_preferred_state.ao_resolution = AO_RESOLUTION_HALF;
+	Render_preferred_state.ao_enabled = true;
+	Render_preferred_state.ao_resolution = AO_RESOLUTION_FULL;
 	Render_preferred_state.ao_sample_count = 32;
 	Render_preferred_state.ao_blur_radius = 6;
 	Render_preferred_state.ao_radius = 4.0f;
 	Render_preferred_state.ao_intensity = 2.5f;
 	Render_preferred_state.ao_bias = 0.25f;
-	Render_preferred_state.ao_overscan_percent = 107;
+	Render_preferred_state.ao_overscan_percent = 100;
 	Render_preferred_state.ao_debug_preview = false;
 	Render_preferred_state.ao_temporal_blend = 0.9f;
 	Render_preferred_state.ao_temporal_depth_reject = 0.03f;
@@ -632,7 +632,7 @@ void LoadGameSettings()
 	Render_preferred_state.ao_mine_occlusion = 1.0f;
 	Render_preferred_state.motion_vector_mode = RENDERER_MOTION_VECTOR_OFF;
 	Render_preferred_state.motion_vector_debug_preview = false;
-	Render_soft_vis_effects = false;
+	Render_soft_vis_effects = true;
 	Render_enhanced_weather = true;
 	Render_hires_skies = true;
 	Render_extended_draw_distance = true;
@@ -661,10 +661,10 @@ void LoadGameSettings()
 	PreferredRenderer = RENDERER_NONE;
 
 
-	Sound_system.SetLLSoundQuantity(MIN_SOUNDS_MIXED+ (MAX_SOUNDS_MIXED-MIN_SOUNDS_MIXED)/2);
-	D3MusicSetVolume(0.5f);
+	Sound_system.SetLLSoundQuantity(MAX_SOUNDS_MIXED);
+	D3MusicSetVolume(0.4f);
 	Detail_settings.Pixel_error = 8.0;
-	Sound_system.SetMasterVolume(1.0);
+	Sound_system.SetMasterVolume(0.8f);
 	Detail_settings.Terrain_render_distance = 70.0 * TERRAIN_SIZE;
 	D3Use_force_feedback = true;
 	D3Force_gain = 1.0f;
@@ -674,7 +674,7 @@ void LoadGameSettings()
 	Sound_quality = SQT_NORMAL;
 	Sound_reverb_level = Sound_reverb ? 0.5f : 0.0f;
 	Sound_doppler_level = Sound_doppler ? 0.5f : 0.0f;
-	Sound_hrtf = false;
+	Sound_hrtf = true;
 	Sound_hrtf_sfx_gain = 1.0f;
 	Sound_hrtf_2d_gain = 1.0f;
 	Sound_hrtf_3d_gain = 1.0f;
@@ -794,7 +794,7 @@ void LoadGameSettings()
 	Database->read_int("RS_frame_limit_fps", &Game_frame_limit_fps);
 	Game_frame_limit_fps = ConfigNormalizeFrameLimitFps(Game_frame_limit_fps);
 	ConfigApplyFrameLimitSetting();
-	int temp;
+	int temp = (int)Render_FOV_desired;
 	Database->read_int("RS_fovdesired", &temp);
 	if (temp < D3_DEFAULT_FOV)
 		temp = D3_DEFAULT_FOV;
@@ -1093,8 +1093,10 @@ void LoadGameSettings()
 	if(force_gain>100) force_gain = 100;
 	D3Force_gain = ((float)force_gain)/100.0f;
 	tempint = 0;
-	Database->read_int("NativeWootingAnalog", &tempint);
-	Wooting_analog_enabled = tempint != 0;
+	const bool saved_wooting_setting =
+		Database->read_int("NativeWootingAnalog", &tempint);
+	Wooting_analog_enabled = saved_wooting_setting ?
+		(tempint != 0) : WootingAnalogDeviceAvailable();
 	READ_FLOAT_SETTING("WootingAnalogStartDeadzone", Wooting_analog_start_deadzone);
 	READ_FLOAT_SETTING("WootingAnalogEndDeadzone", Wooting_analog_end_deadzone);
 	if (Wooting_analog_start_deadzone < 0.0f)
@@ -1245,7 +1247,7 @@ void LoadGameSettings()
 
 	// Motion blur
 	const bool no_motion_blur = FindArg("-nomotionblur") != 0;
-	int motion_blur_mode = MOTION_BLUR_UI_COMBO;
+	int motion_blur_mode = MOTION_BLUR_UI_NEW;
 	if (saved_motion_blur_mode_present)
 	{
 		motion_blur_mode = saved_motion_blur_mode;

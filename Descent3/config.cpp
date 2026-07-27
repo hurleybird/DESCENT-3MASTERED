@@ -103,9 +103,9 @@ static const ConfigAspectRatio Config_aspect_ratios[CONFIG_ASPECT_COUNT] = {
 };
 
 int Game_video_resolution = 1;
-int Game_window_res_width = 1920, Game_window_res_height = 1080;
+int Game_window_res_width = 1280, Game_window_res_height = 720;
 int Game_window_aspect = CONFIG_ASPECT_16_9;
-bool Game_fullscreen = false;
+bool Game_fullscreen = true;
 int Game_frame_limit_fps = 0;
 float Hud_text_scale = 1.0f;
 bool Render_draw_call_stats = false;
@@ -131,7 +131,7 @@ bool Render_per_pixel_sparse_specular_field = false;
 bool Render_per_pixel_field_static_specular = true;
 bool Render_per_pixel_field_missing_only_static_specular = true;
 bool Cockpit_alt_mode = true;
-float Render_FOV_desired = 72;
+float Render_FOV_desired = 82;
 
 tDetailSettings Detail_settings;
 int Default_detail_level = DETAIL_LEVEL_MED;

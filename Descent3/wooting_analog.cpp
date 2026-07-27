@@ -26,8 +26,8 @@
 #endif
 
 bool Wooting_analog_enabled = false;
-float Wooting_analog_start_deadzone = 0.0f;
-float Wooting_analog_end_deadzone = 0.0f;
+float Wooting_analog_start_deadzone = 0.01f;
+float Wooting_analog_end_deadzone = 0.02f;
 
 namespace
 {

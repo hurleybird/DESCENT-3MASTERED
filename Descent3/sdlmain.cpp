@@ -157,7 +157,7 @@ int SharedMain(int argc, char** argv)
 	}
 	else
 	{
-		int temp;
+		int temp = Game_fullscreen ? 1 : 0;
 		Database->read_int("RS_fullscreen", &temp);
 		Game_fullscreen = !!temp;
 
