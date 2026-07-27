@@ -34,6 +34,7 @@
 #include "config.h"
 #include "ddio.h"
 #include "gameloop.h"
+#include "newui_core.h"
 
 static bool GetWindowPositionArgument(int *x, int *y)
 {
@@ -217,7 +218,14 @@ public:
 				RequestAltF4QuitConfirmation();
 				return 0;
 			}
-			break;
+
+			// Do not let DefWindowProc destroy the native window while engine
+			// code and the OpenGL context are still alive. Wake any active UI
+			// loop and let normal shutdown release the renderer before D3End
+			// destroys the window.
+			SetFunctionMode(QUIT_MODE);
+			ui_RequestForceQuit();
+			return 0;
 		case WM_SYSKEYDOWN:
 			if (wParam == VK_F4 && ShouldConfirmAltF4QuitInGame())
 			{

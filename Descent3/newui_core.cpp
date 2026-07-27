@@ -605,8 +605,13 @@ void DoUIFrame()
 	// single-frame PollUI API directly after a parent menu has returned an
 	// ID.  Clear that stale ID before callbacks get a chance to request a new
 	// result; otherwise TCP/IP/Tracker can interpret the parent UID_OK as an
-	// immediate Join on every poll.
-	UI_frame_result = -1;
+	// immediate Join on every poll.  A force-quit request may arrive while
+	// Descent->defer() dispatches WM_CLOSE immediately before this call, so it
+	// must survive this per-frame cleanup.
+	if (UI_frame_result != NEWUIRES_FORCEQUIT)
+		UI_frame_result = -1;
+	else
+		return;
 
 	if (Multi_bail_ui_menu)
 	{

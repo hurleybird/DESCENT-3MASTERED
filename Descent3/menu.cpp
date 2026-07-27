@@ -209,6 +209,14 @@ int MainMenu()
 	// Main Menu Code Here
 	while (!exit_menu)
 	{
+		if (GetFunctionMode() == QUIT_MODE)
+		{
+			exit_game = 1;
+			exit_menu = 1;
+			Mem_quick_exit = 1;
+			break;
+		}
+
 		int res;
 		// handle all UI results.
 		if ((Demo_looping) || (Demo_restart))
@@ -258,6 +266,13 @@ int MainMenu()
 		{
 			main_menu.SetMusicRegion(MM_MUSIC_REGION);
 			res = main_menu.DoUI();
+		}
+		if (GetFunctionMode() == QUIT_MODE)
+		{
+			exit_game = 1;
+			exit_menu = 1;
+			Mem_quick_exit = 1;
+			break;
 		}
 		switch (res)
 		{
