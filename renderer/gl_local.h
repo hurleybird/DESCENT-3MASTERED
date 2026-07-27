@@ -136,6 +136,16 @@ class GL4Renderer : public IRenderer
 	Framebuffer post_present_framebuffer;
 	Framebuffer post_composite_framebuffer;
 	Framebuffer motion_blur_framebuffer;
+	ColorFramebuffer modal_ui_framebuffer;
+	bool modal_ui_frame_active = false;
+	int modal_ui_width = 0;
+	int modal_ui_height = 0;
+	int modal_ui_origin_x = 0;
+	int modal_ui_origin_y = 0;
+	GLint modal_ui_destination_framebuffer = 0;
+	GLint modal_ui_destination_read_framebuffer = 0;
+	GLint modal_ui_destination_draw_buffer = GL_COLOR_ATTACHMENT0;
+	GLint modal_ui_destination_viewport[4] = {};
 	GLuint soft_particle_depth_texture = 0;
 	MotionVectorResources motion_vectors;
 	PostProtectionMaskResources post_protection_mask;
@@ -880,6 +890,9 @@ public:
 	void EndPostPresentFrame() override;
 	bool BeginCockpitFrame() override;
 	void EndCockpitFrame() override;
+	bool BeginModalUIFrame(int reference_height) override;
+	void EndModalUIFrame() override;
+	void MapModalUIInput(int* x, int* y) override;
 
 	// Draws a line using the states of the renderer
 	void DrawSpecialLine(g3Point* p0, g3Point* p1) override;

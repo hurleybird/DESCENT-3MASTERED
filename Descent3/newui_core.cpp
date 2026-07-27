@@ -488,12 +488,19 @@ int UI_frame_result = -1;
 static newuiResources Newui_resources;
 static void (*UI_callback)() = NULL;
 static UIBitmapItem* Preloaded_bitmaps[N_UI_PRELOADED_BITMAPS] = { NULL, };
+static constexpr int MODAL_UI_REFERENCE_HEIGHT = 720;
 
 #ifndef MULTI_H
 extern bool Multi_bail_ui_menu;
 #endif
 
 void SimpleUICallback();
+
+static bool BeginGameplayModalUIFrame()
+{
+	return GetFunctionMode() == GAME_MODE && ui_HasOpenWindows() &&
+		rend_BeginModalUIFrame(MODAL_UI_REFERENCE_HEIGHT);
+}
 
 
 //////////////////////////////////////////////////////////////////////////////
@@ -626,6 +633,8 @@ void DoUIFrame()
 			return;
 		DebugBlockPrint("UL");
 
+		const bool modal_ui_frame = BeginGameplayModalUIFrame();
+
 		if (GetFunctionMode() == MENU_MODE) 
 		{
 			tMusicSeqInfo music_info;
@@ -643,6 +652,8 @@ void DoUIFrame()
 		DebugBlockPrint("UM");
 		UI_frame_result = ui_DoFrame();
 		DebugBlockPrint("UN");
+		if (modal_ui_frame)
+			rend_EndModalUIFrame();
 
 		if (UI_screenshot_and_quit_filename)
 		{
@@ -672,6 +683,8 @@ void DoUIFrameWithoutInput()
 		if (UI_callback)
 			(*UI_callback)();
 
+		const bool modal_ui_frame = BeginGameplayModalUIFrame();
+
 		if (GetFunctionMode() == MENU_MODE)
 		{
 			tMusicSeqInfo music_info;
@@ -687,6 +700,8 @@ void DoUIFrameWithoutInput()
 		}
 
 		UI_frame_result = ui_DoFrame(false);
+		if (modal_ui_frame)
+			rend_EndModalUIFrame();
 	}
 }
 

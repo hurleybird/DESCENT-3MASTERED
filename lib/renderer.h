@@ -702,6 +702,9 @@ void rend_StartPostPresentFrame(int x1,int y1,int x2,int y2,int clear_flags=RF_C
 void rend_EndPostPresentFrame();
 bool rend_BeginCockpitFrame();
 void rend_EndCockpitFrame();
+bool rend_BeginModalUIFrame(int reference_height);
+void rend_EndModalUIFrame();
+void rend_MapModalUIInput(int *x, int *y);
 
 // Init our renderer, pass the application object also.
 int rend_Init (renderer_type state, oeApplication *app,renderer_preferred_state *pref_state);

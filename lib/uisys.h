@@ -153,6 +153,9 @@ void ui_RemoveAllWindows();
 //	removes a window from ui list.if topmost, the next topmost window has focus.
 void ui_RemoveWindow(UIWindow *wnd);
 
+// Returns true while at least one modal UI window is open.
+bool ui_HasOpenWindows();
+
 //	does a ui frame given a list of windows. returns result list.
 int ui_DoFrame(bool input=true);
 

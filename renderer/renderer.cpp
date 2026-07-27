@@ -617,6 +617,30 @@ void rend_EndCockpitFrame()
 	renderer_inst->EndCockpitFrame();
 }
 
+bool rend_BeginModalUIFrame(int reference_height)
+{
+	if (!Renderer_initted)
+		return false;
+
+	return renderer_inst->BeginModalUIFrame(reference_height);
+}
+
+void rend_EndModalUIFrame()
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->EndModalUIFrame();
+}
+
+void rend_MapModalUIInput(int* x, int* y)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->MapModalUIInput(x, y);
+}
+
 // Draws a scaled 2d bitmap to our buffer
 // NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color
 void rend_DrawScaledBitmap(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, int color, float* alphas)

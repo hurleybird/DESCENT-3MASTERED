@@ -1301,6 +1301,9 @@ static bool GL4StateWantsPixelMotionVectors(const renderer_preferred_state& stat
 
 int GL4Renderer::FramebufferWidth() const
 {
+	if (modal_ui_frame_active)
+		return modal_ui_width;
+
 	int logical_width = OpenGL_state.screen_width;
 	const int overscan_percent = GL4OverscanPercent(OpenGL_preferred_state);
 	if (overscan_percent > 100 && logical_width > 0)
@@ -1310,6 +1313,9 @@ int GL4Renderer::FramebufferWidth() const
 
 int GL4Renderer::FramebufferHeight() const
 {
+	if (modal_ui_frame_active)
+		return modal_ui_height;
+
 	int logical_height = OpenGL_state.screen_height;
 	const int overscan_percent = GL4OverscanPercent(OpenGL_preferred_state);
 	if (overscan_percent > 100 && logical_height > 0)
@@ -1319,21 +1325,33 @@ int GL4Renderer::FramebufferHeight() const
 
 int GL4Renderer::ScaledX(int x) const
 {
+	if (modal_ui_frame_active)
+		return x - modal_ui_origin_x;
+
 	return (x + framebuffer_logical_offset_x) * SupersamplingFactor();
 }
 
 int GL4Renderer::ScaledY(int y) const
 {
+	if (modal_ui_frame_active)
+		return y - modal_ui_origin_y;
+
 	return (y + framebuffer_logical_offset_y) * SupersamplingFactor();
 }
 
 int GL4Renderer::ScaledW(int w) const
 {
+	if (modal_ui_frame_active)
+		return w;
+
 	return w * SupersamplingFactor();
 }
 
 int GL4Renderer::ScaledH(int h) const
 {
+	if (modal_ui_frame_active)
+		return h;
+
 	return h * SupersamplingFactor();
 }
 
@@ -1702,6 +1720,31 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		SetViewport();
 		UpdateFramebuffer();
 		ApplySwapInterval();
+	}
+
+	if (modal_ui_frame_active)
+	{
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, modal_ui_framebuffer.Handle());
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glDisable(GL_MULTISAMPLE);
+
+		if (clear_flags & RF_CLEAR_COLOR)
+		{
+			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+			GL4ClearBuffers(GL_COLOR_BUFFER_BIT);
+		}
+
+		OpenGL_state.clip_x1 = x1;
+		OpenGL_state.clip_y1 = y1;
+		OpenGL_state.clip_x2 = x2;
+		OpenGL_state.clip_y2 = y2;
+
+		float projection[16];
+		GL_Ortho(projection, 0, x2 - x1, y2 - y1, 0, 0, 1);
+		UpdateLegacyBlock(projection, mat4_identity);
+		glViewport(ScaledX(x1), FramebufferHeight() - ScaledY(y2),
+			ScaledW(x2 - x1), ScaledH(y2 - y1));
+		return;
 	}
 
 	if (cockpit_scene_frame_active)
@@ -2986,6 +3029,148 @@ void GL4Renderer::EndCockpitFrame()
 	CompositeDeferredBloomOverPostPresent();
 	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_BLOOM_COMPOSITE);
 	UseDrawVAO();
+}
+
+bool GL4Renderer::BeginModalUIFrame(int reference_height)
+{
+	if (!framebuffer_ok || modal_ui_frame_active || reference_height <= 0 ||
+		OpenGL_state.screen_width <= 0 || OpenGL_state.screen_height <= 0)
+	{
+		return false;
+	}
+
+	FlushFontBatch();
+	// Modal UI belongs to the resolved display image. If no late/post-present
+	// layer exists yet, resolve the scene now rather than compositing the
+	// 720p UI back into supersampled scene storage.
+	if (!post_present_pending_swap && !BeginPostPresentFrame())
+		return false;
+
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &modal_ui_destination_framebuffer);
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &modal_ui_destination_read_framebuffer);
+	glGetIntegerv(GL_DRAW_BUFFER, &modal_ui_destination_draw_buffer);
+	glGetIntegerv(GL_VIEWPORT, modal_ui_destination_viewport);
+
+	modal_ui_height = reference_height;
+	modal_ui_width = (OpenGL_state.screen_width * reference_height +
+		OpenGL_state.screen_height / 2) / OpenGL_state.screen_height;
+	if (modal_ui_width < 1)
+		modal_ui_width = 1;
+	modal_ui_origin_x = (OpenGL_state.screen_width - modal_ui_width) / 2;
+	modal_ui_origin_y = (OpenGL_state.screen_height - modal_ui_height) / 2;
+
+	modal_ui_framebuffer.Update(modal_ui_width, modal_ui_height,
+		GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
+	if (modal_ui_framebuffer.Handle() == 0)
+		return false;
+
+	modal_ui_frame_active = true;
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, modal_ui_framebuffer.Handle());
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+
+	const GLboolean scissor_was_enabled = glIsEnabled(GL_SCISSOR_TEST);
+	GLboolean color_mask[4];
+	GLfloat old_clear_color[4];
+	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+	glGetFloatv(GL_COLOR_CLEAR_VALUE, old_clear_color);
+	glDisable(GL_SCISSOR_TEST);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+	glClearColor(old_clear_color[0], old_clear_color[1],
+		old_clear_color[2], old_clear_color[3]);
+	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+	if (scissor_was_enabled)
+		glEnable(GL_SCISSOR_TEST);
+
+	return true;
+}
+
+void GL4Renderer::EndModalUIFrame()
+{
+	if (!modal_ui_frame_active)
+		return;
+
+	FlushFontBatch();
+	const GLuint ui_texture = modal_ui_framebuffer.ColorTextureForRead();
+	modal_ui_frame_active = false;
+	if (ui_texture == 0)
+		return;
+
+	blitshader.Use();
+	if (blitshader_gamma != -1)
+		glUniform1f(blitshader_gamma, 1.0f);
+	if (blitshader_uv_origin != -1)
+		glUniform2f(blitshader_uv_origin, 0.0f, 0.0f);
+	if (blitshader_uv_scale != -1)
+		glUniform2f(blitshader_uv_scale, 1.0f, 1.0f);
+	rend_ClearBoundTextures();
+	GL_BindFramebufferTexture(ui_texture, 0, GL_LINEAR);
+
+	const GLboolean blend_was_enabled = glIsEnabled(GL_BLEND);
+	const GLboolean depth_was_enabled = glIsEnabled(GL_DEPTH_TEST);
+	const GLboolean cull_was_enabled = glIsEnabled(GL_CULL_FACE);
+	const GLboolean scissor_was_enabled = glIsEnabled(GL_SCISSOR_TEST);
+	GLboolean color_mask[4];
+	GLboolean depth_mask;
+	GLint old_src_rgb = GL_ONE;
+	GLint old_dst_rgb = GL_ZERO;
+	GLint old_src_alpha = GL_ONE;
+	GLint old_dst_alpha = GL_ZERO;
+	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+	glGetIntegerv(GL_BLEND_SRC_RGB, &old_src_rgb);
+	glGetIntegerv(GL_BLEND_DST_RGB, &old_dst_rgb);
+	glGetIntegerv(GL_BLEND_SRC_ALPHA, &old_src_alpha);
+	glGetIntegerv(GL_BLEND_DST_ALPHA, &old_dst_alpha);
+
+	glBindVertexArray(GL_GetFramebufferVAO());
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, modal_ui_destination_framebuffer);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+	if (modal_ui_destination_framebuffer != 0)
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	else
+		glDrawBuffer(GL_BACK);
+	glViewport(0, 0, OpenGL_state.screen_width, OpenGL_state.screen_height);
+	glEnable(GL_BLEND);
+	glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA,
+		GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_SCISSOR_TEST);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_FALSE);
+	rend_RecordDrawCall(RENDERER_DRAW_CALL_POSTPROCESS);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, modal_ui_destination_framebuffer);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, modal_ui_destination_read_framebuffer);
+	glDrawBuffer(modal_ui_destination_draw_buffer);
+	glViewport(modal_ui_destination_viewport[0], modal_ui_destination_viewport[1],
+		modal_ui_destination_viewport[2], modal_ui_destination_viewport[3]);
+	glBlendFuncSeparate(old_src_rgb, old_dst_rgb, old_src_alpha, old_dst_alpha);
+	if (blend_was_enabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+	if (depth_was_enabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+	if (cull_was_enabled) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+	if (scissor_was_enabled) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+	glDepthMask(depth_mask);
+	rend_ClearBoundTextures();
+	RestoreLegacy();
+}
+
+void GL4Renderer::MapModalUIInput(int* x, int* y)
+{
+	if (!modal_ui_frame_active || !x || !y ||
+		OpenGL_state.screen_width <= 0 || OpenGL_state.screen_height <= 0)
+	{
+		return;
+	}
+
+	*x = modal_ui_origin_x +
+		(int)(((int64_t)*x * modal_ui_width) / OpenGL_state.screen_width);
+	*y = modal_ui_origin_y +
+		(int)(((int64_t)*y * modal_ui_height) / OpenGL_state.screen_height);
 }
 
 void GL4Renderer::EndFrame(void)
@@ -4425,6 +4610,8 @@ void GL4Renderer::CloseFramebuffer(void)
 	post_present_framebuffer.Destroy();
 	post_composite_framebuffer.Destroy();
 	motion_blur_framebuffer.Destroy();
+	modal_ui_framebuffer.Destroy();
+	modal_ui_frame_active = false;
 	soft_particle_depth_copy_valid = false;
 	soft_particle_depth_source_framebuffer = 0;
 	bloom_source_valid = false;

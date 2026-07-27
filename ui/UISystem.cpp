@@ -313,6 +313,7 @@ bool ui_MousePoll(bool buttons)
 		UI_input.last_my = UI_input.my;
 		UI_input.mx = mx;
 		UI_input.my = my;
+		rend_MapModalUIInput(&UI_input.mx, &UI_input.my);
 		if (UI_suppress_left_mouse_until_release) {
 			if (CHECK_FLAG(btn_mask, MOUSE_LB)) {
 				btn_mask &= ~MOUSE_LB;
@@ -494,6 +495,12 @@ void ui_RemoveWindow(UIWindow *wnd)
 	}
 	ASSERT(found_wnd);
 }
+
+bool ui_HasOpenWindows()
+{
+	return UIWindowList != NULL;
+}
+
 //	Procedure to find which window should gain focus in the 
 //		first check what window contains mouse pointer and save that window
 //		check if keystroke, 

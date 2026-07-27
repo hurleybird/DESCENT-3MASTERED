@@ -2031,8 +2031,9 @@ static void ConfigOptionsUICallback()
 
 	if (Config_options_capture_output && ++Config_options_capture_frames >= 5)
 	{
-		rend_SaveScreenshotPNG(Config_options_capture_output);
-		ui_RequestForceQuit();
+		// Capture after this UI frame has been drawn and composited. Modal UI
+		// now lives in its own resolved 720p layer rather than the scene FBO.
+		ui_RequestScreenshotAndForceQuit(Config_options_capture_output);
 		return;
 	}
 
