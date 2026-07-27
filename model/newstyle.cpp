@@ -591,6 +591,20 @@ public:
 			PolymodelPerfAdd(Polymodel_perf_face_base_time, batch_prepare_start_time);
 
 			double draw_start_time = PolymodelPerfNow();
+			renderer_per_pixel_light per_pixel_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
+			int per_pixel_light_count = 0;
+			if (batch.key.dynamic_lightmap_lmi >= 0)
+			{
+				per_pixel_light_count = GetPerPixelLightmapLights(
+					(ushort)batch.key.dynamic_lightmap_lmi, per_pixel_lights,
+					RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+				if (per_pixel_light_count > 0)
+				{
+					rend_SetPerPixelDynamicLighting(
+						&LightmapInfo[batch.key.dynamic_lightmap_lmi].normal,
+						per_pixel_light_count, per_pixel_lights);
+				}
+			}
 			if (!batch.retained_faces.empty())
 			{
 				if (batch.key.texture_type_value != TT_FLAT)
@@ -599,27 +613,15 @@ public:
 					batch.key.overlay_type != OT_NONE && batch.key.overlay_map < 0;
 				if (batch.key.overlay_type != OT_NONE && !retained_lightmap_arrays)
 					rend_BindLightmap(batch.key.overlay_map);
-				renderer_per_pixel_light per_pixel_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
-				int per_pixel_light_count = 0;
-				if (batch.key.dynamic_lightmap_lmi >= 0)
-				{
-					per_pixel_light_count = GetPerPixelLightmapLights(
-						(ushort)batch.key.dynamic_lightmap_lmi, per_pixel_lights,
-						RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
-					if (per_pixel_light_count > 0)
-						rend_SetPerPixelDynamicLighting(
-							&LightmapInfo[batch.key.dynamic_lightmap_lmi].normal,
-							per_pixel_light_count, per_pixel_lights);
-				}
 				RetainedPolymodelDrawFaces(batch.retained_pm, batch.retained_sm,
 					batch.retained_faces.data(), (int)batch.retained_faces.size(),
 					batch.key.u_offset, batch.key.v_offset, &batch.key.base_color,
 					retained_lightmap_arrays, batch.key.retained_dynamic_lightmaps);
-				if (per_pixel_light_count > 0)
-					rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 			}
 			if (!batch.faces.empty())
 				rend_DrawPolygon3DBatch(batch.key.bitmap_handle, m_batch_items.data(), (int)m_batch_items.size(), MAP_TYPE_BITMAP);
+			if (per_pixel_light_count > 0)
+				rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 			if (Perf_markers_enabled)
 				Polymodel_perf_draw_poly_count++;
 			PolymodelPerfAdd(Polymodel_perf_face_base_draw_time, draw_start_time);
@@ -2270,6 +2272,9 @@ void RotateModelPoints (poly_model *pm,bsp_info *sm)
 
 				g3_RotatePoint(&Robot_points[i],&vec);
 				PolymodelMotionSetPoint(&Robot_points[i], pm, sm - pm->submodel, &vec);
+				// Dynamic lights attached to polymodel lightmaps are stored in
+				// this submodel's local coordinate system.
+				Robot_points[i].p3_vecPreRot = vec;
 
 				Robot_points[i].p3_r=1.0;
 				Robot_points[i].p3_g=1.0;
@@ -2282,6 +2287,7 @@ void RotateModelPoints (poly_model *pm,bsp_info *sm)
 			{
 				g3_RotatePoint(&Robot_points[i],&sm->verts[i]);
 				PolymodelMotionSetPoint(&Robot_points[i], pm, sm - pm->submodel, &sm->verts[i]);
+				Robot_points[i].p3_vecPreRot = sm->verts[i];
 				Robot_points[i].p3_r=1.0;
 				Robot_points[i].p3_g=1.0;
 				Robot_points[i].p3_b=1.0;

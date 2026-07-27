@@ -498,7 +498,8 @@ void SimpleUICallback();
 
 static bool BeginGameplayModalUIFrame()
 {
-	return GetFunctionMode() == GAME_MODE && ui_HasOpenWindows() &&
+	return GetFunctionMode() == GAME_MODE && GetScreenMode() == SM_GAME &&
+		ui_HasOpenWindows() &&
 		rend_BeginModalUIFrame(MODAL_UI_REFERENCE_HEIGHT);
 }
 

@@ -319,9 +319,18 @@ void main()
 		}
 		else
 		{
-			outnormal = retained_lighting_mode == 2 ? vec4(normal.xyz, 1.0) :
-				((dynamic_light_count > 0 || retained_dynamic_lightmaps != 0) ? retained_interpolated_world_position :
-					vec4(0.0, 0.0, 0.0, -1.0));
+			if (retained_lighting_mode == 2)
+				outnormal = vec4(normal.xyz, 1.0);
+			else if (dynamic_light_count > 0 && retained_dynamic_lightmaps == 0)
+			{
+				// Dynamic lights for polymodel lightmaps are authored and
+				// accumulated in submodel-local coordinates.
+				outnormal = local_position * retained_payload_scale;
+			}
+			else if (retained_dynamic_lightmaps != 0)
+				outnormal = retained_interpolated_world_position;
+			else
+				outnormal = vec4(0.0, 0.0, 0.0, -1.0);
 			out_motion_world_position = retained_interpolated_world_position;
 		}
 		out_motion_previous_world_position =
