@@ -1,5 +1,9 @@
 CMAKE_MINIMUM_REQUIRED( VERSION 3.11 )
 
+if(POLICY CMP0177)
+	cmake_policy(SET CMP0177 NEW)
+endif()
+
 MARK_AS_ADVANCED(CMAKE_BACKWARDS_COMPATIBILITY)
 # allow more human readable "if then else" constructs
 SET( CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS TRUE )
@@ -29,7 +33,8 @@ function(add_hog_file HOG_NAME HOG_SRC_DIR)
 endfunction()
 
 IF (UNIX)
-SET (D3_GAMEDIR "~/Descent 3MASTERED/")
+SET (D3_GAMEDIR "~/Descent 3MASTERED/" CACHE STRING
+	"Destination below the install prefix, or an absolute developer install path")
 
   SET(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wno-write-strings -m32")
   SET(CMAKE_CXX_COMPILER "g++")
@@ -51,7 +56,8 @@ IF (UNIX AND NOT APPLE)
 ENDIF()
 
 IF (APPLE)
-	SET(D3_GAMEDIR "~/Descent 3MASTERED")
+	SET(D3_GAMEDIR "~/Descent 3MASTERED" CACHE STRING
+		"Destination below the install prefix, or an absolute developer install path")
   MESSAGE("Building for MAC OSX")
   ADD_DEFINITIONS( -DMONO -D_DEBUG -D__LINUX__ -DLINUX -D_MAX_PATH=260 -D_MAX_FNAME=256 -D_REENRANT -DMACOSX=1 -D_USE_OGL_ACTIVE_TEXTURES)
   SET(PLATFORM_INCLUDES "lib/linux" ${SDL_INCLUDE_DIR} "/usr/X11/include" )
@@ -59,7 +65,8 @@ ENDIF()
 
 IF (WIN32)
 	set(USE_SDL OFF CACHE BOOL "Builds with SDL rather than the Win32 code.")
-	SET(D3_GAMEDIR "c:/games/Descent 3MASTERED/")
+	SET(D3_GAMEDIR "c:/games/Descent 3MASTERED/" CACHE STRING
+		"Destination below the install prefix, or an absolute developer install path")
 	if (CMAKE_SIZEOF_VOID_P EQUAL 8)
 		set(OPENAL_ARCH_DIR "Win64")
 	else()
@@ -302,6 +309,13 @@ install(TARGETS Descent3Mastered DESTINATION ${D3_GAMEDIR})
 install(TARGETS dmfc
 	RUNTIME DESTINATION ${D3_GAMEDIR}
 	LIBRARY DESTINATION ${D3_GAMEDIR})
+install(FILES
+	"${CMAKE_SOURCE_DIR}/README.md"
+	"${CMAKE_SOURCE_DIR}/docs/INSTALL-WINDOWS.txt"
+	DESTINATION ${D3_GAMEDIR})
+install(FILES "${CMAKE_SOURCE_DIR}/LICENSE"
+	DESTINATION ${D3_GAMEDIR}
+	RENAME "LICENSE.txt")
 
 if (WIN32)
 	find_file(OPENAL_RUNTIME_DLL
@@ -324,13 +338,44 @@ if (WIN32)
 				COMMAND ${CMAKE_COMMAND} -E copy_if_different
 					"${WOOTING_ANALOG_RUNTIME_DLL}" "$<TARGET_FILE_DIR:Descent3Mastered>")
 			install(FILES "${WOOTING_ANALOG_RUNTIME_DLL}" DESTINATION ${D3_GAMEDIR})
-			install(FILES
-				"${CMAKE_SOURCE_DIR}/thirdparty/WootingAnalogSDK/COPYING"
-				"${CMAKE_SOURCE_DIR}/thirdparty/WootingAnalogSDK/README.txt"
-				DESTINATION "${D3_GAMEDIR}licenses/WootingAnalogSDK")
 		else()
 			message(WARNING "Wooting Analog SDK distributable was not found; native Wooting support will require a system SDK installation.")
 		endif()
+
+		file(READ "${CMAKE_SOURCE_DIR}/thirdparty/OpenAL/COPYING"
+			OPENAL_LICENSE_TEXT)
+		file(READ "${CMAKE_SOURCE_DIR}/thirdparty/WootingAnalogSDK/COPYING"
+			WOOTING_LICENSE_TEXT)
+		set(THIRD_PARTY_LICENSES_FILE
+			"${CMAKE_CURRENT_BINARY_DIR}/THIRD-PARTY-LICENSES.txt")
+		file(WRITE "${THIRD_PARTY_LICENSES_FILE}" [=[
+Descent 3MASTERED - Third-Party Notices
+========================================
+
+OpenAL Soft 1.25.1
+------------------
+Homepage: https://openal-soft.org/
+Source: https://github.com/kcat/openal-soft
+
+Descent 3MASTERED includes the 64-bit OpenAL Soft runtime. Its complete license
+text follows.
+
+]=])
+		file(APPEND "${THIRD_PARTY_LICENSES_FILE}" "${OPENAL_LICENSE_TEXT}")
+		file(APPEND "${THIRD_PARTY_LICENSES_FILE}" [=[
+
+
+Wooting Analog SDK 0.9.1
+------------------------
+Source: https://github.com/WootingKb/wooting-analog-sdk
+
+Descent 3MASTERED includes the unmodified 64-bit Wooting Analog SDK
+distributable. Its complete license text follows.
+
+]=])
+		file(APPEND "${THIRD_PARTY_LICENSES_FILE}" "${WOOTING_LICENSE_TEXT}")
+		install(FILES "${THIRD_PARTY_LICENSES_FILE}"
+			DESTINATION ${D3_GAMEDIR})
 	endif()
 endif()
 

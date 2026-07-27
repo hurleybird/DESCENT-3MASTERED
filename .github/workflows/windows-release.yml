@@ -1,0 +1,28 @@
+name: Windows release package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  package:
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build and validate release package
+        shell: powershell
+        run: ./tools/package-windows-release.ps1
+
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: Descent-3MASTERED-Windows-x64
+          path: |
+            out/release/*.zip
+            out/release/*.sha256
+          if-no-files-found: error

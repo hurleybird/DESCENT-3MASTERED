@@ -9,4 +9,6 @@ set_target_properties(${NETGAME_MODULE} PROPERTIES SUFFIX ".d3m")
 
 target_link_libraries(${NETGAME_MODULE} dmfc)
 
-install(TARGETS ${NETGAME_MODULE} DESTINATION "${D3_GAMEDIR}netgames/")
+install(TARGETS ${NETGAME_MODULE}
+	RUNTIME DESTINATION "${D3_GAMEDIR}netgames/"
+	LIBRARY DESTINATION "${D3_GAMEDIR}netgames/")

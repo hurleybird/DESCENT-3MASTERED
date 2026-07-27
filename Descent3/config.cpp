@@ -91,16 +91,20 @@ enum
 	CONFIG_ASPECT_16_10,
 	CONFIG_ASPECT_16_9,
 	CONFIG_ASPECT_21_9,
+	CONFIG_ASPECT_NATIVE,
 	CONFIG_ASPECT_COUNT
 };
 
-static const ConfigAspectRatio Config_aspect_ratios[CONFIG_ASPECT_COUNT] = {
+static char Config_native_aspect_name[32] = "";
+static ConfigAspectRatio Config_aspect_ratios[CONFIG_ASPECT_COUNT] = {
 	{5, 4, "5:4"},
 	{4, 3, "4:3"},
 	{16, 10, "16:10"},
 	{16, 9, "16:9"},
-	{21, 9, "21:9"}
+	{21, 9, "21:9"},
+	{0, 0, Config_native_aspect_name}
 };
+static bool Config_native_aspect_available = false;
 
 int Game_video_resolution = 1;
 int Game_window_res_width = 1280, Game_window_res_height = 720;
@@ -718,9 +722,92 @@ static int AnisotropyIndexToFactor(int index)
 	return 1 << index;
 }
 
-static int ConfigRoundAspectWidth(int height, int aspect)
+static int ConfigGreatestCommonDivisor(int a, int b)
+{
+	while (b != 0)
+	{
+		const int remainder = a % b;
+		a = b;
+		b = remainder;
+	}
+	return a;
+}
+
+static void ConfigSetNativeAspect(int display_width, int display_height)
+{
+	Config_native_aspect_available = false;
+	Config_aspect_ratios[CONFIG_ASPECT_NATIVE].width = 0;
+	Config_aspect_ratios[CONFIG_ASPECT_NATIVE].height = 0;
+	Config_native_aspect_name[0] = '\0';
+
+	if (display_width <= 0 || display_height <= 0)
+		return;
+
+	const long long width = display_width;
+	const long long height = display_height;
+	if (width * 4 <= height * 5 || width * 9 >= height * 21)
+		return;
+
+	const int divisor = ConfigGreatestCommonDivisor(display_width, display_height);
+	const int aspect_width = display_width / divisor;
+	const int aspect_height = display_height / divisor;
+	for (int i = 0; i < CONFIG_ASPECT_NATIVE; i++)
+	{
+		if (aspect_width * Config_aspect_ratios[i].height ==
+			aspect_height * Config_aspect_ratios[i].width)
+		{
+			return;
+		}
+	}
+
+	Config_aspect_ratios[CONFIG_ASPECT_NATIVE].width = aspect_width;
+	Config_aspect_ratios[CONFIG_ASPECT_NATIVE].height = aspect_height;
+	snprintf(Config_native_aspect_name, sizeof(Config_native_aspect_name),
+		"%d:%d", aspect_width, aspect_height);
+	Config_native_aspect_available = true;
+}
+
+static bool ConfigAspectAvailable(int aspect)
 {
 	if (aspect < 0 || aspect >= CONFIG_ASPECT_COUNT)
+		return false;
+	return aspect != CONFIG_ASPECT_NATIVE || Config_native_aspect_available;
+}
+
+static int ConfigBuildAspectOrder(int* aspects, int max_aspects, bool widest_first)
+{
+	int count = 0;
+	for (int aspect = 0; aspect < CONFIG_ASPECT_COUNT && count < max_aspects; aspect++)
+	{
+		if (!ConfigAspectAvailable(aspect))
+			continue;
+
+		int insert_at = count;
+		while (insert_at > 0)
+		{
+			const int previous = aspects[insert_at - 1];
+			const long long current_ratio =
+				(long long)Config_aspect_ratios[aspect].width *
+				Config_aspect_ratios[previous].height;
+			const long long previous_ratio =
+				(long long)Config_aspect_ratios[previous].width *
+				Config_aspect_ratios[aspect].height;
+			const bool belongs_before = widest_first ?
+				current_ratio > previous_ratio : current_ratio < previous_ratio;
+			if (!belongs_before)
+				break;
+			aspects[insert_at] = previous;
+			insert_at--;
+		}
+		aspects[insert_at] = aspect;
+		count++;
+	}
+	return count;
+}
+
+static int ConfigRoundAspectWidth(int height, int aspect)
+{
+	if (!ConfigAspectAvailable(aspect))
 		aspect = CONFIG_ASPECT_4_3;
 
 	int width = (height * Config_aspect_ratios[aspect].width +
@@ -732,7 +819,7 @@ static int ConfigRoundAspectWidth(int height, int aspect)
 
 static bool ConfigAspectFitsDisplay(int aspect, int height, int display_width, int display_height)
 {
-	if (aspect < 0 || aspect >= CONFIG_ASPECT_COUNT || height <= 0)
+	if (!ConfigAspectAvailable(aspect) || height <= 0)
 		return false;
 	if (display_width > 0 && ConfigRoundAspectWidth(height, aspect) > display_width)
 		return false;
@@ -750,6 +837,8 @@ static int ConfigAspectFromSize(int width, int height)
 	int best_error = 0x7fffffff;
 	for (int i = 0; i < CONFIG_ASPECT_COUNT; i++)
 	{
+		if (!ConfigAspectAvailable(i))
+			continue;
 		int error = abs(width * Config_aspect_ratios[i].height -
 			height * Config_aspect_ratios[i].width);
 		if (error < best_error)
@@ -766,48 +855,16 @@ static int ConfigBestAspectForDisplay(int desired_aspect, int height, int displa
 	if (ConfigAspectFitsDisplay(desired_aspect, height, display_width, display_height))
 		return desired_aspect;
 
-	for (int i = CONFIG_ASPECT_COUNT - 1; i >= 0; i--)
+	int aspects[CONFIG_ASPECT_COUNT];
+	const int aspect_count = ConfigBuildAspectOrder(
+		aspects, CONFIG_ASPECT_COUNT, true);
+	for (int i = 0; i < aspect_count; i++)
 	{
-		if (ConfigAspectFitsDisplay(i, height, display_width, display_height))
-			return i;
+		if (ConfigAspectFitsDisplay(aspects[i], height, display_width, display_height))
+			return aspects[i];
 	}
 
 	return CONFIG_ASPECT_5_4;
-}
-
-static int ConfigAspectOrderIndex(int aspect)
-{
-	switch (aspect)
-	{
-	case CONFIG_ASPECT_21_9:
-		return 0;
-	case CONFIG_ASPECT_16_9:
-		return 1;
-	case CONFIG_ASPECT_16_10:
-		return 2;
-	case CONFIG_ASPECT_4_3:
-		return 3;
-	case CONFIG_ASPECT_5_4:
-	default:
-		return 4;
-	}
-}
-
-static int ConfigAspectFromOrderIndex(int index)
-{
-	switch (index)
-	{
-	case 0:
-		return CONFIG_ASPECT_21_9;
-	case 1:
-		return CONFIG_ASPECT_16_9;
-	case 2:
-		return CONFIG_ASPECT_16_10;
-	case 3:
-		return CONFIG_ASPECT_4_3;
-	default:
-		return CONFIG_ASPECT_5_4;
-	}
 }
 
 static int ConfigBuildVerticalResolutionList(int* resolutions, int max_resolutions,
@@ -957,9 +1014,12 @@ static void ConfigResolveDisplayMode(int display_width, int display_height, int 
 		return;
 	}
 
-	if (desired_aspect < 0 || desired_aspect >= CONFIG_ASPECT_COUNT)
+	if (!ConfigAspectAvailable(desired_aspect))
 		desired_aspect = CONFIG_ASPECT_16_9;
 
+	int aspect_order[CONFIG_ASPECT_COUNT];
+	const int aspect_count = ConfigBuildAspectOrder(
+		aspect_order, CONFIG_ASPECT_COUNT, true);
 	int start_height = ConfigHighestVerticalResolutionAtOrBelow(desired_height, resolutions, count);
 	int start_index = 0;
 	for (int i = 0; i < count; i++)
@@ -974,12 +1034,21 @@ static void ConfigResolveDisplayMode(int display_width, int display_height, int 
 	for (int height_index = start_index; height_index >= 0; height_index--)
 	{
 		int height = resolutions[height_index];
-		int start_aspect_order = (height == start_height && start_height == desired_height) ?
-			ConfigAspectOrderIndex(desired_aspect) : ConfigAspectOrderIndex(CONFIG_ASPECT_16_9);
-
-		for (int aspect_order = start_aspect_order; aspect_order < CONFIG_ASPECT_COUNT; aspect_order++)
+		const int preferred_aspect =
+			(height == start_height && start_height == desired_height) ?
+			desired_aspect : CONFIG_ASPECT_16_9;
+		int start_aspect_order = 0;
+		while (start_aspect_order < aspect_count &&
+			aspect_order[start_aspect_order] != preferred_aspect)
 		{
-			int aspect = ConfigAspectFromOrderIndex(aspect_order);
+			start_aspect_order++;
+		}
+		if (start_aspect_order >= aspect_count)
+			start_aspect_order = 0;
+
+		for (int order = start_aspect_order; order < aspect_count; order++)
+		{
+			const int aspect = aspect_order[order];
 			if (!ConfigAspectFitsDisplay(aspect, height, display_width, display_height))
 				continue;
 
@@ -1003,9 +1072,10 @@ void ConfigValidateGameWindowSize()
 		display_width = Game_window_res_width > 0 ? Game_window_res_width : 1920;
 	if (display_height <= 0)
 		display_height = Game_window_res_height > 0 ? Game_window_res_height : 1080;
+	ConfigSetNativeAspect(display_width, display_height);
 
 	int desired_aspect = Game_window_aspect;
-	if (desired_aspect < 0 || desired_aspect >= CONFIG_ASPECT_COUNT ||
+	if (!ConfigAspectAvailable(desired_aspect) ||
 		abs(ConfigRoundAspectWidth(Game_window_res_height, desired_aspect) - Game_window_res_width) > 2)
 	{
 		desired_aspect = ConfigAspectFromSize(Game_window_res_width, Game_window_res_height);
@@ -1380,6 +1450,7 @@ struct video_menu
 			display_width = 640;
 		if (display_height <= 0)
 			display_height = 480;
+		ConfigSetNativeAspect(display_width, display_height);
 	}
 
 	void normalize_display_choice()
@@ -1636,7 +1707,7 @@ struct video_menu
 		window_width = Game_window_res_width;
 		window_height = Game_window_res_height;
 		window_aspect = Game_window_aspect;
-		if (window_aspect < 0 || window_aspect >= CONFIG_ASPECT_COUNT)
+		if (!ConfigAspectAvailable(window_aspect))
 			window_aspect = ConfigAspectFromSize(window_width, window_height);
 		else if (abs(ConfigRoundAspectWidth(window_height, window_aspect) - window_width) > 2)
 			window_aspect = ConfigAspectFromSize(window_width, window_height);
@@ -1821,15 +1892,20 @@ struct video_menu
 	int populate_aspect_list(newuiListBox* aspect_list, int* aspects, int max_aspects)
 	{
 		aspect_list->RemoveAll();
+		int ordered_aspects[CONFIG_ASPECT_COUNT];
+		const int ordered_count = ConfigBuildAspectOrder(
+			ordered_aspects, CONFIG_ASPECT_COUNT, false);
 		int count = 0;
-		for (int i = 0; i < CONFIG_ASPECT_COUNT && count < max_aspects; i++)
+		for (int order = 0; order < ordered_count && count < max_aspects; order++)
 		{
-			if (!ConfigAspectFitsDisplay(i, window_height, display_width, display_height))
+			const int aspect = ordered_aspects[order];
+			if (!ConfigAspectFitsDisplay(
+				aspect, window_height, display_width, display_height))
 				continue;
 
-			aspects[count] = i;
-			aspect_list->AddItem(Config_aspect_ratios[i].name);
-			if (i == window_aspect)
+			aspects[count] = aspect;
+			aspect_list->AddItem(Config_aspect_ratios[aspect].name);
+			if (aspect == window_aspect)
 				aspect_list->SetCurrentIndex(count);
 			count++;
 		}
