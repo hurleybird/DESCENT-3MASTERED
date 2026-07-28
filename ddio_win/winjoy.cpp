@@ -93,8 +93,9 @@ static struct tJoystickLibraryData
 	tJoystickRecord *joystick;				// list of joysticks.
 
 	LPDIRECTINPUT lpdi;						// if lpdi != NULL, we use direct input for joysticks
+	bool xinput_mode;						// XInput slots remain available for hot-plugging
 }
-WJD = {0,0,NULL,NULL };
+WJD = {0,0,NULL,NULL,false };
 
 
 
@@ -168,8 +169,9 @@ bool joy_Init(bool emulation)
 			|| DXInputGetState(3, &_discard) == ERROR_SUCCESS;
 	}
 
-    if (xinput_success) 
+    if (xinput_success || (XInputAvailable && dio_count == 0))
 	{
+		WJD.xinput_mode = true;
 		for (i = 0; i < 4; i++) 
 			joyxi_init(i);
 	}
@@ -208,7 +210,7 @@ void joy_Close()
 
 	if (!WJD.init) return;
 
-	if (!WJD.lpdi) {
+	if (!WJD.lpdi && !WJD.xinput_mode) {
 		joymm_close();
 	}
 
@@ -216,6 +218,7 @@ void joy_Close()
 	WJD.joystick = NULL;
 	WJD.njoy = 0;
 	WJD.lpdi = NULL;
+	WJD.xinput_mode = false;
 	WJD.init = 0;
 }
 
@@ -250,6 +253,7 @@ void joy_GetPos(tJoystick stick, tJoyPos *pos)
 	ASSERT(stick >= 0 || stick < WJD.njoy);
 	int i;
 
+	memset(pos, 0, sizeof(*pos));
 	for (i = 0; i < JOYPOV_NUM; i++)
 	{
 		pos->pov[i] = JOYPOV_CENTER;
@@ -266,31 +270,32 @@ void joy_GetPos(tJoystick stick, tJoyPos *pos)
 
 	
 
-	if (WJD.lpdi) 
+	if (WJD.lpdi)
 	{
 		joydi_get_pos(stick, pos);
 	}
-	else 
+	else if (WJD.xinput_mode)
 	{
-		if (XInputAvailable)
+		XINPUT_STATE state = { 0 };
+		if (DXInputGetState(stick, &state) == ERROR_SUCCESS)
 		{
-			XINPUT_STATE state = { 0 };
-			if (DXInputGetState(stick, &state) == ERROR_SUCCESS)
-			{
-				pos->x = (int)(state.Gamepad.sThumbLX / 32767.0f * 128.0f);
-				pos->y = -(int)(state.Gamepad.sThumbLY / 32767.0f * 128.0f);
-				pos->z = (int)(state.Gamepad.bLeftTrigger / 255.0f * 128.0f);
-				pos->r = (int)(state.Gamepad.sThumbRX / 32767.0f * 128.0f);
-				pos->u = (int)(state.Gamepad.sThumbRY / 32767.0f * 128.0f);
-				pos->v = (int)(state.Gamepad.bRightTrigger / 255.0f * 128.0f);
-				pos->buttons = state.Gamepad.wButtons;
-				pos->buttons |= (state.Gamepad.bLeftTrigger > 0) ? (1 << 16) : 0;
-				pos->buttons |= (state.Gamepad.bRightTrigger > 0) ? (1 << 17) : 0;
-				pos->btn = 0;
-				return;
-			}
+			pos->x = (int)(state.Gamepad.sThumbLX / 32767.0f * 128.0f);
+			pos->y = -(int)(state.Gamepad.sThumbLY / 32767.0f * 128.0f);
+			pos->z = (int)(state.Gamepad.bLeftTrigger / 255.0f * 128.0f);
+			pos->r = (int)(state.Gamepad.sThumbRX / 32767.0f * 128.0f);
+			pos->u = (int)(state.Gamepad.sThumbRY / 32767.0f * 128.0f);
+			pos->v = (int)(state.Gamepad.bRightTrigger / 255.0f * 128.0f);
+			pos->buttons = state.Gamepad.wButtons;
+			pos->buttons |= (state.Gamepad.bLeftTrigger > 0) ? (1 << 16) : 0;
+			pos->buttons |= (state.Gamepad.bRightTrigger > 0) ? (1 << 17) : 0;
+			pos->btn = 0;
 		}
-
+		// A disconnected reserved slot must read neutral—not fall through to
+		// an unrelated multimedia joystick with the same numeric index.
+		return;
+	}
+	else
+	{
 		joymm_get_pos(stick, pos);
 	}
 }
@@ -343,31 +348,27 @@ void ddio_InternalJoyFrame()
 void joyxi_init(int i)
 {
 	assert(XInputAvailable);
-	XINPUT_STATE state = {0};
-	if (DXInputGetState(i, &state) == ERROR_SUCCESS) 
-	{
-		WJD.joystick[i].valid = 1;
-		WJD.joystick[i].joy_context.joyid = i;
-		WJD.joystick[i].caps.axes_mask = 
+	WJD.joystick[i].valid = 1;
+	WJD.joystick[i].joy_context.joyid = i;
+	WJD.joystick[i].caps.axes_mask =
 		JOYFLAG_XVALID+JOYFLAG_YVALID+
 		JOYFLAG_RVALID+JOYFLAG_UVALID+JOYFLAG_VVALID+
 		JOYFLAG_ZVALID;
-		WJD.joystick[i].caps.num_btns = 18;
-		strcpy(WJD.joystick[i].caps.name, "XInput Joystick");
-		WJD.joystick[i].caps.minx = -32768;
-		WJD.joystick[i].caps.miny = -32768;
-		WJD.joystick[i].caps.minz = -32768; //[ISB] Setting the triggers to -1 to 1 is a bit of a nonsequitur, but the controller class is currently primed to assume all axes are -1 to 1. 
-		WJD.joystick[i].caps.minr = -32768;
-		WJD.joystick[i].caps.minu = -32768;
-		WJD.joystick[i].caps.minv = -32768;
-		
-		WJD.joystick[i].caps.maxx = 32767;
-		WJD.joystick[i].caps.maxy = 32767;
-		WJD.joystick[i].caps.maxz = 32767;
-		WJD.joystick[i].caps.maxr = 32767;
-		WJD.joystick[i].caps.maxu = 32767;
-		WJD.joystick[i].caps.maxv = 32767;
-	}
+	WJD.joystick[i].caps.num_btns = 18;
+	strcpy(WJD.joystick[i].caps.name, "XInput Joystick");
+	WJD.joystick[i].caps.minx = -32768;
+	WJD.joystick[i].caps.miny = -32768;
+	WJD.joystick[i].caps.minz = -32768; //[ISB] Setting the triggers to -1 to 1 is a bit of a nonsequitur, but the controller class is currently primed to assume all axes are -1 to 1.
+	WJD.joystick[i].caps.minr = -32768;
+	WJD.joystick[i].caps.minu = -32768;
+	WJD.joystick[i].caps.minv = -32768;
+
+	WJD.joystick[i].caps.maxx = 32767;
+	WJD.joystick[i].caps.maxy = 32767;
+	WJD.joystick[i].caps.maxz = 32767;
+	WJD.joystick[i].caps.maxr = 32767;
+	WJD.joystick[i].caps.maxu = 32767;
+	WJD.joystick[i].caps.maxv = 32767;
 }
 
 //////////////////////////////////////////////////////////////////////////////

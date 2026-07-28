@@ -225,6 +225,7 @@ bool TelComAutoMap(tTelComInfo* tcs)
 	while (!done)
 	{
 		ct_packet automap_key;
+		ct_packet automap_button;
 
 		Sound_system.BeginSoundFrame(Telcom_called_from_game);
 
@@ -246,8 +247,10 @@ bool TelComAutoMap(tTelComInfo* tcs)
 		//			AM_tcs->state = TCS_POWEROFF;
 
 			//	read controls
+		Controller->poll();
 		Controller->get_packet(ctfAUTOMAP_KEY, &automap_key);
-		if (automap_key.value > 0.0f)
+		Controller->get_packet(ctfAUTOMAP_BUTTON, &automap_button);
+		if (automap_key.value > 0.0f || automap_button.value > 0.0f)
 			AM_tcs->state = TCS_POWEROFF;
 
 		Sound_system.EndSoundFrame();
