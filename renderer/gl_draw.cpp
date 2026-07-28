@@ -199,6 +199,10 @@ static void GL4SetFieldSpecularVertexPayload(gl_vertex& vert, const g3Point* pnt
 	if (!per_pixel_specular_draw || !pnt->p3_specular_field_valid)
 		return;
 
+	vert.field_specular_color[0].w = pnt->p3_specular_lightmap_color.x;
+	vert.field_specular_color[1].w = pnt->p3_specular_lightmap_color.y;
+	vert.field_specular_color[2].w = pnt->p3_specular_lightmap_color.z;
+	vert.field_specular_color[3].w = 1.0f;
 	const float payloadw = 1.0f / (pnt->p3_z + Z_bias);
 	const int count = std::min((int)pnt->p3_specular_field_count, MAX_SPECULARS);
 	for (int i = 0; i < count; i++)
@@ -211,7 +215,6 @@ static void GL4SetFieldSpecularVertexPayload(gl_vertex& vert, const g3Point* pnt
 		vert.field_specular_color[i].x = pnt->p3_specular_field_colors[i].x;
 		vert.field_specular_color[i].y = pnt->p3_specular_field_colors[i].y;
 		vert.field_specular_color[i].z = pnt->p3_specular_field_colors[i].z;
-		vert.field_specular_color[i].w = 1.0f;
 	}
 }
 

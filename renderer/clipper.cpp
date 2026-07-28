@@ -73,6 +73,8 @@ static void InterpolateSpecularField(g3Point *tmp, g3Point *on_pnt, g3Point *off
 			tmp->p3_specular_field_colors[i] = on_pnt->p3_specular_field_colors[i] +
 				((off_pnt->p3_specular_field_colors[i] - on_pnt->p3_specular_field_colors[i]) * k);
 		}
+		tmp->p3_specular_lightmap_color = on_pnt->p3_specular_lightmap_color +
+			((off_pnt->p3_specular_lightmap_color - on_pnt->p3_specular_lightmap_color) * k);
 		tmp->p3_specular_field_valid = 1;
 	}
 	else

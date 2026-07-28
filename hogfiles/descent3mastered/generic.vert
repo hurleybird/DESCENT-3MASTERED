@@ -121,6 +121,7 @@ flat out vec3 out_retained_face_normal;
 #if defined(USE_SPECULAR)
 out vec4 out_field_specular_centers[4];
 out vec4 out_field_specular_colors[4];
+out float out_field_specular_perspective_scale;
 #endif
 #if defined(USE_TEXTURING)
 out vec3 outuv;
@@ -304,6 +305,9 @@ void main()
 		vec4 retained_world_position = retained_current_world * local_position;
 		float retained_payload_scale = retained_legacy_world_projection != 0 ?
 			1.0 / max(retained_projection_eye_z + retained_depth_bias, 0.0001) : 1.0;
+		#if defined(USE_SPECULAR)
+			out_field_specular_perspective_scale = retained_payload_scale;
+		#endif
 		vec4 retained_interpolated_world_position =
 			retained_world_position * retained_payload_scale;
 		out_room_fog_world_position = retained_interpolated_world_position;
@@ -313,7 +317,10 @@ void main()
 		if (retained_per_pixel_specular_payload != 0)
 		{
 			vec3 retained_view_normal = mat3(retained_modelview) * normal.xyz;
-			outnormal = vec4(normalize(vec3(retained_view_normal.xy, -retained_view_normal.z)), 1.0);
+			outnormal = vec4(
+				normalize(vec3(retained_view_normal.xy, -retained_view_normal.z)) *
+					retained_payload_scale,
+				retained_payload_scale);
 			out_motion_world_position =
 				vec4(view_position, 1.0) * retained_payload_scale;
 		}
@@ -346,20 +353,20 @@ void main()
 				vec4 source = i == 0 ? field_specular_center0 :
 					(i == 1 ? field_specular_center1 :
 					(i == 2 ? field_specular_center2 : field_specular_center3));
+				out_field_specular_colors[i] = (i == 0 ? field_specular_color0 :
+					(i == 1 ? field_specular_color1 :
+					(i == 2 ? field_specular_color2 : field_specular_color3))) *
+					retained_payload_scale;
 				if (retained_per_pixel_specular_payload != 0 && source.w > 0.0)
 				{
 					vec3 retained_view_source = (retained_modelview * vec4(source.xyz, 1.0)).xyz;
 					out_field_specular_centers[i] =
 						vec4(retained_view_source.xy, -retained_view_source.z, 1.0) *
 						retained_payload_scale;
-					out_field_specular_colors[i] = i == 0 ? field_specular_color0 :
-						(i == 1 ? field_specular_color1 :
-						(i == 2 ? field_specular_color2 : field_specular_color3));
 				}
 				else
 				{
 					out_field_specular_centers[i] = vec4(0.0);
-					out_field_specular_colors[i] = vec4(0.0);
 				}
 			}
 		#endif
@@ -390,6 +397,9 @@ void main()
 
 	gl_Position = commons.projection * commons.modelview * vec4(position, 1.0);
 	outcolor = color;
+	#if defined(USE_SPECULAR)
+		out_field_specular_perspective_scale = 1.0;
+	#endif
 	out_retained_effect_alpha = color.a;
 	#if defined(USE_SPECULAR)
 		outnormal = normal;

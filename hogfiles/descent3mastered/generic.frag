@@ -136,6 +136,7 @@ flat in vec3 out_retained_face_normal;
 #if defined(USE_SPECULAR)
 in vec4 out_field_specular_centers[4];
 in vec4 out_field_specular_colors[4];
+in float out_field_specular_perspective_scale;
 #endif
 
 #if defined(USE_LIGHTMAP)
@@ -212,7 +213,7 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 {
 	const float[4] weights = float[4](1.0, 0.66, 0.33, 0.25);
 	vec3 view_position = out_motion_world_position.xyz / max(out_motion_world_position.w, 0.0001);
-	vec3 raw_normal = outnormal.xyz;
+	vec3 raw_normal = outnormal.xyz / max(outnormal.w, 0.0001);
 	if (dot(raw_normal, raw_normal) <= 0.000001)
 		return vec3(0.0);
 	vec3 normal = normalize(raw_normal);
@@ -228,7 +229,9 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 			(out_field_specular_centers[i].xyz / max(out_field_specular_centers[i].w, 0.0001)) :
 			specular_data.speculars[i].bright_center.xyz;
 		vec3 light_color = specular_data.pad0 > 0.5 ?
-			out_field_specular_colors[i].xyz : specular_data.speculars[i].color.xyz;
+			(out_field_specular_colors[i].xyz /
+				max(out_field_specular_perspective_scale, 0.0001)) :
+			specular_data.speculars[i].color.xyz;
 		specular_color += SpecularFromIncident(view_position, normal, view_position - light_position,
 			light_color, source_weight);
 	}
@@ -266,9 +269,15 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 			dynamic_light_colors[i], scalar * dynamic_light_specular_scalars[i]);
 	}
 
-	vec3 lightmap_factor = mix(vec3(1.0), clamp(lightmap_color, vec3(0.0), vec3(1.0)),
+	vec3 shared_lightmap_color = vec3(out_field_specular_colors[0].w,
+		out_field_specular_colors[1].w, out_field_specular_colors[2].w) /
+		max(out_field_specular_perspective_scale, 0.0001);
+	vec3 modulation_color = specular_data.pad0 > 0.5 ?
+		shared_lightmap_color : lightmap_color;
+	vec3 lightmap_factor = mix(vec3(1.0), clamp(modulation_color, vec3(0.0), vec3(1.0)),
 		clamp(specular_data.lightmap_mix, 0.0, 1.0));
-	return clamp(specular_color * lightmap_factor * specular_data.strength, vec3(0.0), vec3(1.0));
+	return clamp(specular_color * lightmap_factor * specular_data.strength,
+		vec3(0.0), vec3(1.0));
 }
 #endif
 
