@@ -255,7 +255,8 @@ class cfg_element_ui: public newuiMessageBox
 
 
 public:
-	void Create(const char *title, ct_type type, ubyte controller, ubyte element);
+	void Create(const char *title, ct_type type, ubyte controller, ubyte element,
+		ct_format function_format);
 	ubyte GetElement() const { return m_element; };
 	ubyte GetController() const { return m_controller; };
 	ct_type GetType() const { return m_type; };
@@ -597,7 +598,17 @@ bool cfg_element::Configure(ct_type *new_elem_type, ubyte *controller, ubyte *ne
 	*cfg_slot = -1;
 	if (configure) {
 		const char *txt = m_title;
-		cfg_box.Create(txt, ctype_fn[slot], ctrl, element);
+		ct_format function_format = ctNoFormat;
+		for (int i = 0; i < NUM_CONTROLLER_FUNCTIONS; ++i)
+		{
+			if (Controller_needs[i].id == fnid)
+			{
+				function_format = Controller_needs[i].format;
+				break;
+			}
+		}
+		cfg_box.Create(txt, ctype_fn[slot], ctrl, element,
+			function_format);
 		cfg_box.Open();
 		if (cfg_box.DoUI() == UID_OK) {
 			*new_elem_type = cfg_box.GetType();
@@ -630,11 +641,15 @@ bool key_cfg_element(ubyte *element, ubyte *flags)
 
 
 
-void cfg_element_ui::Create(const char *title, ct_type type, ubyte controller, ubyte element)
+void cfg_element_ui::Create(const char *title, ct_type type, ubyte controller,
+	ubyte element, ct_format function_format)
 {
 	m_controller = controller;
 	m_element = element;
-	m_type = type;
+	// A controller axis used by a digital action is a virtual button. Keep
+	// subsequent edits in the digital-input path; otherwise rebinding it would
+	// silently turn U-axis+/- (or any other half-axis) back into a whole axis.
+	m_type = (type == ctAxis && function_format != ctAnalog) ? ctButton : type;
 	m_flags = 0;
 	
 	newuiMessageBox::Create(title, MSGBOX_NULL);

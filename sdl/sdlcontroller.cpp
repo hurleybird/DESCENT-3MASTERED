@@ -353,50 +353,31 @@ ct_config_data gameSDLController::get_controller_value(ct_type type_req)
 		break;
 
 	case ctAxis:
+	{
+		float largest_delta = BINDING_SENSITIVITY;
+
 		for (i = 2; i < m_NumControls; i++)
 		{
-			float pos;
 			unsigned ctl = CONTROLLER_CTL_INFO(i, NULL_CONTROLLER);
 
-			if (m_ControlList[i].flags & CTF_V_AXIS)
+			for (ubyte axis = CT_X_AXIS; axis <= CT_V_AXIS; axis++)
 			{
-				pos = get_axis_value(i, CT_V_AXIS, ctAnalog);
-				//[ISB] why are axis values 1 based?
-				if (fabs(pos - m_ControlList[i].commit_state[CT_V_AXIS - 1]) > BINDING_SENSITIVITY)
-					val = make_axis_binding_result(ctl, CT_V_AXIS, pos, m_ControlList[i].commit_state[CT_V_AXIS - 1]);
-			}
-			if (m_ControlList[i].flags & CTF_U_AXIS)
-			{
-				pos = get_axis_value(i, CT_U_AXIS, ctAnalog);
-				if (fabs(pos - m_ControlList[i].commit_state[CT_U_AXIS - 1]) > BINDING_SENSITIVITY)
-					val = make_axis_binding_result(ctl, CT_U_AXIS, pos, m_ControlList[i].commit_state[CT_U_AXIS - 1]);
-			}
-			if (m_ControlList[i].flags & CTF_R_AXIS)
-			{
-				pos = get_axis_value(i, CT_R_AXIS, ctAnalog);
-				if (fabs(pos - m_ControlList[i].commit_state[CT_R_AXIS - 1]) > BINDING_SENSITIVITY)
-					val = make_axis_binding_result(ctl, CT_R_AXIS, pos, m_ControlList[i].commit_state[CT_R_AXIS - 1]);
-			}
-			if (m_ControlList[i].flags & CTF_Z_AXIS)
-			{
-				pos = get_axis_value(i, CT_Z_AXIS, ctAnalog);
-				if (fabs(pos - m_ControlList[i].commit_state[CT_Z_AXIS - 1]) > BINDING_SENSITIVITY)
-					val = make_axis_binding_result(ctl, CT_Z_AXIS, pos, m_ControlList[i].commit_state[CT_Z_AXIS - 1]);
-			}
-			if (m_ControlList[i].flags & CTF_Y_AXIS)
-			{
-				pos = get_axis_value(i, CT_Y_AXIS, ctAnalog);
-				if (fabs(pos - m_ControlList[i].commit_state[CT_Y_AXIS - 1]) > BINDING_SENSITIVITY)
-					val = make_axis_binding_result(ctl, CT_Y_AXIS, pos, m_ControlList[i].commit_state[CT_Y_AXIS - 1]);
-			}
-			if (m_ControlList[i].flags & CTF_X_AXIS)
-			{
-				pos = get_axis_value(i, CT_X_AXIS, ctAnalog);
-				if (fabs(pos - m_ControlList[i].commit_state[CT_X_AXIS - 1]) > BINDING_SENSITIVITY)
-					val = make_axis_binding_result(ctl, CT_X_AXIS, pos, m_ControlList[i].commit_state[CT_X_AXIS - 1]);
+				const int axis_index = axis - 1;
+				if (!(m_ControlList[i].flags & (1 << axis_index)))
+					continue;
+
+				const float pos = get_raw_axis_value(i, axis);
+				const float rest = m_ControlList[i].commit_state[axis_index];
+				const float delta = fabs(pos - rest);
+				if (delta > largest_delta)
+				{
+					largest_delta = delta;
+					val = make_axis_binding_result(ctl, axis, pos, rest);
+				}
 			}
 		}
 		break;
+	}
 
 	case ctMouseAxis:
 	{
@@ -1513,7 +1494,7 @@ void gameSDLController::commit_axis_state()
 		{
 			//if (m_ControlList[i].flags & (1 << axis))
 			{
-				float value = get_axis_value(i, axis + 1, ctAnalog);
+				float value = get_raw_axis_value(i, axis + 1);
 				m_ControlList[i].commit_state[axis] = value;
 			}
 		}
