@@ -793,6 +793,15 @@ void ctl_cfg_set_and_verify_changes(short fnid, ct_type elem_type, ubyte ctrl, u
 	Controller->get_controller_function(fnid, ctype_fn, &ccfgdata_fn, cfgflags_fn);
 	
 	parse_config_data(&cfgparts, ctype_fn[0], ctype_fn[1], ccfgdata_fn);
+
+	// Mouse Y has historically represented inverted flight pitch in the
+	// default mouse preset. Preserve that expectation when it is assigned
+	// manually as well; users can still disable inversion in binding options.
+	if (fnid == ctfPITCH_DOWNAXIS && elem_type == ctMouseAxis &&
+		elem == CT_Y_AXIS)
+	{
+		flags |= CTFNF_INVERT | CTFNF_INVERT_EXPLICIT;
+	}
 	
 	ctype_fn[slot] = elem_type;
 	cfgflags_fn[slot] = flags;
@@ -912,9 +921,15 @@ void ctl_cfg_element_options_dialog(short fnid)
 		}
 		if (inv_binding[0]) {
 			cfgflags_fn[0] = (*inv_binding[0]) ? (cfgflags_fn[0] | CTFNF_INVERT) : (cfgflags_fn[0] & (~CTFNF_INVERT));
+			if (fnid == ctfPITCH_DOWNAXIS && ctype_fn[0] == ctMouseAxis &&
+				cfgparts.bind_0 == CT_Y_AXIS)
+				cfgflags_fn[0] |= CTFNF_INVERT_EXPLICIT;
 		}
 		if (inv_binding[1]) {
 			cfgflags_fn[1] = (*inv_binding[1]) ? (cfgflags_fn[1] | CTFNF_INVERT) : (cfgflags_fn[1] & (~CTFNF_INVERT));
+			if (fnid == ctfPITCH_DOWNAXIS && ctype_fn[1] == ctMouseAxis &&
+				cfgparts.bind_1 == CT_Y_AXIS)
+				cfgflags_fn[1] |= CTFNF_INVERT_EXPLICIT;
 		}
 	
 		ccfgdata_fn = unify_config_data(&cfgparts);

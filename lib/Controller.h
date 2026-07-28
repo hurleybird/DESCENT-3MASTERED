@@ -84,6 +84,7 @@ const ubyte CT_X_AXIS = 1,			// AXIS constants for ctAxis
 #define CTFNF_AXIS_BUTTON_NEGATIVE	0x4	// activate while travelling toward -1
 #define CTFNF_AXIS_BUTTON_REST_LOW	0x8	// the axis rests near -1 (for example, a trigger)
 #define CTFNF_AXIS_BUTTON_REST_HIGH	0x10	// the axis rests near +1
+#define CTFNF_INVERT_EXPLICIT		0x20	// inversion was explicitly chosen rather than inherited from defaults
 
 #define CTFNF_AXIS_BUTTON_MASK		(CTFNF_AXIS_BUTTON | CTFNF_AXIS_BUTTON_NEGATIVE | \
 									 CTFNF_AXIS_BUTTON_REST_LOW | CTFNF_AXIS_BUTTON_REST_HIGH)

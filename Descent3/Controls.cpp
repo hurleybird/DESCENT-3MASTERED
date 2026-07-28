@@ -150,7 +150,7 @@ ct_function Controller_needs[NUM_CONTROLLER_FUNCTIONS] = {
 	{ ctfRIGHT_THRUSTKEY,		ctTime,		ctKey,		ctKey,			KEY_PAD3,		0 ,0,0},
 	{ ctfLEFT_BUTTON,			ctDigital,	ctPOV,		ctButton,		JOYPOV_LEFT,	0 ,0,0},
 	{ ctfLEFT_THRUSTKEY,		ctTime,		ctKey,		ctKey,			KEY_PAD1,		0 ,0,0},
-	{ ctfPITCH_DOWNAXIS,		ctAnalog,	ctAxis,		ctMouseAxis,	CT_Y_AXIS,		CT_Y_AXIS ,0,0},
+	{ ctfPITCH_DOWNAXIS,		ctAnalog,	ctAxis,		ctMouseAxis,	CT_Y_AXIS,		CT_Y_AXIS, 0, CTFNF_INVERT | CTFNF_INVERT_EXPLICIT},
 	{ ctfPITCH_DOWNKEY,			ctTime,		ctKey,		ctKey,			KEY_UP,			KEY_PAD8,0,0},
 	{ ctfPITCH_DOWNBUTTON,		ctDigital,	ctButton,	ctButton,		0,				0 ,0,0},
 	{ ctfPITCH_UPKEY,			ctTime,		ctKey,		ctKey,			KEY_DOWN,		KEY_PAD2,0,0},
@@ -1077,6 +1077,17 @@ void DoControllerMisc(game_controls *controls)
 }
 
 
+static constexpr ubyte ApplyMousePitchInversionDefault(ubyte flags)
+{
+	return (flags & CTFNF_INVERT_EXPLICIT) ? flags : (flags | CTFNF_INVERT);
+}
+
+static_assert(ApplyMousePitchInversionDefault(0) == CTFNF_INVERT);
+static_assert(ApplyMousePitchInversionDefault(CTFNF_INVERT) == CTFNF_INVERT);
+static_assert(ApplyMousePitchInversionDefault(CTFNF_INVERT_EXPLICIT) == CTFNF_INVERT_EXPLICIT);
+static_assert(ApplyMousePitchInversionDefault(CTFNF_INVERT | CTFNF_INVERT_EXPLICIT) ==
+	(CTFNF_INVERT | CTFNF_INVERT_EXPLICIT));
+
 //	sets the internal controller config to the current pilot's configuration.
 void LoadControlConfig(pilot *plt)
 {
@@ -1099,6 +1110,19 @@ void LoadControlConfig(pilot *plt)
 		flags[0] = plt->controls[i].flags[0];
 		flags[1] = plt->controls[i].flags[1];
 
+		if (id == ctfPITCH_DOWNAXIS)
+		{
+			const ushort bindings = CONTROLLER_VALUE(ccfgdata);
+			const ubyte binding[CTLBINDS_PER_FUNC] = {
+				static_cast<ubyte>(CONTROLLER_CTL1_VALUE(bindings)),
+				static_cast<ubyte>(CONTROLLER_CTL2_VALUE(bindings))
+			};
+			for (int slot = 0; slot < CTLBINDS_PER_FUNC; ++slot)
+			{
+				if (type[slot] == ctMouseAxis && binding[slot] == CT_Y_AXIS)
+					flags[slot] = ApplyMousePitchInversionDefault(flags[slot]);
+			}
+		}
 		Controller->set_controller_function(id, type, ccfgdata, flags);
 	}
 
