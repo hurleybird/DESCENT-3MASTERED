@@ -1000,7 +1000,10 @@ static bool TryBatchSubmodelBaseFace(poly_model *pm, bsp_info *sm, int facenum,
 		else if (texp->flags & TF_ALPHA)
 			key.alpha_type = ATF_CONSTANT + ATF_VERTEX;
 		else
-			key.alpha_type = ATF_TEXTURE + ATF_VERTEX;
+			// A face admitted to the opaque batch has no material, effect, or
+			// vertex transparency.  Its 4444 alpha may instead be an authored
+			// specular mask, so do not reinterpret that channel as coverage.
+			key.alpha_type = allow_alpha ? ATF_TEXTURE + ATF_VERTEX : AT_TEXTURE;
 		key.flat_color = 0;
 		if (Polymodel_light_type == POLYMODEL_LIGHTING_GOURAUD)
 			key.lighting = GetPolymodelGouraudLightingState();
@@ -1356,7 +1359,8 @@ inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 			if ((texp->flags & TF_ALPHA) || (Polymodel_use_effect && (Polymodel_effect.type & PEF_ALPHA)))
 				rend_SetAlphaType (ATF_CONSTANT+ATF_VERTEX);
 			else
-				rend_SetAlphaType (ATF_TEXTURE+ATF_VERTEX);
+				rend_SetAlphaType(PolymodelFaceUsesAlpha(pm, sm, facenum) ?
+					ATF_TEXTURE + ATF_VERTEX : AT_TEXTURE);
 		}
 	}
 	else

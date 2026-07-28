@@ -648,18 +648,8 @@ void GLCompatibilityRenderer::TranslateBitmapToOpenGL(int texnum, int bm_handle,
 				if (bm_format(bm_handle) == BITMAP_FORMAT_4444)
 				{
 					// Do 4444
-					if (bm_mipped(bm_handle))
-					{
-						for (i = 0; i < w * h; i++)
-							opengl_packed_Upload_data[i] =
-								0xf | opengl_packed_4444_translate_table[bm_ptr[i]];
-					}
-					else
-					{
-						for (i = 0; i < w * h; i++)
-							opengl_packed_Upload_data[i] =
-								opengl_packed_4444_translate_table[bm_ptr[i]];
-					}
+					for (i = 0; i < w * h; i++)
+						opengl_packed_Upload_data[i] = opengl_packed_4444_translate_table[bm_ptr[i]];
 
 					if (replace)
 					{
@@ -739,18 +729,8 @@ void GLCompatibilityRenderer::TranslateBitmapToOpenGL(int texnum, int bm_handle,
 				if (bm_format(bm_handle) == BITMAP_FORMAT_4444)
 				{
 					// Do 4444
-					if (bm_mipped(bm_handle))
-					{
-						for (i = 0; i < w * h; i++)
-							opengl_Upload_data[i] =
-								(255u << 24) | opengl_4444_translate_table[bm_ptr[i]];
-					}
-					else
-					{
-						for (i = 0; i < w * h; i++)
-							opengl_Upload_data[i] =
-								opengl_4444_translate_table[bm_ptr[i]];
-					}
+					for (i = 0; i < w * h; i++)
+						opengl_Upload_data[i] = opengl_4444_translate_table[bm_ptr[i]];
 				}
 				else
 				{
