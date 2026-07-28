@@ -82,6 +82,7 @@ struct face
 #define PF_CHANGED					16		// Used for multiplayer - this portal has been changed
 #define PF_BLOCK					32
 #define PF_BLOCK_REMOVABLE			64
+#define PF_SUPPRESS_FACE_RENDER		128		// runtime-only: keep portal collision but do not draw its face
 
 
 //a connection between two rooms

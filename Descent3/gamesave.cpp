@@ -813,7 +813,10 @@ void SGSRooms(CFILE* fp)
 
 			for (p = 0; p < Rooms[i].num_portals; p++)
 			{
-				gs_WriteInt(fp, Rooms[i].portals[p].flags);
+				// Renderer-only content corrections are reconstructed after
+				// load and must not leak into interoperable save data.
+				gs_WriteInt(fp, Rooms[i].portals[p].flags &
+					~PF_SUPPRESS_FACE_RENDER);
 			}
 
 			//save doorway info

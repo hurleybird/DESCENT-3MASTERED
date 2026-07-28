@@ -56,6 +56,7 @@
 #include "hud.h"
 #include "gameloop.h"
 #include "savegame_compat.h"
+#include "LoadLevel.h"
 
 void PageInAllData ();
 
@@ -294,6 +295,7 @@ START_VERIFY_SAVEFILE(fp);
 // read in room info
 	retval = LGSRooms(fp);
 	if (retval != LGS_OK) goto loadsg_error;
+	ApplyMissionLevelRenderCorrections();
 
 // read in trigger info
 	retval = LGSTriggers(fp);

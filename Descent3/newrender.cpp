@@ -220,6 +220,9 @@ struct RoomMesh
 			int portalnum = Rooms[roomnum].faces[element.facenum].portal_num;
 			if (portalnum != -1)
 			{
+				if (Rooms[roomnum].portals[portalnum].flags &
+					PF_SUPPRESS_FACE_RENDER)
+					continue;
 				if (!(Rooms[roomnum].portals[portalnum].flags & PF_RENDER_FACES) && !(Rooms[roomnum].flags & RF_FOG))
 					continue;
 			}
