@@ -55,4 +55,6 @@ Pick any two. Choose all three and do not expect the best framerates.
 but unlike Piccu. Custom Descent 3 levels may ship with 32-bit embedded code. 3MASTERED offers **experimental** backwards
 compatibility via a 32-bit background process that interops with the 64-bit engine.
 
+**On AI Use:** Yup. I've made substantial use of AI agents in development of the port.
+
 **On multiplayer:** Not yet well tested. Godspeed.
