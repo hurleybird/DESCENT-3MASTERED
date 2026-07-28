@@ -2799,6 +2799,46 @@ static void SpecularBuildResolvedSourceSet(PrecomputedSpecularSourceSet& set,
 	}
 }
 
+static int SpecularFindFaceCorner(face* fp, int vertex_index)
+{
+	for (int corner = 0; corner < fp->num_verts; corner++)
+	{
+		if (fp->face_verts[corner] == vertex_index)
+			return corner;
+	}
+	return -1;
+}
+
+static vector SpecularFaceCornerNormal(const SpecularFaceInfo& info, int corner)
+{
+	face* fp = &Rooms[info.room_index].faces[info.face_index];
+	vector normal = info.basis.normal;
+	if (corner >= 0 && FaceHasSmoothSpecularNormals(fp))
+		normal = SpecialFaces[fp->special_handle].vertnorms[corner];
+	if (vm_NormalizeVector(&normal) <= 0.0001f)
+		normal = info.basis.normal;
+	return normal;
+}
+
+static float SpecularFaceCornerAngle(room* rp, face* fp, int corner)
+{
+	if (corner < 0 || fp->num_verts < 3)
+		return 1.0f;
+
+	const vector& center = rp->verts[fp->face_verts[corner]];
+	vector previous = rp->verts[fp->face_verts[
+		(corner + fp->num_verts - 1) % fp->num_verts]] - center;
+	vector next = rp->verts[fp->face_verts[(corner + 1) % fp->num_verts]] - center;
+	if (vm_NormalizeVector(&previous) <= 0.0001f ||
+		vm_NormalizeVector(&next) <= 0.0001f)
+	{
+		return 1.0f;
+	}
+
+	const float dot = SpecularClamp(previous * next, -1.0f, 1.0f);
+	return std::max(acosf(dot), 0.01f);
+}
+
 static void SpecularBuildResolvedNormalsForFace(PrecomputedSpecularFaceSources& cached,
 	const SpecularFaceInfo& target, const std::vector<std::vector<SpecularFaceAdjacency>>& adjacency,
 	const std::vector<SpecularFaceInfo>& faces)
@@ -2810,56 +2850,69 @@ static void SpecularBuildResolvedNormalsForFace(PrecomputedSpecularFaceSources& 
 
 	for (int vn = 0; vn < fp->num_verts; vn++)
 	{
-		vector base_normal = target.basis.normal;
-		if (FaceHasSmoothSpecularNormals(fp))
-			base_normal = SpecialFaces[fp->special_handle].vertnorms[vn];
-		if (vm_NormalizeVector(&base_normal) <= 0.0001f)
-			base_normal = target.basis.normal;
-
-		vector normal_sum = base_normal;
-		float total_weight = 1.0f;
 		const int vert_index = fp->face_verts[vn];
-
-		for (const SpecularFaceAdjacency& edge : adjacency[target.face_info_index])
+		std::vector<int> component;
+		std::vector<int> pending;
+		component.push_back(target.face_info_index);
+		pending.push_back(target.face_info_index);
+		for (size_t pending_index = 0; pending_index < pending.size(); pending_index++)
 		{
-			const SpecularFaceInfo& neighbor_info = faces[edge.face_info_index];
-			room* neighbor_room = &Rooms[neighbor_info.room_index];
-			face* neighbor_face = &neighbor_room->faces[neighbor_info.face_index];
-			if (neighbor_info.split_tmap != target.split_tmap)
-				continue;
-			if (neighbor_room != rp)
-				continue;
-
-			bool shares_vertex = false;
-			vector neighbor_normal = neighbor_info.basis.normal;
-			for (int nv = 0; nv < neighbor_face->num_verts; nv++)
+			const int current_index = pending[pending_index];
+			const SpecularFaceInfo& current = faces[current_index];
+			for (const SpecularFaceAdjacency& edge : adjacency[current_index])
 			{
-				if (neighbor_face->face_verts[nv] == vert_index)
+				// Vertex-only contact is not a continuous surface. Restrict smoothing
+				// to faces joined by an edge and in the same geometric crease
+				// component. Material and UV seams do not make a smooth surface
+				// geometrically discontinuous.
+				if (edge.base_cost > 0.0f)
+					continue;
+				const SpecularFaceInfo& neighbor = faces[edge.face_info_index];
+				if (neighbor.room_index != target.room_index)
 				{
-					shares_vertex = true;
-					if (FaceHasSmoothSpecularNormals(neighbor_face))
-						neighbor_normal = SpecialFaces[neighbor_face->special_handle].vertnorms[nv];
-					break;
+					continue;
 				}
+				face* neighbor_face =
+					&Rooms[neighbor.room_index].faces[neighbor.face_index];
+				if (SpecularFindFaceCorner(neighbor_face, vert_index) < 0)
+					continue;
+				const float normal_dot = SpecularClamp(
+					current.basis.normal * neighbor.basis.normal, -1.0f, 1.0f);
+				if (normal_dot < 0.70f)
+					continue;
+				if (std::find(component.begin(), component.end(),
+					edge.face_info_index) != component.end())
+				{
+					continue;
+				}
+				component.push_back(edge.face_info_index);
+				pending.push_back(edge.face_info_index);
 			}
-			if (!shares_vertex)
-				continue;
-
-			if (vm_NormalizeVector(&neighbor_normal) <= 0.0001f)
-				neighbor_normal = neighbor_info.basis.normal;
-
-			const float normal_dot = SpecularClamp(target.basis.normal * neighbor_normal, -1.0f, 1.0f);
-			if (normal_dot < 0.35f)
-				continue;
-
-			const float weight = normal_dot * normal_dot;
-			normal_sum += neighbor_normal * weight;
-			total_weight += weight;
 		}
 
-		normal_sum /= total_weight;
+		// Every face in a connected smoothing component must sum the same inputs
+		// in the same order. This gives duplicated retained corners bit-identical
+		// normals instead of target-face-relative approximations.
+		std::sort(component.begin(), component.end());
+		vector normal_sum = { 0.0f, 0.0f, 0.0f };
+		float total_weight = 0.0f;
+		for (int face_info_index : component)
+		{
+			const SpecularFaceInfo& info = faces[face_info_index];
+			room* component_room = &Rooms[info.room_index];
+			face* component_face = &component_room->faces[info.face_index];
+			const int corner = SpecularFindFaceCorner(component_face, vert_index);
+			if (corner < 0)
+				continue;
+			const float weight =
+				SpecularFaceCornerAngle(component_room, component_face, corner);
+			normal_sum += SpecularFaceCornerNormal(info, corner) * weight;
+			total_weight += weight;
+		}
+		if (total_weight > 0.0f)
+			normal_sum /= total_weight;
 		if (vm_NormalizeVector(&normal_sum) <= 0.0001f)
-			normal_sum = target.basis.normal;
+			normal_sum = SpecularFaceCornerNormal(target, vn);
 		cached.normals[vn] = normal_sum;
 	}
 }
@@ -2979,8 +3032,11 @@ void PrecomputeMineSpecularSources()
 	std::vector<int> exact_donors;
 	std::vector<float> split_costs;
 	std::vector<int> split_donors;
-	SpecularRunSourceFlood(faces, adjacency, donors, false, exact_costs, exact_donors);
-	SpecularRunSourceFlood(faces, adjacency, donors, true, split_costs, split_donors);
+	if (!Render_per_pixel_field_static_specular)
+	{
+		SpecularRunSourceFlood(faces, adjacency, donors, false, exact_costs, exact_donors);
+		SpecularRunSourceFlood(faces, adjacency, donors, true, split_costs, split_donors);
+	}
 
 	SpecularSpatialField spatial_field;
 	SpecularBuildSpatialField(spatial_field, faces, field_samples);
@@ -2991,14 +3047,17 @@ void PrecomputeMineSpecularSources()
 		PrecomputedSpecularFaceSources& cached =
 			Precomputed_specular_sources[info.room_index][info.face_index];
 
-		std::vector<SpecularResolvedDonor> selected;
-		SpecularSelectResolvedDonors(info, donors, info.exact_tmap, false,
-			exact_donors[face_info_index], exact_costs[face_info_index], selected);
-		SpecularBuildResolvedSourceSet(cached.exact, info, donors, selected);
+		if (!Render_per_pixel_field_static_specular)
+		{
+			std::vector<SpecularResolvedDonor> selected;
+			SpecularSelectResolvedDonors(info, donors, info.exact_tmap, false,
+				exact_donors[face_info_index], exact_costs[face_info_index], selected);
+			SpecularBuildResolvedSourceSet(cached.exact, info, donors, selected);
 
-		SpecularSelectResolvedDonors(info, donors, info.split_tmap, true,
-			split_donors[face_info_index], split_costs[face_info_index], selected);
-		SpecularBuildResolvedSourceSet(cached.split, info, donors, selected);
+			SpecularSelectResolvedDonors(info, donors, info.split_tmap, true,
+				split_donors[face_info_index], split_costs[face_info_index], selected);
+			SpecularBuildResolvedSourceSet(cached.split, info, donors, selected);
+		}
 
 		SpecularBuildResolvedNormalsForFace(cached, info, adjacency, faces);
 	};
@@ -3214,15 +3273,7 @@ static void SpecularBuildStaticBlockSources(room* rp, int current_face_index, Sp
 
 	if (Render_per_pixel_field_static_specular)
 	{
-		if (!Render_per_pixel_field_missing_only_static_specular ||
-			fp->special_handle == BAD_SPECIAL_FACE_INDEX)
-		{
-			SpecularSetFieldStaticSourceCount(rp, current_face_index, specblock);
-		}
-		else
-		{
-			SpecularAddFaceStaticSources(specblock, fp);
-		}
+		SpecularSetFieldStaticSourceCount(rp, current_face_index, specblock);
 		return;
 	}
 
@@ -3265,11 +3316,10 @@ static void PrepareSpecularDynamicLight(renderer_per_pixel_light& light)
 	}
 }
 
-static bool UseFieldStaticSpecularForFace(face* fp)
+static bool UseFieldStaticSpecularForRoom(room* rp)
 {
 	return Render_per_pixel_field_static_specular &&
-		(!Render_per_pixel_field_missing_only_static_specular ||
-		 fp->special_handle == BAD_SPECIAL_FACE_INDEX);
+		rp && !(rp->flags & RF_EXTERNAL);
 }
 
 static bool BuildPerPixelSpecularState(room* rp, int face_index, SpecularBlock& specblock,
@@ -3289,7 +3339,7 @@ static bool BuildPerPixelSpecularState(room* rp, int face_index, SpecularBlock& 
 	specblock.debug_authored = SpecularFaceHasLocalSources(fp) ? 1.0f : 0.0f;
 
 	SpecularBuildStaticBlockSources(rp, face_index, specblock);
-	if (UseFieldStaticSpecularForFace(fp))
+	if (UseFieldStaticSpecularForRoom(rp))
 	{
 		specblock.pad0 = 1.0f;
 	}
@@ -3308,7 +3358,7 @@ static void SetSpecularNormalsForFace(room* rp, face* fp, g3Point** pointlist)
 {
 	const bool has_smooth_normals = FaceHasSmoothSpecularNormals(fp);
 	const int face_index = fp - rp->faces;
-	const std::vector<vector>* resolved_normals = has_smooth_normals ? nullptr :
+	const std::vector<vector>* resolved_normals =
 		SpecularGetResolvedNormals(rp, face_index);
 	for (int vn = 0; vn < fp->num_verts; vn++)
 	{
@@ -3345,7 +3395,7 @@ static void SetFieldSpecularSourcesForFace(room* rp, face* fp, g3Point** pointli
 	for (int vn = 0; vn < fp->num_verts; vn++)
 		ClearFieldSpecularSourcesForPoint(pointlist[vn]);
 
-	if (!UseFieldStaticSpecularForFace(fp))
+	if (!UseFieldStaticSpecularForRoom(rp))
 		return;
 
 	int room_index = rp - Rooms;
@@ -3389,7 +3439,7 @@ void PopulateRetainedRoomSpecularVertices(room* rp, int facenum,
 	face* fp = &rp->faces[facenum];
 	count = std::min(count, (int)fp->num_verts);
 	const bool has_smooth_normals = FaceHasSmoothSpecularNormals(fp);
-	const std::vector<vector>* resolved_normals = has_smooth_normals ? nullptr :
+	const std::vector<vector>* resolved_normals =
 		SpecularGetResolvedNormals(rp, facenum);
 	for (int vn = 0; vn < count; vn++)
 	{
@@ -3443,7 +3493,7 @@ void PopulateRetainedRoomSpecularPoints(room* rp, int facenum,
 		return;
 	face* fp = &rp->faces[facenum];
 	const bool has_smooth_normals = FaceHasSmoothSpecularNormals(fp);
-	const std::vector<vector>* resolved_normals = has_smooth_normals ? nullptr :
+	const std::vector<vector>* resolved_normals =
 		SpecularGetResolvedNormals(rp, facenum);
 	const int room_index = (int)(rp - Rooms);
 	const PrecomputedSpecularFaceSources* cached = nullptr;
@@ -3591,7 +3641,7 @@ void RenderSpecularFacesFlat(room* rp)
 			// only by ordinary material state and can share one multi-draw instead of
 			// updating a UBO and issuing a draw for every face.
 			const bool can_batch_field = dynamic_light_count == 0 &&
-				UseFieldStaticSpecularForFace(fp) && specular_clip_codes == 0 &&
+				UseFieldStaticSpecularForRoom(rp) && specular_clip_codes == 0 &&
 				rend_RetainedRoomLightmapsReady() && !In_editor_mode &&
 				RetainedRoomCanDrawBaseFace(rp, face_index);
 			if (can_batch_field)

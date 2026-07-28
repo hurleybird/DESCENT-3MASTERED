@@ -133,7 +133,6 @@ float Render_per_pixel_specular_field_resolution = 100.0f;
 float Render_per_pixel_specular_field_sample_distance = 32.0f;
 bool Render_per_pixel_sparse_specular_field = false;
 bool Render_per_pixel_field_static_specular = true;
-bool Render_per_pixel_field_missing_only_static_specular = true;
 bool Cockpit_alt_mode = true;
 float Render_FOV_desired = 82;
 
@@ -234,7 +233,6 @@ void ConfigResetPerPixelSpecularSettings()
 	Render_per_pixel_specular_field_sample_distance = 32.0f;
 	Render_per_pixel_sparse_specular_field = false;
 	Render_per_pixel_field_static_specular = true;
-	Render_per_pixel_field_missing_only_static_specular = true;
 }
 
 static int ConfigNormalizeAOResolution(int resolution)
