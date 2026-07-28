@@ -1324,8 +1324,6 @@ void RenderAuxHUDFrame()
 
 }
 
-extern const char* cfg_binding_text(ct_type ctype, ubyte ctrl, ubyte binding);
-
 char* GetControllerBindingText(int fidcont)
 {
 	static char* cont_bind_txt;
@@ -1345,7 +1343,7 @@ char* GetControllerBindingText(int fidcont)
 	ubyte one_binding = cfgparts.bind_0;
 	ubyte one_ctrlbind = cfgparts.ctrl_0;
 
-	cont_bind_txt = (char*)cfg_binding_text(ctype[0], one_ctrlbind, one_binding);
+	cont_bind_txt = (char*)cfg_binding_text(ctype[0], one_ctrlbind, one_binding, cfgflags[0]);
 	return cont_bind_txt;
 }
 
@@ -1368,7 +1366,7 @@ char* GetKeyBindingText(int fidkey)
 	ubyte one_binding = cfgparts.bind_0;
 	ubyte one_ctrlbind = cfgparts.ctrl_0;
 
-	key_bind_txt = (char*)cfg_binding_text(ctype[0], one_ctrlbind, one_binding);
+	key_bind_txt = (char*)cfg_binding_text(ctype[0], one_ctrlbind, one_binding, cfgflags[0]);
 	return key_bind_txt;
 }
 

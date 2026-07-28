@@ -80,6 +80,13 @@ const ubyte CT_X_AXIS = 1,			// AXIS constants for ctAxis
 
 // ct_function flags
 #define CTFNF_INVERT				0x1	// invert values returned via get_packet.
+#define CTFNF_AXIS_BUTTON			0x2	// treat a controller axis as a digital button
+#define CTFNF_AXIS_BUTTON_NEGATIVE	0x4	// activate while travelling toward -1
+#define CTFNF_AXIS_BUTTON_REST_LOW	0x8	// the axis rests near -1 (for example, a trigger)
+#define CTFNF_AXIS_BUTTON_REST_HIGH	0x10	// the axis rests near +1
+
+#define CTFNF_AXIS_BUTTON_MASK		(CTFNF_AXIS_BUTTON | CTFNF_AXIS_BUTTON_NEGATIVE | \
+									 CTFNF_AXIS_BUTTON_REST_LOW | CTFNF_AXIS_BUTTON_REST_HIGH)
 
 
 #define NULL_BINDING				0x00
@@ -103,6 +110,83 @@ const ubyte CT_X_AXIS = 1,			// AXIS constants for ctAxis
 #define MAKE_CONFIG_DATA(_c, _v) makeword(_c,_v)
 
 #define CTLBINDS_PER_FUNC	2
+
+// Runtime state for an analog axis bound to a digital action. This mirrors the
+// state exposed by physical buttons: held state, edge count, and held time.
+struct ct_axis_button_state
+{
+	bool initialized = false;
+	bool pressed = false;
+	ubyte presses = 0;
+	float pending_time = 0.0f;
+	float last_update_time = 0.0f;
+};
+
+constexpr float CT_AXIS_BUTTON_PRESS_POINT = 0.5f;
+constexpr float CT_AXIS_BUTTON_RELEASE_POINT = CT_AXIS_BUTTON_PRESS_POINT * 0.75f;
+
+constexpr float ct_axis_button_travel(float raw_value, ubyte flags)
+{
+	const float rest = (flags & CTFNF_AXIS_BUTTON_REST_LOW) ? -1.0f :
+		((flags & CTFNF_AXIS_BUTTON_REST_HIGH) ? 1.0f : 0.0f);
+	const float endpoint = (flags & CTFNF_AXIS_BUTTON_NEGATIVE) ? -1.0f : 1.0f;
+	const float range = endpoint > rest ? endpoint - rest : rest - endpoint;
+	const float directed_travel = endpoint > rest ? raw_value - rest : rest - raw_value;
+	const float normalized = range > 0.0001f ? directed_travel / range : 0.0f;
+	return normalized < 0.0f ? 0.0f : (normalized > 1.0f ? 1.0f : normalized);
+}
+
+static_assert(ct_axis_button_travel(0.5f, CTFNF_AXIS_BUTTON) == 0.5f);
+static_assert(ct_axis_button_travel(-0.5f, CTFNF_AXIS_BUTTON | CTFNF_AXIS_BUTTON_NEGATIVE) == 0.5f);
+static_assert(ct_axis_button_travel(0.0f, CTFNF_AXIS_BUTTON | CTFNF_AXIS_BUTTON_REST_LOW) == 0.5f);
+static_assert(ct_axis_button_travel(0.0f, CTFNF_AXIS_BUTTON | CTFNF_AXIS_BUTTON_NEGATIVE |
+	CTFNF_AXIS_BUTTON_REST_HIGH) == 0.5f);
+
+inline void ct_axis_button_update(ct_axis_button_state& state, float travel, float now)
+{
+	if (!state.initialized)
+	{
+		state.initialized = true;
+		state.pressed = travel >= CT_AXIS_BUTTON_PRESS_POINT;
+		state.presses = state.pressed ? 1 : 0;
+		state.last_update_time = now;
+		return;
+	}
+
+	if (state.pressed && now > state.last_update_time)
+		state.pending_time += now - state.last_update_time;
+
+	const bool pressed_now = state.pressed
+		? travel > CT_AXIS_BUTTON_RELEASE_POINT
+		: travel >= CT_AXIS_BUTTON_PRESS_POINT;
+	if (pressed_now && !state.pressed && state.presses < 255)
+		++state.presses;
+	state.pressed = pressed_now;
+	state.last_update_time = now;
+}
+
+inline float ct_axis_button_read(ct_axis_button_state& state, ct_format format)
+{
+	switch (format)
+	{
+	case ctDigital:
+		return state.pressed ? 1.0f : 0.0f;
+	case ctDownCount:
+	{
+		const float presses = static_cast<float>(state.presses);
+		state.presses = 0;
+		return presses;
+	}
+	case ctTime:
+	{
+		const float held_time = state.pending_time;
+		state.pending_time = 0.0f;
+		return held_time;
+	}
+	default:
+		return 0.0f;
+	}
+}
 
 class gameController
 {

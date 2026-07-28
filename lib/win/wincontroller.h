@@ -147,6 +147,7 @@ private:
 		ubyte flags[2];
 		bool enabled;
 	} m_ElementList[CT_MAX_ELEMENTS];
+	ct_axis_button_state m_AxisButtonStates[CT_MAX_ELEMENTS][CTLBINDS_PER_FUNC]{};
 
 	bool enum_controllers(char *remote_adr);
 
@@ -162,8 +163,10 @@ private:
 //	returns the controller with a pov hat
 	sbyte get_pov_controller(ubyte pov);
 
-//	note controller is index into ControlList.
+	//	note controller is index into ControlList.
 	float get_axis_value(sbyte controller, ubyte axis, ct_format format,bool invert = false);
+	float get_raw_axis_value(sbyte controller, ubyte axis);
+	float get_axis_button_value(int id, int slot, sbyte controller, ubyte axis, ct_format format);
 
 //	get value of button in  seconds, presses, etc.
 	float get_button_value(sbyte controller, ct_format format, ubyte button);

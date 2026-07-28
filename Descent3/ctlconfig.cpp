@@ -154,7 +154,8 @@ t_cfg_element Cfg_joy_elements[] =
 
 #define N_JOY_CFG_FN (sizeof(Cfg_joy_elements)/sizeof(t_cfg_element))
 #define N_KEY_CFG_FN (sizeof(Cfg_key_elements)/sizeof(t_cfg_element))
-void ctl_cfg_set_and_verify_changes(short fnid, ct_type elem_type, ubyte controller, ubyte elem, sbyte slot);
+void ctl_cfg_set_and_verify_changes(short fnid, ct_type elem_type, ubyte controller, ubyte elem,
+	ubyte flags, sbyte slot);
 void ctl_cfg_element_options_dialog(short fnid);
 // used for adjusting settings.
 int weapon_select_dialog(int wpn, bool is_secondary);
@@ -226,14 +227,14 @@ void key_cfg_screen::process(int res)
 	{
 		if (m_elem[i].GetID() != -1 && m_elem[i].GetID() == res) {
 		// we chose a slot to configure.
-			ubyte elem, controller;
+			ubyte elem, controller, flags;
 			sbyte slot;
 			ct_type elem_type;
 			if (m_elem[i].GetActiveSlot() == CFGELEM_SLOT_CLEAR) {
 				ctl_cfg_element_options_dialog((short)(res-UID_KEYCFG_ID));
 			}
-			else if (m_elem[i].Configure(&elem_type, &controller, &elem, &slot)) {
-				ctl_cfg_set_and_verify_changes((short)(res-UID_KEYCFG_ID), elem_type, controller, elem, slot);
+			else if (m_elem[i].Configure(&elem_type, &controller, &elem, &flags, &slot)) {
+				ctl_cfg_set_and_verify_changes((short)(res-UID_KEYCFG_ID), elem_type, controller, elem, flags, slot);
 			}
 			break;
 		}
@@ -346,16 +347,16 @@ void joy_cfg_screen::process(int res)
 		if (m_elem[i].GetID() != -1 && m_elem[i].GetID() == res) 
 		{
 		// we chose a slot to configure.
-			ubyte elem, controller;
+			ubyte elem, controller, flags;
 			sbyte slot;
 			ct_type elem_type;
 			if (m_elem[i].GetActiveSlot() == CFGELEM_SLOT_CLEAR) 
 			{
 				ctl_cfg_element_options_dialog((short)(res-UID_JOYCFG_ID));
 			}
-			else if (m_elem[i].Configure(&elem_type, &controller, &elem, &slot)) 
+			else if (m_elem[i].Configure(&elem_type, &controller, &elem, &flags, &slot))
 			{
-				ctl_cfg_set_and_verify_changes((short)(res-UID_JOYCFG_ID), elem_type, controller, elem, slot);
+				ctl_cfg_set_and_verify_changes((short)(res-UID_JOYCFG_ID), elem_type, controller, elem, flags, slot);
 			}
 			break;
 		}
@@ -717,7 +718,8 @@ void wpnsel_cfg_screen::unrealize()
 }
 //////////////////////////////////////////////////////////////////////////////
 // this will take out any repeats of element and slot in function id.
-void ctl_cfg_set_and_verify_changes(short fnid, ct_type elem_type, ubyte ctrl, ubyte elem, sbyte slot)
+void ctl_cfg_set_and_verify_changes(short fnid, ct_type elem_type, ubyte ctrl, ubyte elem,
+	ubyte flags, sbyte slot)
 {
 	ct_type ctype_fn[CTLBINDS_PER_FUNC];
 	ubyte cfgflags_fn[CTLBINDS_PER_FUNC];
@@ -757,14 +759,25 @@ void ctl_cfg_set_and_verify_changes(short fnid, ct_type elem_type, ubyte ctrl, u
 		Controller->get_controller_function(fn_list[i].fn_id, ctype_fn, &ccfgdata_fn, cfgflags_fn);
 		
 		parse_config_data(&cfgparts, ctype_fn[0], ctype_fn[1], ccfgdata_fn);
-		if (elem_type == ctype_fn[0] && elem == cfgparts.bind_0 && cfgparts.ctrl_0 == ctrl) 
+		const bool new_axis_button = elem_type == ctAxis && (flags & CTFNF_AXIS_BUTTON);
+		const bool old_axis_button_0 = ctype_fn[0] == ctAxis && (cfgflags_fn[0] & CTFNF_AXIS_BUTTON);
+		const bool old_axis_button_1 = ctype_fn[1] == ctAxis && (cfgflags_fn[1] & CTFNF_AXIS_BUTTON);
+		const ubyte axis_button_identity_mask = CTFNF_AXIS_BUTTON_MASK;
+
+		if (elem_type == ctype_fn[0] && elem == cfgparts.bind_0 && cfgparts.ctrl_0 == ctrl &&
+			(!new_axis_button && !old_axis_button_0 ||
+			 (new_axis_button && old_axis_button_0 &&
+			  (flags & axis_button_identity_mask) == (cfgflags_fn[0] & axis_button_identity_mask))))
 		{
 		// match found! clear this part out.
 			cfgparts.bind_0 = NULL_BINDING;
 			cfgparts.ctrl_0 = NULL_CONTROLLER;
 			match_found = true;
 		}
-		if (elem_type == ctype_fn[1] && elem == cfgparts.bind_1 && cfgparts.ctrl_1 == ctrl) 
+		if (elem_type == ctype_fn[1] && elem == cfgparts.bind_1 && cfgparts.ctrl_1 == ctrl &&
+			(!new_axis_button && !old_axis_button_1 ||
+			 (new_axis_button && old_axis_button_1 &&
+			  (flags & axis_button_identity_mask) == (cfgflags_fn[1] & axis_button_identity_mask))))
 		{
 		// match found! clear this part out.
 			cfgparts.bind_1 = NULL_BINDING;
@@ -782,7 +795,7 @@ void ctl_cfg_set_and_verify_changes(short fnid, ct_type elem_type, ubyte ctrl, u
 	parse_config_data(&cfgparts, ctype_fn[0], ctype_fn[1], ccfgdata_fn);
 	
 	ctype_fn[slot] = elem_type;
-	cfgflags_fn[slot] = 0;
+	cfgflags_fn[slot] = flags;
 	if (slot == 1) 
 	{
 		cfgparts.bind_1 = elem;	cfgparts.ctrl_1 = ctrl;
@@ -795,7 +808,6 @@ void ctl_cfg_set_and_verify_changes(short fnid, ct_type elem_type, ubyte ctrl, u
 	Controller->set_controller_function(fnid, ctype_fn, ccfgdata_fn, cfgflags_fn);
 }
 // used as a help/options dialog for each controller config element
-extern const char *cfg_binding_text(ct_type ctype, ubyte ctrl, ubyte binding);
 void ctl_cfg_element_options_dialog(short fnid)
 {
 	newuiTiledWindow wnd;
@@ -848,10 +860,11 @@ void ctl_cfg_element_options_dialog(short fnid)
 	inv_binding[0] = NULL;
 	if (cfgparts.ctrl_0 != NULL_CONTROLLER) 
 	{
-		sprintf(str, TXT_CFG_BIND_1, cfg_binding_text(ctype_fn[0], cfgparts.ctrl_0,cfgparts.bind_0));
+		sprintf(str, TXT_CFG_BIND_1, cfg_binding_text(ctype_fn[0], cfgparts.ctrl_0,cfgparts.bind_0, cfgflags_fn[0]));
 		sheet->NewGroup(str, 0, y, NEWUI_ALIGN_HORIZ);
 		clear_binding[0] = sheet->AddCheckBox(TXT_CFG_CLEAR);
-		if (ctype_fn[0] == ctAxis || ctype_fn[0] == ctMouseAxis) 
+		if ((ctype_fn[0] == ctAxis || ctype_fn[0] == ctMouseAxis) &&
+			!(cfgflags_fn[0] & CTFNF_AXIS_BUTTON))
 		{
 			sheet->AddText(TXT_CFG_INVERT);
 			inv_binding[0] = sheet->AddFirstRadioButton(TXT_NO);
@@ -865,10 +878,11 @@ void ctl_cfg_element_options_dialog(short fnid)
 	inv_binding[1] = NULL;
 	if (cfgparts.ctrl_1 != NULL_CONTROLLER) 
 	{
-		sprintf(str, TXT_CFG_BIND_2, cfg_binding_text(ctype_fn[1], cfgparts.ctrl_1,cfgparts.bind_1));
+		sprintf(str, TXT_CFG_BIND_2, cfg_binding_text(ctype_fn[1], cfgparts.ctrl_1,cfgparts.bind_1, cfgflags_fn[1]));
 		sheet->NewGroup(str, 0, y, NEWUI_ALIGN_HORIZ);
 		clear_binding[1] = sheet->AddCheckBox(TXT_CFG_CLEAR);
-		if (ctype_fn[1] == ctAxis || ctype_fn[1] == ctMouseAxis) 
+		if ((ctype_fn[1] == ctAxis || ctype_fn[1] == ctMouseAxis) &&
+			!(cfgflags_fn[1] & CTFNF_AXIS_BUTTON))
 		{
 			sheet->AddText(TXT_CFG_INVERT);
 			inv_binding[1] = sheet->AddFirstRadioButton(TXT_NO);

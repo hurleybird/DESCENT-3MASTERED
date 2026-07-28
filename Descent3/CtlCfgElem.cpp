@@ -196,9 +196,10 @@ void Localize_ctl_bindings()
 
 
 //////////////////////////////////////////////////////////////////////////////
-const char *cfg_binding_text(ct_type ctype, ubyte ctrl, ubyte binding)
+const char *cfg_binding_text(ct_type ctype, ubyte ctrl, ubyte binding, ubyte flags)
 {
 	const char *str;
+	static char axis_button_text[32];
 
 	if (ctrl == NULL_CONTROLLER) 
 		return NULL;
@@ -221,6 +222,12 @@ const char *cfg_binding_text(ct_type ctype, ubyte ctrl, ubyte binding)
 	case ctMouseAxis:
 	case ctAxis:
 		str = Controller->get_binding_text(ctype, ctrl, binding);
+		if (ctype == ctAxis && (flags & CTFNF_AXIS_BUTTON) && str)
+		{
+			snprintf(axis_button_text, sizeof(axis_button_text), "%s%c", str,
+				(flags & CTFNF_AXIS_BUTTON_NEGATIVE) ? '-' : '+');
+			str = axis_button_text;
+		}
 		break;
 
 	default:
@@ -244,6 +251,7 @@ class cfg_element_ui: public newuiMessageBox
 	ubyte m_controller;				// controller.
 	sbyte m_alpha;						// used for fx.
 	ct_type m_type;
+	ubyte m_flags;
 
 
 public:
@@ -251,6 +259,7 @@ public:
 	ubyte GetElement() const { return m_element; };
 	ubyte GetController() const { return m_controller; };
 	ct_type GetType() const { return m_type; };
+	ubyte GetFlags() const { return m_flags; };
 	int DoUI();
 
 protected:
@@ -268,7 +277,6 @@ UIBitmapItem *cfg_element::m_xbtn_bmp_lit = NULL;
 UIBitmapItem *cfg_element::m_xbtn_bmp = NULL;
 short cfg_element::m_count = 0;
 
-const char *cfg_binding_text(ct_type ctype, ubyte binding);
 bool key_cfg_element(ubyte *element, ubyte *flags);
 
 //////////////////////////////////////////////////////////////////////////////
@@ -352,7 +360,7 @@ void cfg_element::OnDraw()
 			ubyte one_binding = (i==0) ? cfgparts.bind_0 : cfgparts.bind_1;
 			ubyte one_ctrlbind = (i==0) ? cfgparts.ctrl_0 : cfgparts.ctrl_1;
 
-			txt = cfg_binding_text(ctype[i], one_ctrlbind, one_binding);
+			txt = cfg_binding_text(ctype[i], one_ctrlbind, one_binding, cfgflags[i]);
 
 		// draw button
 			if (CHECK_FLAG(m_flags, F_ELEM_HILITE) && m_curslot == i) {
@@ -521,7 +529,8 @@ void cfg_element::OnDestroy()
 
 
 // calls configuration routines
-bool cfg_element::Configure(ct_type *new_elem_type, ubyte *controller, ubyte *new_cfg_element, sbyte *cfg_slot)
+bool cfg_element::Configure(ct_type *new_elem_type, ubyte *controller, ubyte *new_cfg_element,
+	ubyte *new_flags, sbyte *cfg_slot)
 {
 	cfg_element_ui cfg_box;
 	ct_type ctype_fn[CTLBINDS_PER_FUNC];
@@ -584,6 +593,7 @@ bool cfg_element::Configure(ct_type *new_elem_type, ubyte *controller, ubyte *ne
 	*new_elem_type = ctNone;
 	*new_cfg_element = NULL_BINDING;
 	*controller = NULL_CONTROLLER;
+	*new_flags = 0;
 	*cfg_slot = -1;
 	if (configure) {
 		const char *txt = m_title;
@@ -593,6 +603,7 @@ bool cfg_element::Configure(ct_type *new_elem_type, ubyte *controller, ubyte *ne
 			*new_elem_type = cfg_box.GetType();
 			*new_cfg_element = cfg_box.GetElement();
 			*controller = cfg_box.GetController();
+			*new_flags = cfg_box.GetFlags();
 			*cfg_slot = m_slot;
 			configure = true;
 		}
@@ -624,6 +635,7 @@ void cfg_element_ui::Create(const char *title, ct_type type, ubyte controller, u
 	m_controller = controller;
 	m_element = element;
 	m_type = type;
+	m_flags = 0;
 	
 	newuiMessageBox::Create(title, MSGBOX_NULL);
 
@@ -654,9 +666,10 @@ void cfg_element_ui::Create(const char *title, ct_type type, ubyte controller, u
 }
 
 
-#define GCV_CONTROLLER(_r) (CONTROLLER_CTL1_INFO(CONTROLLER_INFO(ccfgdata)))
-#define GCV_VALUE(_r) (CONTROLLER_CTL1_VALUE(CONTROLLER_VALUE(ccfgdata)))
-#define GCV_VALID_RESULT(_r) (CONTROLLER_CTL1_INFO(CONTROLLER_INFO(ccfgdata)) != (sbyte)NULL_CONTROLLER) 
+#define GCV_CONTROLLER(_r) (CONTROLLER_CTL1_INFO(CONTROLLER_INFO(_r)))
+#define GCV_VALUE(_r) (CONTROLLER_CTL1_VALUE(CONTROLLER_VALUE(_r)))
+#define GCV_FLAGS(_r) (CONTROLLER_CTL2_VALUE(CONTROLLER_VALUE(_r)))
+#define GCV_VALID_RESULT(_r) (CONTROLLER_CTL1_INFO(CONTROLLER_INFO(_r)) != (sbyte)NULL_CONTROLLER)
 
 #include "game.h"
 
@@ -681,7 +694,8 @@ int cfg_element_ui::DoUI()
 
 	MouseForceCapture mousecapture;
 
-	if (m_type == ctAxis)
+	if (m_type == ctAxis || m_type == ctButton || m_type == ctMouseButton ||
+		m_type == ctPOV || m_type == ctPOV2 || m_type == ctPOV3 || m_type == ctPOV4)
 	{
 		Descent->defer();
 		Controller->poll(true); //force it to poll
@@ -754,10 +768,22 @@ int cfg_element_ui::DoUI()
 						}
 					}
 				}
+				if (!GCV_VALID_RESULT(ccfgdata)) {
+					ccfgdata = Controller->get_controller_value(ctAxis);
+					if (GCV_VALID_RESULT(ccfgdata)) {
+						m_type = ctAxis;
+						m_element = GCV_VALUE(ccfgdata);
+						m_controller = GCV_CONTROLLER(ccfgdata);
+						m_flags = GCV_FLAGS(ccfgdata);
+						quit = true;
+						break;
+					}
+				}
 				if (GCV_VALID_RESULT(ccfgdata) && !catch_press) {
 					m_type = new_type;
 					m_element = GCV_VALUE(ccfgdata);
 					m_controller = GCV_CONTROLLER(ccfgdata);
+					m_flags = 0;
 					catch_press = true;
 				//	mprintf((0, "HERE?\n"));
 				}
@@ -788,6 +814,7 @@ int cfg_element_ui::DoUI()
 					m_type = new_type;
 					m_element = GCV_VALUE(ccfgdata);
 					m_controller = GCV_CONTROLLER(ccfgdata);
+					m_flags = 0;
 					quit = true;
 				}
 				break;

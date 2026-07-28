@@ -157,6 +157,9 @@ void gameWinController::flush()
 	m_mouse_rate_pending[0] = m_mouse_rate_pending[1] = 0.0f;
 	m_mouse_rate_cache[0] = m_mouse_rate_cache[1] = 0.0f;
 	m_mouse_rate_cached[0] = m_mouse_rate_cached[1] = false;
+	for (int id = 0; id < CT_MAX_ELEMENTS; ++id)
+		for (int slot = 0; slot < CTLBINDS_PER_FUNC; ++slot)
+			m_AxisButtonStates[id][slot] = {};
 
 	// does real flush
 	mask_controllers(false, false);
@@ -212,6 +215,13 @@ bool gameWinController::get_packet(int id, ct_packet* packet, ct_format alt_form
 			if (!summed_axis_binding)
 				packet->flags |= CTPK_MOUSE;
 		case ctAxis:
+			if (binding_type == ctAxis &&
+				(m_ElementList[id].flags[i] & CTFNF_AXIS_BUTTON) &&
+				m_ElementList[id].format != ctAnalog)
+			{
+				val = get_axis_button_value(id, i, controller, value, alt_format);
+				break;
+			}
 			val = get_axis_value(controller, value, alt_format, (m_ElementList[id].flags[i] & CTFNF_INVERT) ? true : false);
 			if (m_ElementList[id].flags[i] & CTFNF_INVERT) {
 				if (alt_format == ctDigital) {
@@ -281,8 +291,30 @@ skip_packet_read:
 	return true;
 }
 
+constexpr float BINDING_SENSITIVITY = 0.3f;
 
-//	returns the value of a requested controller type.  
+static ubyte axis_button_binding_flags(float position, float rest_position)
+{
+	ubyte flags = CTFNF_AXIS_BUTTON;
+
+	if (position < rest_position)
+		flags |= CTFNF_AXIS_BUTTON_NEGATIVE;
+
+	if (rest_position <= -0.5f)
+		flags |= CTFNF_AXIS_BUTTON_REST_LOW;
+	else if (rest_position >= 0.5f)
+		flags |= CTFNF_AXIS_BUTTON_REST_HIGH;
+
+	return flags;
+}
+
+static ct_config_data make_axis_binding_result(unsigned controller, ubyte axis, float position, float rest_position)
+{
+	const ubyte flags = axis_button_binding_flags(position, rest_position);
+	return MAKE_CONFIG_DATA(controller, CONTROLLER_CTL_VALUE(axis, flags));
+}
+
+//	returns the value of a requested controller type.
 ct_config_data gameWinController::get_controller_value(ct_type type_req)
 {
 	//	will return the current value of a requested control type.
@@ -325,63 +357,43 @@ ct_config_data gameWinController::get_controller_value(ct_type type_req)
 		for (i = 2; i < m_NumControls; i++)
 		{
 			float pos;
-			float limit;
 			unsigned ctl = CONTROLLER_CTL_INFO(i, NULL_CONTROLLER);
 
-			if (m_ControlList[i].flags & CTF_V_AXIS) 
+			if (m_ControlList[i].flags & CTF_V_AXIS)
 			{
-				//limit = (m_ControlList[i].sens[CT_V_AXIS - 1] > 1.5f) ? 0.95f : (m_ControlList[i].sens[CT_V_AXIS - 1] > 1.0f) ? 0.80f : (m_ControlList[i].sens[CT_V_AXIS - 1] / 2);
 				pos = get_axis_value(i, CT_V_AXIS, ctAnalog);
-				//[ISB] why are axis values 1 based?
-				if (fabs(fabs(pos) - fabs(m_ControlList[i].commit_state[CT_V_AXIS - 1])) > 0.2)
-					val = MAKE_CONFIG_DATA(ctl, CONTROLLER_CTL_VALUE(CT_V_AXIS, NULL_BINDING));
-				/*if (fabs(pos) > limit)
-					val = MAKE_CONFIG_DATA(ctl, CONTROLLER_CTL_VALUE(CT_V_AXIS, NULL_BINDING));*/
+				if (fabs(pos - m_ControlList[i].commit_state[CT_V_AXIS - 1]) > BINDING_SENSITIVITY)
+					val = make_axis_binding_result(ctl, CT_V_AXIS, pos, m_ControlList[i].commit_state[CT_V_AXIS - 1]);
 			}
-			if (m_ControlList[i].flags & CTF_U_AXIS) 
+			if (m_ControlList[i].flags & CTF_U_AXIS)
 			{
-				//limit = (m_ControlList[i].sens[CT_U_AXIS - 1] > 1.5f) ? 0.95f : (m_ControlList[i].sens[CT_U_AXIS - 1] > 1.0f) ? 0.80f : (m_ControlList[i].sens[CT_U_AXIS - 1] / 2);
 				pos = get_axis_value(i, CT_U_AXIS, ctAnalog);
-				if (fabs(fabs(pos) - fabs(m_ControlList[i].commit_state[CT_U_AXIS - 1])) > 0.2)
-					val = MAKE_CONFIG_DATA(ctl, CONTROLLER_CTL_VALUE(CT_U_AXIS, NULL_BINDING));
-				/*if (fabs(pos) > limit)
-					val = MAKE_CONFIG_DATA(ctl, CONTROLLER_CTL_VALUE(CT_U_AXIS, NULL_BINDING));*/
+				if (fabs(pos - m_ControlList[i].commit_state[CT_U_AXIS - 1]) > BINDING_SENSITIVITY)
+					val = make_axis_binding_result(ctl, CT_U_AXIS, pos, m_ControlList[i].commit_state[CT_U_AXIS - 1]);
 			}
-			if (m_ControlList[i].flags & CTF_R_AXIS) 
+			if (m_ControlList[i].flags & CTF_R_AXIS)
 			{
-				//limit = (m_ControlList[i].sens[CT_R_AXIS - 1] > 1.5f) ? 0.95f : (m_ControlList[i].sens[CT_R_AXIS - 1] > 1.0f) ? 0.80f : (m_ControlList[i].sens[CT_R_AXIS - 1] / 2);
 				pos = get_axis_value(i, CT_R_AXIS, ctAnalog);
-				if (fabs(fabs(pos) - fabs(m_ControlList[i].commit_state[CT_R_AXIS - 1])) > 0.2)
-					val = MAKE_CONFIG_DATA(ctl, CONTROLLER_CTL_VALUE(CT_R_AXIS, NULL_BINDING));
-				/*if (fabs(pos) > limit)
-					val = MAKE_CONFIG_DATA(ctl, CONTROLLER_CTL_VALUE(CT_R_AXIS, NULL_BINDING));*/
+				if (fabs(pos - m_ControlList[i].commit_state[CT_R_AXIS - 1]) > BINDING_SENSITIVITY)
+					val = make_axis_binding_result(ctl, CT_R_AXIS, pos, m_ControlList[i].commit_state[CT_R_AXIS - 1]);
 			}
-			if (m_ControlList[i].flags & CTF_Z_AXIS) 
+			if (m_ControlList[i].flags & CTF_Z_AXIS)
 			{
-				//limit = (m_ControlList[i].sens[CT_Z_AXIS - 1] > 1.5f) ? 0.95f : (m_ControlList[i].sens[CT_Z_AXIS - 1] > 1.0f) ? 0.80f : (m_ControlList[i].sens[CT_Z_AXIS - 1] / 2);
 				pos = get_axis_value(i, CT_Z_AXIS, ctAnalog);
-				if (fabs(fabs(pos) - fabs(m_ControlList[i].commit_state[CT_Z_AXIS - 1])) > 0.2)
-					val = MAKE_CONFIG_DATA(ctl, CONTROLLER_CTL_VALUE(CT_Z_AXIS, NULL_BINDING));
-				/*if (fabs(pos) > limit)
-					val = MAKE_CONFIG_DATA(ctl, CONTROLLER_CTL_VALUE(CT_Z_AXIS, NULL_BINDING));*/
+				if (fabs(pos - m_ControlList[i].commit_state[CT_Z_AXIS - 1]) > BINDING_SENSITIVITY)
+					val = make_axis_binding_result(ctl, CT_Z_AXIS, pos, m_ControlList[i].commit_state[CT_Z_AXIS - 1]);
 			}
-			if (m_ControlList[i].flags & CTF_Y_AXIS) 
+			if (m_ControlList[i].flags & CTF_Y_AXIS)
 			{
-				//limit = (m_ControlList[i].sens[CT_Y_AXIS - 1] > 1.5f) ? 0.95f : (m_ControlList[i].sens[CT_Y_AXIS - 1] > 1.0f) ? 0.80f : (m_ControlList[i].sens[CT_Y_AXIS - 1] / 2);
 				pos = get_axis_value(i, CT_Y_AXIS, ctAnalog);
-				if (fabs(fabs(pos) - fabs(m_ControlList[i].commit_state[CT_Y_AXIS - 1])) > 0.2)
-					val = MAKE_CONFIG_DATA(ctl, CONTROLLER_CTL_VALUE(CT_Y_AXIS, NULL_BINDING));
-				/*if (fabs(pos) > limit)
-					val = MAKE_CONFIG_DATA(ctl, CONTROLLER_CTL_VALUE(CT_Y_AXIS, NULL_BINDING));*/
+				if (fabs(pos - m_ControlList[i].commit_state[CT_Y_AXIS - 1]) > BINDING_SENSITIVITY)
+					val = make_axis_binding_result(ctl, CT_Y_AXIS, pos, m_ControlList[i].commit_state[CT_Y_AXIS - 1]);
 			}
-			if (m_ControlList[i].flags & CTF_X_AXIS) 
+			if (m_ControlList[i].flags & CTF_X_AXIS)
 			{
-				//limit = (m_ControlList[i].sens[CT_X_AXIS - 1] > 1.5f) ? 0.95f : (m_ControlList[i].sens[CT_X_AXIS - 1] > 1.0f) ? 0.80f : (m_ControlList[i].sens[CT_X_AXIS - 1] / 2);
 				pos = get_axis_value(i, CT_X_AXIS, ctAnalog);
-				if (fabs(fabs(pos) - fabs(m_ControlList[i].commit_state[CT_X_AXIS - 1])) > 0.2)
-					val = MAKE_CONFIG_DATA(ctl, CONTROLLER_CTL_VALUE(CT_X_AXIS, NULL_BINDING));
-				/*if (fabs(pos) > limit)
-					val = MAKE_CONFIG_DATA(ctl, CONTROLLER_CTL_VALUE(CT_X_AXIS, NULL_BINDING));*/
+				if (fabs(pos - m_ControlList[i].commit_state[CT_X_AXIS - 1]) > BINDING_SENSITIVITY)
+					val = make_axis_binding_result(ctl, CT_X_AXIS, pos, m_ControlList[i].commit_state[CT_X_AXIS - 1]);
 			}
 		}
 		break;
@@ -520,6 +532,8 @@ void gameWinController::set_controller_function(int id, const ct_type* type, ct_
 		elem.ctl[1] = NULL_WINCONTROLLER;
 
 	assign_element(id, &elem);
+	for (int slot = 0; slot < CTLBINDS_PER_FUNC; ++slot)
+		m_AxisButtonStates[id][slot] = {};
 }
 
 
@@ -619,6 +633,46 @@ unsigned gameWinController::get_joy_raw_values(int* x, int* y)
 }
 
 constexpr float FRAMETIME_AT_60FPS = (1.f / 60.f);
+
+float gameWinController::get_raw_axis_value(sbyte controller, ubyte axis)
+{
+	if (controller <= NULL_WINCONTROLLER || controller >= CT_MAX_CONTROLLERS)
+		return 0.0f;
+
+	t_controller* ctldev = &m_ControlList[controller];
+	if (ctldev->id < CTID_EXTCONTROL0 || ctldev->id == CTID_INVALID)
+		return 0.0f;
+
+	const int axis_index = axis - 1;
+	if (axis_index < 0 || axis_index >= CT_NUM_AXES ||
+		!CHECK_FLAG(ctldev->flags, 1 << axis_index) ||
+		ctldev->normalizer[axis_index] <= 0.0f)
+		return 0.0f;
+
+	float axis_value = 0.0f;
+	switch (axis)
+	{
+	case CT_X_AXIS: axis_value = static_cast<float>(m_ExtCtlStates[ctldev->id].x); break;
+	case CT_Y_AXIS: axis_value = static_cast<float>(m_ExtCtlStates[ctldev->id].y); break;
+	case CT_Z_AXIS: axis_value = static_cast<float>(m_ExtCtlStates[ctldev->id].z); break;
+	case CT_R_AXIS: axis_value = static_cast<float>(m_ExtCtlStates[ctldev->id].r); break;
+	case CT_U_AXIS: axis_value = static_cast<float>(m_ExtCtlStates[ctldev->id].u); break;
+	case CT_V_AXIS: axis_value = static_cast<float>(m_ExtCtlStates[ctldev->id].v); break;
+	default: return 0.0f;
+	}
+
+	const float normalized = (axis_value / ctldev->normalizer[axis_index]) - 1.0f;
+	return (std::max)(-1.0f, (std::min)(normalized, 1.0f));
+}
+
+float gameWinController::get_axis_button_value(int id, int slot, sbyte controller, ubyte axis, ct_format format)
+{
+	ct_axis_button_state& state = m_AxisButtonStates[id][slot];
+	const ubyte flags = m_ElementList[id].flags[slot];
+	const float travel = ct_axis_button_travel(get_raw_axis_value(controller, axis), flags);
+	ct_axis_button_update(state, travel, WinControllerTimer);
+	return ct_axis_button_read(state, format);
+}
 
 //	note controller is index into ControlList.
 float gameWinController::get_axis_value(sbyte controller, ubyte axis, ct_format format, bool invert)
@@ -1096,6 +1150,8 @@ int gameWinController::assign_function(ct_function* func)
 	elem.enabled = true;
 
 	assign_element(func->id, &elem);
+	for (int slot = 0; slot < CTLBINDS_PER_FUNC; ++slot)
+		m_AxisButtonStates[func->id][slot] = {};
 
 	return func->id;
 }
