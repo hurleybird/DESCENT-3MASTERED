@@ -3076,7 +3076,9 @@ void GameRenderFrame(void)
 		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_SMALL_VIEWS);
 
 		// Do Cockpit/Hud
-		if (!HUD_disabled)
+		// Cinematics own their presentation through Cinematic_RenderFrame below.
+		// Do not run either the primary or auxiliary gameplay HUD while one is active.
+		if (!HUD_disabled && !Cinematic_inuse)
 		{
 			PERF_MARKER_SCOPE("GameDrawHud.Total");
 			GameDrawHud();

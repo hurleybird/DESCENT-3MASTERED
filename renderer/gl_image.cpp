@@ -1025,8 +1025,22 @@ void GL4Renderer::TranslateBitmapToOpenGL(int texnum, int bm_handle, int map_typ
 				if (bm_format(bm_handle) == BITMAP_FORMAT_4444)
 				{
 					// Do 4444
-					for (i = 0; i < w * h; i++)
-						opengl_packed_Upload_data[i] = opengl_packed_4444_translate_table[bm_ptr[i]];
+					if (bm_mipped(bm_handle))
+					{
+						// Preserve the original renderer's asset semantics: mipped
+						// 4444 bitmaps are opaque, while unmipped 4444 bitmaps keep
+						// their authored alpha. Some legacy surface textures contain
+						// non-opaque alpha data despite using an opaque material.
+						for (i = 0; i < w * h; i++)
+							opengl_packed_Upload_data[i] =
+								0xf | opengl_packed_4444_translate_table[bm_ptr[i]];
+					}
+					else
+					{
+						for (i = 0; i < w * h; i++)
+							opengl_packed_Upload_data[i] =
+								opengl_packed_4444_translate_table[bm_ptr[i]];
+					}
 
 					if (replace)
 					{
@@ -1106,8 +1120,18 @@ void GL4Renderer::TranslateBitmapToOpenGL(int texnum, int bm_handle, int map_typ
 				if (bm_format(bm_handle) == BITMAP_FORMAT_4444)
 				{
 					// Do 4444
-					for (i = 0; i < w * h; i++)
-						opengl_Upload_data[i] = opengl_4444_translate_table[bm_ptr[i]];
+					if (bm_mipped(bm_handle))
+					{
+						for (i = 0; i < w * h; i++)
+							opengl_Upload_data[i] =
+								(255u << 24) | opengl_4444_translate_table[bm_ptr[i]];
+					}
+					else
+					{
+						for (i = 0; i < w * h; i++)
+							opengl_Upload_data[i] =
+								opengl_4444_translate_table[bm_ptr[i]];
+					}
 				}
 				else
 				{
