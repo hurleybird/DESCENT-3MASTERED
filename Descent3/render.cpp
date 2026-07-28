@@ -1943,6 +1943,57 @@ struct SpecularFaceAdjacency
 	float base_cost;
 };
 
+struct SpecularQuantizedPosition
+{
+	int x;
+	int y;
+	int z;
+
+	bool operator==(const SpecularQuantizedPosition& other) const
+	{
+		return x == other.x && y == other.y && z == other.z;
+	}
+
+	bool operator<(const SpecularQuantizedPosition& other) const
+	{
+		if (x != other.x)
+			return x < other.x;
+		if (y != other.y)
+			return y < other.y;
+		return z < other.z;
+	}
+};
+
+struct SpecularEdgeKey
+{
+	SpecularQuantizedPosition a;
+	SpecularQuantizedPosition b;
+
+	bool operator==(const SpecularEdgeKey& other) const
+	{
+		return a == other.a && b == other.b;
+	}
+};
+
+struct SpecularEdgeKeyHash
+{
+	size_t operator()(const SpecularEdgeKey& key) const
+	{
+		auto mix = [](size_t seed, int value) {
+			return seed ^ ((size_t)(uint32_t)value + 0x9e3779b9u +
+				(seed << 6) + (seed >> 2));
+		};
+		size_t result = 0;
+		result = mix(result, key.a.x);
+		result = mix(result, key.a.y);
+		result = mix(result, key.a.z);
+		result = mix(result, key.b.x);
+		result = mix(result, key.b.y);
+		result = mix(result, key.b.z);
+		return result;
+	}
+};
+
 struct SpecularDonorFace
 {
 	int room_index;
@@ -2047,6 +2098,27 @@ static bool SpecularTextureHasOwnOrSplitMask(face* fp)
 static float SpecularClamp(float value, float low, float high)
 {
 	return std::max(low, std::min(value, high));
+}
+
+static SpecularQuantizedPosition SpecularQuantizePosition(const vector& position)
+{
+	constexpr float scale = 1000.0f;
+	return {
+		(int)lroundf(position.x * scale),
+		(int)lroundf(position.y * scale),
+		(int)lroundf(position.z * scale)
+	};
+}
+
+static SpecularEdgeKey SpecularBuildEdgeKey(const vector& a, const vector& b)
+{
+	SpecularEdgeKey key = {
+		SpecularQuantizePosition(a),
+		SpecularQuantizePosition(b)
+	};
+	if (key.b < key.a)
+		std::swap(key.a, key.b);
+	return key;
 }
 
 static bool SpecularFaceCanReceivePpxSources(room* rp, face* fp)
@@ -2654,9 +2726,9 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set, const
 			field.global.lobes[lobe_index], target_normal, 0.08f);
 	}
 
-	float strongest_lobe_weight = 0.0f;
+	float total_lobe_weight = 0.0f;
 	for (const SpecularFieldLobe& lobe : output.lobes)
-		strongest_lobe_weight = std::max(strongest_lobe_weight, lobe.weight);
+		total_lobe_weight += std::max(lobe.weight, 0.0f);
 
 	for (int reference_index = 0; reference_index < MAX_SPECULARS; reference_index++)
 	{
@@ -2682,8 +2754,12 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set, const
 				SpecularFieldNormalizeOr(lobe.direction_sum, reference_direction);
 			const float distance =
 				SpecularClamp(lobe.distance_sum / lobe.weight, 40.0f, 800.0f);
-			const float lobe_strength = strongest_lobe_weight > 0.0f ?
-				sqrt(SpecularClamp(lobe.weight / strongest_lobe_weight,
+			// Normalize the complete local lobe set instead of making every
+			// strongest lobe full strength. This keeps a single authored
+			// highlight unchanged while preventing overlapping approximations
+			// from multiplying total specular energy.
+			const float lobe_strength = total_lobe_weight > 0.0f ?
+				sqrt(SpecularClamp(lobe.weight / total_lobe_weight,
 					0.0f, 1.0f)) : 1.0f;
 			resolved.bright_center = source_anchor + direction * distance;
 			linear_color = {
@@ -2888,6 +2964,19 @@ static int SpecularFindFaceCorner(face* fp, int vertex_index)
 	return -1;
 }
 
+static int SpecularFindFaceCornerAtPosition(room* rp, face* fp,
+	const vector& position)
+{
+	constexpr float position_epsilon_squared = 0.000001f;
+	for (int corner = 0; corner < fp->num_verts; corner++)
+	{
+		vector delta = rp->verts[fp->face_verts[corner]] - position;
+		if ((delta * delta) <= position_epsilon_squared)
+			return corner;
+	}
+	return -1;
+}
+
 static vector SpecularFaceCornerNormal(const SpecularFaceInfo& info, int corner)
 {
 	face* fp = &Rooms[info.room_index].faces[info.face_index];
@@ -2959,6 +3048,7 @@ static void SpecularBuildResolvedNormalsForFace(PrecomputedSpecularFaceSources& 
 	for (int vn = 0; vn < fp->num_verts; vn++)
 	{
 		const int vert_index = fp->face_verts[vn];
+		const vector& vert_position = rp->verts[vert_index];
 		std::vector<int> component;
 		std::vector<int> pending;
 		component.push_back(target.face_info_index);
@@ -2976,13 +3066,19 @@ static void SpecularBuildResolvedNormalsForFace(PrecomputedSpecularFaceSources& 
 				if (edge.base_cost > 0.0f)
 					continue;
 				const SpecularFaceInfo& neighbor = faces[edge.face_info_index];
-				if (neighbor.room_index != target.room_index)
-				{
-					continue;
-				}
+				room* neighbor_room = &Rooms[neighbor.room_index];
 				face* neighbor_face =
-					&Rooms[neighbor.room_index].faces[neighbor.face_index];
-				if (SpecularFindFaceCorner(neighbor_face, vert_index) < 0)
+					&neighbor_room->faces[neighbor.face_index];
+				int neighbor_corner = -1;
+				if (neighbor.room_index == target.room_index)
+					neighbor_corner =
+						SpecularFindFaceCorner(neighbor_face, vert_index);
+				if (neighbor_corner < 0)
+				{
+					neighbor_corner = SpecularFindFaceCornerAtPosition(
+						neighbor_room, neighbor_face, vert_position);
+				}
+				if (neighbor_corner < 0)
 					continue;
 				const float normal_dot = SpecularClamp(
 					current.basis.normal * neighbor.basis.normal, -1.0f, 1.0f);
@@ -3010,7 +3106,14 @@ static void SpecularBuildResolvedNormalsForFace(PrecomputedSpecularFaceSources& 
 			const SpecularFaceInfo& info = faces[face_info_index];
 			room* component_room = &Rooms[info.room_index];
 			face* component_face = &component_room->faces[info.face_index];
-			const int corner = SpecularFindFaceCorner(component_face, vert_index);
+			int corner = -1;
+			if (info.room_index == target.room_index)
+				corner = SpecularFindFaceCorner(component_face, vert_index);
+			if (corner < 0)
+			{
+				corner = SpecularFindFaceCornerAtPosition(component_room,
+					component_face, vert_position);
+			}
 			if (corner < 0)
 				continue;
 			const float weight =
@@ -3141,6 +3244,40 @@ void PrecomputeMineSpecularSources()
 				else if (SpecularFacesShareVertex(&rp->faces[a], &rp->faces[b]))
 					SpecularAddFaceAdjacency(adjacency, a_info, b_info, 3.5f);
 			}
+		}
+	}
+
+	// Mine geometry duplicates boundary vertices both across rooms and within a
+	// room. Join coincident edges into the same geometric smoothing graph so a
+	// continuous wall does not acquire a specular seam merely because its
+	// vertices have different indices. The normal-angle test below still keeps
+	// authored hard creases separate.
+	std::unordered_map<SpecularEdgeKey, std::vector<int>, SpecularEdgeKeyHash>
+		coincident_edges;
+	coincident_edges.reserve(faces.size() * 4);
+	for (const SpecularFaceInfo& info : faces)
+	{
+		room* rp = &Rooms[info.room_index];
+		face* fp = &rp->faces[info.face_index];
+		for (int corner = 0; corner < fp->num_verts; corner++)
+		{
+			const vector& a = rp->verts[fp->face_verts[corner]];
+			const vector& b =
+				rp->verts[fp->face_verts[(corner + 1) % fp->num_verts]];
+			vector edge = a - b;
+			if (vm_GetMagnitude(&edge) <= 0.0001f)
+				continue;
+
+			const SpecularEdgeKey key = SpecularBuildEdgeKey(a, b);
+			std::vector<int>& owners = coincident_edges[key];
+			for (int owner_index : owners)
+			{
+				if (owner_index == info.face_info_index)
+					continue;
+				SpecularAddFaceAdjacency(adjacency, owner_index,
+					info.face_info_index, 0.0f);
+			}
+			owners.push_back(info.face_info_index);
 		}
 	}
 
@@ -3818,12 +3955,18 @@ void RenderSpecularFacesFlat(room* rp)
 			bool retained_drawn = false;
 			if (!In_editor_mode && RetainedRoomCanDrawBaseFace(rp, face_index))
 			{
+				const bool use_field_lightmap_arrays =
+					dynamic_light_count == 0 &&
+					UseFieldStaticSpecularForRoom(rp) &&
+					rend_RetainedRoomLightmapsReady();
 				rend_BindBitmap(bm_handle);
-				rend_BindLightmap(LightmapInfo[fp->lmi_handle].lm_handle);
+				if (!use_field_lightmap_arrays)
+					rend_BindLightmap(LightmapInfo[fp->lmi_handle].lm_handle);
 				retained_drawn = RetainedRoomDrawFaces(rp, &face_index, 1,
 					bm_handle, 0.0f, 0.0f, 1.0f,
-					LightmapInfo[fp->lmi_handle].lm_handle,
-					specular_clip_codes, true);
+					use_field_lightmap_arrays ? -1 :
+						LightmapInfo[fp->lmi_handle].lm_handle,
+					specular_clip_codes, true, use_field_lightmap_arrays);
 			}
 			if (!retained_drawn)
 			{
