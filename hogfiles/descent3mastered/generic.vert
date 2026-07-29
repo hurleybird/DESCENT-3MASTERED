@@ -213,13 +213,16 @@ void main()
 			precise float legacy_z = (legacy_z0 + legacy_z1) + legacy_z2;
 			view_position = vec3(legacy_x, legacy_y, legacy_z);
 			retained_projection_eye_z = legacy_z;
-			precise float legacy_inverse_z = 1.0 / max(legacy_z, 0.0001);
+			// Preserve the legacy screen transform, but keep eye-space Z in W.
+			// This gives the fixed-function clipper a coherent homogeneous
+			// triangle instead of an already-divided w=1 triangle whose depth
+			// collapses when a near vertex crosses a viewport edge.
 			gl_Position = vec4(
-				legacy_x * legacy_inverse_z * retained_legacy_viewport_scale.x +
-					retained_legacy_viewport_center.x,
-				legacy_y * legacy_inverse_z * retained_legacy_viewport_scale.y +
-					retained_legacy_viewport_center.y,
-				0.0, 1.0);
+				legacy_x * retained_legacy_viewport_scale.x +
+					retained_legacy_viewport_center.x * legacy_z,
+				legacy_y * retained_legacy_viewport_scale.y +
+					retained_legacy_viewport_center.y * legacy_z,
+				0.0, legacy_z);
 		}
 		else
 		{
@@ -230,11 +233,27 @@ void main()
 		// it shares a depth buffer exactly with immediate draws.
 		if (retained_legacy_depth != 0)
 		{
-			float retained_eye_z = max(
-				(retained_legacy_world_projection != 0 ? retained_projection_eye_z :
-					gl_Position.w) + retained_depth_bias, 0.0001);
-			float retained_depth_value = clamp(1.0 - (1.0 / retained_eye_z), 0.0, 1.0);
-			gl_Position.z = (retained_depth_value * 2.0 - 1.0) * gl_Position.w;
+			if (retained_legacy_world_projection != 0 &&
+				abs(retained_depth_bias) < 0.000001)
+			{
+				// For the legacy infinite-far mapping, NDC Z is 1 - 2/z.
+				// Because homogeneous W is eye Z, clip-space Z simplifies to
+				// z - 2.  This remains linear across the primitive, clips
+				// behind/near-plane crossings correctly, and never collapses
+				// near vertices onto one depth value.
+				gl_Position.z = retained_projection_eye_z - 2.0;
+			}
+			else
+			{
+				float retained_eye_z = max(
+					(retained_legacy_world_projection != 0 ?
+						retained_projection_eye_z : gl_Position.w) +
+						retained_depth_bias, 0.0001);
+				float retained_depth_value =
+					clamp(1.0 - (1.0 / retained_eye_z), 0.0, 1.0);
+				gl_Position.z =
+					(retained_depth_value * 2.0 - 1.0) * gl_Position.w;
+			}
 		}
 		if (retained_custom_clip_enabled != 0)
 		{
@@ -303,8 +322,12 @@ void main()
 			vertex_alpha * retained_alpha_scale * retained_effect_alpha_scale);
 		out_retained_effect_alpha = outcolor.a;
 		vec4 retained_world_position = retained_current_world * local_position;
+		// Hardware perspective interpolation contributes 1 / eye-Z. Multiply
+		// by eye-Z / biased-eye-Z so the resulting rational interpolation is
+		// exactly the legacy 1 / (z + Z_bias) payload contract.
 		float retained_payload_scale = retained_legacy_world_projection != 0 ?
-			1.0 / max(retained_projection_eye_z + retained_depth_bias, 0.0001) : 1.0;
+			max(retained_projection_eye_z, 0.0001) /
+				max(retained_projection_eye_z + retained_depth_bias, 0.0001) : 1.0;
 		#if defined(USE_SPECULAR)
 			out_field_specular_perspective_scale = retained_payload_scale;
 		#endif
@@ -346,18 +369,8 @@ void main()
 		out_retained_ao_class = int(round(color.r * 255.0));
 		int retained_lmi = (retained_source_vertex >> 16) & 0xffff;
 		out_retained_lightmap_info = retained_lmi == 0xffff ? -1 : retained_lmi;
-		if (retained_per_pixel_specular_payload != 0)
-		{
-			vec3 retained_view_face_normal =
-				mat3(retained_modelview) * motion_world_position.xyz;
-			out_retained_face_normal = normalize(vec3(
-				retained_view_face_normal.xy, -retained_view_face_normal.z));
-		}
-		else
-		{
-			out_retained_face_normal =
-				normalize(mat3(retained_current_world) * motion_world_position.xyz);
-		}
+		out_retained_face_normal =
+			normalize(mat3(retained_current_world) * motion_world_position.xyz);
 		#if defined(USE_SPECULAR)
 			for (int i = 0; i < 4; i++)
 			{
@@ -386,7 +399,8 @@ void main()
 			// perspective interpolation otherwise supplies 1 / z, which subtly
 			// shifts textures on biased custom submodels such as cockpit arms.
 			float uv_perspective_scale = retained_legacy_world_projection != 0 ?
-				1.0 / max(retained_projection_eye_z + retained_depth_bias, 0.0001) :
+				max(retained_projection_eye_z, 0.0001) /
+					max(retained_projection_eye_z + retained_depth_bias, 0.0001) :
 				(retained_legacy_depth != 0 ?
 					gl_Position.w / max(gl_Position.w + retained_depth_bias, 0.0001) : 1.0);
 			outuv = vec3((uv.xy + retained_uv_offset) * uv_perspective_scale,

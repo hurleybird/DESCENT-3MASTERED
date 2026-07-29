@@ -54,20 +54,6 @@ struct RetainedRoomTransform
 	bool enabled = false;
 };
 
-struct RetainedRoomClippedPolygon
-{
-	std::array<g3Point, MAX_POINTS_IN_POLY> points;
-	std::array<g3Point*, MAX_POINTS_IN_POLY> pointlist;
-	int count = 0;
-	int lightmap_handle = -1;
-
-	void RefreshPointList()
-	{
-		for (int i = 0; i < count; i++)
-			pointlist[i] = &points[i];
-	}
-};
-
 static std::array<std::unique_ptr<RetainedRoomCache>, MAX_ROOMS> Retained_room_caches;
 static std::array<RetainedRoomDeformation, MAX_ROOMS> Retained_room_deformations;
 static std::array<RetainedRoomTransform, MAX_ROOMS> Retained_room_transforms;
@@ -219,9 +205,9 @@ static void ApplyRetainedRoomClipping(int clip_codes,
 static void ApplyRetainedRoomLegacyProjection(
 	renderer_retained_polymodel_draw& draw)
 {
-	// Room boundaries can meet geometry still submitted through g3's projected
-	// stream. Match its affine w=1 raster contract so shared edges quantize to
-	// the same samples; equivalent NDC positions with varying w are not enough.
+	// Reproduce g3's view transform and biased depth contract in the retained
+	// shader. The shader keeps eye-space Z in homogeneous W so clipping remains
+	// coherent instead of switching near-camera faces to a CPU-projected stream.
 	draw.legacy_world_projection = true;
 	draw.legacy_view_position[0] = View_position.x;
 	draw.legacy_view_position[1] = View_position.y;
@@ -349,70 +335,8 @@ static bool BuildRetainedRoom(room* rp, RetainedRoomCache& cache)
 	return true;
 }
 
-static void GetTriangleCorners(const face* fp, int triangle, bool reflected,
-	int corners[3])
-{
-	if (reflected)
-	{
-		corners[0] = fp->num_verts - 1;
-		corners[1] = fp->num_verts - 2 - triangle;
-		corners[2] = fp->num_verts - 3 - triangle;
-	}
-	else
-	{
-		corners[0] = 0;
-		corners[1] = triangle + 1;
-		corners[2] = triangle + 2;
-	}
-}
-
-static bool ClipPreparedTriangle(g3Point points[3],
-	RetainedRoomClippedPolygon& output)
-{
-	g3Point* pointlist[3] = { &points[0], &points[1], &points[2] };
-	g3Codes codes = { 0, 0xff };
-	for (int i = 0; i < 3; i++)
-	{
-		codes.cc_or |= points[i].p3_codes;
-		codes.cc_and &= points[i].p3_codes;
-	}
-	if (codes.cc_and)
-		return false;
-	if (!codes.cc_or)
-	{
-		output.count = 3;
-		for (int i = 0; i < 3; i++)
-		{
-			output.points[i] = points[i];
-			output.points[i].p3_flags &= ~PF_TEMP_POINT;
-			if (!(output.points[i].p3_flags & PF_PROJECTED))
-				g3_ProjectPoint(&output.points[i]);
-		}
-		return true;
-	}
-
-	int count = 3;
-	g3Point** clipped = g3_ClipPolygon(pointlist, &count, &codes);
-	const bool survives = count > 0 && count <= MAX_POINTS_IN_POLY &&
-		!(codes.cc_or & CC_BEHIND) && !codes.cc_and;
-	if (survives)
-	{
-		output.count = count;
-		for (int i = 0; i < count; i++)
-		{
-			output.points[i] = *clipped[i];
-			output.points[i].p3_flags &= ~PF_TEMP_POINT;
-			if (!(output.points[i].p3_flags & PF_PROJECTED))
-				g3_ProjectPoint(&output.points[i]);
-		}
-	}
-	g3_FreeTempPoints(clipped, count);
-	return survives;
-}
-
 static void AppendRetainedRoomFaceRanges(room* rp, const RetainedRoomCache& cache,
-	int facenum, int clip_codes, std::vector<ElementRange>& ranges,
-	int& vertex_count)
+	int facenum, std::vector<ElementRange>& ranges, int& vertex_count)
 {
 	const RetainedRoomFace& retained_face = cache.faces[facenum];
 	const int roomnum = (int)(rp - Rooms);
@@ -420,178 +344,8 @@ static void AppendRetainedRoomFaceRanges(room* rp, const RetainedRoomCache& cach
 		Retained_room_transforms[roomnum].enabled;
 	const ElementRange& face_range = reflected ?
 		retained_face.reflected_index_range : retained_face.index_range;
-	if (!(clip_codes & CC_BEHIND))
-	{
-		ranges.push_back(face_range);
-		vertex_count += retained_face.vertex_count;
-		return;
-	}
-
-	// A face that crosses the legacy behind plane must remain one coherent
-	// projected stream. Mixing retained triangles with CPU-clipped triangles
-	// changes interpolation as individual vertices cross the plane.
-}
-
-static void BuildBaseBoundaryPolygons(room* rp, const int* facenums, int count,
-	int clip_codes, float u_offset, float v_offset, float light_scalar,
-	bool per_pixel_specular_payload,
-	std::vector<RetainedRoomClippedPolygon>& polygons)
-{
-	const int roomnum = (int)(rp - Rooms);
-	const bool reflected = roomnum >= 0 && roomnum < MAX_ROOMS &&
-		Retained_room_transforms[roomnum].enabled;
-	for (int face_index = 0; face_index < count; face_index++)
-	{
-		const int facenum = facenums[face_index];
-		if (!(clip_codes & CC_BEHIND))
-		{
-			continue;
-		}
-		face* fp = &rp->faces[facenum];
-		for (int triangle = 0; triangle < fp->num_verts - 2; triangle++)
-		{
-			int corners[3];
-			GetTriangleCorners(fp, triangle, reflected, corners);
-			g3Point points[3];
-			g3Point* pointlist[3] = { &points[0], &points[1], &points[2] };
-			for (int i = 0; i < 3; i++)
-			{
-				points[i] = World_point_buffer[
-					rp->wpb_index + fp->face_verts[corners[i]]];
-				points[i].p3_flags &= ~PF_TEMP_POINT;
-				const roomUVL& uv = fp->face_uvls[corners[i]];
-				points[i].p3_uvl.u = uv.u + u_offset;
-				points[i].p3_uvl.v = uv.v + v_offset;
-				points[i].p3_uvl.u2 = uv.u2;
-				points[i].p3_uvl.v2 = uv.v2;
-				points[i].p3_uvl.l = light_scalar;
-				points[i].p3_flags |= PF_UV | PF_UV2 | PF_L;
-			}
-			if (per_pixel_specular_payload)
-				PopulateRetainedRoomSpecularPoints(rp, facenum, corners,
-					pointlist, 3);
-			RetainedRoomClippedPolygon polygon;
-			if (ClipPreparedTriangle(points, polygon))
-			{
-				if (RoomFaceUsesLightmap(fp))
-					polygon.lightmap_handle =
-						LightmapInfo[fp->lmi_handle].lm_handle;
-				polygons.push_back(polygon);
-			}
-		}
-	}
-}
-
-static float FogVertexAlpha(const vector& world_position,
-	const vector* fog_plane, float fog_distance, float fog_eye_distance,
-	float fog_depth, bool use_fog_plane, const vector* viewer_eye,
-	const matrix* viewer_orient)
-{
-	float magnitude;
-	if (use_fog_plane)
-	{
-		const float distance = (world_position * *fog_plane) + fog_distance;
-		const vector to_vertex = world_position - *viewer_eye;
-		const float denominator = fog_eye_distance - distance;
-		const float t = denominator != 0.0f ? fog_eye_distance / denominator : 0.0f;
-		const vector portal_point = *viewer_eye + t * to_vertex;
-		const float eye_distance = -(viewer_orient->fvec * portal_point);
-		magnitude = (viewer_orient->fvec * world_position) + eye_distance;
-	}
-	else
-	{
-		magnitude = (world_position * *fog_plane) + fog_distance;
-	}
-	const float scalar = magnitude / std::max(fog_depth, 0.0001f);
-	return std::max(0.0f, std::min(1.0f, scalar)) * Room_light_val;
-}
-
-static void BuildFogBoundaryPolygons(room* rp, const int* facenums, int count,
-	int clip_codes, const vector* fog_plane, float fog_distance,
-	float fog_eye_distance, float fog_depth, bool use_fog_plane,
-	const vector* viewer_eye, const matrix* viewer_orient,
-	std::vector<RetainedRoomClippedPolygon>& polygons)
-{
-	if (!fog_plane || !viewer_eye || !viewer_orient)
-		return;
-	for (int face_index = 0; face_index < count; face_index++)
-	{
-		const int facenum = facenums[face_index];
-		if (!(clip_codes & CC_BEHIND))
-		{
-			continue;
-		}
-		face* fp = &rp->faces[facenum];
-		for (int triangle = 0; triangle < fp->num_verts - 2; triangle++)
-		{
-			int corners[3];
-			GetTriangleCorners(fp, triangle, false, corners);
-			g3Point points[3];
-			for (int i = 0; i < 3; i++)
-			{
-				const int room_vertex = fp->face_verts[corners[i]];
-				points[i] = World_point_buffer[rp->wpb_index + room_vertex];
-				points[i].p3_flags &= ~PF_TEMP_POINT;
-				points[i].p3_a = FogVertexAlpha(rp->verts[room_vertex],
-					fog_plane, fog_distance, fog_eye_distance, fog_depth,
-					use_fog_plane, viewer_eye, viewer_orient);
-				points[i].p3_flags |= PF_RGBA;
-			}
-			RetainedRoomClippedPolygon polygon;
-			if (ClipPreparedTriangle(points, polygon))
-				polygons.push_back(polygon);
-		}
-	}
-}
-
-static void DrawBoundaryPolygons(std::vector<RetainedRoomClippedPolygon>& polygons,
-	int bitmap_handle, bool use_face_lightmaps)
-{
-	if (polygons.empty())
-		return;
-	if (use_face_lightmaps)
-	{
-		thread_local std::vector<renderer_poly_batch_item> items;
-		for (size_t first = 0; first < polygons.size();)
-		{
-			const int lightmap_handle = polygons[first].lightmap_handle;
-			size_t end = first + 1;
-			while (end < polygons.size() &&
-				polygons[end].lightmap_handle == lightmap_handle)
-			{
-				++end;
-			}
-			if (lightmap_handle >= 0)
-			{
-				rend_SetOverlayType(OT_BLEND);
-				rend_SetOverlayMap(lightmap_handle);
-			}
-			else
-			{
-				rend_SetOverlayType(OT_NONE);
-			}
-			items.resize(end - first);
-			for (size_t i = first; i < end; i++)
-			{
-				polygons[i].RefreshPointList();
-				items[i - first].pointlist = polygons[i].pointlist.data();
-				items[i - first].nv = polygons[i].count;
-			}
-			rend_DrawPolygon3DBatch(bitmap_handle, items.data(),
-				(int)items.size(), MAP_TYPE_BITMAP);
-			first = end;
-		}
-		return;
-	}
-	std::vector<renderer_poly_batch_item> items(polygons.size());
-	for (size_t i = 0; i < polygons.size(); i++)
-	{
-		polygons[i].RefreshPointList();
-		items[i].pointlist = polygons[i].pointlist.data();
-		items[i].nv = polygons[i].count;
-	}
-	rend_DrawPolygon3DBatch(bitmap_handle, items.data(), (int)items.size(),
-		MAP_TYPE_BITMAP);
+	ranges.push_back(face_range);
+	vertex_count += retained_face.vertex_count;
 }
 
 static VertexBuffer* GetRetainedRoomSpecularVertices(room* rp,
@@ -759,14 +513,10 @@ bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 			return false;
 		const RetainedRoomFace& retained_face = cache->faces[facenum];
 		if (retained_face.index_range.count != 0)
-			AppendRetainedRoomFaceRanges(rp, *cache, facenum, clip_codes,
-				ranges, vertex_count);
+			AppendRetainedRoomFaceRanges(rp, *cache, facenum, ranges,
+				vertex_count);
 	}
-	thread_local std::vector<RetainedRoomClippedPolygon> clipped_polygons;
-	clipped_polygons.clear();
-	BuildBaseBoundaryPolygons(rp, facenums, count, clip_codes, u_offset,
-		v_offset, light_scalar, per_pixel_specular_payload, clipped_polygons);
-	if (ranges.empty() && clipped_polygons.empty())
+	if (ranges.empty())
 		return true;
 
 	renderer_retained_polymodel_draw draw = {};
@@ -819,7 +569,6 @@ bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 		rend_EndRetainedPolymodelDraw();
 		rendTEMP_UnbindVertexBuffer();
 	}
-	DrawBoundaryPolygons(clipped_polygons, bitmap_handle, true);
 	return true;
 }
 
@@ -845,15 +594,10 @@ bool RetainedRoomDrawFogFaces(room* rp, const int* facenums, int count,
 			return false;
 		const RetainedRoomFace& face = cache->faces[facenum];
 		if (face.index_range.count != 0)
-			AppendRetainedRoomFaceRanges(rp, *cache, facenum, clip_codes,
-				ranges, vertex_count);
+			AppendRetainedRoomFaceRanges(rp, *cache, facenum, ranges,
+				vertex_count);
 	}
-	thread_local std::vector<RetainedRoomClippedPolygon> clipped_polygons;
-	clipped_polygons.clear();
-	BuildFogBoundaryPolygons(rp, facenums, count, clip_codes, fog_plane,
-		fog_distance, fog_eye_distance, fog_depth, use_fog_plane,
-		viewer_eye, viewer_orient, clipped_polygons);
-	if (ranges.empty() && clipped_polygons.empty())
+	if (ranges.empty())
 		return true;
 
 	renderer_retained_polymodel_draw draw = {};
@@ -900,6 +644,5 @@ bool RetainedRoomDrawFogFaces(room* rp, const int* facenums, int count,
 		rend_EndRetainedPolymodelDraw();
 		rendTEMP_UnbindVertexBuffer();
 	}
-	DrawBoundaryPolygons(clipped_polygons, 0, false);
 	return true;
 }
