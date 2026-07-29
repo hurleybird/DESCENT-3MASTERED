@@ -221,16 +221,20 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 	vec3 normal = raw_normal / normal_length;
 	float base_exponent = float(specular_data.exponent);
 	float specular_exponent = base_exponent;
+	float specular_peak_scale = 1.0;
 	if (retained_per_pixel_specular_payload != 0)
 	{
 		// The length lost while interpolating unit vertex normals measures their
 		// angular variance. Toksvig-style exponent filtering broadens unstable
 		// highlights without introducing a per-face normal (and therefore a new
-		// discontinuity) or lowering the original peak brightness.
+		// discontinuity). Lowering the exponent also broadens the lobe's energy,
+		// so reduce its peak by the corresponding normalized-Phong ratio.
 		float filtered_length = clamp(normal_length, 0.0, 1.0);
 		float toksvig = filtered_length /
 			max(filtered_length + base_exponent * (1.0 - filtered_length), 0.0001);
 		specular_exponent = max(1.0, base_exponent * toksvig);
+		specular_peak_scale =
+			(specular_exponent + 2.0) / max(base_exponent + 2.0, 0.0001);
 	}
 	vec3 specular_color = vec3(0.0);
 
@@ -292,7 +296,8 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 		shared_lightmap_color : lightmap_color;
 	vec3 lightmap_factor = mix(vec3(1.0), clamp(modulation_color, vec3(0.0), vec3(1.0)),
 		clamp(specular_data.lightmap_mix, 0.0, 1.0));
-	return clamp(specular_color * lightmap_factor * specular_data.strength,
+	return clamp(specular_color * specular_peak_scale *
+		lightmap_factor * specular_data.strength,
 		vec3(0.0), vec3(1.0));
 }
 #endif

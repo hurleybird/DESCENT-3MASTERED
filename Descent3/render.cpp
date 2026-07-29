@@ -1985,6 +1985,22 @@ struct SpecularEdgeKeyHash
 	}
 };
 
+struct SpecularQuantizedPositionHash
+{
+	size_t operator()(const SpecularQuantizedPosition& position) const
+	{
+		auto mix = [](size_t seed, int value) {
+			return seed ^ ((size_t)(uint32_t)value + 0x9e3779b9u +
+				(seed << 6) + (seed >> 2));
+		};
+		size_t result = 0;
+		result = mix(result, position.x);
+		result = mix(result, position.y);
+		result = mix(result, position.z);
+		return result;
+	}
+};
+
 struct SpecularDonorFace
 {
 	int room_index;
@@ -2018,6 +2034,7 @@ struct SpecularResolvedDonor
 struct SpecularFieldSample
 {
 	vector position;
+	vector source_center;
 	vector direction;
 	vector normal;
 	float distance;
@@ -2025,6 +2042,7 @@ struct SpecularFieldSample
 	float g;
 	float b;
 	float weight;
+	int source_id;
 };
 
 struct SpecularFieldLobe
@@ -2052,10 +2070,10 @@ struct SpecularSpatialField
 	int x_cells;
 	int y_cells;
 	int z_cells;
-	bool sparse;
-	std::unordered_map<int, SpecularFieldCell> cells;
-	std::vector<int> populated_cell_indices;
 	SpecularFieldCell global;
+	std::vector<SpecularFieldSample> exact_samples;
+	std::vector<vector> exact_source_centers;
+	std::unordered_map<int, std::vector<int>> exact_sample_cells;
 };
 
 static std::vector<std::vector<PrecomputedSpecularFaceSources>> Precomputed_specular_sources;
@@ -2337,35 +2355,6 @@ static int SpecularFieldIndex(const SpecularSpatialField& field, int x, int y, i
 	return (z * field.y_cells + y) * field.x_cells + x;
 }
 
-static SpecularFieldCell& SpecularFieldEnsureCell(SpecularSpatialField& field, int x, int y, int z)
-{
-	const int index = SpecularFieldIndex(field, x, y, z);
-	auto result = field.cells.emplace(index, SpecularFieldCell{});
-	if (result.second)
-		field.populated_cell_indices.push_back(index);
-	return result.first->second;
-}
-
-static void SpecularFieldPopulateDenseCells(SpecularSpatialField& field)
-{
-	field.cells.reserve(field.x_cells * field.y_cells * field.z_cells);
-	field.populated_cell_indices.reserve(field.x_cells * field.y_cells * field.z_cells);
-	for (int z = 0; z < field.z_cells; z++)
-	{
-		for (int y = 0; y < field.y_cells; y++)
-		{
-			for (int x = 0; x < field.x_cells; x++)
-				SpecularFieldEnsureCell(field, x, y, z);
-		}
-	}
-}
-
-static const SpecularFieldCell* SpecularFieldFindCell(const SpecularSpatialField& field, int x, int y, int z)
-{
-	auto iter = field.cells.find(SpecularFieldIndex(field, x, y, z));
-	return iter == field.cells.end() ? nullptr : &iter->second;
-}
-
 static int SpecularFieldClampCell(int value, int max_value)
 {
 	if (value < 0)
@@ -2383,24 +2372,6 @@ static void SpecularFieldCellForPosition(const SpecularSpatialField& field, cons
 	z = SpecularFieldClampCell((int)floor((position.z - field.min_bound.z) / field.cell_size), field.z_cells);
 }
 
-static vector SpecularFieldCellCenter(const SpecularSpatialField& field, int x, int y, int z)
-{
-	vector center;
-	center.x = field.min_bound.x + ((float)x + 0.5f) * field.cell_size;
-	center.y = field.min_bound.y + ((float)y + 0.5f) * field.cell_size;
-	center.z = field.min_bound.z + ((float)z + 0.5f) * field.cell_size;
-	return center;
-}
-
-static vector SpecularFieldCellCenterFromIndex(const SpecularSpatialField& field, int index)
-{
-	const int x = index % field.x_cells;
-	const int yz = index / field.x_cells;
-	const int y = yz % field.y_cells;
-	const int z = yz / field.y_cells;
-	return SpecularFieldCellCenter(field, x, y, z);
-}
-
 static float SpecularFieldSmoothKernel(float distance, float radius)
 {
 	if (radius <= 0.0f)
@@ -2409,16 +2380,6 @@ static float SpecularFieldSmoothKernel(float distance, float radius)
 	const float smooth = t * t * (3.0f - 2.0f * t);
 	const float weight = 1.0f - smooth;
 	return weight * weight;
-}
-
-static bool SpecularFieldHasLobes(const SpecularFieldCell& cell)
-{
-	for (int i = 0; i < MAX_SPECULARS; i++)
-	{
-		if (cell.lobes[i].weight > 0.0f)
-			return true;
-	}
-	return false;
 }
 
 static void SpecularFieldAddWeightedSample(SpecularFieldCell& cell, const SpecularFieldSample& sample,
@@ -2476,50 +2437,6 @@ static void SpecularFieldAddWeightedSample(SpecularFieldCell& cell, const Specul
 	lobe.weight += weight;
 }
 
-static int SpecularFieldFindReferenceLobe(const SpecularFieldCell& reference,
-	const SpecularFieldSample& sample)
-{
-	int best_lobe = -1;
-	float best_score = -10.0f;
-	for (int i = 0; i < MAX_SPECULARS; i++)
-	{
-		const SpecularFieldLobe& lobe = reference.lobes[i];
-		if (lobe.weight <= 0.0f)
-			continue;
-
-		const vector lobe_direction =
-			SpecularFieldNormalizeOr(lobe.direction_sum, sample.direction);
-		const vector lobe_normal =
-			SpecularFieldNormalizeOr(lobe.normal_sum, sample.normal);
-		const float score =
-			SpecularClamp(lobe_direction * sample.direction, -1.0f, 1.0f) * 0.75f +
-			SpecularClamp(lobe_normal * sample.normal, -1.0f, 1.0f) * 0.25f;
-		if (score > best_score)
-		{
-			best_score = score;
-			best_lobe = i;
-		}
-	}
-	return best_lobe;
-}
-
-static void SpecularFieldAddWeightedSampleToLobe(SpecularFieldCell& cell, int lobe_index,
-	const SpecularFieldSample& sample, float weight)
-{
-	if (lobe_index < 0 || lobe_index >= MAX_SPECULARS || weight <= 0.0f)
-		return;
-
-	SpecularFieldLobe& lobe = cell.lobes[lobe_index];
-	lobe.position_sum += sample.position * weight;
-	lobe.direction_sum += sample.direction * weight;
-	lobe.normal_sum += sample.normal * weight;
-	lobe.distance_sum += sample.distance * weight;
-	lobe.r_sum += sample.r * weight;
-	lobe.g_sum += sample.g * weight;
-	lobe.b_sum += sample.b * weight;
-	lobe.weight += weight;
-}
-
 static void SpecularBuildSpatialField(SpecularSpatialField& field, const std::vector<SpecularFaceInfo>& faces,
 	const std::vector<SpecularFieldSample>& samples)
 {
@@ -2544,27 +2461,11 @@ static void SpecularBuildSpatialField(SpecularSpatialField& field, const std::ve
 	const float max_extent = std::max(extent.x, std::max(extent.y, extent.z));
 	const float field_resolution =
 		ConfigNormalizePerPixelSpecularFieldResolution(Render_per_pixel_specular_field_resolution);
-	field.sparse = Render_per_pixel_sparse_specular_field;
 	field.cell_size = SpecularClamp(max_extent / field_resolution, 6.0f, 120.0f);
 	if (field.cell_size <= 0.0f)
 		field.cell_size = 20.0f;
 
-	const int max_axis_cells = field.sparse ? 256 : 48;
-	bool dense_cap_applied = false;
-	if (!field.sparse)
-	{
-		const int requested_x_cells = (int)ceil(std::max(extent.x, 1.0f) / field.cell_size) + 3;
-		const int requested_y_cells = (int)ceil(std::max(extent.y, 1.0f) / field.cell_size) + 3;
-		const int requested_z_cells = (int)ceil(std::max(extent.z, 1.0f) / field.cell_size) + 3;
-		if (requested_x_cells > max_axis_cells ||
-			requested_y_cells > max_axis_cells ||
-			requested_z_cells > max_axis_cells)
-		{
-			const float capped_resolution = (float)(max_axis_cells - 3);
-			field.cell_size = SpecularClamp(max_extent / capped_resolution, 6.0f, 120.0f);
-			dense_cap_applied = true;
-		}
-	}
+	const int max_axis_cells = 256;
 
 	field.x_cells = SpecularFieldClampCell((int)ceil(std::max(extent.x, 1.0f) / field.cell_size), max_axis_cells) + 1;
 	field.y_cells = SpecularFieldClampCell((int)ceil(std::max(extent.y, 1.0f) / field.cell_size), max_axis_cells) + 1;
@@ -2575,195 +2476,317 @@ static void SpecularBuildSpatialField(SpecularSpatialField& field, const std::ve
 	field.x_cells = std::max(1, std::min(field.x_cells + 2, max_axis_cells));
 	field.y_cells = std::max(1, std::min(field.y_cells + 2, max_axis_cells));
 	field.z_cells = std::max(1, std::min(field.z_cells + 2, max_axis_cells));
-	if (field.sparse)
-	{
-		field.cells.reserve((faces.size() + samples.size()) * 8);
-		field.populated_cell_indices.reserve((faces.size() + samples.size()) * 8);
-	}
-	else
-	{
-		if (dense_cap_applied)
-		{
-			mprintf((0, "Warning: dense PPX specular field capped to %dx%dx%d cells; enable Sparse field for full %.1f resolution.\n",
-				field.x_cells, field.y_cells, field.z_cells, field_resolution));
-		}
-		SpecularFieldPopulateDenseCells(field);
-	}
+	field.exact_samples = samples;
+	field.exact_source_centers.clear();
+	field.exact_sample_cells.clear();
+	field.exact_sample_cells.reserve(samples.size());
 
-	// Establish four stable source families once for the entire mine. Cells and
-	// vertex queries retain these identities; independently reclustering each
-	// cell makes unrelated light families exchange interpolated slots.
+	// Keep four stable directional families as compact shader channels. Unlike
+	// the old path, these families no longer reconstruct an averaged world-space
+	// light; they only organize exact authored centers and their smooth energy.
 	for (const SpecularFieldSample& sample : samples)
 		SpecularFieldAddWeightedSample(field.global, sample, sample.weight);
 
-	for (const SpecularFieldSample& sample : samples)
+	// An authored bright center is a position, not a directional hint. Preserve
+	// that identity exactly and let only its influence vary over the receiving
+	// surface. Quantization merges repeated serialized copies of the same center
+	// without averaging distinct nearby lights into a moving virtual source.
+	std::unordered_map<SpecularQuantizedPosition, int,
+		SpecularQuantizedPositionHash> source_lookup;
+	source_lookup.reserve(samples.size());
+	for (int sample_index = 0; sample_index < (int)field.exact_samples.size(); sample_index++)
 	{
-		const int reference_lobe =
-			SpecularFieldFindReferenceLobe(field.global, sample);
-		if (reference_lobe < 0)
+		SpecularFieldSample& sample = field.exact_samples[sample_index];
+		const SpecularQuantizedPosition key =
+			SpecularQuantizePosition(sample.source_center);
+		auto result = source_lookup.emplace(key,
+			(int)field.exact_source_centers.size());
+		if (result.second)
+			field.exact_source_centers.push_back(sample.source_center);
+		sample.source_id = result.first->second;
+
+		int x, y, z;
+		SpecularFieldCellForPosition(field, sample.position, x, y, z);
+		field.exact_sample_cells[SpecularFieldIndex(field, x, y, z)].
+			push_back(sample_index);
+	}
+}
+
+struct SpecularFieldInfluence
+{
+	int source_id;
+	vector color_sum;
+	float color_weight;
+	float influence;
+	vector linear_color;
+};
+
+struct SpecularFieldCandidate
+{
+	int sample_index;
+	float distance;
+	float normal_weight;
+};
+
+static std::vector<SpecularFieldInfluence> SpecularEvaluateFieldInfluences(
+	const SpecularSpatialField& field, const vector& target_position,
+	const vector& target_normal)
+{
+	std::vector<SpecularFieldInfluence> influences;
+	if (field.exact_samples.empty() || field.exact_source_centers.empty())
+		return influences;
+
+	std::unordered_map<int, int> influence_lookup;
+	const float local_radius =
+		ConfigNormalizePerPixelSpecularFieldSampleDistance(
+			Render_per_pixel_specular_field_sample_distance);
+	const float query_radius = local_radius * 3.0f;
+	std::vector<SpecularFieldCandidate> candidates;
+	float local_coverage = 0.0f;
+	int cx, cy, cz;
+	SpecularFieldCellForPosition(field, target_position, cx, cy, cz);
+	const int query_radius_cells = std::max(1,
+		std::min(24, (int)ceil(query_radius /
+			std::max(field.cell_size, 0.001f))));
+
+	for (int z = std::max(0, cz - query_radius_cells);
+		z <= std::min(field.z_cells - 1, cz + query_radius_cells); z++)
+	{
+		for (int y = std::max(0, cy - query_radius_cells);
+			y <= std::min(field.y_cells - 1, cy + query_radius_cells); y++)
+		{
+			for (int x = std::max(0, cx - query_radius_cells);
+				x <= std::min(field.x_cells - 1, cx + query_radius_cells); x++)
+			{
+				auto cell_iter = field.exact_sample_cells.find(
+					SpecularFieldIndex(field, x, y, z));
+				if (cell_iter == field.exact_sample_cells.end())
+					continue;
+
+				for (int sample_index : cell_iter->second)
+				{
+					const SpecularFieldSample& sample =
+						field.exact_samples[sample_index];
+					vector delta = sample.position - target_position;
+					const float distance = vm_GetMagnitude(&delta);
+					if (distance >= query_radius)
+						continue;
+
+					const float normal_dot = SpecularClamp(
+						sample.normal * target_normal, -1.0f, 1.0f);
+					if (normal_dot < -0.2f)
+						continue;
+					const float normal_weight =
+						(0.12f + std::max(normal_dot, 0.0f) *
+							std::max(normal_dot, 0.0f)) / 1.12f;
+					candidates.push_back(
+						{ sample_index, distance, normal_weight });
+					local_coverage = std::max(local_coverage,
+						SpecularFieldSmoothKernel(distance, local_radius) *
+						normal_weight);
+				}
+			}
+		}
+	}
+
+	// Prefer the authored neighborhood. Expansion is only a continuous
+	// reconstruction across holes in that neighborhood, not a permanently
+	// broader light that can wash unrelated geometry into the same lobe.
+	const float coverage_t = SpecularClamp(
+		(local_coverage - 0.15f) / 0.50f, 0.0f, 1.0f);
+	const float coverage_smooth =
+		coverage_t * coverage_t * (3.0f - 2.0f * coverage_t);
+	const float expansion = 1.0f - coverage_smooth;
+	for (const SpecularFieldCandidate& candidate : candidates)
+	{
+		const SpecularFieldSample& sample =
+			field.exact_samples[candidate.sample_index];
+		const float local_weight =
+			SpecularFieldSmoothKernel(candidate.distance, local_radius);
+		const float expanded_weight =
+			SpecularFieldSmoothKernel(candidate.distance, query_radius);
+		const float spatial_weight =
+			local_weight + (expanded_weight - local_weight) * expansion;
+		const float influence = spatial_weight * candidate.normal_weight;
+		if (influence <= 0.0001f)
 			continue;
 
-		int cx, cy, cz;
-		SpecularFieldCellForPosition(field, sample.position, cx, cy, cz);
-		for (int z = std::max(0, cz - 1); z <= std::min(field.z_cells - 1, cz + 1); z++)
+		int influence_index;
+		auto result = influence_lookup.emplace(sample.source_id,
+			(int)influences.size());
+		if (result.second)
 		{
-			for (int y = std::max(0, cy - 1); y <= std::min(field.y_cells - 1, cy + 1); y++)
-			{
-				for (int x = std::max(0, cx - 1); x <= std::min(field.x_cells - 1, cx + 1); x++)
-				{
-					vector delta = SpecularFieldCellCenter(field, x, y, z) - sample.position;
-					const float distance = vm_GetMagnitude(&delta);
-					const float falloff = std::max(0.0f, 1.0f - distance / (field.cell_size * 1.75f));
-					if (falloff <= 0.0f)
-						continue;
-					SpecularFieldAddWeightedSampleToLobe(
-						SpecularFieldEnsureCell(field, x, y, z), reference_lobe,
-						sample, sample.weight * falloff * falloff);
-				}
-			}
+			SpecularFieldInfluence added = {};
+			added.source_id = sample.source_id;
+			influences.push_back(added);
 		}
+		influence_index = result.first->second;
+		SpecularFieldInfluence& output = influences[influence_index];
+		const float color_weight =
+			influence * std::max(sample.weight, 0.0001f);
+		output.color_sum +=
+			vector{ sample.r, sample.g, sample.b } * color_weight;
+		output.color_weight += color_weight;
+		output.influence = std::max(output.influence, influence);
 	}
+
+	for (SpecularFieldInfluence& influence : influences)
+	{
+		const vector average_color = influence.color_weight > 0.0f ?
+			influence.color_sum / influence.color_weight :
+			vector{ 0.0f, 0.0f, 0.0f };
+		influence.linear_color =
+			average_color * sqrt(influence.influence);
+	}
+	std::sort(influences.begin(), influences.end(),
+		[](const SpecularFieldInfluence& a,
+			const SpecularFieldInfluence& b) {
+			return a.source_id < b.source_id;
+		});
+	return influences;
 }
 
-static void SpecularFieldAddLobeToOutput(SpecularFieldCell& output, int output_lobe_index,
-	const SpecularFieldLobe& source, const vector& target_normal, float base_weight)
+static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set,
+	const SpecularFaceInfo& target, const SpecularSpatialField& field,
+	const vector& target_position, const vector& target_normal,
+	float specular_exponent)
 {
-	if (source.weight <= 0.0f || base_weight <= 0.0f)
+	(void)target;
+	set = {};
+
+	const std::vector<SpecularFieldInfluence> influences =
+		SpecularEvaluateFieldInfluences(field, target_position, target_normal);
+	if (influences.empty())
 		return;
 
-	SpecularFieldSample sample = {};
-	sample.position = source.position_sum / source.weight;
-	sample.direction = SpecularFieldNormalizeOr(source.direction_sum, target_normal);
-	sample.normal = SpecularFieldNormalizeOr(source.normal_sum, target_normal);
-	sample.distance = source.distance_sum / source.weight;
-	sample.r = source.r_sum / source.weight;
-	sample.g = source.g_sum / source.weight;
-	sample.b = source.b_sum / source.weight;
-
-	const float normal_dot = SpecularClamp(sample.normal * target_normal, -1.0f, 1.0f);
-	if (normal_dot < -0.2f)
-		return;
-
-	const float normal_weight = 0.12f + std::max(normal_dot, 0.0f) * std::max(normal_dot, 0.0f);
-	SpecularFieldAddWeightedSampleToLobe(output, output_lobe_index, sample,
-		base_weight * normal_weight);
-}
-
-static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set, const SpecularFaceInfo& target,
-	const SpecularSpatialField& field, const vector& target_position, const vector& target_normal)
-{
-	set.count = 0;
-	memset(set.sources, 0, sizeof(set.sources));
-	memset(set.linear_colors, 0, sizeof(set.linear_colors));
-	if (field.cells.empty() || !SpecularFieldHasLobes(field.global))
-		return;
-
-	SpecularFieldCell output = {};
-	const float query_radius =
-		ConfigNormalizePerPixelSpecularFieldSampleDistance(Render_per_pixel_specular_field_sample_distance);
-
-	auto add_cell_to_output = [&](int cell_index, const SpecularFieldCell& cell) {
-		vector delta = SpecularFieldCellCenterFromIndex(field, cell_index) - target_position;
-		const float distance = vm_GetMagnitude(&delta);
-		const float spatial_weight = SpecularFieldSmoothKernel(distance, query_radius);
-		if (spatial_weight <= 0.0f)
-			return;
-		for (int lobe_index = 0; lobe_index < MAX_SPECULARS; lobe_index++)
-		{
-			SpecularFieldAddLobeToOutput(output, lobe_index,
-				cell.lobes[lobe_index], target_normal, spatial_weight);
-		}
-	};
-
-	if (field.sparse)
+	// Four stable directional bases are the compact representation consumed by
+	// the existing shader. Classify each exact source from the receiving point,
+	// not permanently from its authored face: a center's incident direction
+	// changes as it propagates around curved geometry.
+	vector reference_directions[MAX_SPECULARS] = {};
+	bool reference_valid[MAX_SPECULARS] = {};
+	for (int family = 0; family < MAX_SPECULARS; family++)
 	{
-		for (int cell_index : field.populated_cell_indices)
-		{
-			const auto cell_iter = field.cells.find(cell_index);
-			if (cell_iter == field.cells.end())
-				continue;
-
-			add_cell_to_output(cell_index, cell_iter->second);
-		}
-	}
-	else
-	{
-		int cx, cy, cz;
-		SpecularFieldCellForPosition(field, target_position, cx, cy, cz);
-		const int query_radius_cells = std::max(1,
-			std::min(24, (int)ceil(query_radius / std::max(field.cell_size, 0.001f))));
-		for (int z = std::max(0, cz - query_radius_cells);
-			z <= std::min(field.z_cells - 1, cz + query_radius_cells); z++)
-		{
-			for (int y = std::max(0, cy - query_radius_cells);
-				y <= std::min(field.y_cells - 1, cy + query_radius_cells); y++)
-			{
-				for (int x = std::max(0, cx - query_radius_cells);
-					x <= std::min(field.x_cells - 1, cx + query_radius_cells); x++)
-				{
-					const SpecularFieldCell* cell = SpecularFieldFindCell(field, x, y, z);
-					if (cell == nullptr)
-						continue;
-
-					add_cell_to_output(SpecularFieldIndex(field, x, y, z), *cell);
-				}
-			}
-		}
-	}
-
-	for (int lobe_index = 0; lobe_index < MAX_SPECULARS; lobe_index++)
-	{
-		SpecularFieldAddLobeToOutput(output, lobe_index,
-			field.global.lobes[lobe_index], target_normal, 0.08f);
-	}
-
-	float total_lobe_weight = 0.0f;
-	for (const SpecularFieldLobe& lobe : output.lobes)
-		total_lobe_weight += std::max(lobe.weight, 0.0f);
-
-	for (int reference_index = 0; reference_index < MAX_SPECULARS; reference_index++)
-	{
-		const SpecularFieldLobe& reference = field.global.lobes[reference_index];
+		const SpecularFieldLobe& reference = field.global.lobes[family];
 		if (reference.weight <= 0.0f)
-			break;
+			continue;
+		reference_directions[family] =
+			SpecularFieldNormalizeOr(reference.direction_sum,
+				vector{ 0.0f, 0.0f, 1.0f });
+		reference_valid[family] = true;
+	}
 
-		const vector reference_anchor = reference.position_sum / reference.weight;
-		const vector reference_direction =
-			SpecularFieldNormalizeOr(reference.direction_sum, target_normal);
-		const float reference_distance =
-			SpecularClamp(reference.distance_sum / reference.weight, 40.0f, 800.0f);
-		specular_instance resolved = {};
-		resolved.bright_center =
-			reference_anchor + reference_direction * reference_distance;
+	vector family_colors[MAX_SPECULARS] = {};
+	vector family_center_sums[MAX_SPECULARS] = {};
+	vector incident_sums[MAX_SPECULARS] = {};
+	float family_center_weights[MAX_SPECULARS] = {};
+	float incident_weights[MAX_SPECULARS] = {};
+	float family_weights[MAX_SPECULARS] = {};
+	for (const SpecularFieldInfluence& influence : influences)
+	{
+		vector incident =
+			target_position - field.exact_source_centers[influence.source_id];
+		if (vm_NormalizeVector(&incident) <= 0.0001f)
+			continue;
+		const vector toward_source = -incident;
 
-		const SpecularFieldLobe& lobe = output.lobes[reference_index];
-		vector linear_color = { 0.0f, 0.0f, 0.0f };
-		if (lobe.weight > 0.0f)
+		float assignment[MAX_SPECULARS] = {};
+		float maximum_dot = -1.0f;
+		for (int family = 0; family < MAX_SPECULARS; family++)
 		{
-			const vector source_anchor = lobe.position_sum / lobe.weight;
-			const vector direction =
-				SpecularFieldNormalizeOr(lobe.direction_sum, reference_direction);
-			const float distance =
-				SpecularClamp(lobe.distance_sum / lobe.weight, 40.0f, 800.0f);
-			// Normalize the complete local lobe set instead of making every
-			// strongest lobe full strength. This keeps a single authored
-			// highlight unchanged while preventing overlapping approximations
-			// from multiplying total specular energy.
-			const float lobe_strength = total_lobe_weight > 0.0f ?
-				sqrt(SpecularClamp(lobe.weight / total_lobe_weight,
-					0.0f, 1.0f)) : 1.0f;
-			resolved.bright_center = source_anchor + direction * distance;
-			linear_color = {
-				(lobe.r_sum / lobe.weight) * lobe_strength,
-				(lobe.g_sum / lobe.weight) * lobe_strength,
-				(lobe.b_sum / lobe.weight) * lobe_strength
-			};
-			resolved.bright_color =
-				SpecularPackColor(linear_color.x, linear_color.y, linear_color.z);
+			if (!reference_valid[family])
+				continue;
+			assignment[family] = toward_source * reference_directions[family];
+			maximum_dot = std::max(maximum_dot, assignment[family]);
 		}
-		set.sources[set.count] = resolved;
-		set.linear_colors[set.count] = linear_color;
-		set.count++;
+		float assignment_sum = 0.0f;
+		for (int family = 0; family < MAX_SPECULARS; family++)
+		{
+			if (!reference_valid[family])
+				continue;
+			// A soft angular partition keeps family identities stable while
+			// avoiding discrete source-slot changes at polygon boundaries.
+			assignment[family] =
+				exp((assignment[family] - maximum_dot) * 32.0f);
+			assignment_sum += assignment[family];
+		}
+		if (assignment_sum <= 0.0001f)
+			continue;
+
+		const float direction_weight =
+			std::max((influence.linear_color.x +
+				influence.linear_color.y +
+				influence.linear_color.z) / 3.0f, 0.0f);
+		const float kernel_weight = sqrt(influence.influence);
+		for (int family = 0; family < MAX_SPECULARS; family++)
+		{
+			if (!reference_valid[family])
+				continue;
+			const float family_assignment =
+				assignment[family] / assignment_sum;
+			family_colors[family] +=
+				influence.linear_color * family_assignment;
+			family_weights[family] +=
+				kernel_weight * family_assignment;
+			const float center_weight =
+				direction_weight * family_assignment;
+			family_center_sums[family] +=
+				field.exact_source_centers[influence.source_id] *
+				center_weight;
+			family_center_weights[family] += center_weight;
+			incident_sums[family] +=
+				incident * center_weight;
+			incident_weights[family] +=
+				center_weight;
+		}
+	}
+
+	// Preserve point-light parallax by storing each family's smoothly weighted
+	// authored center in world space. A per-vertex unit virtual segment turns a
+	// fixed authored light into a directional lobe attached to the surface; as
+	// the camera moves, that reads as a spotlight emitted by the viewer.
+	float total_family_weight = 0.0f;
+	for (float family_weight : family_weights)
+		total_family_weight += std::max(family_weight, 0.0f);
+	set.count = MAX_SPECULARS;
+	for (int family = 0; family < MAX_SPECULARS; family++)
+	{
+		if (incident_weights[family] <= 0.0001f ||
+			family_center_weights[family] <= 0.0001f)
+			continue;
+		const float incident_magnitude =
+			vm_GetMagnitude(&incident_sums[family]);
+		if (incident_magnitude <= 0.0001f)
+			continue;
+		const float concentration = SpecularClamp(
+			incident_magnitude / incident_weights[family], 0.0f, 1.0f);
+		incident_sums[family] /= incident_magnitude;
+
+		// One shader lobe represents this complete directional family. Average
+		// overlapping authored members instead of multiplying their energy;
+		// max(..., 1) also provides a smooth fade where the field runs out.
+		vector family_color =
+			family_colors[family] / std::max(family_weights[family], 1.0f);
+		// The four compact channels share one authored energy budget. Giving
+		// every family full strength concentrates overlapping directions into a
+		// camera-facing spotlight; normalize them as one lobe set instead.
+		const float family_strength = total_family_weight > 0.0001f ?
+			sqrt(SpecularClamp(family_weights[family] /
+				total_family_weight, 0.0f, 1.0f)) : 0.0f;
+		// A single mean direction otherwise puts the full energy of several
+		// separated authored directions into one Phong peak. Their mean-resultant
+		// length estimates that angular spread; applying the material exponent
+		// preserves coherent lights and suppresses the false camera spotlight.
+		family_color *= family_strength *
+			pow(concentration, std::max(specular_exponent, 1.0f));
+		family_color.x = std::min(family_color.x, 1.0f);
+		family_color.y = std::min(family_color.y, 1.0f);
+		family_color.z = std::min(family_color.z, 1.0f);
+		set.linear_colors[family] = family_color;
+		set.sources[family].bright_center =
+			family_center_sums[family] / family_center_weights[family];
+		set.sources[family].bright_color = SpecularPackColor(
+			family_color.x, family_color.y, family_color.z);
 	}
 }
 
@@ -3199,6 +3222,7 @@ void PrecomputeMineSpecularSources()
 					const float intensity = (r + g + b) / 3.0f;
 					SpecularFieldSample sample = {};
 					sample.position = info.basis.center;
+					sample.source_center = sources[i].bright_center;
 					sample.direction = direction;
 					sample.normal = info.basis.normal;
 					sample.distance = source_distance;
@@ -3206,6 +3230,7 @@ void PrecomputeMineSpecularSources()
 					sample.g = g;
 					sample.b = b;
 					sample.weight = face_weight * (0.25f + intensity);
+					sample.source_id = -1;
 					field_samples.push_back(sample);
 				}
 			}
@@ -3341,12 +3366,13 @@ void PrecomputeMineSpecularSources()
 		PrecomputedSpecularFaceSources& cached =
 			Precomputed_specular_sources[info.room_index][info.face_index];
 
-		cached.field = {};
-		SpecularBuildFieldSourceSet(cached.field, info, spatial_field,
-			info.basis.center, info.basis.normal);
-
 		room* rp = &Rooms[info.room_index];
 		face* fp = &rp->faces[info.face_index];
+		const float field_specular_exponent =
+			(float)TunedSpecularMaterialExponent(SpecularMaterialType(fp));
+		cached.field = {};
+		SpecularBuildFieldSourceSet(cached.field, info, spatial_field,
+			info.basis.center, info.basis.normal, field_specular_exponent);
 		cached.field_vertices.clear();
 		cached.field_vertices.resize(fp->num_verts);
 		for (int vn = 0; vn < fp->num_verts; vn++)
@@ -3360,7 +3386,8 @@ void PrecomputeMineSpecularSources()
 				vertex_normal = info.basis.normal;
 
 			SpecularBuildFieldSourceSet(cached.field_vertices[vn], info,
-				spatial_field, rp->verts[fp->face_verts[vn]], vertex_normal);
+				spatial_field, rp->verts[fp->face_verts[vn]], vertex_normal,
+				field_specular_exponent);
 		}
 	};
 
