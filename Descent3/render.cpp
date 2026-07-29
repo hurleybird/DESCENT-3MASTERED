@@ -1826,15 +1826,6 @@ static bool SpecularShouldQueueFace(room* rp, face* fp)
 {
 	if (!Detail_settings.Specular_lighting)
 		return false;
-	// GL4's retained room depth cannot be replayed reliably by the legacy
-	// projected-vertex specular pass.  Per-pixel lighting has a coherent retained
-	// material pass; with it disabled, omit specular rather than intermittently
-	// exposing coplanar legacy triangles.  GL1 retains the original path.
-	if (UseHardware && rend_CanUseNewrender() &&
-		!Render_preferred_state.per_pixel_lighting)
-	{
-		return false;
-	}
 	if (SpecularCanUseFieldStaticFace(rp, fp))
 		return true;
 	if ((GameTextures[fp->tmap].flags & TF_SPECULAR) && SpecularFaceHasAuthoredPath(rp, fp))
@@ -3398,6 +3389,7 @@ void PrecomputeMineSpecularSources()
 		for (std::thread& worker : workers)
 			worker.join();
 	}
+
 }
 
 static void SpecularAddPrecomputedSourceSet(SpecularBlock& specblock, const PrecomputedSpecularSourceSet& set)
@@ -3780,6 +3772,14 @@ void PopulateRetainedRoomSpecularPoints(room* rp, int facenum,
 		point->p3_specular_field_valid = 0;
 		point->p3_specular_field_count = 0;
 		point->p3_specular_lightmap_color = { 1.0f, 1.0f, 1.0f };
+		for (int source_index = 0;
+			source_index < G3_MAX_SPECULAR_FIELD_SOURCES; source_index++)
+		{
+			point->p3_specular_field_centers[source_index] =
+				{ 0.0f, 0.0f, 0.0f };
+			point->p3_specular_field_colors[source_index] =
+				{ 0.0f, 0.0f, 0.0f };
+		}
 		if (!cached || corner >= (int)cached->field_vertices.size())
 			continue;
 
@@ -3902,7 +3902,9 @@ void RenderSpecularFacesFlat(room* rp)
 			// only by ordinary material state and can share one multi-draw instead of
 			// updating a UBO and issuing a draw for every face.
 			const bool can_batch_field = dynamic_light_count == 0 &&
-				UseFieldStaticSpecularForRoom(rp) && specular_clip_codes == 0 &&
+				UseFieldStaticSpecularForRoom(rp) &&
+				!(specular_clip_codes &
+					(CC_BEHIND | CC_OFF_FAR | CC_OFF_CUSTOM)) &&
 				rend_RetainedRoomLightmapsReady() && !In_editor_mode &&
 				RetainedRoomCanDrawBaseFace(rp, face_index);
 			if (can_batch_field)
@@ -4958,6 +4960,11 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 		return false;
 
 	const bool spec_face = SpecularShouldQueueFace(rp, fp);
+	// Piccu's per-vertex specular is a projected Gouraud overlay. Its base face
+	// must use the same projected stream; replaying it over retained geometry
+	// creates view-dependent depth holes and visible triangle boundaries.
+	if (spec_face && !Render_preferred_state.per_pixel_lighting)
+		return false;
 
 	float uchange = 0;
 	float vchange = 0;
@@ -5095,6 +5102,15 @@ static void RenderRoomDepthPrepass(room* rp)
 			continue;
 		if ((rp->flags & RF_FOG) && fp->portal_num != -1 &&
 			!(rp->portals[fp->portal_num].flags & PF_RENDER_FACES))
+		{
+			continue;
+		}
+		// The non-per-pixel specular path deliberately renders the matching base
+		// face through Piccu's projected stream. Do not seed its depth with the
+		// retained projection first, or the legacy color pass can fail against
+		// subtly different samples before its overlay is even drawn.
+		if (!Render_preferred_state.per_pixel_lighting &&
+			SpecularShouldQueueFace(rp, fp))
 		{
 			continue;
 		}
@@ -5370,7 +5386,8 @@ void RenderFace(room* rp, int facenum)
 		g3_SetTriangulationTest(1);
 	}
 	retained_geometry_eligible = !In_editor_mode &&
-		RetainedRoomCanDrawBaseFace(rp, facenum);
+		RetainedRoomCanDrawBaseFace(rp, facenum) &&
+		!(spec_face && !Render_preferred_state.per_pixel_lighting);
 
 	// Do special fog stuff for portal faces
 	if (rp->flags & RF_FOG && !In_editor_mode)

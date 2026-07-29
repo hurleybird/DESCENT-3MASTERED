@@ -346,7 +346,18 @@ void main()
 		out_retained_ao_class = int(round(color.r * 255.0));
 		int retained_lmi = (retained_source_vertex >> 16) & 0xffff;
 		out_retained_lightmap_info = retained_lmi == 0xffff ? -1 : retained_lmi;
-		out_retained_face_normal = normalize(mat3(retained_current_world) * motion_world_position.xyz);
+		if (retained_per_pixel_specular_payload != 0)
+		{
+			vec3 retained_view_face_normal =
+				mat3(retained_modelview) * motion_world_position.xyz;
+			out_retained_face_normal = normalize(vec3(
+				retained_view_face_normal.xy, -retained_view_face_normal.z));
+		}
+		else
+		{
+			out_retained_face_normal =
+				normalize(mat3(retained_current_world) * motion_world_position.xyz);
+		}
 		#if defined(USE_SPECULAR)
 			for (int i = 0; i < 4; i++)
 			{
@@ -398,7 +409,12 @@ void main()
 	gl_Position = commons.projection * commons.modelview * vec4(position, 1.0);
 	outcolor = color;
 	#if defined(USE_SPECULAR)
-		out_field_specular_perspective_scale = 1.0;
+		// Projected g3 vertices already carry their field payload multiplied by
+		// 1 / (z + bias), just like UVs and retained room vertices. Recover the
+		// shared scale in the fragment shader so CPU-clipped and retained faces
+		// interpolate the same normals, source colors, and lightmap modulation.
+		out_field_specular_perspective_scale =
+			max(field_specular_center0.w, 0.0001);
 	#endif
 	out_retained_effect_alpha = color.a;
 	#if defined(USE_SPECULAR)

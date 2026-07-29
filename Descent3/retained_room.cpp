@@ -366,33 +366,6 @@ static void GetTriangleCorners(const face* fp, int triangle, bool reflected,
 	}
 }
 
-static constexpr int RETAINED_ROOM_VIEWPORT_CLIP_CODES =
-	CC_OFF_LEFT | CC_OFF_RIGHT | CC_OFF_BOT | CC_OFF_TOP;
-
-static bool NeedsRetainedRoomProjectedClipping(room* rp, int facenum)
-{
-	if (!rp || facenum < 0 || facenum >= rp->num_faces)
-		return false;
-
-	const face* fp = &rp->faces[facenum];
-	int face_codes = 0;
-	bool has_vertex_inside_gl_near_plane = false;
-	for (int corner = 0; corner < fp->num_verts; corner++)
-	{
-		const g3Point& point =
-			World_point_buffer[rp->wpb_index + fp->face_verts[corner]];
-		face_codes |= point.p3_codes;
-		has_vertex_inside_gl_near_plane |=
-			point.p3_z >= 0.0f && point.p3_z < 1.0f;
-	}
-	// Legacy g3 projection accepts every positive eye-space Z, whereas the GL
-	// projection's near plane is 1.  Preserve the legacy viewport intersection
-	// for only those faces; keeping viewport codes out of the room batch key
-	// avoids fragmenting ordinary retained draws.
-	return has_vertex_inside_gl_near_plane &&
-		(face_codes & RETAINED_ROOM_VIEWPORT_CLIP_CODES) != 0;
-}
-
 static bool ClipPreparedTriangle(g3Point points[3],
 	RetainedRoomClippedPolygon& output)
 {
@@ -447,8 +420,7 @@ static void AppendRetainedRoomFaceRanges(room* rp, const RetainedRoomCache& cach
 		Retained_room_transforms[roomnum].enabled;
 	const ElementRange& face_range = reflected ?
 		retained_face.reflected_index_range : retained_face.index_range;
-	if (!(clip_codes & CC_BEHIND) &&
-		!NeedsRetainedRoomProjectedClipping(rp, facenum))
+	if (!(clip_codes & CC_BEHIND))
 	{
 		ranges.push_back(face_range);
 		vertex_count += retained_face.vertex_count;
@@ -471,8 +443,7 @@ static void BuildBaseBoundaryPolygons(room* rp, const int* facenums, int count,
 	for (int face_index = 0; face_index < count; face_index++)
 	{
 		const int facenum = facenums[face_index];
-		if (!(clip_codes & CC_BEHIND) &&
-			!NeedsRetainedRoomProjectedClipping(rp, facenum))
+		if (!(clip_codes & CC_BEHIND))
 		{
 			continue;
 		}
@@ -546,8 +517,7 @@ static void BuildFogBoundaryPolygons(room* rp, const int* facenums, int count,
 	for (int face_index = 0; face_index < count; face_index++)
 	{
 		const int facenum = facenums[face_index];
-		if (!(clip_codes & CC_BEHIND) &&
-			!NeedsRetainedRoomProjectedClipping(rp, facenum))
+		if (!(clip_codes & CC_BEHIND))
 		{
 			continue;
 		}

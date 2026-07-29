@@ -193,7 +193,8 @@ layout(std140) uniform SpecularBlock
 	specular speculars[4];
 } specular_data;
 
-vec3 SpecularFromIncident(vec3 view_position, vec3 normal, vec3 incident, vec3 light_color, float scalar)
+vec3 SpecularFromIncident(vec3 view_position, vec3 normal, vec3 incident,
+	vec3 light_color, float scalar, float exponent, float peak_scale)
 {
 	float distance = length(incident);
 	if (distance <= 0.0001 || scalar <= 0.0)
@@ -206,7 +207,7 @@ vec3 SpecularFromIncident(vec3 view_position, vec3 normal, vec3 incident, vec3 l
 	if (dotp <= 0.0)
 		return vec3(0.0);
 
-	return pow(dotp, float(specular_data.exponent)) * light_color * scalar;
+	return pow(dotp, exponent) * light_color * scalar * peak_scale;
 }
 
 vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
@@ -217,6 +218,24 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 	if (dot(raw_normal, raw_normal) <= 0.000001)
 		return vec3(0.0);
 	vec3 normal = normalize(raw_normal);
+	float specular_exponent = float(specular_data.exponent);
+	float specular_peak_scale = 1.0;
+	if (retained_per_pixel_specular_payload != 0)
+	{
+		// Coarse 1999 geometry can make an otherwise smooth Phong highlight
+		// cross a large face in one frame. Treat disagreement between the
+		// smoothed vertex normal and the authored face normal as geometric
+		// roughness: broaden the lobe and lower its peak while approximately
+		// preserving its energy.
+		vec3 face_normal = normalize(out_retained_face_normal);
+		float normal_divergence =
+			sqrt(max(1.0 - clamp(dot(normal, face_normal), -1.0, 1.0), 0.0));
+		float base_exponent = specular_exponent;
+		specular_exponent = max(1.0,
+			base_exponent / (1.0 + normal_divergence * 5.0));
+		specular_peak_scale =
+			(specular_exponent + 2.0) / (base_exponent + 2.0);
+	}
 	vec3 specular_color = vec3(0.0);
 
 	for (int i = 0; i < 4; i++)
@@ -233,7 +252,7 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 				max(out_field_specular_perspective_scale, 0.0001)) :
 			specular_data.speculars[i].color.xyz;
 		specular_color += SpecularFromIncident(view_position, normal, view_position - light_position,
-			light_color, source_weight);
+			light_color, source_weight, specular_exponent, specular_peak_scale);
 	}
 
 	for (int i = 0; i < 8; i++)
@@ -266,7 +285,8 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 		}
 
 		specular_color += SpecularFromIncident(view_position, normal, incident,
-			dynamic_light_colors[i], scalar * dynamic_light_specular_scalars[i]);
+			dynamic_light_colors[i], scalar * dynamic_light_specular_scalars[i],
+			specular_exponent, specular_peak_scale);
 	}
 
 	vec3 shared_lightmap_color = vec3(out_field_specular_colors[0].w,

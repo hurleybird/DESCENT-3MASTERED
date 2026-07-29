@@ -199,11 +199,16 @@ static void GL4SetFieldSpecularVertexPayload(gl_vertex& vert, const g3Point* pnt
 	if (!per_pixel_specular_draw || !pnt->p3_specular_field_valid)
 		return;
 
-	vert.field_specular_color[0].w = pnt->p3_specular_lightmap_color.x;
-	vert.field_specular_color[1].w = pnt->p3_specular_lightmap_color.y;
-	vert.field_specular_color[2].w = pnt->p3_specular_lightmap_color.z;
-	vert.field_specular_color[3].w = 1.0f;
 	const float payloadw = 1.0f / (pnt->p3_z + Z_bias);
+	for (int i = 0; i < MAX_SPECULARS; i++)
+		vert.field_specular_center[i].w = payloadw;
+	vert.field_specular_color[0].w =
+		pnt->p3_specular_lightmap_color.x * payloadw;
+	vert.field_specular_color[1].w =
+		pnt->p3_specular_lightmap_color.y * payloadw;
+	vert.field_specular_color[2].w =
+		pnt->p3_specular_lightmap_color.z * payloadw;
+	vert.field_specular_color[3].w = payloadw;
 	const int count = std::min((int)pnt->p3_specular_field_count, MAX_SPECULARS);
 	for (int i = 0; i < count; i++)
 	{
@@ -211,10 +216,12 @@ static void GL4SetFieldSpecularVertexPayload(gl_vertex& vert, const g3Point* pnt
 		vert.field_specular_center[i].x = view_center.x * payloadw;
 		vert.field_specular_center[i].y = view_center.y * payloadw;
 		vert.field_specular_center[i].z = view_center.z * payloadw;
-		vert.field_specular_center[i].w = payloadw;
-		vert.field_specular_color[i].x = pnt->p3_specular_field_colors[i].x;
-		vert.field_specular_color[i].y = pnt->p3_specular_field_colors[i].y;
-		vert.field_specular_color[i].z = pnt->p3_specular_field_colors[i].z;
+		vert.field_specular_color[i].x =
+			pnt->p3_specular_field_colors[i].x * payloadw;
+		vert.field_specular_color[i].y =
+			pnt->p3_specular_field_colors[i].y * payloadw;
+		vert.field_specular_color[i].z =
+			pnt->p3_specular_field_colors[i].z * payloadw;
 	}
 }
 
@@ -1247,11 +1254,12 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 
 	if (per_pixel_specular_draw)
 	{
+		const float payloadw = 1.0f / (pnt->p3_z + Z_bias);
 		vector specular_normal = GL4ViewSpaceSpecularNormal(pnt, per_pixel_dynamic_face_normal);
-		vert.normal.x = specular_normal.x;
-		vert.normal.y = specular_normal.y;
-		vert.normal.z = specular_normal.z;
-		vert.normal.w = 1.0f;
+		vert.normal.x = specular_normal.x * payloadw;
+		vert.normal.y = specular_normal.y * payloadw;
+		vert.normal.z = specular_normal.z * payloadw;
+		vert.normal.w = payloadw;
 	}
 	else if (OpenGL_state.cur_light_state == LS_PHONG || per_pixel_dynamic_light_count > 0)
 	{
@@ -2109,11 +2117,12 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 
 		if (per_pixel_specular_draw)
 		{
+			const float payloadw = 1.0f / (pnt->p3_z + Z_bias);
 			vector specular_normal = GL4ViewSpaceSpecularNormal(pnt, per_pixel_dynamic_face_normal);
-			vertp->normal.x = specular_normal.x;
-			vertp->normal.y = specular_normal.y;
-			vertp->normal.z = specular_normal.z;
-			vertp->normal.w = 1.0f;
+			vertp->normal.x = specular_normal.x * payloadw;
+			vertp->normal.y = specular_normal.y * payloadw;
+			vertp->normal.z = specular_normal.z * payloadw;
+			vertp->normal.w = payloadw;
 		}
 		else if (OpenGL_state.cur_light_state == LS_PHONG || per_pixel_dynamic_light_count > 0)
 		{
