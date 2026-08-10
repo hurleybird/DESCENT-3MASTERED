@@ -2648,8 +2648,7 @@ static std::vector<SpecularFieldInfluence> SpecularEvaluateFieldInfluences(
 
 static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set,
 	const SpecularFaceInfo& target, const SpecularSpatialField& field,
-	const vector& target_position, const vector& target_normal,
-	float specular_exponent)
+	const vector& target_position, const vector& target_normal)
 {
 	(void)target;
 	set = {};
@@ -2775,10 +2774,29 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set,
 				total_family_weight, 0.0f, 1.0f)) : 0.0f;
 		// A single mean direction otherwise puts the full energy of several
 		// separated authored directions into one Phong peak. Their mean-resultant
-		// length estimates that angular spread; applying the material exponent
-		// preserves coherent lights and suppresses the false camera spotlight.
+		// length estimates that angular spread. This attenuation belongs to the
+		// reconstructed light field and must be material-independent: material
+		// shininess is applied later by the fragment BRDF. Baking it here made
+		// adjacent materials observe different light colors at a shared point.
+		constexpr float field_concentration_exponent = 6.0f;
 		family_color *= family_strength *
-			pow(concentration, std::max(specular_exponent, 1.0f));
+			pow(concentration, field_concentration_exponent);
+		// The legacy per-vertex path evaluates independently colored authored
+		// sources before interpolation. Compacting several sources into one
+		// continuous family preserves energy but partially averages their hue.
+		// Restore some of that authored colorfulness without increasing luma.
+		const float family_luminance =
+			family_color.x * 0.2126f +
+			family_color.y * 0.7152f +
+			family_color.z * 0.0722f;
+		const vector family_gray = {
+			family_luminance, family_luminance, family_luminance
+		};
+		family_color =
+			family_gray + (family_color - family_gray) * 1.6f;
+		family_color.x = std::max(family_color.x, 0.0f);
+		family_color.y = std::max(family_color.y, 0.0f);
+		family_color.z = std::max(family_color.z, 0.0f);
 		family_color.x = std::min(family_color.x, 1.0f);
 		family_color.y = std::min(family_color.y, 1.0f);
 		family_color.z = std::min(family_color.z, 1.0f);
@@ -3368,11 +3386,9 @@ void PrecomputeMineSpecularSources()
 
 		room* rp = &Rooms[info.room_index];
 		face* fp = &rp->faces[info.face_index];
-		const float field_specular_exponent =
-			(float)TunedSpecularMaterialExponent(SpecularMaterialType(fp));
 		cached.field = {};
 		SpecularBuildFieldSourceSet(cached.field, info, spatial_field,
-			info.basis.center, info.basis.normal, field_specular_exponent);
+			info.basis.center, info.basis.normal);
 		cached.field_vertices.clear();
 		cached.field_vertices.resize(fp->num_verts);
 		for (int vn = 0; vn < fp->num_verts; vn++)
@@ -3386,8 +3402,7 @@ void PrecomputeMineSpecularSources()
 				vertex_normal = info.basis.normal;
 
 			SpecularBuildFieldSourceSet(cached.field_vertices[vn], info,
-				spatial_field, rp->verts[fp->face_verts[vn]], vertex_normal,
-				field_specular_exponent);
+				spatial_field, rp->verts[fp->face_verts[vn]], vertex_normal);
 		}
 	};
 

@@ -217,14 +217,10 @@ extern ubyte Terrain_from_mine;
 enum terrain_renderer_mode
 {
 	TERRAIN_RENDERER_LEGACY,
-	TERRAIN_RENDERER_COMPUTE
+	TERRAIN_RENDERER_RETAINED
 };
 
 extern int Terrain_renderer_mode;
-extern char Terrain_compute_status_text[96];
-extern char Terrain_compute_debug_label[160];
-extern char Terrain_compute_debug_last_label[160];
-extern int Terrain_compute_debug_last_frame;
 void TerrainRenderer_ResetLevelState();
 void TerrainRenderer_PrecacheLevel();
 

@@ -123,10 +123,10 @@ float Motion_blur_strength_setting = 0.5f;
 // bool Render_split_specular_textures = false;
 bool Render_split_specular_textures = true;
 float Render_per_pixel_specular_strength = 1.0f;
-float Render_per_pixel_static_specular_strength = 1.0f;
+float Render_per_pixel_static_specular_strength = 1.4f;
 float Render_per_pixel_dynamic_specular_strength = 2.0f;
 float Render_per_pixel_headlight_specular_strength = 1.0f;
-float Render_per_pixel_specular_sharpness = 1.0f;
+float Render_per_pixel_specular_sharpness = 0.65f;
 float Render_per_pixel_specular_lightmap_mix = 1.0f;
 float Render_per_pixel_specular_alpha_strength = 1.0f;
 float Render_per_pixel_specular_field_resolution = 100.0f;
@@ -222,10 +222,10 @@ float ConfigNormalizePerPixelSpecularFieldSampleDistance(float distance)
 void ConfigResetPerPixelSpecularSettings()
 {
 	Render_per_pixel_specular_strength = 1.0f;
-	Render_per_pixel_static_specular_strength = 1.0f;
+	Render_per_pixel_static_specular_strength = 1.4f;
 	Render_per_pixel_dynamic_specular_strength = 2.0f;
 	Render_per_pixel_headlight_specular_strength = 1.0f;
-	Render_per_pixel_specular_sharpness = 1.0f;
+	Render_per_pixel_specular_sharpness = 0.65f;
 	Render_per_pixel_specular_lightmap_mix = 1.0f;
 	Render_per_pixel_specular_alpha_strength = 1.0f;
 	Render_per_pixel_specular_field_resolution = 100.0f;

@@ -117,5 +117,9 @@ void main()
 	vec4 lmcolor = texture(lightmaptexture, vec3(outuv2.xy / outuv2.z, float(clamp(outlmpage, 0, 3))));
 	lmcolor.rgb = ApplyDynamicLightmapLighting(lmcolor.rgb, world_position);
 	color = basecolor * lmcolor * outcolor;
+	// Terrain holes are authored through TF_INVISIBLE cells, not bitmap alpha.
+	// Keep visible terrain intrinsically opaque, including primitives clipped
+	// close to the eye where interpolated legacy alpha can become unstable.
+	color.a = 1.0;
 	post_mask = vec4(0.0, 0.0, 0.0, 1.0 / 255.0);
 }

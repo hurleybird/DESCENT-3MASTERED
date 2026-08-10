@@ -43,7 +43,6 @@ in vec4 outcolor;
 in vec3 outuv;
 in vec3 outuv2;
 in vec4 outworld;
-in float outdepth;
 flat in int outlmpage;
 flat in int outtexpage;
 
@@ -125,9 +124,14 @@ void main()
 	vec4 lmcolor = texture(lightmaptexture, vec3(outuv2.xy / outuv2.z, float(clamp(outlmpage, 0, 3))));
 	lmcolor.rgb = ApplyDynamicLightmapLighting(lmcolor.rgb, world_position);
 	vec4 litcolor = basecolor * lmcolor * outcolor;
+	litcolor.a = 1.0;
 	float fog_start = clamp(1.0 - (1.0 / max(fog.start_dist, 0.0001)), 0.0, 1.0);
 	float fog_end = clamp(1.0 - (1.0 / max(fog.end_dist, 0.0001)), 0.0, 1.0);
-	float fog_amount = clamp((outdepth - fog_start) / max(fog_end - fog_start, 0.0001), 0.0, 1.0);
+	// Use the depth actually produced by rasterization.  A separately
+	// interpolated legacy depth becomes invalid when native clipping creates
+	// vertices for a terrain triangle crossing the eye plane.
+	float fog_amount = clamp((gl_FragCoord.z - fog_start) /
+		max(fog_end - fog_start, 0.0001), 0.0, 1.0);
 	color = vec4(mix(litcolor.rgb, fog.color.rgb, fog_amount), litcolor.a);
 	post_mask = vec4(0.0, fog_amount, 0.0, 1.0 / 255.0);
 }

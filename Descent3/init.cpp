@@ -656,7 +656,7 @@ void LoadGameSettings()
 	Render_preferred_state.afterburner_pixel_blur_multiplier = 2.0f;
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
-	Terrain_renderer_mode = TERRAIN_RENDERER_COMPUTE;
+	Terrain_renderer_mode = TERRAIN_RENDERER_RETAINED;
 	Hud_text_scale = 1.0f;
 	PreferredRenderer = RENDERER_NONE;
 
@@ -1131,7 +1131,8 @@ void LoadGameSettings()
 		DesiredOpenGLProfile = GLPROFILE_CORE;
 		DesiredOpenGLProfileExplicit = true;
 	}
-	Terrain_renderer_mode = DesiredOpenGLProfile == GLPROFILE_CORE ? TERRAIN_RENDERER_COMPUTE : TERRAIN_RENDERER_LEGACY;
+	Terrain_renderer_mode = DesiredOpenGLProfile == GLPROFILE_CORE ?
+		TERRAIN_RENDERER_RETAINED : TERRAIN_RENDERER_LEGACY;
 	if (DesiredOpenGLProfile != GLPROFILE_CORE)
 	{
 		Render_preferred_state.per_pixel_lighting = false;
