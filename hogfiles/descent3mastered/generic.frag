@@ -369,17 +369,12 @@ float SoftParticleEyeDepth(float depth)
 	return 1.0 / max(1.0 - clamp(depth, 0.0, 0.9999), 0.0001);
 }
 
-float RoomFogAmount(vec3 world_position)
+float RoomFogAmount()
 {
-	vec3 segment = world_position - room_fog_viewer_position;
-	float segment_length = length(segment);
-	if (segment_length <= 0.0001)
-		return 0.0;
-
-	// The original room fog density is measured along camera-forward depth,
-	// rather than Euclidean ray length. Preserve that authored presentation in
-	// the per-fragment volume path so oblique walls do not become over-fogged.
-	float fog_length = max(dot(segment, room_fog_viewer_forward), 0.0);
+	// Room fog is authored in camera-forward depth. Reconstruct it from raster
+	// depth so retained, immediate and CPU-clipped geometry share one stable
+	// source instead of depending on legacy world-position payloads.
+	float fog_length = SoftParticleEyeDepth(gl_FragCoord.z);
 	if (room_fog_viewer_inside == 0)
 	{
 		if (room_fog_entry_map_enabled == 0)
@@ -451,11 +446,9 @@ void main()
 		frame1.a *= particle_fade;
 
 		float room_amount = 0.0;
-		if (room_fog_enabled != 0 && abs(out_room_fog_world_position.w) > 0.00001)
+		if (room_fog_enabled != 0)
 		{
-			vec3 room_world_position = out_room_fog_world_position.xyz /
-				out_room_fog_world_position.w;
-			room_amount = RoomFogAmount(room_world_position);
+			room_amount = RoomFogAmount();
 			if (fog_composite_mode == 1)
 			{
 				frame0.rgb *= 1.0 - room_amount;
@@ -594,11 +587,9 @@ void main()
 			}
 		}
 
-		if (room_fog_enabled != 0 && abs(out_room_fog_world_position.w) > 0.00001)
+		if (room_fog_enabled != 0)
 		{
-			vec3 room_world_position = out_room_fog_world_position.xyz /
-				out_room_fog_world_position.w;
-			color.rgb *= 1.0 - RoomFogAmount(room_world_position);
+			color.rgb *= 1.0 - RoomFogAmount();
 		}
 		#if defined(USE_FOG)
 			float fog_start = clamp(1.0 - (1.0 / max(fog.start_dist, 0.0001)), 0.0, 1.0);
@@ -625,11 +616,9 @@ void main()
 		#endif
 
 		float room_amount = 0.0;
-		if (room_fog_enabled != 0 && abs(out_room_fog_world_position.w) > 0.00001)
+		if (room_fog_enabled != 0)
 		{
-			vec3 room_world_position = out_room_fog_world_position.xyz /
-				out_room_fog_world_position.w;
-			room_amount = RoomFogAmount(room_world_position);
+			room_amount = RoomFogAmount();
 			color.rgb = mix(color.rgb, room_fog_color, room_amount);
 		}
 		float bloom_mask = 0.0;
@@ -766,11 +755,9 @@ void main()
 			color.a *= fade;
 		}
 	}
-	if (room_fog_enabled != 0 && abs(out_room_fog_world_position.w) > 0.00001)
+	if (room_fog_enabled != 0)
 	{
-		vec3 room_world_position = out_room_fog_world_position.xyz /
-			out_room_fog_world_position.w;
-		room_fog_amount = RoomFogAmount(room_world_position);
+		room_fog_amount = RoomFogAmount();
 		if (fog_composite_mode == 2)
 			color = vec4(room_fog_color, room_fog_amount);
 		else if (fog_composite_mode == 1)

@@ -1337,15 +1337,6 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 			vert.motion_previous_world_position.w = payloadw;
 		}
 	}
-	if (room_fog_enabled)
-	{
-		float payloadw = 1.0f / (pnt->p3_z + Z_bias);
-		vert.motion_previous_world_position.x = pnt->p3_vecPreRot.x * payloadw;
-		vert.motion_previous_world_position.y = pnt->p3_vecPreRot.y * payloadw;
-		vert.motion_previous_world_position.z = pnt->p3_vecPreRot.z * payloadw;
-		vert.motion_previous_world_position.w = payloadw;
-	}
-
 	float z = GL4DepthFromEyeZ(pnt->p3_z + Z_bias);
 	vert.vert.z = -z;
 	GL4SetFieldSpecularVertexPayload(vert, pnt, per_pixel_specular_draw);
@@ -2201,15 +2192,6 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 				vertp->motion_previous_world_position.w = payloadw;
 			}
 		}
-		if (room_fog_enabled)
-		{
-			float payloadw = 1.0f / (pnt->p3_z + Z_bias);
-			vertp->motion_previous_world_position.x = pnt->p3_vecPreRot.x * payloadw;
-			vertp->motion_previous_world_position.y = pnt->p3_vecPreRot.y * payloadw;
-			vertp->motion_previous_world_position.z = pnt->p3_vecPreRot.z * payloadw;
-			vertp->motion_previous_world_position.w = payloadw;
-		}
-
 		float z = GL4DepthFromEyeZ(pnt->p3_z + Z_bias);
 		vertp->vert.z = -z;
 		GL4SetFieldSpecularVertexPayload(*vertp, pnt, per_pixel_specular_draw);

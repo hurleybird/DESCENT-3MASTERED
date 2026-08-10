@@ -3087,7 +3087,12 @@ void GameRenderFrame(void)
 		// Render Ingame Cinematics
 		{
 			PERF_MARKER_SCOPE("Cinematic_RenderFrame");
+			const bool cinematic_frame = Cinematic_inuse;
+			if (cinematic_frame)
+				StartFrame(0, 0, Max_window_w, Max_window_h, false);
 			Cinematic_RenderFrame();
+			if (cinematic_frame)
+				EndFrame();
 		}
 		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_CINEMATIC);
 

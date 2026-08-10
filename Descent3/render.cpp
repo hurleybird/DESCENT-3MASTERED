@@ -136,6 +136,7 @@ bool RenderLastMainViewSawTerrain()
 int Global_buffer_index;
 int No_render_windows_hack = -1;
 constexpr float WALL_PULSE_INCREMENT = .01f;
+constexpr float WALL_PULSE_MIN_HALF_PERIOD = .04f;
 
 //Variables for various debugging features
 #ifndef _DEBUG
@@ -5823,7 +5824,8 @@ void ComputeRoomPulseLight(room* rp)
 		Room_light_val = 1.0;
 	else
 	{
-		float ptime = rp->pulse_time * WALL_PULSE_INCREMENT;
+		float ptime = (std::max)(rp->pulse_time * WALL_PULSE_INCREMENT,
+			WALL_PULSE_MIN_HALF_PERIOD);
 		float add_time = rp->pulse_offset * WALL_PULSE_INCREMENT;
 
 		int int_time = (int)((Gametime + add_time) / (ptime * 2));

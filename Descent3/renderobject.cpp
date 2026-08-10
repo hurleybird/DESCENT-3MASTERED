@@ -932,12 +932,16 @@ bool SetupTerrainObject(object* obj)
 				scalar_r = std::min(1.f, scalar + (obj->effect_info->dynamic_red));
 				scalar_g = std::min(1.f, scalar + (obj->effect_info->dynamic_green));
 				scalar_b = std::min(1.f, scalar + (obj->effect_info->dynamic_blue));
-				// If this is a robot, make it at least 10% for each RGB component
+				// Outdoor robots otherwise become effectively black beneath terrain
+				// occluders: the directional Gouraud term can halve an already tiny
+				// ambient scalar on vertical faces. Preserve directional shading while
+				// keeping enough indirect light for their authored texture to read.
 				if (obj->type == OBJ_ROBOT)
 				{
-					scalar_r = std::max(.1f, scalar_r);
-					scalar_g = std::max(.1f, scalar_g);
-					scalar_b = std::max(.1f, scalar_b);
+					constexpr float minimum_outdoor_robot_light = 0.25f;
+					scalar_r = std::max(minimum_outdoor_robot_light, scalar_r);
+					scalar_g = std::max(minimum_outdoor_robot_light, scalar_g);
+					scalar_b = std::max(minimum_outdoor_robot_light, scalar_b);
 				}
 				if (obj->type == OBJ_PLAYER && ((Players[obj->id].flags & PLAYER_FLAGS_HEADLIGHT) || ((Game_mode & GM_MULTI) && (Netgame.flags & NF_BRIGHT_PLAYERS))))
 				{

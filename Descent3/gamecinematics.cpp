@@ -1149,6 +1149,10 @@ void Cinematic_RenderFrame(void)
 
 void Cinematic_DrawText(void)
 {
+	int old_left, old_top, old_right, old_bottom;
+	grtext_GetParameters(&old_left, &old_top, &old_right, &old_bottom, NULL);
+	grtext_SetParameters(0, 0, Max_window_w, Max_window_h);
+
 	int font_height = grfont_GetHeight(BIG_BRIEFING_FONT) + 2;
 	int old_font = grtext_GetFont();
 	grtext_SetFont(BIG_BRIEFING_FONT);
@@ -1221,6 +1225,7 @@ void Cinematic_DrawText(void)
 	if (total_text_time <= 0.0f)
 	{
 		grtext_SetFont(old_font);
+		grtext_SetParameters(old_left, old_top, old_right, old_bottom);
 		return;
 	}
 
@@ -1356,6 +1361,7 @@ void Cinematic_DrawText(void)
 
 
 	grtext_SetFont(old_font);
+	grtext_SetParameters(old_left, old_top, old_right, old_bottom);
 }
 
 void Cinematic_DoStartTransition(void)
