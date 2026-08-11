@@ -496,6 +496,10 @@ void main()
 
 		float suppression0 = clamp(frame0.a, 0.0, 1.0);
 		float suppression1 = has_frame1 ? clamp(frame1.a, 0.0, 1.0) : 0.0;
+		// Fog destroys small-scale contrast faster than its color opacity alone
+		// suggests. Preserve the authored fog ramp, but attenuate deferred AO by
+		// the corresponding two-pass transmittance (1 - (1 - f)^2).
+		float room_ao_suppression = room_amount * (2.0 - room_amount);
 		float ao_mask0;
 		float ao_mask1;
 		if (post_mask_blend_mode == 1)
@@ -518,8 +522,8 @@ void main()
 			ao_mask1 = ao_suppression * suppression1;
 			if (fog_composite_mode == 0)
 			{
-				ao_mask0 = max(ao_mask0, room_amount * suppression0);
-				ao_mask1 = max(ao_mask1, room_amount * suppression1);
+				ao_mask0 = max(ao_mask0, room_ao_suppression * suppression0);
+				ao_mask1 = max(ao_mask1, room_ao_suppression * suppression1);
 			}
 		}
 
@@ -813,10 +817,11 @@ void main()
 	// operation covers the destination for the deferred AO composite.  Weight
 	// alpha-blended base materials by their actual coverage so transparent texels
 	// cannot stamp a rectangular fog mask into the scene.
+	float room_fog_ao_suppression = room_fog_amount * (2.0 - room_fog_amount);
 	if (fog_composite_mode == 0)
-		ao_mask = max(ao_mask, room_fog_amount * suppression_alpha);
+		ao_mask = max(ao_mask, room_fog_ao_suppression * suppression_alpha);
 	else if (fog_composite_mode == 2)
-		ao_mask = max(ao_mask, room_fog_amount);
+		ao_mask = max(ao_mask, room_fog_ao_suppression);
 	bloom_mask = clamp(bloom_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
 	
 	#if defined(USE_FOG)
