@@ -36,6 +36,52 @@
 
 int Num_textures = 0;
 texture GameTextures[MAX_TEXTURES];
+bool Render_hires_textures = true;
+
+struct high_resolution_texture
+{
+	const char* texture_name;
+	const char* bitmap_filename;
+	int bitmap_handle;
+	bool attempted_load;
+};
+
+// Engine-owned replacements are keyed by the texture page name rather than
+// model or level.  Consequently every legitimate use of the authored texture
+// receives the same replacement without special-casing a draw path.
+static high_resolution_texture High_resolution_textures[] = {
+	{"NovakSigns", "TextureHi_NovakSigns.tga", BAD_BITMAP_HANDLE, false},
+};
+
+static int GetHighResolutionTextureBitmap(int texture_handle, int fallback_bitmap)
+{
+	if (!Render_hires_textures || texture_handle < 0 ||
+		texture_handle >= MAX_TEXTURES ||
+		(GameTextures[texture_handle].flags & (TF_ANIMATED | TF_PROCEDURAL)))
+	{
+		return fallback_bitmap;
+	}
+	for (auto& replacement : High_resolution_textures)
+	{
+		if (stricmp(GameTextures[texture_handle].name,
+			replacement.texture_name) != 0)
+		{
+			continue;
+		}
+
+		if (!replacement.attempted_load)
+		{
+			replacement.attempted_load = true;
+			replacement.bitmap_handle = bm_AllocLoadFileBitmapTrueColor(
+				replacement.bitmap_filename, 1);
+		}
+
+		return replacement.bitmap_handle != BAD_BITMAP_HANDLE ?
+			replacement.bitmap_handle : fallback_bitmap;
+	}
+
+	return fallback_bitmap;
+}
 
 extern bool Mem_superlow_memory_mode;
 
@@ -332,7 +378,7 @@ int GetTextureBitmap(int handle, int framenum, bool force)
 			src_bitmap = GameTextures[handle].procedural->procedural_bitmap;
 	}
 
-	return src_bitmap;
+	return GetHighResolutionTextureBitmap(handle, src_bitmap);
 
 }
 

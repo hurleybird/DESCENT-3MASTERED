@@ -145,6 +145,11 @@ struct texture
 extern texture GameTextures[MAX_TEXTURES];
 extern int Num_textures;
 
+// Master gate for engine-provided higher-resolution replacements.  This is
+// intentionally always enabled for now; keeping it separate from the authored
+// texture state makes a future user-facing toggle straightforward.
+extern bool Render_hires_textures;
+
 // Inits the texture system, returning 1 if successful
 int InitTextures();
 void ShutdownTextures();
