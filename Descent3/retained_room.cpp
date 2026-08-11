@@ -20,22 +20,31 @@ struct RetainedRoomFace
 {
 	ElementRange index_range;
 	ElementRange reflected_index_range;
+	ElementRange world_index_range;
+	ElementRange world_reflected_index_range;
 	uint32_t first_vertex = 0;
 	uint32_t vertex_count = 0;
 };
 
 struct RetainedRoomCache
 {
-	VertexBuffer vertices{ false, false, VertexBufferLayout::RetainedPolymodel };
-	VertexBuffer specular_vertices{ false, false, VertexBufferLayout::RetainedRoomSpecular };
-	IndexBuffer indices{ false, false };
 	std::vector<RetainedRoomFace> faces;
 	std::vector<RendVertex> cpu_vertices;
+	std::vector<uint32_t> cpu_indices;
 	uint32_t renderer_generation = 0;
 	int num_vertices = 0;
 	int num_faces = 0;
 	const vector* room_vertices = nullptr;
 	const face* room_faces = nullptr;
+	bool built = false;
+};
+
+struct RetainedWorldCache
+{
+	VertexBuffer vertices{ false, false, VertexBufferLayout::RetainedPolymodel };
+	VertexBuffer specular_vertices{ false, false, VertexBufferLayout::RetainedRoomSpecular };
+	IndexBuffer indices{ false, false };
+	uint32_t renderer_generation = 0;
 	bool built = false;
 	bool specular_built = false;
 };
@@ -55,10 +64,34 @@ struct RetainedRoomTransform
 };
 
 static std::array<std::unique_ptr<RetainedRoomCache>, MAX_ROOMS> Retained_room_caches;
+static RetainedWorldCache Retained_world_cache;
+static bool Retained_room_base_batch_active = false;
 static std::array<RetainedRoomDeformation, MAX_ROOMS> Retained_room_deformations;
 static std::array<RetainedRoomTransform, MAX_ROOMS> Retained_room_transforms;
 static std::vector<int> Retained_room_lightmap_handles;
 static uint32_t Retained_room_lightmap_attempt_generation = 0;
+
+static void InvalidateRetainedWorldCache()
+{
+	if (!Retained_world_cache.built)
+		return;
+	if (Retained_world_cache.renderer_generation == rend_GetGeneration())
+	{
+		Retained_world_cache.vertices.Destroy();
+		if (Retained_world_cache.specular_built)
+			Retained_world_cache.specular_vertices.Destroy();
+		Retained_world_cache.indices.Destroy();
+	}
+	else
+	{
+		Retained_world_cache.vertices.Invalidate();
+		Retained_world_cache.specular_vertices.Invalidate();
+		Retained_world_cache.indices.Invalidate();
+	}
+	Retained_world_cache.renderer_generation = 0;
+	Retained_world_cache.built = false;
+	Retained_world_cache.specular_built = false;
+}
 
 static void SetIdentity(float matrix[16])
 {
@@ -69,6 +102,8 @@ static void SetIdentity(float matrix[16])
 
 void RetainedRoomInvalidateAll()
 {
+	Retained_room_base_batch_active = false;
+	InvalidateRetainedWorldCache();
 	for (int i = 0; i < MAX_ROOMS; i++)
 	{
 		std::unique_ptr<RetainedRoomCache>& cache = Retained_room_caches[i];
@@ -76,19 +111,6 @@ void RetainedRoomInvalidateAll()
 		Retained_room_transforms[i] = {};
 		if (!cache)
 			continue;
-		if (cache->built && cache->renderer_generation == rend_GetGeneration())
-		{
-			cache->vertices.Destroy();
-			if (cache->specular_built)
-				cache->specular_vertices.Destroy();
-			cache->indices.Destroy();
-		}
-		else
-		{
-			cache->vertices.Invalidate();
-			cache->specular_vertices.Invalidate();
-			cache->indices.Invalidate();
-		}
 		cache.reset();
 	}
 }
@@ -320,60 +342,138 @@ static bool BuildRetainedRoom(room* rp, RetainedRoomCache& cache)
 
 	if (vertices.empty() || indices.empty())
 		return false;
-	cache.vertices.Initialize((uint32_t)vertices.size(),
-		(uint32_t)(vertices.size() * sizeof(RendVertex)), vertices.data());
-	cache.indices.Initialize((uint32_t)indices.size(),
-		(uint32_t)(indices.size() * sizeof(uint32_t)), indices.data());
 	cache.cpu_vertices = std::move(vertices);
+	cache.cpu_indices = std::move(indices);
 	cache.renderer_generation = rend_GetGeneration();
 	cache.num_vertices = rp->num_verts;
 	cache.num_faces = rp->num_faces;
 	cache.room_vertices = rp->verts;
 	cache.room_faces = rp->faces;
 	cache.built = true;
-	cache.specular_built = false;
+	return true;
+}
+
+static RetainedRoomCache* GetRetainedRoom(room* rp);
+
+static bool BuildRetainedWorldCache(bool include_specular)
+{
+	// Renderer shutdown and room mutation both invalidate the arena explicitly.
+	// Keep the draw-time fast path to two local flag tests; this function is
+	// reached for every retained material batch.
+	if (Retained_world_cache.built &&
+		(!include_specular || Retained_world_cache.specular_built))
+	{
+		return true;
+	}
+	InvalidateRetainedWorldCache();
+
+	std::vector<RendVertex> vertices;
+	std::vector<RetainedRoomSpecularVertex> specular_vertices;
+	std::vector<uint32_t> indices;
+	size_t vertex_count = 0;
+	size_t index_count = 0;
+	for (int roomnum = 0; roomnum <= Highest_room_index; roomnum++)
+	{
+		room* rp = &Rooms[roomnum];
+		if (!rp->used)
+			continue;
+		RetainedRoomCache* cache = GetRetainedRoom(rp);
+		if (!cache)
+			continue;
+		vertex_count += cache->cpu_vertices.size();
+		index_count += cache->cpu_indices.size();
+	}
+	if (vertex_count == 0 || index_count == 0)
+		return false;
+	vertices.reserve(vertex_count);
+	if (include_specular)
+		specular_vertices.reserve(vertex_count);
+	indices.reserve(index_count);
+
+	for (int roomnum = 0; roomnum <= Highest_room_index; roomnum++)
+	{
+		room* rp = &Rooms[roomnum];
+		if (!rp->used)
+			continue;
+		RetainedRoomCache* cache = GetRetainedRoom(rp);
+		if (!cache || cache->cpu_vertices.empty() || cache->cpu_indices.empty())
+			continue;
+
+		const uint32_t vertex_base = (uint32_t)vertices.size();
+		const uint32_t index_base = (uint32_t)indices.size();
+		vertices.insert(vertices.end(), cache->cpu_vertices.begin(),
+			cache->cpu_vertices.end());
+		if (include_specular)
+		{
+			const size_t specular_base = specular_vertices.size();
+			specular_vertices.resize(specular_base + cache->cpu_vertices.size());
+			for (size_t i = 0; i < cache->cpu_vertices.size(); i++)
+				specular_vertices[specular_base + i].base = cache->cpu_vertices[i];
+			for (int facenum = 0; facenum < (int)cache->faces.size(); facenum++)
+			{
+				const RetainedRoomFace& retained_face = cache->faces[facenum];
+				if (retained_face.vertex_count == 0)
+					continue;
+				PopulateRetainedRoomSpecularVertices(rp, facenum,
+					specular_vertices.data() + specular_base +
+						retained_face.first_vertex,
+					(int)retained_face.vertex_count);
+			}
+		}
+		for (uint32_t index : cache->cpu_indices)
+			indices.push_back(vertex_base + index);
+		for (RetainedRoomFace& retained_face : cache->faces)
+		{
+			retained_face.world_index_range = ElementRange(
+				index_base + retained_face.index_range.offset,
+				retained_face.index_range.count);
+			retained_face.world_reflected_index_range = ElementRange(
+				index_base + retained_face.reflected_index_range.offset,
+				retained_face.reflected_index_range.count);
+		}
+	}
+
+	Retained_world_cache.vertices.Initialize((uint32_t)vertices.size(),
+		(uint32_t)(vertices.size() * sizeof(RendVertex)), vertices.data());
+	if (include_specular)
+	{
+		Retained_world_cache.specular_vertices.Initialize(
+			(uint32_t)specular_vertices.size(),
+			(uint32_t)(specular_vertices.size() *
+				sizeof(RetainedRoomSpecularVertex)), specular_vertices.data());
+		Retained_world_cache.specular_built = true;
+	}
+	Retained_world_cache.indices.Initialize((uint32_t)indices.size(),
+		(uint32_t)(indices.size() * sizeof(uint32_t)), indices.data());
+	// Element-array bindings are VAO state. Attach the shared index arena once
+	// to each retained layout instead of rebinding it for every material batch.
+	Retained_world_cache.vertices.Bind();
+	Retained_world_cache.indices.Bind();
+	if (include_specular)
+	{
+		Retained_world_cache.specular_vertices.Bind();
+		Retained_world_cache.indices.Bind();
+	}
+	Retained_world_cache.renderer_generation = rend_GetGeneration();
+	Retained_world_cache.built = true;
 	return true;
 }
 
 static void AppendRetainedRoomFaceRanges(room* rp, const RetainedRoomCache& cache,
-	int facenum, std::vector<ElementRange>& ranges, int& vertex_count)
+	int facenum, std::vector<ElementRange>& ranges, int& vertex_count,
+	bool world_cache)
 {
 	const RetainedRoomFace& retained_face = cache.faces[facenum];
 	const int roomnum = (int)(rp - Rooms);
 	const bool reflected = roomnum >= 0 && roomnum < MAX_ROOMS &&
 		Retained_room_transforms[roomnum].enabled;
-	const ElementRange& face_range = reflected ?
-		retained_face.reflected_index_range : retained_face.index_range;
+	const ElementRange& face_range = world_cache ?
+		(reflected ? retained_face.world_reflected_index_range :
+			retained_face.world_index_range) :
+		(reflected ? retained_face.reflected_index_range :
+			retained_face.index_range);
 	ranges.push_back(face_range);
 	vertex_count += retained_face.vertex_count;
-}
-
-static VertexBuffer* GetRetainedRoomSpecularVertices(room* rp,
-	RetainedRoomCache& cache)
-{
-	if (cache.specular_built)
-		return &cache.specular_vertices;
-	if (cache.cpu_vertices.empty())
-		return nullptr;
-
-	std::vector<RetainedRoomSpecularVertex> vertices(cache.cpu_vertices.size());
-	for (size_t i = 0; i < cache.cpu_vertices.size(); i++)
-		vertices[i].base = cache.cpu_vertices[i];
-	for (int facenum = 0; facenum < (int)cache.faces.size(); facenum++)
-	{
-		const RetainedRoomFace& retained_face = cache.faces[facenum];
-		if (retained_face.vertex_count == 0)
-			continue;
-		PopulateRetainedRoomSpecularVertices(rp, facenum,
-			vertices.data() + retained_face.first_vertex,
-			(int)retained_face.vertex_count);
-	}
-
-	cache.specular_vertices.Initialize((uint32_t)vertices.size(),
-		(uint32_t)(vertices.size() * sizeof(RetainedRoomSpecularVertex)),
-		vertices.data());
-	cache.specular_built = true;
-	return &cache.specular_vertices;
 }
 
 static RetainedRoomCache* GetRetainedRoom(room* rp)
@@ -390,24 +490,12 @@ static RetainedRoomCache* GetRetainedRoom(room* rp)
 	const bool room_changed = cache.built &&
 		(cache.num_vertices != rp->num_verts || cache.num_faces != rp->num_faces ||
 		 cache.room_vertices != rp->verts || cache.room_faces != rp->faces);
-	if (cache.built && (cache.renderer_generation != rend_GetGeneration() || room_changed))
+	if (cache.built && room_changed)
 	{
-		if (cache.renderer_generation == rend_GetGeneration())
-		{
-			cache.vertices.Destroy();
-			if (cache.specular_built)
-				cache.specular_vertices.Destroy();
-			cache.indices.Destroy();
-		}
-		else
-		{
-			cache.vertices.Invalidate();
-			cache.specular_vertices.Invalidate();
-			cache.indices.Invalidate();
-		}
+		InvalidateRetainedWorldCache();
 		cache.built = false;
-		cache.specular_built = false;
 		cache.cpu_vertices.clear();
+		cache.cpu_indices.clear();
 	}
 	if (!cache.built && !BuildRetainedRoom(rp, cache))
 		return nullptr;
@@ -451,10 +539,9 @@ void RetainedRoomPrecacheAll(bool include_specular)
 		if (!rp->used)
 			continue;
 
-		RetainedRoomCache* cache = GetRetainedRoom(rp);
-		if (include_specular && cache)
-			GetRetainedRoomSpecularVertices(rp, *cache);
+		GetRetainedRoom(rp);
 	}
+	BuildRetainedWorldCache(include_specular);
 
 	// The last upload leaves its VAO and index buffer bound. Restore the
 	// renderer's streaming vertex state before level startup continues.
@@ -491,6 +578,25 @@ bool RetainedRoomCanDrawBaseFace(room* rp, int facenum)
 		cache->faces[facenum].index_range.count != 0;
 }
 
+bool RetainedRoomBeginBaseBatch()
+{
+	if (Retained_room_base_batch_active)
+		return true;
+	if (!BuildRetainedWorldCache(false))
+		return false;
+	Retained_world_cache.vertices.Bind();
+	Retained_room_base_batch_active = true;
+	return true;
+}
+
+void RetainedRoomEndBaseBatch()
+{
+	if (!Retained_room_base_batch_active)
+		return;
+	Retained_room_base_batch_active = false;
+	rendTEMP_UnbindVertexBuffer();
+}
+
 bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 	int bitmap_handle, float u_offset, float v_offset, float light_scalar,
 	int lightmap_handle, int clip_codes, bool per_pixel_specular_payload,
@@ -499,7 +605,7 @@ bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 	if (!rp || !facenums || count <= 0)
 		return false;
 	RetainedRoomCache* cache = GetRetainedRoom(rp);
-	if (!cache)
+	if (!cache || !BuildRetainedWorldCache(per_pixel_specular_payload))
 		return false;
 
 	thread_local std::vector<ElementRange> ranges;
@@ -514,7 +620,7 @@ bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 		const RetainedRoomFace& retained_face = cache->faces[facenum];
 		if (retained_face.index_range.count != 0)
 			AppendRetainedRoomFaceRanges(rp, *cache, facenum, ranges,
-				vertex_count);
+				vertex_count, true);
 	}
 	if (ranges.empty())
 		return true;
@@ -554,20 +660,23 @@ bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 	if (!ranges.empty())
 	{
 		VertexBuffer* vertices = per_pixel_specular_payload ?
-			GetRetainedRoomSpecularVertices(rp, *cache) : &cache->vertices;
-		if (!vertices)
-			return false;
-		vertices->Bind();
-		cache->indices.Bind();
+			&Retained_world_cache.specular_vertices :
+			&Retained_world_cache.vertices;
+		const bool keep_base_arena_bound = Retained_room_base_batch_active &&
+			!per_pixel_specular_payload;
+		if (!keep_base_arena_bound)
+			vertices->Bind();
 		if (!rend_BeginRetainedPolymodelDraw(&draw))
 		{
-			rendTEMP_UnbindVertexBuffer();
+			if (!keep_base_arena_bound)
+				rendTEMP_UnbindVertexBuffer();
 			return false;
 		}
 		vertices->DrawIndexedRanges(PrimitiveType::Triangles, ranges.data(),
 			(uint32_t)ranges.size(), RENDERER_DRAW_CALL_3D);
 		rend_EndRetainedPolymodelDraw();
-		rendTEMP_UnbindVertexBuffer();
+		if (!keep_base_arena_bound)
+			rendTEMP_UnbindVertexBuffer();
 	}
 	return true;
 }
@@ -580,7 +689,7 @@ bool RetainedRoomDrawFogFaces(room* rp, const int* facenums, int count,
 	if (!rp || !facenums || count <= 0)
 		return false;
 	RetainedRoomCache* cache = GetRetainedRoom(rp);
-	if (!cache)
+	if (!cache || !BuildRetainedWorldCache(false))
 		return false;
 
 	thread_local std::vector<ElementRange> ranges;
@@ -595,7 +704,7 @@ bool RetainedRoomDrawFogFaces(room* rp, const int* facenums, int count,
 		const RetainedRoomFace& face = cache->faces[facenum];
 		if (face.index_range.count != 0)
 			AppendRetainedRoomFaceRanges(rp, *cache, facenum, ranges,
-				vertex_count);
+				vertex_count, true);
 	}
 	if (ranges.empty())
 		return true;
@@ -632,14 +741,13 @@ bool RetainedRoomDrawFogFaces(room* rp, const int* facenums, int count,
 
 	if (!ranges.empty())
 	{
-		cache->vertices.Bind();
-		cache->indices.Bind();
+		Retained_world_cache.vertices.Bind();
 		if (!rend_BeginRetainedPolymodelDraw(&draw))
 		{
 			rendTEMP_UnbindVertexBuffer();
 			return false;
 		}
-		cache->vertices.DrawIndexedRanges(PrimitiveType::Triangles, ranges.data(),
+		Retained_world_cache.vertices.DrawIndexedRanges(PrimitiveType::Triangles, ranges.data(),
 			(uint32_t)ranges.size(), RENDERER_DRAW_CALL_3D);
 		rend_EndRetainedPolymodelDraw();
 		rendTEMP_UnbindVertexBuffer();

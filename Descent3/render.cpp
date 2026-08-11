@@ -4305,33 +4305,63 @@ static bool PortalContinuesFogVolume(const room& source, const portal& pp)
 	return RoomsHaveMatchingFog(source, connected);
 }
 
-static bool ViewerSharesFogVolume(const room* target, int viewer_room)
+static int Fog_volume_cache_frame = -1;
+static int Fog_volume_component_count = 0;
+static int Fog_volume_room_component[MAX_ROOMS] = {};
+static std::vector<renderer_room_fog_triangle> Fog_volume_boundaries[MAX_ROOMS];
+
+static void AppendFogVolumePortal(std::vector<renderer_room_fog_triangle>& output,
+	const room& source, const portal& pp)
 {
-	if (!target || viewer_room < 0 || ROOMNUM_OUTSIDE(viewer_room) ||
-		viewer_room > Highest_room_index || !Rooms[viewer_room].used)
+	if (pp.portal_face < 0 || pp.portal_face >= source.num_faces)
+		return;
+	const face& fp = source.faces[pp.portal_face];
+	if (!fp.face_verts || fp.num_verts < 3)
+		return;
+	const vector& a = source.verts[fp.face_verts[0]];
+	for (int triangle = 0; triangle < fp.num_verts - 2; triangle++)
 	{
-		return false;
+		const vector& b = source.verts[fp.face_verts[triangle + 1]];
+		const vector& c = source.verts[fp.face_verts[triangle + 2]];
+		renderer_room_fog_triangle item = {};
+		item.a[0] = a.x; item.a[1] = a.y; item.a[2] = a.z;
+		item.b[0] = b.x; item.b[1] = b.y; item.b[2] = b.z;
+		item.c[0] = c.x; item.c[1] = c.y; item.c[2] = c.z;
+		output.push_back(item);
 	}
+}
 
-	const int target_room = (int)(target - Rooms);
-	if (target_room == viewer_room)
-		return true;
-	if (!RoomsHaveMatchingFog(*target, Rooms[viewer_room]))
-		return false;
+static void BuildFogVolumeCache()
+{
+	if (Fog_volume_cache_frame == FrameCount)
+		return;
 
-	// Build the viewer's continuous fog component once per frame. Room boundaries
-	// connected by open portals do not restart an otherwise identical fog volume.
-	static int cached_frame = -1;
-	static int cached_viewer_room = -1;
-	static bool connected_rooms[MAX_ROOMS] = {};
-	if (cached_frame != FrameCount || cached_viewer_room != viewer_room)
+	// Fog is a property of connected space, not of the arbitrary rooms used to
+	// author that space.  Build the connected components once per frame so that
+	// crossing an internal room portal cannot change the apparent fog distance.
+	// Only portals on a component's outer boundary are submitted to the entry map.
+	// Rebuilding is deliberately cheap and keeps animated doors/portal materials
+	// authoritative without introducing a second invalidation system.
+	for (int component = 0; component < Fog_volume_component_count; component++)
+		Fog_volume_boundaries[component].clear();
+	std::fill(std::begin(Fog_volume_room_component),
+		std::end(Fog_volume_room_component), -1);
+	Fog_volume_component_count = 0;
+
+	int pending[MAX_ROOMS];
+	for (int start_room = 0; start_room <= Highest_room_index; start_room++)
 	{
-		memset(connected_rooms, 0, sizeof(connected_rooms));
-		int pending[MAX_ROOMS];
+		if (!Rooms[start_room].used || !(Rooms[start_room].flags & RF_FOG) ||
+			Fog_volume_room_component[start_room] != -1)
+		{
+			continue;
+		}
+
+		const int component = Fog_volume_component_count++;
 		int pending_begin = 0;
 		int pending_end = 0;
-		connected_rooms[viewer_room] = true;
-		pending[pending_end++] = viewer_room;
+		Fog_volume_room_component[start_room] = component;
+		pending[pending_end++] = start_room;
 		while (pending_begin < pending_end)
 		{
 			const int roomnum = pending[pending_begin++];
@@ -4341,20 +4371,49 @@ static bool ViewerSharesFogVolume(const room* target, int viewer_room)
 			{
 				const portal& pp = current.portals[portal_index];
 				if (!PortalContinuesFogVolume(current, pp) ||
-					connected_rooms[pp.croom])
+					Fog_volume_room_component[pp.croom] != -1)
 				{
 					continue;
 				}
-				connected_rooms[pp.croom] = true;
+				Fog_volume_room_component[pp.croom] = component;
 				pending[pending_end++] = pp.croom;
 			}
 		}
-		cached_frame = FrameCount;
-		cached_viewer_room = viewer_room;
 	}
 
-	return target_room >= 0 && target_room < MAX_ROOMS &&
-		connected_rooms[target_room];
+	for (int roomnum = 0; roomnum <= Highest_room_index; roomnum++)
+	{
+		const int component = Fog_volume_room_component[roomnum];
+		if (component < 0)
+			continue;
+		room& current = Rooms[roomnum];
+		for (int portal_index = 0; portal_index < current.num_portals;
+			portal_index++)
+		{
+			portal& pp = current.portals[portal_index];
+			if (pp.croom >= 0 && pp.croom < MAX_ROOMS &&
+				Fog_volume_room_component[pp.croom] == component)
+			{
+				continue;
+			}
+			if (!RenderPastPortal(&current, &pp))
+				continue;
+			AppendFogVolumePortal(Fog_volume_boundaries[component], current, pp);
+		}
+	}
+
+	Fog_volume_cache_frame = FrameCount;
+}
+
+static int FogVolumeComponentForRoom(int roomnum)
+{
+	BuildFogVolumeCache();
+	if (roomnum < 0 || ROOMNUM_OUTSIDE(roomnum) || roomnum >= MAX_ROOMS ||
+		roomnum > Highest_room_index || !Rooms[roomnum].used)
+	{
+		return -1;
+	}
+	return Fog_volume_room_component[roomnum];
 }
 
 bool BeginRoomMaterialFog(room* rp, const vector* eye, int viewer_room,
@@ -4394,36 +4453,39 @@ bool BeginRoomMaterialFog(room* rp, const vector* eye, int viewer_room,
 
 	thread_local std::vector<renderer_room_fog_triangle> portal_triangles;
 	portal_triangles.clear();
-	for (int portal_index = 0; portal_index < rp->num_portals; portal_index++)
+	const int fog_component = FogVolumeComponentForRoom((int)(rp - Rooms));
+	const std::vector<renderer_room_fog_triangle>* component_triangles =
+		fog_component >= 0 ? &Fog_volume_boundaries[fog_component] : nullptr;
+	const renderer_room_fog_triangle* fog_triangles =
+		component_triangles && !component_triangles->empty() ?
+		component_triangles->data() : nullptr;
+	int fog_triangle_count = component_triangles ?
+		(int)component_triangles->size() : 0;
+	if (mirror_face && component_triangles)
 	{
-		// Use the same material/door visibility decision as room traversal: a
-		// transparent rendered portal remains an opening, while an opaque one is
-		// a terminating material surface rather than a fog boundary.
-		if (!RenderPastPortal(rp, &rp->portals[portal_index]))
-			continue;
-		const int facenum = rp->portals[portal_index].portal_face;
-		if (facenum < 0 || facenum >= rp->num_faces)
-			continue;
-		const face* fp = &rp->faces[facenum];
-		if (!fp->face_verts || fp->num_verts < 3)
-			continue;
-		const vector a = fog_world_position(rp->verts[fp->face_verts[0]]);
-		for (int triangle = 0; triangle < fp->num_verts - 2; triangle++)
+		portal_triangles.reserve(component_triangles->size());
+		for (const renderer_room_fog_triangle& source : *component_triangles)
 		{
-			const vector b = fog_world_position(rp->verts[fp->face_verts[triangle + 1]]);
-			const vector c = fog_world_position(rp->verts[fp->face_verts[triangle + 2]]);
+			const vector source_a = { source.a[0], source.a[1], source.a[2] };
+			const vector source_b = { source.b[0], source.b[1], source.b[2] };
+			const vector source_c = { source.c[0], source.c[1], source.c[2] };
+			const vector a = fog_world_position(source_a);
+			const vector b = fog_world_position(source_b);
+			const vector c = fog_world_position(source_c);
 			renderer_room_fog_triangle item = {};
 			item.a[0] = a.x; item.a[1] = a.y; item.a[2] = a.z;
 			item.b[0] = b.x; item.b[1] = b.y; item.b[2] = b.z;
 			item.c[0] = c.x; item.c[1] = c.y; item.c[2] = c.z;
 			portal_triangles.push_back(item);
 		}
+		fog_triangles = portal_triangles.empty() ? nullptr : portal_triangles.data();
+		fog_triangle_count = (int)portal_triangles.size();
 	}
 
 	renderer_room_fog_state state = {};
 	state.enabled = true;
-	state.viewer_inside = !Render_mirror_for_room &&
-		ViewerSharesFogVolume(rp, viewer_room);
+	state.viewer_inside = !Render_mirror_for_room && fog_component >= 0 &&
+		fog_component == FogVolumeComponentForRoom(viewer_room);
 	state.viewer_position[0] = eye->x;
 	state.viewer_position[1] = eye->y;
 	state.viewer_position[2] = eye->z;
@@ -4435,8 +4497,8 @@ bool BeginRoomMaterialFog(room* rp, const vector* eye, int viewer_room,
 	state.color[2] = rp->fog_b;
 	state.depth = rp->fog_depth;
 	state.intensity = intensity;
-	state.triangles = portal_triangles.empty() ? nullptr : portal_triangles.data();
-	state.triangle_count = (int)portal_triangles.size();
+	state.triangles = fog_triangles;
+	state.triangle_count = fog_triangle_count;
 	Room_material_fog_active = rend_SetRoomFogState(&state);
 	return Room_material_fog_active;
 }
@@ -4816,6 +4878,7 @@ public:
 	{
 		if (m_active_batch_count == 0)
 			return;
+		bool retained_base_batch_active = false;
 		for (size_t i = 0; i < m_active_batch_count; i++)
 		{
 			RoomBaseFaceBatch& batch = m_batches[i];
@@ -4836,6 +4899,8 @@ public:
 			rend_SetAOClass(batch.key.ao_class);
 			if (!batch.retained_faces.empty())
 			{
+				if (!retained_base_batch_active)
+					retained_base_batch_active = RetainedRoomBeginBaseBatch();
 				bool depth_prepassed = Room_depth_prepass_color_pass_active &&
 					batch.retained_room != nullptr;
 				if (depth_prepassed)
@@ -4889,6 +4954,11 @@ public:
 
 			if (!batch.faces.empty())
 			{
+				if (retained_base_batch_active)
+				{
+					RetainedRoomEndBaseBatch();
+					retained_base_batch_active = false;
+				}
 				std::vector<renderer_poly_batch_item> items(batch.faces.size());
 				for (size_t face_index = 0; face_index < batch.faces.size(); face_index++)
 				{
@@ -4901,6 +4971,8 @@ public:
 					(int)items.size(), MAP_TYPE_BITMAP);
 			}
 		}
+		if (retained_base_batch_active)
+			RetainedRoomEndBaseBatch();
 
 		rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
 		for (size_t i = 0; i < m_active_batch_count; i++)

@@ -5,6 +5,8 @@ struct vector;
 struct matrix;
 
 bool RetainedRoomCanDrawBaseFace(room* rp, int facenum);
+bool RetainedRoomBeginBaseBatch();
+void RetainedRoomEndBaseBatch();
 bool RetainedRoomDrawFaces(room* rp, const int* facenums, int count,
 	int bitmap_handle, float u_offset, float v_offset, float light_scalar,
 	int lightmap_handle,
