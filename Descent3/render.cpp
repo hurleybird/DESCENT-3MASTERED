@@ -302,10 +302,7 @@ static inline bool FaceIsRenderable(room* rp, face* fp)
 	//Check for face that's part of a portal
 	if (fp->portal_num != -1)
 	{
-		const int portal_flags = rp->portals[fp->portal_num].flags;
-		if (portal_flags & PF_SUPPRESS_FACE_RENDER)
-			return false;
-		if (portal_flags & PF_RENDER_FACES)
+		if (rp->portals[fp->portal_num].flags & PF_RENDER_FACES)
 			return true;
 		if (rp->flags & RF_FOG && !In_editor_mode)
 			return true;

@@ -215,10 +215,6 @@
 //	parm2 = -2, for done loading.
 int LoadLevel(char *filename, void (*cb_fn)(const char *,int, int) = NULL);
 
-// Applies mission-specific, renderer-only content corrections after level
-// data or saved portal state has been loaded.
-void ApplyMissionLevelRenderCorrections();
-
 //Save a level file
 //Returns 1 if file saved ok, else 0
 int SaveLevel(char *filename, bool f_save_room_AABB = true);
