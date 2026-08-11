@@ -4282,6 +4282,81 @@ void UpdateFogFace(room* rp, face* fp, bool retained, ubyte clip_codes)
 	Num_fog_faces_to_render++;
 }
 
+static bool RoomsHaveMatchingFog(const room& a, const room& b)
+{
+	return (a.flags & RF_FOG) && (b.flags & RF_FOG) &&
+		a.fog_depth == b.fog_depth && a.fog_r == b.fog_r &&
+		a.fog_g == b.fog_g && a.fog_b == b.fog_b;
+}
+
+static bool PortalContinuesFogVolume(const room& source, const portal& pp)
+{
+	if ((pp.flags & PF_RENDER_FACES) || pp.croom < 0 ||
+		pp.croom > Highest_room_index || !Rooms[pp.croom].used)
+	{
+		return false;
+	}
+	const room& connected = Rooms[pp.croom];
+	if (pp.cportal < 0 || pp.cportal >= connected.num_portals ||
+		(connected.portals[pp.cportal].flags & PF_RENDER_FACES))
+	{
+		return false;
+	}
+	return RoomsHaveMatchingFog(source, connected);
+}
+
+static bool ViewerSharesFogVolume(const room* target, int viewer_room)
+{
+	if (!target || viewer_room < 0 || ROOMNUM_OUTSIDE(viewer_room) ||
+		viewer_room > Highest_room_index || !Rooms[viewer_room].used)
+	{
+		return false;
+	}
+
+	const int target_room = (int)(target - Rooms);
+	if (target_room == viewer_room)
+		return true;
+	if (!RoomsHaveMatchingFog(*target, Rooms[viewer_room]))
+		return false;
+
+	// Build the viewer's continuous fog component once per frame. Room boundaries
+	// connected by open portals do not restart an otherwise identical fog volume.
+	static int cached_frame = -1;
+	static int cached_viewer_room = -1;
+	static bool connected_rooms[MAX_ROOMS] = {};
+	if (cached_frame != FrameCount || cached_viewer_room != viewer_room)
+	{
+		memset(connected_rooms, 0, sizeof(connected_rooms));
+		int pending[MAX_ROOMS];
+		int pending_begin = 0;
+		int pending_end = 0;
+		connected_rooms[viewer_room] = true;
+		pending[pending_end++] = viewer_room;
+		while (pending_begin < pending_end)
+		{
+			const int roomnum = pending[pending_begin++];
+			const room& current = Rooms[roomnum];
+			for (int portal_index = 0; portal_index < current.num_portals;
+				portal_index++)
+			{
+				const portal& pp = current.portals[portal_index];
+				if (!PortalContinuesFogVolume(current, pp) ||
+					connected_rooms[pp.croom])
+				{
+					continue;
+				}
+				connected_rooms[pp.croom] = true;
+				pending[pending_end++] = pp.croom;
+			}
+		}
+		cached_frame = FrameCount;
+		cached_viewer_room = viewer_room;
+	}
+
+	return target_room >= 0 && target_room < MAX_ROOMS &&
+		connected_rooms[target_room];
+}
+
 bool BeginRoomMaterialFog(room* rp, const vector* eye, int viewer_room,
 	float intensity)
 {
@@ -4347,7 +4422,8 @@ bool BeginRoomMaterialFog(room* rp, const vector* eye, int viewer_room,
 
 	renderer_room_fog_state state = {};
 	state.enabled = true;
-	state.viewer_inside = !Render_mirror_for_room && viewer_room == (int)(rp - Rooms);
+	state.viewer_inside = !Render_mirror_for_room &&
+		ViewerSharesFogVolume(rp, viewer_room);
 	state.viewer_position[0] = eye->x;
 	state.viewer_position[1] = eye->y;
 	state.viewer_position[2] = eye->z;
@@ -5387,8 +5463,17 @@ void RenderFace(room* rp, int facenum)
 	bm_handle = BaseBitmapHandleForFace(fp);
 	ASSERT(bm_handle != -1);
 
-	//Set alpha, transparency, & lighting for this face
-	rend_SetAlphaType(GetFaceAlpha(fp, bm_handle));
+	// Set alpha, transparency, & lighting for this face. Additive materials on
+	// rendered fog-room portals are physical translucent boundaries rather than
+	// free-floating light. Alpha compositing lets them converge toward the fog
+	// color while retaining their authored texture and constant coverage.
+	int face_alpha_type = GetFaceAlpha(fp, bm_handle);
+	if ((rp->flags & RF_FOG) && fp->portal_num != -1 &&
+		(face_alpha_type & ATF_SATURATE))
+	{
+		face_alpha_type = (face_alpha_type & ~ATF_SATURATE) | ATF_TEXTURE;
+	}
+	rend_SetAlphaType(face_alpha_type);
 
 	// If this is a mirror face, and mirrors are turned off, then just make opaque
 	if (!Detail_settings.Mirrored_surfaces && rp->mirror_face != -1 && rp->faces[rp->mirror_face].tmap == fp->tmap)
@@ -5516,7 +5601,18 @@ void RenderFace(room* rp, int facenum)
 	}
 
 draw_fog:
-	if (!Render_mirror_for_room && !In_editor_mode && drawn && (rp->flags & RF_FOG))
+	bool portal_continues_same_fog = false;
+	if (fp->portal_num != -1)
+	{
+		const portal& pp = rp->portals[fp->portal_num];
+		const room& connected_room = Rooms[pp.croom];
+		// An invisible portal between identical fog rooms is internal to one
+		// continuous volume. The legacy planar cap double-fogs that opening and
+		// can switch abruptly as individual faces of a combined portal are culled.
+		portal_continues_same_fog = PortalContinuesFogVolume(*rp, pp);
+	}
+	if (!portal_continues_same_fog && !Render_mirror_for_room && !In_editor_mode &&
+		drawn && (rp->flags & RF_FOG))
 	{
 		UpdateFogFace(rp, fp, retained_base_face_drawn,
 			face_cc.cc_or & RETAINED_ROOM_CLIP_CODES);
