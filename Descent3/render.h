@@ -113,6 +113,9 @@ extern g3Point SolidFogPoints[],AlphaFogPoints[];
 //					flag_automap - if true, flag segments as visited when rendered
 //					called_from_terrain - set if calling this routine from the terrain renderer
 void RenderMine(int viewer_roomnum,int flag_automap=0,int called_from_terrain=0);
+// Compile renderer-only Euclidean room clusters for the newly loaded level.
+// The authored portal graph remains authoritative for gameplay systems.
+void RenderRoomClustersInitNewLevel();
 
 // True when the most recent main mine view reached an exterior portal.
 // Consumers can use this as a cheap rejection before doing precise portal

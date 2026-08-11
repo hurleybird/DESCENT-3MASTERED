@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <limits>
@@ -582,6 +583,475 @@ struct clip_wnd
 	float left, top, right, bot;
 };
 
+// Rooms are an authoring/gameplay partition, but a validated group of rooms can
+// be an ordinary Euclidean scene as far as the renderer is concerned.  Compile
+// permanently compatible portal connections into renderer-only clusters.  The
+// original room/portal graph is never modified: AI, collision, scripts, sound,
+// and doors continue to use it exactly as authored.
+struct RoomRenderCluster
+{
+	std::vector<short> rooms;
+};
+
+struct RoomRenderClusterEdge
+{
+	short room_a = -1;
+	short room_b = -1;
+	short portal_a = -1;
+	short portal_b = -1;
+};
+
+static std::array<int, MAX_ROOMS> Room_render_cluster = {};
+static std::vector<RoomRenderCluster> Room_render_clusters;
+static std::vector<RoomRenderClusterEdge> Room_render_cluster_edges;
+static std::array<ubyte, MAX_ROOMS * MAX_ROOMS> Room_render_cluster_overlap = {};
+static bool Room_render_clusters_prepared = false;
+static uint64_t Room_render_cluster_state = UINT64_MAX;
+static int Room_render_cluster_elided_portals = 0;
+static int Room_render_cluster_overlap_tests = 0;
+static int Room_render_cluster_overlap_rejects = 0;
+static int Room_render_cluster_shell_rejects = 0;
+static int Room_render_cluster_containment_rejects = 0;
+
+static float RoomClusterDistanceSquared(const vector& a, const vector& b)
+{
+	const float x = a.x - b.x;
+	const float y = a.y - b.y;
+	const float z = a.z - b.z;
+	return x * x + y * y + z * z;
+}
+
+static bool RoomClusterPortalGeometryMatches(int room_a, int portal_a,
+	int room_b, int portal_b)
+{
+	const room& a = Rooms[room_a];
+	const room& b = Rooms[room_b];
+	if (portal_a < 0 || portal_a >= a.num_portals ||
+		portal_b < 0 || portal_b >= b.num_portals)
+	{
+		return false;
+	}
+	const portal& ap = a.portals[portal_a];
+	const portal& bp = b.portals[portal_b];
+	if (ap.portal_face < 0 || ap.portal_face >= a.num_faces ||
+		bp.portal_face < 0 || bp.portal_face >= b.num_faces)
+	{
+		return false;
+	}
+	const face& af = a.faces[ap.portal_face];
+	const face& bf = b.faces[bp.portal_face];
+	if (!af.face_verts || !bf.face_verts || af.num_verts < 3 ||
+		af.num_verts != bf.num_verts)
+	{
+		return false;
+	}
+
+	// Connected portal faces should oppose each other.  D3's own visibility
+	// builder explicitly tolerates slightly non-planar portals, so use a small
+	// geometric tolerance instead of demanding bit-identical authored vertices.
+	if (vm_DotProduct(&af.normal, &bf.normal) > -0.95f)
+		return false;
+	const float match_epsilon_squared = 0.05f * 0.05f;
+	for (int av = 0; av < af.num_verts; av++)
+	{
+		const vector& point = a.verts[af.face_verts[av]];
+		bool found = false;
+		for (int bv = 0; bv < bf.num_verts; bv++)
+		{
+			if (RoomClusterDistanceSquared(point,
+				b.verts[bf.face_verts[bv]]) <= match_epsilon_squared)
+			{
+				found = true;
+				break;
+			}
+		}
+		if (!found)
+			return false;
+	}
+	return true;
+}
+
+static bool RoomClusterBoundsOverlapVolume(int room_a, int room_b)
+{
+	const room& a = Rooms[room_a];
+	const room& b = Rooms[room_b];
+	// Contact at a shared wall/portal is expected.  Only positive volume in all
+	// three axes needs the more expensive shell/containment test below.
+	static constexpr float epsilon = 0.05f;
+	const float overlap_x = std::min(a.max_xyz.x, b.max_xyz.x) -
+		std::max(a.min_xyz.x, b.min_xyz.x);
+	const float overlap_y = std::min(a.max_xyz.y, b.max_xyz.y) -
+		std::max(a.min_xyz.y, b.min_xyz.y);
+	const float overlap_z = std::min(a.max_xyz.z, b.max_xyz.z) -
+		std::max(a.min_xyz.z, b.min_xyz.z);
+	return overlap_x > epsilon && overlap_y > epsilon && overlap_z > epsilon;
+}
+
+static vector RoomClusterCross(const vector& a, const vector& b)
+{
+	return { a.y * b.z - a.z * b.y,
+		a.z * b.x - a.x * b.z,
+		a.x * b.y - a.y * b.x };
+}
+
+static float RoomClusterDot(const vector& a, const vector& b)
+{
+	return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+static bool RoomClusterSegmentIntersectsTriangle(const vector& start,
+	const vector& end, const vector& a, const vector& b, const vector& c,
+	vector* intersection)
+{
+	// Moller-Trumbore on a finite segment.  Endpoint contacts are deliberately
+	// excluded: adjacent rooms are expected to share portal vertices and edges.
+	static constexpr float determinant_epsilon = 1.0e-6f;
+	static constexpr float contact_epsilon = 1.0e-4f;
+	const vector direction = end - start;
+	const vector edge1 = b - a;
+	const vector edge2 = c - a;
+	const vector p = RoomClusterCross(direction, edge2);
+	const float determinant = RoomClusterDot(edge1, p);
+	if (std::fabs(determinant) <= determinant_epsilon)
+		return false;
+	const float inverse = 1.0f / determinant;
+	const vector relative = start - a;
+	const float u = RoomClusterDot(relative, p) * inverse;
+	if (u < -contact_epsilon || u > 1.0f + contact_epsilon)
+		return false;
+	const vector q = RoomClusterCross(relative, edge1);
+	const float v = RoomClusterDot(direction, q) * inverse;
+	if (v < -contact_epsilon || u + v > 1.0f + contact_epsilon)
+		return false;
+	const float t = RoomClusterDot(edge2, q) * inverse;
+	if (t <= contact_epsilon || t >= 1.0f - contact_epsilon)
+		return false;
+	if (intersection)
+		*intersection = start + direction * t;
+	return true;
+}
+
+static bool RoomClusterFaceIsSharedPortal(const room& source,
+	int face_index, int connected_roomnum)
+{
+	for (int portalnum = 0; portalnum < source.num_portals; portalnum++)
+	{
+		if (source.portals[portalnum].portal_face == face_index &&
+			source.portals[portalnum].croom == connected_roomnum)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool RoomClusterEdgesPierceShell(int edges_roomnum, int shell_roomnum)
+{
+	room& edges_room = Rooms[edges_roomnum];
+	room& shell_room = Rooms[shell_roomnum];
+	for (int edge_face_index = 0; edge_face_index < edges_room.num_faces;
+		edge_face_index++)
+	{
+		const face& edge_face = edges_room.faces[edge_face_index];
+		if ((edge_face.flags & FF_NOT_SHELL) || !edge_face.face_verts ||
+			edge_face.num_verts < 2 || RoomClusterFaceIsSharedPortal(edges_room,
+				edge_face_index, shell_roomnum))
+		{
+			continue;
+		}
+		for (int edge_index = 0; edge_index < edge_face.num_verts; edge_index++)
+		{
+			const vector& start = edges_room.verts[edge_face.face_verts[edge_index]];
+			const vector& end = edges_room.verts[
+				edge_face.face_verts[(edge_index + 1) % edge_face.num_verts]];
+			for (int shell_face_index = 0;
+				shell_face_index < shell_room.num_faces; shell_face_index++)
+			{
+				const face& shell_face = shell_room.faces[shell_face_index];
+				if ((shell_face.flags & FF_NOT_SHELL) || !shell_face.face_verts ||
+					shell_face.num_verts < 3 || RoomClusterFaceIsSharedPortal(shell_room,
+						shell_face_index, edges_roomnum))
+				{
+					continue;
+				}
+				const vector& a = shell_room.verts[shell_face.face_verts[0]];
+				for (int triangle = 0; triangle < shell_face.num_verts - 2;
+					triangle++)
+				{
+					const vector& b = shell_room.verts[
+						shell_face.face_verts[triangle + 1]];
+					const vector& c = shell_room.verts[
+						shell_face.face_verts[triangle + 2]];
+					vector intersection;
+					if (RoomClusterSegmentIntersectsTriangle(start, end, a, b, c,
+						&intersection))
+					{
+						// Surface contact alone is not volumetric overlap.  D3 rooms often
+						// meet with slightly non-planar or overhanging boundary faces.  Face
+						// normals point into their rooms, so a point nudged into both local
+						// half-spaces is a direct witness of overlapping interiors.
+						static constexpr float interior_nudge = 0.1f;
+						vector sample = intersection +
+							(edge_face.normal + shell_face.normal) * interior_nudge;
+						if (fvi_QuickRoomCheck(&sample, &edges_room) &&
+							fvi_QuickRoomCheck(&sample, &shell_room))
+						{
+							return true;
+						}
+					}
+				}
+			}
+		}
+	}
+	return false;
+}
+
+static bool RoomClusterVolumesOverlap(int room_a, int room_b)
+{
+	if (!RoomClusterBoundsOverlapVolume(room_a, room_b))
+		return false;
+	const int low = std::min(room_a, room_b);
+	const int high = std::max(room_a, room_b);
+	ubyte& cached = Room_render_cluster_overlap[low * MAX_ROOMS + high];
+	if (cached)
+		return cached == 2;
+
+	Room_render_cluster_overlap_tests++;
+	room& a = Rooms[room_a];
+	room& b = Rooms[room_b];
+	bool overlap = RoomClusterEdgesPierceShell(room_a, room_b) ||
+		RoomClusterEdgesPierceShell(room_b, room_a);
+	if (overlap)
+		Room_render_cluster_shell_rejects++;
+	if (!overlap)
+	{
+		// With two closed shells that do not intersect, overlap is only possible
+		// when one volume contains the other.  Level loading validates path_pnt as
+		// an interior point, making it a much stronger witness than an AABB centre.
+		overlap = fvi_QuickRoomCheck(&a.path_pnt, &b) ||
+			fvi_QuickRoomCheck(&b.path_pnt, &a);
+		if (overlap)
+			Room_render_cluster_containment_rejects++;
+	}
+	cached = overlap ? 2 : 1;
+	if (overlap)
+		Room_render_cluster_overlap_rejects++;
+	return overlap;
+}
+
+static bool RoomClusterPortalCurrentlyOpen(const RoomRenderClusterEdge& edge)
+{
+	if (edge.room_a < 0 || edge.room_b < 0 ||
+		edge.room_a > Highest_room_index || edge.room_b > Highest_room_index)
+	{
+		return false;
+	}
+	const room& a = Rooms[edge.room_a];
+	const room& b = Rooms[edge.room_b];
+	if (!a.used || !b.used || (a.flags & (RF_EXTERNAL | RF_DOOR)) ||
+		(b.flags & (RF_EXTERNAL | RF_DOOR)))
+	{
+		return false;
+	}
+	const portal& ap = a.portals[edge.portal_a];
+	const portal& bp = b.portals[edge.portal_b];
+	const int blocking_flags = PF_RENDER_FACES | PF_BLOCK | PF_BLOCK_REMOVABLE;
+	return !(ap.flags & blocking_flags) && !(bp.flags & blocking_flags);
+}
+
+static int RoomClusterFind(std::array<int, MAX_ROOMS>& parents, int roomnum)
+{
+	int root = roomnum;
+	while (parents[root] != root)
+		root = parents[root];
+	while (parents[roomnum] != roomnum)
+	{
+		const int next = parents[roomnum];
+		parents[roomnum] = root;
+		roomnum = next;
+	}
+	return root;
+}
+
+static bool RoomClusterCanMerge(std::array<int, MAX_ROOMS>& parents,
+	int root_a, int root_b)
+{
+	for (int a = 0; a <= Highest_room_index; a++)
+	{
+		if (!Rooms[a].used || RoomClusterFind(parents, a) != root_a)
+			continue;
+		for (int b = 0; b <= Highest_room_index; b++)
+		{
+			if (!Rooms[b].used || RoomClusterFind(parents, b) != root_b)
+				continue;
+			if (RoomClusterVolumesOverlap(a, b))
+				return false;
+		}
+	}
+	return true;
+}
+
+static void RebuildActiveRoomRenderClusters()
+{
+	std::array<int, MAX_ROOMS> parents;
+	std::array<int, MAX_ROOMS> ranks = {};
+	for (int roomnum = 0; roomnum < MAX_ROOMS; roomnum++)
+		parents[roomnum] = roomnum;
+
+	Room_render_cluster_elided_portals = 0;
+	for (const RoomRenderClusterEdge& edge : Room_render_cluster_edges)
+	{
+		if (!RoomClusterPortalCurrentlyOpen(edge))
+			continue;
+		int root_a = RoomClusterFind(parents, edge.room_a);
+		int root_b = RoomClusterFind(parents, edge.room_b);
+		if (root_a == root_b)
+		{
+			Room_render_cluster_elided_portals++;
+			continue;
+		}
+		if (!RoomClusterCanMerge(parents, root_a, root_b))
+			continue;
+		if (ranks[root_a] < ranks[root_b])
+			std::swap(root_a, root_b);
+		parents[root_b] = root_a;
+		if (ranks[root_a] == ranks[root_b])
+			ranks[root_a]++;
+		Room_render_cluster_elided_portals++;
+	}
+
+	Room_render_clusters.clear();
+	Room_render_cluster.fill(-1);
+	std::array<int, MAX_ROOMS> root_to_cluster;
+	root_to_cluster.fill(-1);
+	for (int roomnum = 0; roomnum <= Highest_room_index; roomnum++)
+	{
+		if (!Rooms[roomnum].used)
+			continue;
+		const int root = RoomClusterFind(parents, roomnum);
+		int& cluster = root_to_cluster[root];
+		if (cluster < 0)
+		{
+			cluster = (int)Room_render_clusters.size();
+			Room_render_clusters.emplace_back();
+		}
+		Room_render_cluster[roomnum] = cluster;
+		Room_render_clusters[cluster].rooms.push_back((short)roomnum);
+	}
+}
+
+static uint64_t RoomRenderClusterStateHash()
+{
+	uint64_t hash = 1469598103934665603ull;
+	for (const RoomRenderClusterEdge& edge : Room_render_cluster_edges)
+	{
+		const bool open = RoomClusterPortalCurrentlyOpen(edge);
+		hash ^= (uint64_t)(open ? 1 : 0);
+		hash *= 1099511628211ull;
+	}
+	return hash;
+}
+
+void RenderRoomClustersInitNewLevel()
+{
+	Room_render_clusters_prepared = true;
+	Room_render_cluster_state = UINT64_MAX;
+	Room_render_cluster_edges.clear();
+	Room_render_clusters.clear();
+	Room_render_cluster.fill(-1);
+	Room_render_cluster_overlap.fill(0);
+	Room_render_cluster_overlap_tests = 0;
+	Room_render_cluster_overlap_rejects = 0;
+	Room_render_cluster_shell_rejects = 0;
+	Room_render_cluster_containment_rejects = 0;
+
+	if (FindArg("-NoRoomClusters"))
+	{
+		RebuildActiveRoomRenderClusters();
+		return;
+	}
+
+	for (int roomnum = 0; roomnum <= Highest_room_index; roomnum++)
+	{
+		const room& rp = Rooms[roomnum];
+		if (!rp.used || (rp.flags & (RF_EXTERNAL | RF_DOOR)) ||
+			rp.mirror_face != -1)
+		{
+			continue;
+		}
+		for (int portalnum = 0; portalnum < rp.num_portals; portalnum++)
+		{
+			const portal& pp = rp.portals[portalnum];
+			if (pp.croom <= roomnum || pp.croom < 0 ||
+				pp.croom > Highest_room_index || !Rooms[pp.croom].used)
+			{
+				continue;
+			}
+			const room& connected = Rooms[pp.croom];
+			if ((connected.flags & (RF_EXTERNAL | RF_DOOR)) ||
+				connected.mirror_face != -1 || pp.cportal < 0 ||
+				pp.cportal >= connected.num_portals)
+			{
+				continue;
+			}
+			const portal& reciprocal = connected.portals[pp.cportal];
+			if (reciprocal.croom != roomnum || reciprocal.cportal != portalnum ||
+				!RoomClusterPortalGeometryMatches(roomnum, portalnum,
+					pp.croom, pp.cportal))
+			{
+				continue;
+			}
+			Room_render_cluster_edges.push_back({ (short)roomnum,
+				(short)pp.croom, (short)portalnum, pp.cportal });
+		}
+	}
+
+	Room_render_cluster_state = RoomRenderClusterStateHash();
+	RebuildActiveRoomRenderClusters();
+	int multi_room_clusters = 0;
+	int clustered_rooms = 0;
+	for (const RoomRenderCluster& cluster : Room_render_clusters)
+	{
+		if (cluster.rooms.size() > 1)
+		{
+			multi_room_clusters++;
+			clustered_rooms += (int)cluster.rooms.size();
+		}
+	}
+	mprintf((0, "Room clusters: %d clusters, %d multi-room, %d clustered rooms, %d/%d portal links elided, %d/%d volume pairs rejected (%d shell, %d containment)\n",
+		(int)Room_render_clusters.size(), multi_room_clusters, clustered_rooms,
+		Room_render_cluster_elided_portals,
+		(int)Room_render_cluster_edges.size(), Room_render_cluster_overlap_rejects,
+		Room_render_cluster_overlap_tests, Room_render_cluster_shell_rejects,
+		Room_render_cluster_containment_rejects));
+	AutomatedCaptureLog("room clusters total=%d multi=%d rooms=%d elided=%d candidates=%d overlap_rejects=%d overlap_tests=%d shell_rejects=%d containment_rejects=%d",
+		(int)Room_render_clusters.size(), multi_room_clusters, clustered_rooms,
+		Room_render_cluster_elided_portals,
+		(int)Room_render_cluster_edges.size(), Room_render_cluster_overlap_rejects,
+		Room_render_cluster_overlap_tests, Room_render_cluster_shell_rejects,
+		Room_render_cluster_containment_rejects);
+}
+
+static void EnsureRoomRenderClusters()
+{
+	if (!Room_render_clusters_prepared)
+		RenderRoomClustersInitNewLevel();
+	const uint64_t state = RoomRenderClusterStateHash();
+	if (state != Room_render_cluster_state)
+	{
+		Room_render_cluster_state = state;
+		RebuildActiveRoomRenderClusters();
+	}
+}
+
+static bool RoomsShareRenderCluster(int room_a, int room_b)
+{
+	if (room_a < 0 || room_b < 0 || room_a >= MAX_ROOMS || room_b >= MAX_ROOMS)
+		return false;
+	return Room_render_cluster[room_a] >= 0 &&
+		Room_render_cluster[room_a] == Room_render_cluster[room_b];
+}
+
 static clip_wnd Room_render_windows[MAX_ROOMS + MAX_PALETTE_ROOMS];
 static bool Room_render_window_valid[MAX_ROOMS + MAX_PALETTE_ROOMS];
 static std::vector<ubyte> Room_depth_prepass_faces[MAX_ROOMS];
@@ -591,7 +1061,8 @@ static bool BeginRoomRenderScissor(int roomnum, int viewer_roomnum,
 	rendTEMP_ScissorState& state)
 {
 	if (!rend_CanUseNewrender() || !Room_render_window_valid[roomnum] ||
-		roomnum == viewer_roomnum)
+		roomnum == viewer_roomnum || (!Called_from_terrain &&
+			RoomsShareRenderCluster(roomnum, viewer_roomnum)))
 	{
 		return false;
 	}
@@ -604,6 +1075,8 @@ static bool BeginRoomRenderScissor(int roomnum, int viewer_roomnum,
 		(int)std::ceil(room_window.right) + padding);
 	const int bottom = std::min(Render_height,
 		(int)std::ceil(room_window.bot) + padding);
+	if (left == 0 && top == 0 && right == Render_width && bottom == Render_height)
+		return false;
 	rendTEMP_SaveScissorState(&state);
 	rendTEMP_SetScissorRect(left, top, right, bottom,
 		Render_width, Render_height);
@@ -625,14 +1098,15 @@ static void AccumulateRoomRenderWindow(int roomnum, const clip_wnd& wnd)
 	{
 		Room_render_windows[roomnum] = wnd;
 		Room_render_window_valid[roomnum] = true;
-		return;
 	}
-
-	clip_wnd& accumulated = Room_render_windows[roomnum];
-	accumulated.left = std::min(accumulated.left, wnd.left);
-	accumulated.top = std::min(accumulated.top, wnd.top);
-	accumulated.right = std::max(accumulated.right, wnd.right);
-	accumulated.bot = std::max(accumulated.bot, wnd.bot);
+	else
+	{
+		clip_wnd& accumulated = Room_render_windows[roomnum];
+		accumulated.left = std::min(accumulated.left, wnd.left);
+		accumulated.top = std::min(accumulated.top, wnd.top);
+		accumulated.right = std::max(accumulated.right, wnd.right);
+		accumulated.bot = std::max(accumulated.bot, wnd.bot);
+	}
 }
 
 inline int clip2d(g3Point* pnt, clip_wnd* wnd)
@@ -1133,7 +1607,7 @@ void CheckFogPortalExtents(int roomnum, int portalnum)
 }
 
 g3Point Combined_portal_points[MAX_VERTS_PER_FACE * 5];
-void BuildRoomListSub(int start_room_num, clip_wnd* wnd, int depth)
+static void BuildRoomListSub(int start_room_num, clip_wnd* wnd, int depth)
 {
 	room* rp = &Rooms[start_room_num];
 	int i, t;
@@ -1173,7 +1647,6 @@ void BuildRoomListSub(int start_room_num, clip_wnd* wnd, int depth)
 		portal* pp = &rp->portals[t];
 		int croom = pp->croom;
 		ASSERT(croom >= 0);
-
 		// If we are an external room portalizing into another external room, then skip!
 		if ((rp->flags & RF_EXTERNAL) && (Rooms[croom].flags & RF_EXTERNAL))
 			continue;
@@ -1482,6 +1955,7 @@ static int Room_z_sort_func(const short* a, const short* b)
 //fills in Render_list & N_render_rooms
 void BuildRoomList(int start_room_num)
 {
+	EnsureRoomRenderClusters();
 	clip_wnd wnd;
 	room* rp = &Rooms[start_room_num];
 	//For now, render all connected rooms

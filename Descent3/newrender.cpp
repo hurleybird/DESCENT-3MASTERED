@@ -939,6 +939,7 @@ void NewRender_Render(vector& vieweye, matrix& vieworientation, int roomnum)
 void NewRender_InitNewLevel()
 {
 	RetainedRoomInvalidateAll();
+	RenderRoomClustersInitNewLevel();
 #ifndef NDEBUG
 	if (!rend_CanUseNewrender())
 		return;
