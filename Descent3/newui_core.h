@@ -92,6 +92,7 @@ void (*GetUICallback())();
 //	does a UI loop:  returns a result value for the current window in focus.
 int DoUI();
 void ui_RequestForceQuit();
+void ui_ClearForceQuitRequest();
 void ui_RequestScreenshotAndForceQuit(const char* filename);
 
 // does one frame of UI input (returns result.)

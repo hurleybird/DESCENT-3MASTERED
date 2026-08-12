@@ -599,6 +599,12 @@ void ui_RequestForceQuit()
 	UI_frame_result = NEWUIRES_FORCEQUIT;
 }
 
+void ui_ClearForceQuitRequest()
+{
+	if (UI_frame_result == NEWUIRES_FORCEQUIT)
+		UI_frame_result = -1;
+}
+
 void ui_RequestScreenshotAndForceQuit(const char* filename)
 {
 	UI_screenshot_and_quit_filename = filename;

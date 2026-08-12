@@ -195,7 +195,8 @@ bool GameSequencer()
 						MultiLeaveGame();
 					MultiDLLGameStarting = 0;
 					Multi_bail_ui_menu = false;
-					SetFunctionMode(MENU_MODE);				//	return to main menu
+					if (GetFunctionMode() != QUIT_MODE)
+						SetFunctionMode(MENU_MODE);			//	return to main menu
 					break;
 				}
 			}
@@ -447,7 +448,7 @@ bool DoLevelIntro()
 			return false;
 		}
 	}
-	return true;
+	return GetFunctionMode() != QUIT_MODE;
 }
 
 //Sets the current level for subsequent level loads, movies, or briefings
@@ -1379,7 +1380,8 @@ void RunGameMenu()
 		ResumeControls();
 		SetUICallback(NULL);
 		ui_SetFrameRateLimit(60);
-		Game_interface_mode = GAME_INTERFACE;
+		Game_interface_mode = ConsumeAltF4QuitConfirmationRequest() ?
+			GAME_QUIT_CONFIRM : GAME_INTERFACE;
 		NewUIWindow_alpha = 192;
 		Clear_screen = 4;
 	}

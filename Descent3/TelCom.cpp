@@ -163,7 +163,9 @@ void TelComMain(bool ingame, bool SelectShip)
 	if (ingame && Telcom_system.current_status == TS_MAINMENU)
 		return_to_main_menu = true;
 
-	while (Telcom_system.state != TCS_POWEROFF)
+	while (Telcom_system.state != TCS_POWEROFF &&
+		GetFunctionMode() != QUIT_MODE &&
+		!IsAltF4QuitConfirmationPending())
 	{
 		TelComEnableSystemKey(TCSYS_MAXKEYS, true);
 
@@ -278,7 +280,9 @@ void TelComMain(bool ingame, bool SelectShip)
 
 	//see if we should display the Single Player Ship Selection
 #if (!defined (DEMO)) && (!defined (OEM))
-	if (SelectShip && !Telcom_exit_to_mainmenu)
+	if (SelectShip && !Telcom_exit_to_mainmenu &&
+		GetFunctionMode() != QUIT_MODE &&
+		!IsAltF4QuitConfirmationPending())
 		TelComSingleShipSelect(&Telcom_system);
 #endif
 
@@ -291,7 +295,9 @@ void TelComMain(bool ingame, bool SelectShip)
 
 	float starttime = timer_GetTime();
 
-	while (timer_GetTime() - starttime < TCPE_TIME)
+	while (timer_GetTime() - starttime < TCPE_TIME &&
+		GetFunctionMode() != QUIT_MODE &&
+		!IsAltF4QuitConfirmationPending())
 	{
 		//Process all waiting events for the TelCom	(we may only want to handle this once a frame!)
 		TelComHandleAllEvents(&Telcom_system);
@@ -958,7 +964,12 @@ bool TelComMainMenu(tTelComInfo* tcs)
 
 		TelcomRenderScreen();
 		Descent->defer();
-		if (KEY_STATE(KEY_ESC))
+		if (IsAltF4QuitConfirmationPending())
+		{
+			Telcom_system.state = TCS_POWEROFF;
+			done = true;
+		}
+		else if (KEY_STATE(KEY_ESC))
 			Telcom_system.state = TCS_POWEROFF;
 
 		Sound_system.EndSoundFrame();
@@ -3506,7 +3517,12 @@ void TelComSingleShipSelect(tTelComInfo* tcs)
 
 		TelcomRenderScreen();
 		Descent->defer();
-		if (KEY_STATE(KEY_ESC))
+		if (IsAltF4QuitConfirmationPending())
+		{
+			tcs->state = TCS_POWEROFF;
+			done = true;
+		}
+		else if (KEY_STATE(KEY_ESC))
 			tcs->state = TCS_POWEROFF;
 
 		Sound_system.EndSoundFrame();

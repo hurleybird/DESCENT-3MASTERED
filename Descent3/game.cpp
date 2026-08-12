@@ -64,6 +64,8 @@ constexpr int D3M_VK_RMENU = 0xa5;
 
 extern bool Menu_interface_mode;
 
+static bool Alt_f4_quit_confirmation_pending = false;
+
 ///////////////////////////////////////////////////////////////////////////////
 //	Variables
 
@@ -403,8 +405,6 @@ bool ShouldConfirmAltF4QuitInGame()
 {
 	return GetFunctionMode() == GAME_MODE &&
 		GetGameState() == GAMESTATE_LVLPLAYING &&
-		Game_interface_mode == GAME_INTERFACE &&
-		!Menu_interface_mode &&
 		!Cinematic_inuse;
 }
 
@@ -413,8 +413,31 @@ void RequestAltF4QuitConfirmation()
 	if (!ShouldConfirmAltF4QuitInGame())
 		return;
 
-	Game_interface_mode = GAME_QUIT_CONFIRM;
+	if (Game_interface_mode == GAME_INTERFACE && !Menu_interface_mode)
+	{
+		Alt_f4_quit_confirmation_pending = false;
+		Game_interface_mode = GAME_QUIT_CONFIRM;
+	}
+	else
+	{
+		Alt_f4_quit_confirmation_pending = true;
+		ui_RequestForceQuit();
+	}
 	ddio_KeyFlush();
+}
+
+bool IsAltF4QuitConfirmationPending()
+{
+	return Alt_f4_quit_confirmation_pending;
+}
+
+bool ConsumeAltF4QuitConfirmationRequest()
+{
+	const bool pending = Alt_f4_quit_confirmation_pending;
+	Alt_f4_quit_confirmation_pending = false;
+	if (pending)
+		ui_ClearForceQuitRequest();
+	return pending;
 }
 
 void SetDisplayModeChangedCallback(void (*fn)())

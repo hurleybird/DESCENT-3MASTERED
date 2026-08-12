@@ -3982,6 +3982,8 @@ void EndGameMenu()
 		ResumeGame();
 
 	Menu_interface_mode = false;
+	if (ConsumeAltF4QuitConfirmationRequest())
+		Game_interface_mode = GAME_QUIT_CONFIRM;
 
 	ResumeControls();
 	SetUICallback(NULL);

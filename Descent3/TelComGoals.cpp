@@ -753,7 +753,12 @@ bool TelComGoalStatus(tTelComInfo* tcs)
 
 		TelcomRenderScreen();
 		Descent->defer();
-		if (KEY_STATE(KEY_ESC))
+		if (IsAltF4QuitConfirmationPending())
+		{
+			Telcom_system.state = TCS_POWEROFF;
+			done = true;
+		}
+		else if (KEY_STATE(KEY_ESC))
 			Telcom_system.state = TCS_POWEROFF;
 
 		Sound_system.EndSoundFrame();

@@ -269,7 +269,12 @@ bool PlayBriefing(tTelComInfo *tcs)
 
 		TelcomRenderScreen();
 		Descent->defer();
-		if(KEY_STATE(KEY_ESC))
+		if (GetFunctionMode() == QUIT_MODE || IsAltF4QuitConfirmationPending())
+		{
+			tcs->state = TCS_POWEROFF;
+			done = true;
+		}
+		else if(KEY_STATE(KEY_ESC))
 			tcs->state = TCS_POWEROFF;
 
 		Sound_system.EndSoundFrame();
@@ -410,7 +415,12 @@ bool PBLoopCallback()
 	TelcomRenderScreen();
 
 	Descent->defer();
-	if(KEY_STATE(KEY_ESC)){
+	if (GetFunctionMode() == QUIT_MODE || IsAltF4QuitConfirmationPending())
+	{
+		pb_tcs->state = TCS_POWEROFF;
+		ret = true;
+	}
+	else if(KEY_STATE(KEY_ESC)){
 		pb_tcs->state = TCS_POWEROFF;
 		ret = true;
 	}

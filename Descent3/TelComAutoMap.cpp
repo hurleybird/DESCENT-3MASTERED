@@ -240,7 +240,12 @@ bool TelComAutoMap(tTelComInfo* tcs)
 
 		TelcomRenderScreen();
 		Descent->defer();
-		if (KEY_STATE(KEY_ESC))
+		if (IsAltF4QuitConfirmationPending())
+		{
+			AM_tcs->state = TCS_POWEROFF;
+			done = true;
+		}
+		else if (KEY_STATE(KEY_ESC))
 			AM_tcs->state = TCS_POWEROFF;
 
 		//		if(KEY_STATE(KEY_TAB))

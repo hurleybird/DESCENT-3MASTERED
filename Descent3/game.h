@@ -60,6 +60,8 @@ bool IsAltEnterFullscreenKey(int key);
 bool IsAltF4QuitKey(int key);
 bool ShouldConfirmAltF4QuitInGame();
 void RequestAltF4QuitConfirmation();
+bool IsAltF4QuitConfirmationPending();
+bool ConsumeAltF4QuitConfirmationRequest();
 void SetDisplayModeChangedCallback(void (*fn)());
 void ForceFullGameWindowOnNextGameMode();
 
