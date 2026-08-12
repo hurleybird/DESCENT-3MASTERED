@@ -32,6 +32,9 @@ uniform int dynamic_light_directional[8];
 uniform int per_pixel_specular_enabled;
 uniform float ao_suppression;
 uniform float bloom_suppression;
+uniform float texture_bloom_protection;
+uniform float texture_bloom_range;
+uniform int texture_bloom_opaque_coverage;
 uniform int ao_class_value;
 uniform float ao_weight_value;
 uniform int ao_capture_weight_mode;
@@ -636,6 +639,16 @@ void main()
 			bloom_mask = mag;
 		#endif
 		float coverage = clamp(color.a, 0.0, 1.0);
+		if (texture_bloom_protection > 0.0 && texture_bloom_range > 0.0)
+		{
+			float view_distance = SoftParticleEyeDepth(gl_FragCoord.z);
+			float distance_weight = 1.0 - smoothstep(texture_bloom_range * 0.5,
+				texture_bloom_range, view_distance);
+			float protection_coverage = texture_bloom_opaque_coverage != 0 ?
+				1.0 : coverage;
+			bloom_mask = max(bloom_mask, texture_bloom_protection *
+				distance_weight * protection_coverage);
+		}
 		int room_ao_class = retained_room_lightmap_arrays != 0 ?
 			out_retained_ao_class : ao_class_value;
 		post_mask = vec4(room_amount * coverage, bloom_mask, 0.0,
@@ -823,6 +836,15 @@ void main()
 	else if (fog_composite_mode == 2)
 		ao_mask = max(ao_mask, room_fog_ao_suppression);
 	bloom_mask = clamp(bloom_suppression * (1.0 - pow(1.0 - suppression_alpha, 3.0)), 0.0, 1.0);
+	if (texture_bloom_protection > 0.0 && texture_bloom_range > 0.0)
+	{
+		float view_distance = SoftParticleEyeDepth(gl_FragCoord.z);
+		float distance_weight = 1.0 - smoothstep(texture_bloom_range * 0.5,
+			texture_bloom_range, view_distance);
+		float protection_coverage = texture_bloom_opaque_coverage != 0 ? 1.0 : suppression_alpha;
+		bloom_mask = max(bloom_mask, texture_bloom_protection *
+			distance_weight * protection_coverage);
+	}
 	
 	#if defined(USE_FOG)
 		float fog_start = clamp(1.0 - (1.0 / max(fog.start_dist, 0.0001)), 0.0, 1.0);

@@ -398,8 +398,6 @@ void SaveGameSettings()
 	Database->write("RS_bloom_enabled", Render_preferred_state.bloom_enabled);
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_threshold);
 	Database->write("RS_bloom_threshold", tempbuffer, strlen(tempbuffer) + 1);
-	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_intensity);
-	Database->write("RS_bloom_intensity", tempbuffer, strlen(tempbuffer) + 1);
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_spread);
 	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
 	Database->write("RS_ao_enabled", Render_preferred_state.ao_enabled);
@@ -611,8 +609,10 @@ void LoadGameSettings()
 	Render_preferred_state.vsync = false;
 	Render_vrr_diagnostics = FindArg("-vrr-status") != 0;
 	Render_preferred_state.bloom_threshold = 0.75f;
-	Render_preferred_state.bloom_intensity = 0.75f;
+	Render_preferred_state.bloom_intensity = 1.25f;
 	Render_preferred_state.bloom_spread = 0.75f;
+	Render_preferred_state.bloom_texture_protection = 0.75f;
+	Render_preferred_state.bloom_texture_protection_range = 150.0f;
 	Render_preferred_state.ao_enabled = true;
 	Render_preferred_state.ao_resolution = AO_RESOLUTION_FULL;
 	Render_preferred_state.ao_sample_count = 32;
@@ -914,11 +914,6 @@ void LoadGameSettings()
 	{
 		Render_preferred_state.bloom_threshold = ConfigNormalizeBloomThreshold((float)strtod(tempbuffer, &stoptemp));
 	}
-	templen = TEMPBUFFERSIZE;
-	if (Database->read("RS_bloom_intensity", tempbuffer, &templen))
-	{
-		Render_preferred_state.bloom_intensity = ConfigNormalizeBloomIntensity((float)strtod(tempbuffer, &stoptemp));
-	}
 	int bloom_threshold_arg = FindArg("-bloomthreshold");
 	if (!bloom_threshold_arg)
 		bloom_threshold_arg = FindArg("-bloom-threshold");
@@ -932,6 +927,28 @@ void LoadGameSettings()
 	const char* bloom_intensity_value = bloom_intensity_arg ? GetArg(bloom_intensity_arg + 1) : nullptr;
 	if (bloom_intensity_value && bloom_intensity_value[0])
 		Render_preferred_state.bloom_intensity = ConfigNormalizeBloomIntensity((float)strtod(bloom_intensity_value, &stoptemp));
+
+	int bloom_protection_arg = FindArg("-bloomprotection");
+	if (!bloom_protection_arg)
+		bloom_protection_arg = FindArg("-bloom-protection");
+	const char* bloom_protection_value = bloom_protection_arg ? GetArg(bloom_protection_arg + 1) : nullptr;
+	if (bloom_protection_value && bloom_protection_value[0])
+	{
+		float protection = (float)strtod(bloom_protection_value, &stoptemp);
+		Render_preferred_state.bloom_texture_protection =
+			protection < 0.0f ? 0.0f : (protection > 1.0f ? 1.0f : protection);
+	}
+
+	int bloom_range_arg = FindArg("-bloomprotectionrange");
+	if (!bloom_range_arg)
+		bloom_range_arg = FindArg("-bloom-protection-range");
+	const char* bloom_range_value = bloom_range_arg ? GetArg(bloom_range_arg + 1) : nullptr;
+	if (bloom_range_value && bloom_range_value[0])
+	{
+		float range = (float)strtod(bloom_range_value, &stoptemp);
+		Render_preferred_state.bloom_texture_protection_range =
+			range < 0.0f ? 0.0f : (range > 500.0f ? 500.0f : range);
+	}
 
 	Database->read("RS_ao_enabled", &Render_preferred_state.ao_enabled);
 	tempint = Render_preferred_state.ao_resolution;

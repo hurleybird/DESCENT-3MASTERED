@@ -190,8 +190,8 @@ float ConfigNormalizeBloomIntensity(float intensity)
 {
 	if (intensity < 0.0f)
 		return 0.0f;
-	if (intensity > 1.0f)
-		return 1.0f;
+	if (intensity > 4.0f)
+		return 4.0f;
 	return intensity;
 }
 
@@ -2622,7 +2622,7 @@ void OptionsMenu()
 			menu.AddSimpleOption(IDV_CCONFIG, TXT_OPTCONFIG);
 			menu.AddSimpleOption(UID_CANCEL, TXT_DONE);
 
-			menu.SetCurrentOption(IDV_VCONFIG);
+			menu.SetCurrentOption(FindArg("-capture-options-detail") ? IDV_DCONFIG : IDV_VCONFIG);
 
 			DoWaitMessage(false);
 			ui_SuppressLeftMouseUntilRelease();

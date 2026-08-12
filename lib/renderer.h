@@ -326,6 +326,10 @@ struct renderer_preferred_state
 	float bloom_threshold;
 	float bloom_intensity;
 	float bloom_spread;
+	// Selected luminous display materials suppress bloom nearby, then fade their
+	// protection with distance so small far-field highlights still bloom.
+	float bloom_texture_protection;
+	float bloom_texture_protection_range;
 
 	bool ao_enabled;       //Master AO on/off
 	ubyte ao_resolution;   //ao_resolution enum

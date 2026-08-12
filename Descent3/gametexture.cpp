@@ -291,6 +291,49 @@ void FreeStaticProceduralsForTexture(int handle)
 // If the texture is animated, returns framenum mod num_of_frames in the animation
 // Force is to force the evaluation of a procedural
 // Also figures in gametime
+static bool BloomProtectedTextureName(const char* name)
+{
+	static const char* const names[] = {
+		"computerhubmonitors2", "securmonitor2",
+		"Reddata", "Reddatascrolling copy", "Bluedatascrollup", "Reddataup",
+		"Notready", "Online", "Offline", "Ready1", "Datlinckcenter",
+		"Highvoltageandptmc", "Storageandhighheat", "Dockingbaysandarmory",
+		"Maintenanceandlevel3", "Levels1and2", "Level4and5",
+		"P-MonClampClosed", "P-MonClampMalfu", "P-MonClampOpen",
+		"P-MonCoolingDis", "P-MonCoolingEng", "P-MonMayday",
+		"P-MonTempAbov", "P-MonTempBelo", "P-MonTempCrit", "P-MonTempNorm",
+		"Bigmonitor", "Computerterminal1",
+		"Nano1", "NanoStat", "CEDUpSucOn", "CEDUploadAnti", "Nano4", "Nano3", "Nano2",
+		"Nov MAXSec", "Nov MedSec", "Nov MinSec",
+		"PhobBackWait", "PhobBioWarn", "PhobEmerEvac", "PhobPrisLock",
+		"PhobMonCHEMSPIL", "PhobMonEVACOMP", "PhobMonUNLOCKED",
+		"DataBoss", "DataCED", "DataClasLog", "DataDrav", "DataLab", "DataSwit",
+		"DataCrash", "DataPlogo", "DataLogon", "DataSecAlrt", "DataMatDef",
+		"DataScroll", "DataPani", "PhobMonAccepted", "PhobMonInvWait",
+		"PhobMonInvalidAlert", "PhobMonInsertPas", "PhobMonDataScroll", "PhobMonNOVAKlogo",
+		"RedAMon99", "RedAMon75", "RedAMon50", "RedAMon25", "Ed", "Snet",
+		"Merc3MonCroal", "Merc3MonDownL", "Merc3MonLock", "Merc3MonLogo",
+		"Merc3MonNeed", "Merc3MonWaitN", "Merc3MonWaitS", "Clear Red Data Window",
+		"OHQ_Monitor01", "OHQ_Monitor02", "OHQ_Monitor03", "OHQ_Monitor04",
+		"OHQ_Monitor05", "OHQ_DebugMonitor", "M02_Ready", "M02_Scanning",
+		"M02_Cleared", "M02_Aborted", "M06_ForcefieldDisabled", "M06_ForcefieldEnabled",
+		"PTMCminingmanage", "PTMCLogoON", "PTMClogooff", "M06_FailsafeMonitor",
+		"AlienWhiteLight"
+	};
+	for (const char* candidate : names)
+		if (!stricmp(name, candidate))
+			return true;
+	return false;
+}
+
+static bool BloomProtectedBitmaps[MAX_BITMAPS] = {};
+
+bool IsBloomProtectedTextureBitmap(int bitmap_handle)
+{
+	return bitmap_handle >= 0 && bitmap_handle < MAX_BITMAPS &&
+		BloomProtectedBitmaps[bitmap_handle];
+}
+
 int GetTextureBitmap(int handle, int framenum, bool force)
 {
 	int src_bitmap;
@@ -378,7 +421,11 @@ int GetTextureBitmap(int handle, int framenum, bool force)
 			src_bitmap = GameTextures[handle].procedural->procedural_bitmap;
 	}
 
-	return GetHighResolutionTextureBitmap(handle, src_bitmap);
+	const int final_bitmap = GetHighResolutionTextureBitmap(handle, src_bitmap);
+	if (final_bitmap >= 0 && final_bitmap < MAX_BITMAPS)
+		BloomProtectedBitmaps[final_bitmap] =
+			BloomProtectedTextureName(GameTextures[handle].name);
+	return final_bitmap;
 
 }
 

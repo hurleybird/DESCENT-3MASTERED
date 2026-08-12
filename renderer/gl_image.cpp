@@ -19,6 +19,7 @@
 #include <string.h>
 #include "gl_local.h"
 #include "gameloop.h"
+#include "gametexture.h"
 
 #ifndef GL_UNSIGNED_SHORT_5_5_5_1
 #define GL_UNSIGNED_SHORT_5_5_5_1 0x8034
@@ -1293,6 +1294,7 @@ void GL4Renderer::SetFrameBufferCopyState(bool state)
 
 void GL4Renderer::BindBitmap(int handle)
 {
+	SetBloomProtectionBitmap(handle);
 	MakeBitmapCurrent(handle, MAP_TYPE_BITMAP, 0);
 	MakeWrapTypeCurrent(handle, MAP_TYPE_BITMAP, 0);
 	MakeFilterTypeCurrent(handle, MAP_TYPE_BITMAP, 0);

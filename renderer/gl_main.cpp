@@ -1616,6 +1616,11 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 		bool ao_buffers_changed =
 			pref_state->ao_enabled != old_state.ao_enabled ||
 			pref_state->ao_resolution != old_state.ao_resolution;
+		if (pref_state->bloom_texture_protection != old_state.bloom_texture_protection ||
+			pref_state->bloom_texture_protection_range != old_state.bloom_texture_protection_range)
+		{
+			legacy_draw_uniforms_dirty = true;
+		}
 
 		if (framebuffer_state_changed)
 		{

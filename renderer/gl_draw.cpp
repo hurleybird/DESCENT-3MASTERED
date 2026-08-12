@@ -21,6 +21,7 @@
 #include "gameloop.h"
 #include "config.h"
 #include "HardwareInternal.h"
+#include "gametexture.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -278,7 +279,8 @@ bool GL4Renderer::UsesExactRoomFogMultiply() const
 bool GL4Renderer::CurrentDrawNeedsPostMask(bool include_ao_class) const
 {
 	if (include_ao_class || ao_suppression_draw_value > 0.0f ||
-		bloom_suppression_draw_value > 0.0f || room_fog_overlay)
+		bloom_suppression_draw_value > 0.0f ||
+		texture_bloom_protection_draw_value > 0.0f || room_fog_overlay)
 	{
 		return true;
 	}
@@ -303,6 +305,37 @@ bool GL4Renderer::CurrentDrawNeedsPostMask(bool include_ao_class) const
 	default:
 		return true;
 	}
+}
+
+void GL4Renderer::SetBloomProtectionBitmap(int handle)
+{
+	const float value = IsBloomProtectedTextureBitmap(handle) ? 1.0f : 0.0f;
+	if (texture_bloom_protection_draw_value != value)
+	{
+		texture_bloom_protection_draw_value = value;
+		legacy_draw_uniforms_dirty = true;
+	}
+
+	// Mesh pipelines bind their shader before their material bitmap.  Update the
+	// active program immediately as well as dirtying the legacy shader cache, so
+	// both submission paths observe the same material state.
+	ShaderProgram* current_shader = ShaderProgram::Current();
+	if (current_shader)
+	{
+		GLint protection_uniform = current_shader->FindUniform("texture_bloom_protection");
+		if (protection_uniform != -1)
+			glUniform1f(protection_uniform,
+				value * OpenGL_preferred_state.bloom_texture_protection);
+		GLint range_uniform = current_shader->FindUniform("texture_bloom_range");
+		if (range_uniform != -1)
+			glUniform1f(range_uniform,
+				OpenGL_preferred_state.bloom_texture_protection_range);
+		GLint coverage_uniform = current_shader->FindUniform("texture_bloom_opaque_coverage");
+		if (coverage_uniform != -1)
+			glUniform1i(coverage_uniform, OpenGL_state.cur_alpha_type == AT_ALWAYS ? 1 : 0);
+	}
+	if (value > 0.0f)
+		post_protection_mask_dirty = true;
 }
 
 void GL4Renderer::SetCurrentFogCompositeMode(int mode)
@@ -1626,6 +1659,9 @@ void GL4Renderer::SetDrawDefaults()
 		drawshader_per_pixel_specular_enabled_uniforms[i] = drawshaders[i].FindUniform("per_pixel_specular_enabled");
 		drawshader_ao_suppression_uniforms[i] = drawshaders[i].FindUniform("ao_suppression");
 		drawshader_bloom_suppression_uniforms[i] = drawshaders[i].FindUniform("bloom_suppression");
+		drawshader_texture_bloom_protection_uniforms[i] = drawshaders[i].FindUniform("texture_bloom_protection");
+		drawshader_texture_bloom_range_uniforms[i] = drawshaders[i].FindUniform("texture_bloom_range");
+		drawshader_texture_bloom_opaque_coverage_uniforms[i] = drawshaders[i].FindUniform("texture_bloom_opaque_coverage");
 		drawshader_ao_class_uniforms[i] = drawshaders[i].FindUniform("ao_class_value");
 		drawshader_ao_weight_uniforms[i] = drawshaders[i].FindUniform("ao_weight_value");
 		drawshader_ao_capture_weight_mode_uniforms[i] = drawshaders[i].FindUniform("ao_capture_weight_mode");
@@ -1803,6 +1839,15 @@ void GL4Renderer::SelectDrawShader(bool retained_setup)
 		glUniform1f(drawshader_ao_suppression_uniforms[shader_index], ao_suppression_draw_value);
 	if (drawshader_bloom_suppression_uniforms[shader_index] != -1)
 		glUniform1f(drawshader_bloom_suppression_uniforms[shader_index], bloom_suppression_draw_value);
+	if (drawshader_texture_bloom_protection_uniforms[shader_index] != -1)
+		glUniform1f(drawshader_texture_bloom_protection_uniforms[shader_index],
+			texture_bloom_protection_draw_value * OpenGL_preferred_state.bloom_texture_protection);
+	if (drawshader_texture_bloom_range_uniforms[shader_index] != -1)
+		glUniform1f(drawshader_texture_bloom_range_uniforms[shader_index],
+			OpenGL_preferred_state.bloom_texture_protection_range);
+	if (drawshader_texture_bloom_opaque_coverage_uniforms[shader_index] != -1)
+		glUniform1i(drawshader_texture_bloom_opaque_coverage_uniforms[shader_index],
+			OpenGL_state.cur_alpha_type == AT_ALWAYS ? 1 : 0);
 	if (drawshader_ao_class_uniforms[shader_index] != -1)
 		glUniform1i(drawshader_ao_class_uniforms[shader_index], ao_class_draw_value);
 	if (drawshader_ao_weight_uniforms[shader_index] != -1)
@@ -1836,6 +1881,7 @@ void GL4Renderer::SelectDrawShader(bool retained_setup)
 			OpenGL_state.cur_light_state != LS_PHONG &&
 			cockpit_backing_effect.enabled == 0 &&
 			ao_suppression_draw_value == 0.0f && bloom_suppression_draw_value == 0.0f &&
+			texture_bloom_protection_draw_value == 0.0f &&
 			!CurrentDrawWritesPixelMotionVectors() && !CurrentDrawWritesMotionObjectId();
 		glUniform1i(drawshader_fast_additive_bitmap_uniforms[shader_index],
 			fast_additive_bitmap ? 1 : 0);
@@ -1988,6 +2034,7 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 	float xscalar = 1;
 	float yscalar = 1;
 
+	SetBloomProtectionBitmap(OpenGL_state.cur_texture_quality != 0 ? handle : -1);
 	SelectDrawShader();
 
 	if (OpenGL_state.cur_light_state == LS_FLAT_GOURAUD || OpenGL_state.cur_texture_type == 0)
@@ -2269,6 +2316,7 @@ void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item 
 	float xscalar = 1;
 	float yscalar = 1;
 
+	SetBloomProtectionBitmap(OpenGL_state.cur_texture_quality != 0 ? handle : -1);
 	SelectDrawShader();
 
 	if (OpenGL_state.cur_light_state == LS_FLAT_GOURAUD || OpenGL_state.cur_texture_type == 0)
@@ -2410,6 +2458,7 @@ bool GL4Renderer::DrawWeatherQuadBatch(int handle, const renderer_weather_quad *
 	if (!items || count <= 0 || OpenGL_state.cur_texture_quality == 0)
 		return false;
 
+	SetBloomProtectionBitmap(handle);
 	SelectDrawShader();
 	MakeBitmapCurrent(handle, map_type, 0);
 	MakeWrapTypeCurrent(handle, map_type, 0);
@@ -3939,6 +3988,7 @@ void GL4Renderer::DrawSpecialLineBatch(const renderer_line_batch_item *items, in
 	ubyte fg = GR_COLOR_GREEN(OpenGL_state.cur_color);
 	ubyte fb = GR_COLOR_BLUE(OpenGL_state.cur_color);
 
+	SetBloomProtectionBitmap(-1);
 	SelectDrawShader();
 
 	static std::vector<gl_vertex> vertices;

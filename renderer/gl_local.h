@@ -341,6 +341,9 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_per_pixel_specular_enabled_uniforms[DRAW_SHADER_COUNT] = {};
 	GLint drawshader_ao_suppression_uniforms[DRAW_SHADER_COUNT] = {};
 	GLint drawshader_bloom_suppression_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_texture_bloom_protection_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_texture_bloom_range_uniforms[DRAW_SHADER_COUNT] = {};
+	GLint drawshader_texture_bloom_opaque_coverage_uniforms[DRAW_SHADER_COUNT] = {};
 	GLint drawshader_ao_class_uniforms[DRAW_SHADER_COUNT] = {};
 	GLint drawshader_ao_weight_uniforms[DRAW_SHADER_COUNT] = {};
 	GLint drawshader_ao_capture_weight_mode_uniforms[DRAW_SHADER_COUNT] = {};
@@ -385,6 +388,7 @@ class GL4Renderer : public IRenderer
 	bool retained_far_clip_active = false;
 	float ao_suppression_draw_value = 0.0f;
 	float bloom_suppression_draw_value = 0.0f;
+	float texture_bloom_protection_draw_value = 0.0f;
 	int ao_class_draw_value = 0;
 	float ao_weight_draw_value = 1.0f;
 	renderer_cockpit_backing_effect cockpit_backing_effect = {};
@@ -521,7 +525,7 @@ class GL4Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, AO_RESOLUTION_HALF, 32, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.9f, 0.03f, 128.0f, false, 0.5f, 0.5f, 0.5f, 1.0f, RENDERER_MOTION_VECTOR_OFF, false, 0.0f, false, 1.0f, 1.0f / 20.0f, 0.20f, 2.0f, 24, 1.5f, 1.0f, 0.0f, 0.0f, 0.0f, 9, 0.08f, 2.0f };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, 1.0f, 150.0f, false, AO_RESOLUTION_HALF, 32, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.9f, 0.03f, 128.0f, false, 0.5f, 0.5f, 0.5f, 1.0f, RENDERER_MOTION_VECTOR_OFF, false, 0.0f, false, 1.0f, 1.0f / 20.0f, 0.20f, 2.0f, 24, 1.5f, 1.0f, 0.0f, 0.0f, 0.0f, 9, 0.08f, 2.0f };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -560,6 +564,7 @@ private:
 	int CopyVertices(const gl_vertex* vertices, int numvertices);
 	void SetDrawDefaults();
 	void SelectDrawShader(bool retained_setup = false);
+	void SetBloomProtectionBitmap(int handle);
 	bool UsesExactRoomFogMultiply() const;
 	bool CurrentDrawNeedsPostMask(bool include_ao_class) const;
 	void SetCurrentFogCompositeMode(int mode);
