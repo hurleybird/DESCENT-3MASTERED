@@ -651,7 +651,9 @@ void main()
 		}
 		int room_ao_class = retained_room_lightmap_arrays != 0 ?
 			out_retained_ao_class : ao_class_value;
-		post_mask = vec4(room_amount * coverage, bloom_mask, 0.0,
+		float retained_ao_mask = max(room_amount * coverage,
+			ao_suppression * coverage);
+		post_mask = vec4(retained_ao_mask, bloom_mask, 0.0,
 			float(clamp(room_ao_class, 0, 255)) / 255.0);
 		return;
 	}

@@ -139,14 +139,21 @@ void DrawPostrenderFace(int roomnum, int facenum, bool change_z)
 	}
 	const bool material_fog = BeginRoomMaterialFog(rp, &Viewer_eye,
 		Viewer_roomnum, Room_light_val);
+	const texture& face_texture = GameTextures[fp->tmap];
+	const bool translucent_water = (face_texture.flags & TF_WATER) != 0 &&
+		face_texture.alpha < 1.0f;
 
 	// Render!
 	if (change_z)
 		rend_SetZBufferWriteMask(0);
+	if (translucent_water)
+		rend_SetAOSuppression(1.0f);
 	{
 		PERF_MARKER_SCOPE("PostRenderFace.RenderFace");
 		RenderFace(rp, facenum);
 	}
+	if (translucent_water)
+		rend_SetAOSuppression(0.0f);
 
 	// Render any effects for this face
 	if (Num_specular_faces_to_render > 0)
