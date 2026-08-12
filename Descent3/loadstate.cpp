@@ -248,8 +248,9 @@ START_VERIFY_SAVEFILE(fp);
 	curlevel = (ushort)cf_ReadShort(fp);
 	cf_ReadString(path, sizeof(path), fp);
 
-	if( (curlevel > 4) && (strcmpi(path,"d3.mn3")==0) )
-		strcpy(path,"d3_2.mn3");
+	const char *campaign_file = GetMainCampaignFileForLevel(path, curlevel);
+	if (campaign_file)
+		strcpy(path, campaign_file);
 
 //	must load mission and initialize level before reading in other data.
 	retval = LGSMission(path, curlevel);

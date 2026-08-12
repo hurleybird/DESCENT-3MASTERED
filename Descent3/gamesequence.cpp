@@ -313,36 +313,26 @@ void CheckHogfile()
 {
 	char hogpath[_MAX_PATH * 2];
 	mprintf((0, "Checking to see if we need to open another hog off of disk or CDROM\n"));
-
-	if (Current_mission.filename && (strcmpi(Current_mission.filename, "d3.mn3") == 0) && (Current_mission.cur_level > 4))
+	const char *required_file = GetMainCampaignFileForLevel(
+		Current_mission.filename, Current_mission.cur_level);
+	if (required_file && strcmpi(Current_mission.filename, required_file))
 	{
-		//close the mission hog file and open d3_2.mn3
 		mn3_Close();
-		char* hogp = GetMultiCDPath("d3_2.mn3");
-		if (hogp)
+		char* hogp;
+		if (IsOsirisHostTestCampaign(required_file))
 		{
-			strcpy(hogpath, hogp);
-			mn3_Open(hogpath);
-			mem_free(Current_mission.filename);
-			Current_mission.filename = mem_strdup("d3_2.mn3");
+			ddio_MakePath(hogpath, D3MissionsDir, required_file, NULL);
+			hogp = hogpath;
 		}
 		else
 		{
-			SetFunctionMode(MENU_MODE);
+			hogp = GetMultiCDPath((char *)required_file);
 		}
-	}
-	else if (Current_mission.filename && (strcmpi(Current_mission.filename, "d3_2.mn3") == 0) && (Current_mission.cur_level <= 4))
-	{
-		//Part 2 of the mission is d3_2.mn3
-		//close the mission hog file and open d3.mn3
-		mn3_Close();
-		char* hogp = GetMultiCDPath("d3.mn3");
 		if (hogp)
 		{
-			strcpy(hogpath, hogp);
-			mn3_Open(hogpath);
+			mn3_Open(hogp);
 			mem_free(Current_mission.filename);
-			Current_mission.filename = mem_strdup("d3.mn3");
+			Current_mission.filename = mem_strdup(required_file);
 		}
 		else
 		{
@@ -699,44 +689,9 @@ void StartLevel()
 //Loads a level and starts everything up
 bool LoadAndStartCurrentLevel()
 {
-	char hogpath[_MAX_PATH * 2];
 	//This is a bit redundant because we just did it in most cases, but we need to be sure that it always happens,
 	//and this code is here for weird systems, like save/load and demo, etc.
-	if (Current_mission.filename && (strcmpi(Current_mission.filename, "d3.mn3") == 0) && (Current_mission.cur_level > 4))
-	{
-		//close the mission hog file and open d3_2.mn3
-		mn3_Close();
-		char* hogp = GetMultiCDPath("d3_2.mn3");
-		if (hogp)
-		{
-			strcpy(hogpath, hogp);
-			mn3_Open(hogpath);
-			mem_free(Current_mission.filename);
-			Current_mission.filename = mem_strdup("d3_2.mn3");
-		}
-		else
-		{
-			SetFunctionMode(MENU_MODE);
-		}
-	}
-	else if (Current_mission.filename && (strcmpi(Current_mission.filename, "d3_2.mn3") == 0) && (Current_mission.cur_level <= 4))
-	{
-		//Part 2 of the mission is d3_2.mn3
-		//close the mission hog file and open d3.mn3
-		mn3_Close();
-		char* hogp = GetMultiCDPath("d3.mn3");
-		if (hogp)
-		{
-			strcpy(hogpath, hogp);
-			mn3_Open(hogpath);
-			mem_free(Current_mission.filename);
-			Current_mission.filename = mem_strdup("d3.mn3");
-		}
-		else
-		{
-			SetFunctionMode(MENU_MODE);
-		}
-	}
+	CheckHogfile();
 
 	//	load the level. if fails, then bail out
 	//ShowProgressScreen (TXT_LOADINGLEVEL);

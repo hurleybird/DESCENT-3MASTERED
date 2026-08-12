@@ -696,7 +696,8 @@ static int count_missions_worker(const char* pathname, const char* wildcard)
 			char* name;
 			ddio_MakePath(fullpath, pathname, filename, NULL);
 
-			if (strcmpi("d3_2.mn3", filename) == 0)
+			if (strcmpi("d3_2.mn3", filename) == 0 ||
+				strcmpi("d3_32_2.mn3", filename) == 0)
 				continue;
 			//mprintf((0, "Mission path:%s\n", fullpath)); //don't know the thread safetiness of mprintf atm
 			name = GetMissionName(filename);
@@ -747,7 +748,8 @@ static int generate_mission_listbox_worker(newuiListBox* lb, int n_maxfiles, cha
 			if (n_maxfiles > c)
 			{
 				ddio_MakePath(fullpath, pathname, filename, NULL);
-				if (strcmpi("d3_2.mn3", filename) == 0)
+				if (strcmpi("d3_2.mn3", filename) == 0 ||
+					strcmpi("d3_32_2.mn3", filename) == 0)
 					continue;
 				if (GetMissionInfo(filename, &msninfo) && msninfo.name[0] && msninfo.single)
 				{

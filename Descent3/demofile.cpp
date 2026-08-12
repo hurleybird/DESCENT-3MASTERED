@@ -158,9 +158,10 @@ void DemoWriteHeader()
 	//Next is the version
 	cf_WriteShort(Demo_cfp, GAMESAVE_VERSION);
 	//Write the mission filename
-	if (Current_mission.filename && (strcmpi("d3_2.mn3", Current_mission.filename) == 0))
+	const char *campaign_file = GetMainCampaignFileForLevel(Current_mission.filename, 1);
+	if (campaign_file)
 	{
-		cf_WriteString(Demo_cfp, "d3.mn3");
+		cf_WriteString(Demo_cfp, campaign_file);
 	}
 	else
 	{

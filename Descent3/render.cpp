@@ -2991,6 +2991,9 @@ struct SpecularFieldInfluence
 	float color_weight;
 	float influence;
 	vector linear_color;
+	vector reflected_sum;
+	float reflected_weight;
+	vector reflected_direction;
 };
 
 struct SpecularFieldCandidate
@@ -3100,6 +3103,19 @@ static std::vector<SpecularFieldInfluence> SpecularEvaluateFieldInfluences(
 			vector{ sample.r, sample.g, sample.b } * color_weight;
 		output.color_weight += color_weight;
 		output.influence = std::max(output.influence, influence);
+
+		vector donor_incident = sample.position - sample.source_center;
+		if (vm_NormalizeVector(&donor_incident) > 0.0001f)
+		{
+			const float normal_dot = donor_incident * sample.normal;
+			vector donor_reflected =
+				donor_incident - sample.normal * (2.0f * normal_dot);
+			if (vm_NormalizeVector(&donor_reflected) > 0.0001f)
+			{
+				output.reflected_sum += donor_reflected * color_weight;
+				output.reflected_weight += color_weight;
+			}
+		}
 	}
 
 	for (SpecularFieldInfluence& influence : influences)
@@ -3109,6 +3125,9 @@ static std::vector<SpecularFieldInfluence> SpecularEvaluateFieldInfluences(
 			vector{ 0.0f, 0.0f, 0.0f };
 		influence.linear_color =
 			average_color * sqrt(influence.influence);
+		influence.reflected_direction = influence.reflected_sum;
+		if (vm_NormalizeVector(&influence.reflected_direction) <= 0.0001f)
+			influence.reflected_direction = { 0.0f, 0.0f, 0.0f };
 	}
 	std::sort(influences.begin(), influences.end(),
 		[](const SpecularFieldInfluence& a,
@@ -3159,7 +3178,9 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set,
 			target_position - field.exact_source_centers[influence.source_id];
 		if (vm_NormalizeVector(&incident) <= 0.0001f)
 			continue;
-		const vector toward_source = -incident;
+		const vector reflected = influence.reflected_direction;
+		if ((reflected * reflected) <= 0.00000001f)
+			continue;
 
 		float assignment[MAX_SPECULARS] = {};
 		float maximum_dot = -1.0f;
@@ -3167,7 +3188,7 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set,
 		{
 			if (!reference_valid[family])
 				continue;
-			assignment[family] = toward_source * reference_directions[family];
+			assignment[family] = reflected * reference_directions[family];
 			maximum_dot = std::max(maximum_dot, assignment[family]);
 		}
 		float assignment_sum = 0.0f;
@@ -3202,11 +3223,10 @@ static void SpecularBuildFieldSourceSet(PrecomputedSpecularSourceSet& set,
 			const float center_weight =
 				direction_weight * family_assignment;
 			family_center_sums[family] +=
-				field.exact_source_centers[influence.source_id] *
-				center_weight;
+				(target_position + reflected * 100.0f) * center_weight;
 			family_center_weights[family] += center_weight;
 			incident_sums[family] +=
-				incident * center_weight;
+				reflected * center_weight;
 			incident_weights[family] +=
 				center_weight;
 		}
@@ -3702,9 +3722,15 @@ void PrecomputeMineSpecularSources()
 				const float face_weight = info.field_weight;
 				for (int i = 0; i < source_count; i++)
 				{
-					vector direction = sources[i].bright_center - info.basis.center;
-					const float source_distance = vm_NormalizeVector(&direction);
+					vector toward_source = sources[i].bright_center - info.basis.center;
+					const float source_distance = vm_NormalizeVector(&toward_source);
 					if (source_distance <= 0.1f)
+						continue;
+					vector incident = -toward_source;
+					const float normal_dot = incident * info.basis.normal;
+					vector direction =
+						incident - info.basis.normal * (2.0f * normal_dot);
+					if (vm_NormalizeVector(&direction) <= 0.0001f)
 						continue;
 
 					float r, g, b;

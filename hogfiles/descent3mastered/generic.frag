@@ -237,6 +237,14 @@ vec3 ApplyPerPixelSpecular(vec3 lightmap_color)
 			(out_field_specular_colors[i].xyz /
 				max(out_field_specular_perspective_scale, 0.0001)) :
 			specular_data.speculars[i].color.xyz;
+		if (specular_data.pad0 > 0.5)
+		{
+			vec3 reflected = normalize(light_position - view_position);
+			float dotp = max(dot(normalize(-view_position), reflected), 0.0);
+			specular_color += pow(dotp, specular_exponent) *
+				light_color * source_weight;
+			continue;
+		}
 		specular_color += SpecularFromIncident(view_position, normal, view_position - light_position,
 			light_color, source_weight, specular_exponent);
 	}

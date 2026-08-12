@@ -38,6 +38,7 @@
 #include "demofile.h"
 #include "osiris_bridge_client.h"
 #include "args.h"
+#include "Mission.h"
 
 #ifdef _DEBUG
 #define OSIRISDEBUG
@@ -638,7 +639,8 @@ int _get_full_path_to_module(char* module_name, char* fullpath, char* basename)
 
 		// The bridge test harness can deliberately select the mission's retail
 		// Win32 copy even when a native first-party module was extracted earlier.
-		if (FindArg("-osiris-force-bridge"))
+		if (FindArg("-osiris-force-bridge") ||
+			IsOsirisHostTestCampaign(Current_mission.filename))
 		{
 			for (int i = MAX_EXTRACTED_SCRIPTS - 1; i >= 0; --i)
 			{

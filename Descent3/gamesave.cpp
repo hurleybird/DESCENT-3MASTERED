@@ -628,9 +628,10 @@ bool SaveGameState(const char* pathname, const char* description)
 	//	write out mission level information
 	cf_WriteShort(fp, (short)Current_mission.cur_level);
 
-	if (Current_mission.filename && (strcmpi("d3_2.mn3", Current_mission.filename) == 0))
+	const char *campaign_file = GetMainCampaignFileForLevel(Current_mission.filename, 1);
+	if (campaign_file)
 	{
-		cf_WriteString(fp, "d3.mn3");
+		cf_WriteString(fp, campaign_file);
 	}
 	else
 	{

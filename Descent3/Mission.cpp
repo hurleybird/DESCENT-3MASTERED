@@ -65,6 +65,34 @@ char D3MissionsDir[PSPATHNAME_LEN];
 extern int Times_game_restored;
 extern msn_urls Net_msn_URLs;
 
+static const char *D3_MAIN_CAMPAIGN_PART1 = "d3.mn3";
+static const char *D3_MAIN_CAMPAIGN_PART2 = "d3_2.mn3";
+static const char *D3_OSIRIS_HOST_PART1 = "d3_32.mn3";
+static const char *D3_OSIRIS_HOST_PART2 = "d3_32_2.mn3";
+static const char *D3_OSIRIS_HOST_NAME = "Descent 3 (32-bit OSIRIS Host)";
+
+bool IsOsirisHostTestCampaign(const char *mission_filename)
+{
+	return mission_filename &&
+		(!strcmpi(mission_filename, D3_OSIRIS_HOST_PART1) ||
+		 !strcmpi(mission_filename, D3_OSIRIS_HOST_PART2));
+}
+
+const char *GetMainCampaignFileForLevel(const char *mission_filename, int level)
+{
+	if (!mission_filename)
+		return NULL;
+
+	if (IsOsirisHostTestCampaign(mission_filename))
+		return level > 4 ? D3_OSIRIS_HOST_PART2 : D3_OSIRIS_HOST_PART1;
+
+	if (!strcmpi(mission_filename, D3_MAIN_CAMPAIGN_PART1) ||
+		!strcmpi(mission_filename, D3_MAIN_CAMPAIGN_PART2))
+		return level > 4 ? D3_MAIN_CAMPAIGN_PART2 : D3_MAIN_CAMPAIGN_PART1;
+
+	return NULL;
+}
+
 //	---------------------------------------------------------------------------
 //	Function prototypes
 //	---------------------------------------------------------------------------
@@ -95,7 +123,8 @@ inline char* MN3_TO_MSN_NAME(const char* mn3name, char* msnname)
 	char fname[PSFILENAME_LEN];
 	ddio_SplitPath(mn3name, NULL, fname, NULL);
 
-	if (stricmp(fname, "d3_2") == 0)
+	if (stricmp(fname, "d3_2") == 0 || stricmp(fname, "d3_32") == 0 ||
+		stricmp(fname, "d3_32_2") == 0)
 	{
 		strcpy(fname, "d3");
 	}
@@ -675,6 +704,11 @@ bool LoadMission(const char* mssn)
 	msn->num_levels = numlevels;
 	msn->levels = lvls;
 	msn->filename = mem_strdup((char*)mission);
+	if (IsOsirisHostTestCampaign(mission))
+	{
+		strncpy(msn->name, D3_OSIRIS_HOST_NAME, MSN_NAMELEN - 1);
+		msn->name[MSN_NAMELEN - 1] = '\0';
+	}
 	msn->game_state_flags = 0;
 	strcpy(Net_msn_URLs.msnname, mission);
 	res = true;							// everthing is ok.
@@ -1429,6 +1463,10 @@ bool mn3_Open(const char* mn3file)
 
 	// do table file stuff.
 	ddio_SplitPath(mn3file, NULL, filename, ext);
+	if (!strcmpi(filename, "d3_32"))
+		strcpy(filename, "d3");
+	else if (!strcmpi(filename, "d3_32_2"))
+		strcpy(filename, "d3_2");
 
 	//	char voice_hog[_MAX_PATH*2];
 	if ((strcmpi(filename, "d3") == 0) || (strcmpi(filename, "training") == 0))
@@ -1479,6 +1517,11 @@ bool mn3_GetInfo(const char* mn3file, tMissionInfo* msn)
 
 	MN3_TO_MSN_NAME(mn3file, filename);
 	retval = GetMissionInfo(filename, msn);
+	if (retval && IsOsirisHostTestCampaign(mn3file))
+	{
+		strncpy(msn->name, D3_OSIRIS_HOST_NAME, MSN_NAMELEN - 1);
+		msn->name[MSN_NAMELEN - 1] = '\0';
+	}
 	cf_CloseLibrary(handle);
 	return retval;
 }

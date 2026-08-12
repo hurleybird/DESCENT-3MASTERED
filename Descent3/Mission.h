@@ -156,6 +156,13 @@ void ResetMission();
 //	loads and verifies a mission as the current mission, returns if valid of not.
 bool LoadMission(const char *msn);
 
+// Returns the archive belonging to this level while preserving which copy of
+// the split main campaign was selected. NULL means it is another mission.
+const char *GetMainCampaignFileForLevel(const char *mission_filename, int level);
+
+// True for the main-campaign copy intended to exercise the Win32 OSIRIS host.
+bool IsOsirisHostTestCampaign(const char *mission_filename);
+
 //	initializes a level's script.
 void InitLevelScript();
 
