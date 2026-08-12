@@ -1149,6 +1149,7 @@ void TelcomRenderScreen(bool poweron, bool powerup, ubyte power_effect)
 	TelcomRenderOverlays();
 
 	grtext_Flush();
+	rend_FlushTextLayer();
 
 	switch (power_effect)
 	{
