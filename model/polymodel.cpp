@@ -387,6 +387,49 @@ lightmap_object *Polylighting_lightmap_object;
 
 vector *Polymodel_light_direction,Polymodel_fog_plane,Polymodel_specular_pos,Polymodel_fog_portal_vert,Polymodel_bump_pos;
 
+static bool Polymodel_secondary_specular_active = false;
+static vector Polymodel_secondary_specular_pos;
+static float Polymodel_secondary_specular_r = 0.0f;
+static float Polymodel_secondary_specular_g = 0.0f;
+static float Polymodel_secondary_specular_b = 0.0f;
+static float Polymodel_secondary_specular_scalar = 0.0f;
+
+void SetPolymodelSecondarySpecular(const vector *position, float r, float g,
+	float b, float scalar)
+{
+	Polymodel_secondary_specular_active = position != nullptr && scalar > 0.0f;
+	if (!Polymodel_secondary_specular_active)
+		return;
+	Polymodel_secondary_specular_pos = *position;
+	Polymodel_secondary_specular_r = r;
+	Polymodel_secondary_specular_g = g;
+	Polymodel_secondary_specular_b = b;
+	Polymodel_secondary_specular_scalar = scalar;
+}
+
+void ClearPolymodelSecondarySpecular()
+{
+	Polymodel_secondary_specular_active = false;
+}
+
+bool GetPolymodelSecondarySpecular(vector *position, float *r, float *g,
+	float *b, float *scalar)
+{
+	if (!Polymodel_secondary_specular_active)
+		return false;
+	if (position)
+		*position = Polymodel_secondary_specular_pos;
+	if (r)
+		*r = Polymodel_secondary_specular_r;
+	if (g)
+		*g = Polymodel_secondary_specular_g;
+	if (b)
+		*b = Polymodel_secondary_specular_b;
+	if (scalar)
+		*scalar = Polymodel_secondary_specular_scalar;
+	return true;
+}
+
 int findtextbmpname = 0;
 int findtextname = 0;
 
@@ -2815,6 +2858,7 @@ vector Instance_fog_plane_stack[MAX_SUBOBJECTS];
 vector Instance_fog_portal_vert_stack[MAX_SUBOBJECTS];
 vector Instance_light_stack[MAX_SUBOBJECTS];
 vector Instance_specular_pos[MAX_SUBOBJECTS];
+vector Instance_secondary_specular_pos[MAX_SUBOBJECTS];
 vector Instance_bump_pos[MAX_SUBOBJECTS];
 
 int Instance_light_cnt=0;
@@ -2842,6 +2886,9 @@ void StartLightInstance (vector *pos,matrix *orient)
 
 	if (specular)
 		Instance_specular_pos[Instance_light_cnt]=Polymodel_specular_pos;
+	if (Polymodel_secondary_specular_active)
+		Instance_secondary_specular_pos[Instance_light_cnt] =
+			Polymodel_secondary_specular_pos;
 
 	if (bumped)
 		Instance_bump_pos[Instance_light_cnt]=Polymodel_bump_pos;
@@ -2870,6 +2917,12 @@ void StartLightInstance (vector *pos,matrix *orient)
 		vm_MatrixMulVector (&temp_vec,&tempv,orient);
 		Polymodel_specular_pos = temp_vec;
 	}
+	if (Polymodel_secondary_specular_active)
+	{
+		vector tempv = Polymodel_secondary_specular_pos - *pos;
+		vm_MatrixMulVector(&temp_vec, &tempv, orient);
+		Polymodel_secondary_specular_pos = temp_vec;
+	}
 
 	if (bumped)
 	{
@@ -2895,6 +2948,9 @@ void DoneLightInstance ()
 
 	if (Polymodel_use_effect && Polymodel_effect.type & (PEF_SPECULAR_MODEL|PEF_SPECULAR_FACES))
 		Polymodel_specular_pos=Instance_specular_pos[Instance_light_cnt];
+	if (Polymodel_secondary_specular_active)
+		Polymodel_secondary_specular_pos =
+			Instance_secondary_specular_pos[Instance_light_cnt];
 
 	if (Polymodel_use_effect && (Polymodel_effect.type & PEF_BUMPMAPPED))
 		Polymodel_bump_pos=Instance_bump_pos[Instance_light_cnt];

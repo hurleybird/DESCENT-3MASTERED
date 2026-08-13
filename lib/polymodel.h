@@ -48,6 +48,15 @@ extern ubyte *Polylighting_gouraud;
 extern vector *Polymodel_light_direction,Polymodel_fog_portal_vert,Polymodel_fog_plane,Polymodel_specular_pos,Polymodel_bump_pos;
 extern lightmap_object *Polylighting_lightmap_object;
 
+// An outdoor satellite reflection and a dynamic-light reflection may coexist.
+// This is renderer-internal state rather than part of polymodel_effect so the
+// public effect structure and module ABI remain unchanged.
+void SetPolymodelSecondarySpecular(const vector *position, float r, float g,
+	float b, float scalar);
+void ClearPolymodelSecondarySpecular();
+bool GetPolymodelSecondarySpecular(vector *position, float *r, float *g,
+	float *b, float *scalar);
+
 extern vector Model_eye_position;
 extern vector Interp_pos_instance_vec;
 extern g3Point Robot_points[];

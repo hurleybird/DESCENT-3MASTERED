@@ -1689,6 +1689,7 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 	int use_effect = 0;
 	vector obj_pos = obj->pos;
 	polymodel_effect pe = { 0 };
+	ClearPolymodelSecondarySpecular();
 
 	// Do cloak effect on player
 	if (UseHardware)
@@ -1847,10 +1848,17 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 			}
 		}
 
-		// Apply specularity from outdoor satellites
+		// Apply specularity from outdoor satellites. A dynamic reflection must
+		// add to this baseline rather than replacing it; otherwise switching on
+		// a flashlight can remove an existing canopy highlight.
 		if (OBJECT_OUTSIDE(obj) && obj->lighting_render_type == LRT_GOURAUD && Detail_settings.Specular_lighting && !(Object_info[obj->id].lighting_info.flags & OLF_NO_SPECULARITY))
 		{
-			if (obj->effect_info && !(obj->effect_info->type_flags & EF_SPECULAR))
+			if (obj->effect_info && (obj->effect_info->type_flags & EF_SPECULAR))
+			{
+				SetPolymodelSecondarySpecular(&Terrain_sky.satellite_vectors[0],
+					1.0f, 1.0f, 1.0f, RenderObjectStaticScalar);
+			}
+			else
 			{
 				if (obj->type == OBJ_POWERUP)
 					pe.type |= PEF_SPECULAR_MODEL;
@@ -2029,6 +2037,7 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 		rend_EndMotionObject();
 	}
 	PolymodelMotionEndObject();
+	ClearPolymodelSecondarySpecular();
 	Polymodel_render_pass = saved_render_pass;
 }
 

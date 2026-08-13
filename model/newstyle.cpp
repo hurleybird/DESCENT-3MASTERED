@@ -1689,7 +1689,8 @@ inline void RenderSubmodelFaceSpecular (poly_model *pm,bsp_info *sm,int facenum)
 	
 	if (sm->vertnorms != nullptr)
 	{
-		if ((Polymodel_effect.type & PEF_SPECULAR_FACES) && (GameTextures[fp->texnum].flags & TF_SMOOTH_SPECULAR))
+		if ((Polymodel_effect.type & PEF_SPECULAR_FACES) && fp->texnum >= 0 &&
+			(GameTextures[pm->textures[fp->texnum]].flags & TF_SMOOTH_SPECULAR))
 			smooth=1;
 		else if ((Polymodel_effect.type & PEF_SPECULAR_MODEL) && UsePerPixelPolymodelLighting())
 			smooth=1;
@@ -2080,20 +2081,26 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 		rend_SetAlphaType (AT_SATURATE_VERTEX);
 		rend_SetAlphaValue (255);
 		rend_SetZBufferWriteMask (0);
-	
-		rend_SetFlatColor (GR_RGB((int)(Polymodel_effect.spec_r*255.0),(int)(Polymodel_effect.spec_g*255.0),(int)(Polymodel_effect.spec_b*255.0)));
 
+		vector secondary_position = {};
+		float secondary_r = 0.0f, secondary_g = 0.0f, secondary_b = 0.0f;
+		float secondary_scalar = 0.0f;
+		const bool have_secondary = GetPolymodelSecondarySpecular(
+			&secondary_position, &secondary_r, &secondary_g, &secondary_b,
+			&secondary_scalar);
 		thread_local std::vector<int> retained_flat_faces;
 		thread_local std::vector<int> retained_smooth_faces;
+		thread_local std::vector<int> legacy_faces;
 		retained_flat_faces.clear();
 		retained_smooth_faces.clear();
+		legacy_faces.clear();
 		retained_flat_faces.reserve(sm->num_faces);
 		retained_smooth_faces.reserve(sm->num_faces);
+		legacy_faces.reserve(sm->num_faces);
 		for (i=0;i<sm->num_faces;i++)
 		{
 			polyface *fp=&sm->faces[i];
-
-			if (!g3_CheckNormalFacing(&sm->verts[fp->vertnums[0]],&fp->normal))	
+			if (!g3_CheckNormalFacing(&sm->verts[fp->vertnums[0]],&fp->normal))
 				continue;
 
 		/*	vector subvec=sm->verts[fp->vertnums[0]]-Polymodel_specular_pos;
@@ -2102,9 +2109,7 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 
 			if (!((Polymodel_effect.type & PEF_SPECULAR_MODEL) ||
 				(fp->texnum!=-1 && GameTextures[pm->textures[fp->texnum]].flags & TF_SPECULAR)))
-			{
 				continue;
-			}
 
 			if (!PolymodelFaceNeedsLegacyClip(sm, fp) &&
 				RetainedPolymodelCanDrawBaseFace(pm, sm, i))
@@ -2113,32 +2118,56 @@ void RenderSubmodelFacesUnsorted (poly_model *pm,bsp_info *sm)
 				if (sm->vertnorms != nullptr)
 				{
 					if ((Polymodel_effect.type & PEF_SPECULAR_FACES) && fp->texnum >= 0 &&
-						(GameTextures[fp->texnum].flags & TF_SMOOTH_SPECULAR))
+						(GameTextures[pm->textures[fp->texnum]].flags & TF_SMOOTH_SPECULAR))
 						smooth = true;
 					else if ((Polymodel_effect.type & PEF_SPECULAR_MODEL) && UsePerPixelPolymodelLighting())
 						smooth = true;
 				}
 				(smooth ? retained_smooth_faces : retained_flat_faces).push_back(i);
-				if (Perf_markers_enabled)
-					Polymodel_perf_specular_face_count++;
 			}
 			else
+				legacy_faces.push_back(i);
+		}
+
+		const vector primary_position = Polymodel_specular_pos;
+		for (int source = 0; source < (have_secondary ? 2 : 1); source++)
+		{
+			const bool secondary = source == 1;
+			Polymodel_specular_pos = secondary ? secondary_position : primary_position;
+			const float source_r = secondary ? secondary_r : Polymodel_effect.spec_r;
+			const float source_g = secondary ? secondary_g : Polymodel_effect.spec_g;
+			const float source_b = secondary ? secondary_b : Polymodel_effect.spec_b;
+			const float source_scalar = secondary ? secondary_scalar :
+				Polymodel_effect.spec_scalar;
+			rend_SetFlatColor(GR_RGB((int)(source_r * 255.0f),
+				(int)(source_g * 255.0f), (int)(source_b * 255.0f)));
+
+			const float saved_scalar = Polymodel_effect.spec_scalar;
+			Polymodel_effect.spec_scalar = source_scalar;
+			for (int facenum : legacy_faces)
+				RenderSubmodelFaceSpecular(pm, sm, facenum);
+			Polymodel_effect.spec_scalar = saved_scalar;
+
+			if (!retained_flat_faces.empty())
 			{
-				RenderSubmodelFaceSpecular (pm,sm,i);
+				if (Perf_markers_enabled)
+					Polymodel_perf_specular_face_count +=
+						(int)retained_flat_faces.size();
+				RetainedPolymodelDrawSpecularFaces(pm, sm, retained_flat_faces.data(),
+					(int)retained_flat_faces.size(), &Specular_view_pos, &Polymodel_specular_pos,
+					source_scalar, false);
+			}
+			if (!retained_smooth_faces.empty())
+			{
+				if (Perf_markers_enabled)
+					Polymodel_perf_specular_face_count +=
+						(int)retained_smooth_faces.size();
+				RetainedPolymodelDrawSpecularFaces(pm, sm, retained_smooth_faces.data(),
+					(int)retained_smooth_faces.size(), &Specular_view_pos, &Polymodel_specular_pos,
+					source_scalar, true);
 			}
 		}
-		if (!retained_flat_faces.empty())
-		{
-			RetainedPolymodelDrawSpecularFaces(pm, sm, retained_flat_faces.data(),
-				(int)retained_flat_faces.size(), &Specular_view_pos, &Polymodel_specular_pos,
-				Polymodel_effect.spec_scalar, false);
-		}
-		if (!retained_smooth_faces.empty())
-		{
-			RetainedPolymodelDrawSpecularFaces(pm, sm, retained_smooth_faces.data(),
-				(int)retained_smooth_faces.size(), &Specular_view_pos, &Polymodel_specular_pos,
-				Polymodel_effect.spec_scalar, true);
-		}
+		Polymodel_specular_pos = primary_position;
 		
 		RestorePolymodelDepthWriteMask();
 		PolymodelPerfAdd(Polymodel_perf_specular_pass_time, specular_start_time);
