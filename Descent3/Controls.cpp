@@ -1079,11 +1079,14 @@ void DoControllerMisc(game_controls *controls)
 
 static constexpr ubyte ApplyMousePitchInversionDefault(ubyte flags)
 {
-	return (flags & CTFNF_INVERT_EXPLICIT) ? flags : (flags | CTFNF_INVERT);
+	return (flags & CTFNF_INVERT_EXPLICIT) ? flags :
+		(flags | CTFNF_INVERT | CTFNF_INVERT_EXPLICIT);
 }
 
-static_assert(ApplyMousePitchInversionDefault(0) == CTFNF_INVERT);
-static_assert(ApplyMousePitchInversionDefault(CTFNF_INVERT) == CTFNF_INVERT);
+static_assert(ApplyMousePitchInversionDefault(0) ==
+	(CTFNF_INVERT | CTFNF_INVERT_EXPLICIT));
+static_assert(ApplyMousePitchInversionDefault(CTFNF_INVERT) ==
+	(CTFNF_INVERT | CTFNF_INVERT_EXPLICIT));
 static_assert(ApplyMousePitchInversionDefault(CTFNF_INVERT_EXPLICIT) == CTFNF_INVERT_EXPLICIT);
 static_assert(ApplyMousePitchInversionDefault(CTFNF_INVERT | CTFNF_INVERT_EXPLICIT) ==
 	(CTFNF_INVERT | CTFNF_INVERT_EXPLICIT));
@@ -1120,7 +1123,10 @@ void LoadControlConfig(pilot *plt)
 			for (int slot = 0; slot < CTLBINDS_PER_FUNC; ++slot)
 			{
 				if (type[slot] == ctMouseAxis && binding[slot] == CT_Y_AXIS)
+				{
 					flags[slot] = ApplyMousePitchInversionDefault(flags[slot]);
+					plt->controls[i].flags[slot] = flags[slot];
+				}
 			}
 		}
 		Controller->set_controller_function(id, type, ccfgdata, flags);
