@@ -4986,16 +4986,17 @@ void DMFCBase::LossGuageFrame(void)
 
 	int max_x = 0;
 	int y = 2;
+	const int line_spacing = DLLgrfont_GetHeight(Game_fonts[HUD_FONT_INDEX]) + 2;
 
 	DLLRenderHUDText(loss_color,255,2,0,y,DTXT_NETWORK_LOSS);
 	max_x = DLLRenderHUDGetTextLineWidth(DTXT_NETWORK_LOSS);
 	
-	DLLRenderHUDText(ping_color,255,2,0,y+10,DTXT_NETWORK_PING);
+	DLLRenderHUDText(ping_color,255,2,0,y+line_spacing,DTXT_NETWORK_PING);
 	max_x = max(max_x,DLLRenderHUDGetTextLineWidth(DTXT_NETWORK_PING));
 
 	max_x += 10;
 	DLLRenderHUDText(loss_color,255,0,2+max_x,y,"%.2f%%",packetloss);
-	DLLRenderHUDText(ping_color,255,0,2+max_x,y+10,"%dms",(int)(NetPlayers[GetPlayerNum()].ping_time*1000.0f));
+	DLLRenderHUDText(ping_color,255,0,2+max_x,y+line_spacing,"%dms",(int)(NetPlayers[GetPlayerNum()].ping_time*1000.0f));
 }
 
 level_info *DMFCBase::GetLevelInfo(void)

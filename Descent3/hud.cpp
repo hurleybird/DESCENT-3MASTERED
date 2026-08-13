@@ -1102,18 +1102,18 @@ void RenderHUDFrame(float zoom)
 		Game_window_x = temp_window_x;
 	}
 
-	// The HUD DLL callback is also presentation-layer rendering. Keeping it in
-	// this pass prevents multiplayer status text and custom HUD elements from
-	// becoming input to motion blur and other world post-processing.
-	const bool render_game_dll_after_world_post = true;
+	const bool render_cockpit_geometry =
+		must_render_cockpit && IsValidCockpit() && CockpitState() != COCKPIT_STATE_DORMANT;
+	// The HUD DLL callback is presentation-layer rendering. In cockpit mode it
+	// must be later still, after deferred bloom is resolved over the cockpit.
+	const bool render_game_dll_after_world_post = !render_cockpit_geometry;
+	const bool render_game_dll_after_cockpit_bloom = render_cockpit_geometry;
 	const bool render_post_world_hud =
 		render_hud_items_after_world_post ||
 		render_reticle_after_world_post ||
 		render_guided_reticle_after_world_post ||
 		render_zoom_reticle_after_world_post ||
 		render_game_dll_after_world_post;
-	const bool render_cockpit_geometry =
-		must_render_cockpit && IsValidCockpit() && CockpitState() != COCKPIT_STATE_DORMANT;
 
 	// [ISB] extra pass to render the cockpit so it always uses correct window
 	if (render_post_world_hud || render_cockpit_geometry)
@@ -1255,6 +1255,15 @@ void RenderHUDFrame(float zoom)
 			{
 				PERF_MARKER_SCOPE("HUD.EndCockpitFrame");
 				rend_EndCockpitFrame();
+			}
+			if (render_game_dll_after_cockpit_bloom)
+			{
+				PERF_MARKER_SCOPE("HUD.CallGameDLL.FinalCockpitLayer");
+				rend_StartPostPresentFrame(post_world_hud_window_x, post_world_hud_window_y,
+					post_world_hud_window_x + post_world_hud_window_w,
+					post_world_hud_window_y + post_world_hud_window_h, RF_CLEAR_ZBUFFER);
+				CallGameDLL(EVT_CLIENT_HUD_INTERVAL, &DLLInfo);
+				rend_EndFrame();
 			}
 		}
 	}

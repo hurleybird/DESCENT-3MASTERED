@@ -423,7 +423,12 @@ bool ProcessCommandLine()
 		Netgame.packets_per_second = 30;
 		Netgame.respawn_time = 60;
 		Netgame.flags = NF_RANDOMIZE_RESPAWN;
-		strcpy(Netgame.name, "Automated Host");
+		const int host_name_arg = FindArg("-capture-host-name");
+		const char* host_name = host_name_arg ? GetArg(host_name_arg + 1) : "Automated Host";
+		if (!host_name || !host_name[0])
+			host_name = "Automated Host";
+		strncpy(Netgame.name, host_name, sizeof(Netgame.name) - 1);
+		Netgame.name[sizeof(Netgame.name) - 1] = '\0';
 		const int host_connector_arg = FindArg("-capture-host-connector");
 		const char* host_connector = host_connector_arg ?
 			GetArg(host_connector_arg + 1) : "Direct TCP~IP";

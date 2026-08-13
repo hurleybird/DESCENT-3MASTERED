@@ -32,6 +32,9 @@
 #include "gamespy.h"
 #include "enginebrand.h"
 #include "builtin_connectors.h"
+#ifdef WIN32
+#include <natupnp.h>
+#endif
 
 extern short Multi_kills[MAX_NET_PLAYERS];
 extern short Multi_deaths[MAX_NET_PLAYERS];
@@ -69,6 +72,123 @@ int gspy_queryid = 0;
 char gspy_validate[MAX_GAMESPY_BUFFER] = "";
 unsigned short gspy_listenport;
 static int gspy_automatic_server = -1;
+
+#ifdef WIN32
+static IStaticPortMappingCollection* gspy_upnp_mappings = nullptr;
+static bool gspy_upnp_com_initialized = false;
+static bool gspy_upnp_game_port_added = false;
+static bool gspy_upnp_query_port_added = false;
+
+static bool gspy_GetLocalIPv4(char* output, size_t output_size)
+{
+	char hostname[256];
+	if (gethostname(hostname, sizeof(hostname)) == SOCKET_ERROR)
+		return false;
+	HOSTENT* host = gethostbyname(hostname);
+	if (!host || !host->h_addr_list || !host->h_addr_list[0])
+		return false;
+	in_addr address;
+	memcpy(&address, host->h_addr_list[0], sizeof(address));
+	const char* text = inet_ntoa(address);
+	if (!text)
+		return false;
+	strncpy(output, text, output_size - 1);
+	output[output_size - 1] = '\0';
+	return true;
+}
+
+static bool gspy_AddUPnPMapping(long port, bool* added)
+{
+	BSTR protocol = SysAllocString(L"UDP");
+	IStaticPortMapping* existing = nullptr;
+	HRESULT result = gspy_upnp_mappings->get_Item(port, protocol, &existing);
+	if (SUCCEEDED(result) && existing)
+	{
+		existing->Release();
+		SysFreeString(protocol);
+		mprintf((0, "UPnP UDP port %ld already has a mapping; leaving it unchanged.\n", port));
+		return true;
+	}
+
+	char local_ip[64];
+	if (!gspy_GetLocalIPv4(local_ip, sizeof(local_ip)))
+	{
+		SysFreeString(protocol);
+		return false;
+	}
+	wchar_t local_ip_w[64];
+	MultiByteToWideChar(CP_ACP, 0, local_ip, -1, local_ip_w, ARRAYSIZE(local_ip_w));
+	BSTR internal_client = SysAllocString(local_ip_w);
+	BSTR description = SysAllocString(L"Descent 3MASTERED Tracker Host");
+	IStaticPortMapping* mapping = nullptr;
+	result = gspy_upnp_mappings->Add(port, protocol, port, internal_client,
+		VARIANT_TRUE, description, &mapping);
+	if (mapping)
+		mapping->Release();
+	SysFreeString(description);
+	SysFreeString(internal_client);
+	SysFreeString(protocol);
+	if (FAILED(result))
+		return false;
+	*added = true;
+	mprintf((0, "UPnP mapped UDP port %ld for Tracker hosting.\n", port));
+	return true;
+}
+
+static void gspy_RemoveUPnPMappings()
+{
+	if (gspy_upnp_mappings)
+	{
+		BSTR protocol = SysAllocString(L"UDP");
+		if (gspy_upnp_query_port_added)
+			gspy_upnp_mappings->Remove(ntohs(gspy_listenport), protocol);
+		if (gspy_upnp_game_port_added)
+			gspy_upnp_mappings->Remove(Gameport, protocol);
+		SysFreeString(protocol);
+		gspy_upnp_mappings->Release();
+		gspy_upnp_mappings = nullptr;
+	}
+	gspy_upnp_query_port_added = false;
+	gspy_upnp_game_port_added = false;
+	if (gspy_upnp_com_initialized)
+	{
+		CoUninitialize();
+		gspy_upnp_com_initialized = false;
+	}
+}
+
+static void gspy_EnableUPnPForTracker()
+{
+	gspy_RemoveUPnPMappings();
+	if (stricmp(Netgame.connection_name, BUILTIN_TRACKER_NAME))
+		return;
+
+	HRESULT result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+	if (SUCCEEDED(result))
+		gspy_upnp_com_initialized = true;
+	else if (result != RPC_E_CHANGED_MODE)
+		return;
+
+	IUPnPNAT* nat = nullptr;
+	result = CoCreateInstance(CLSID_UPnPNAT, nullptr, CLSCTX_INPROC_SERVER,
+		IID_IUPnPNAT, reinterpret_cast<void**>(&nat));
+	if (SUCCEEDED(result) && nat)
+	{
+		result = nat->get_StaticPortMappingCollection(&gspy_upnp_mappings);
+		nat->Release();
+	}
+	if (FAILED(result) || !gspy_upnp_mappings ||
+		!gspy_AddUPnPMapping(Gameport, &gspy_upnp_game_port_added) ||
+		!gspy_AddUPnPMapping(ntohs(gspy_listenport), &gspy_upnp_query_port_added))
+	{
+		mprintf((0, "Tracker hosting could not establish UPnP mappings. Forward UDP %u and %u manually for public listing and joins.\n",
+			(unsigned int)Gameport, (unsigned int)ntohs(gspy_listenport)));
+	}
+}
+#else
+static void gspy_EnableUPnPForTracker() {}
+static void gspy_RemoveUPnPMappings() {}
+#endif
 
 static bool gspy_AddressIsUnset(const SOCKADDR_IN& address)
 {
@@ -141,14 +261,18 @@ static void gspy_EnableTsetseflyForTracker()
 
 static void gspy_BuildAdvertisedVersion(char* output, size_t output_size)
 {
-	snprintf(output, output_size, "3MASTERED v%s, %s", ENGINE_VERSION_STRING,
-		MultiProtocolIsEnhanced(Netgame.server_version) ? "Enhanced" : "Vanilla");
+	if (MultiProtocolIsEnhanced(Netgame.server_version))
+		snprintf(output, output_size, "3MASTERED %d.%d.%d",
+			ENGINE_VERSION_MAJOR, ENGINE_VERSION_MINOR, ENGINE_VERSION_PATCH);
+	else
+		snprintf(output, output_size, "Retail 1.5.0");
 }
 
 //Register a game with this library so we will tell the servers about it...
 void gspy_StartGame(char *name)
 {
 	gspy_EnableTsetseflyForTracker();
+	gspy_EnableUPnPForTracker();
 	char advertised_version[128];
 	gspy_BuildAdvertisedVersion(advertised_version, sizeof(advertised_version));
 	mprintf((0, "GameSpy advertised engine identity: %s\n", advertised_version));
@@ -160,6 +284,7 @@ void gspy_StartGame(char *name)
 void gspy_EndGame()
 {
 	gspy_game_running = false;
+	gspy_RemoveUPnPMappings();
 }
 
 //Initialize gamespy with the info we need to talk to the servers

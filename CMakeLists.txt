@@ -110,7 +110,7 @@ MESSAGE("Install will copy files to ${D3_GAMEDIR}")
 include_directories("lib" "Descent3" "netcon/includes" ${PLATFORM_INCLUDES})
 
 IF (WIN32)
-	SET (PLATFORM_LIBS wsock32.lib winmm.lib Glu32.lib OpenGL32.lib dbghelp.lib wininet.lib
+	SET (PLATFORM_LIBS wsock32.lib winmm.lib Glu32.lib OpenGL32.lib dbghelp.lib wininet.lib ole32.lib oleaut32.lib uuid.lib
 		${DXGUID_LIBRARY} ${OPENAL_LIBRARY})
 	if (USE_SDL)
 		SET (PLATFORM_LIBS ${PLATFORM_LIBS} SDL3::SDL3)
