@@ -11,10 +11,14 @@ The new executable and data archives have distinct names and do not replace the
 original Descent 3 executable. OpenAL Soft and the Wooting Analog SDK runtime
 are included.
 
+Native 64-bit multiplayer game modules are installed in the separate
+netgames3mastered directory. The retail netgames directory is left in place for
+the original game and is not loaded by 3MASTERED. Their private runtime is named
+dmfc3m.dll so it cannot replace another engine's dmfc.dll.
+
 OsirisHost32.exe is launched automatically when a custom mission needs the
 experimental legacy 32-bit script bridge. Do not run it manually.
 
 Pilots, saves, screenshots, and downloaded missions are stored under:
 
   %USERPROFILE%\Saved Games\Descent 3MASTERED
-

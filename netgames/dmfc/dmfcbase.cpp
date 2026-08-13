@@ -470,6 +470,7 @@
 #include "DMFC.h"
 #include "dmfcinternal.h"
 #include "dmfcinputcommands.h"
+#include "enginebrand.h"
 
 
 #include <stdlib.h>
@@ -3628,7 +3629,7 @@ void DMFCBase::GenerateStatFilename(char *filename,char *root,bool end_of_level)
 	}
 
 	//build the path info here
-	DLLddio_MakePath(filename,LocalD3Dir,"netgames",fname,NULL);
+	DLLddio_MakePath(filename,LocalD3Dir,ENGINE_NETGAMES_DIRECTORY,fname,NULL);
 }
 
 //	DMFCBase::IsPlayerObserver
@@ -4559,8 +4560,8 @@ void DMFCBase::ReadInHostsAllowDeny(void)
 	bool allow_exist,deny_exist;
 
 	//build the path info here
-	DLLddio_MakePath(allow_fn,LocalD3Dir,"netgames","hosts.allow",NULL);
-	DLLddio_MakePath(deny_fn,LocalD3Dir,"netgames","hosts.deny",NULL);
+	DLLddio_MakePath(allow_fn,LocalD3Dir,ENGINE_NETGAMES_DIRECTORY,"hosts.allow",NULL);
+	DLLddio_MakePath(deny_fn,LocalD3Dir,ENGINE_NETGAMES_DIRECTORY,"hosts.deny",NULL);
 
 	allow_exist = (bool)(DLLcfexist(allow_fn)!=0);
 	deny_exist = (bool)(DLLcfexist(deny_fn)!=0);
@@ -4649,7 +4650,7 @@ void DMFCBase::ParseStartupScript(void)
 	}else
 	{
 		// use the default autoexec.dmfc
-		DLLddio_MakePath(path,LocalD3Dir,"netgames","autoexec.dmfc",NULL);
+		DLLddio_MakePath(path,LocalD3Dir,ENGINE_NETGAMES_DIRECTORY,"autoexec.dmfc",NULL);
 	}
 
 	DLLOpenCFILE(&file,path,"rt");

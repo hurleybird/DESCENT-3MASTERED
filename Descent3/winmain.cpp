@@ -159,6 +159,7 @@ struct cpuinfo
 
 
 int no_debug_dialog=0;
+static ULONGLONG Last_alt_f4_keydown_ms = 0;
 
 void getcpudata(cpuinfo *info);
 
@@ -213,23 +214,35 @@ public:
 		switch (msg)
 		{
 		case WM_CLOSE:
-			if (ShouldConfirmAltF4QuitInGame())
-			{
-				RequestAltF4QuitConfirmation();
-				return 0;
-			}
-
-			// Do not let DefWindowProc destroy the native window while engine
-			// code and the OpenGL context are still alive. Wake any active UI
-			// loop and let normal shutdown release the renderer before D3End
-			// destroys the window.
-			SetFunctionMode(QUIT_MODE);
-			ui_RequestForceQuit();
+			// Alt-F4 is intercepted at WM_SYSKEYDOWN when gameplay needs a
+			// confirmation.  A WM_CLOSE that reaches here is the native close
+			// button or an unconfirmed close from outside gameplay.
+			PostQuitMessage(0);
 			return 0;
 		case WM_SYSKEYDOWN:
-			if (wParam == VK_F4 && ShouldConfirmAltF4QuitInGame())
+			if (wParam == VK_F4)
 			{
-				RequestAltF4QuitConfirmation();
+				// Bit 30 is set for auto-repeat. Only physical presses participate
+				// in the double-press failsafe or open another confirmation.
+				if (lParam & (1LL << 30))
+					return 0;
+
+				const ULONGLONG now = GetTickCount64();
+				if (Last_alt_f4_keydown_ms &&
+					now - Last_alt_f4_keydown_ms <= 1000)
+				{
+					PostQuitMessage(0);
+					return 0;
+				}
+				Last_alt_f4_keydown_ms = now;
+
+				if (ShouldConfirmAltF4QuitInGame())
+				{
+					RequestAltF4QuitConfirmation();
+					return 0;
+				}
+
+				PostQuitMessage(0);
 				return 0;
 			}
 			break;

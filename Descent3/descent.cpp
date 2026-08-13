@@ -593,7 +593,7 @@ char * GetMultiCDPath(char *file)
 
 	for (int i = 0; i < num_cd_files; i++)
 	{
-		if (!strcmp(file, file_volumes[i].file))
+		if (!stricmp(file, file_volumes[i].file))
 		{
 			ddio_MakePath(fullpath, Base_directory, file_volumes[i].localpath, file_volumes[i].file, nullptr);
 			return fullpath;

@@ -189,7 +189,7 @@ void DLLFUNCCALL DLLGetGameInfo (tDLLOptions *options)
 {
 	options->flags		= DOF_MAXTEAMS;
 	options->max_teams	= 1;
-	strcpy(options->game_name,TXT_GAMENAME);
+	strcpy(options->game_name,"Hyper-Anarchy");
 	strcpy(options->requirements,"");
 }
 

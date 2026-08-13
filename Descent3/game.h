@@ -234,6 +234,7 @@ inline void ResetGamemode()
 }
 
 void SetGamemodeScript(const char *scrfilename,int num_requested_teams=-1);
+const char *ResolveCompatibleGameModule(const char *advertised_name);
 
 // Does a screenshot and tells the bitmap lib to save out the picture
 void DoScreenshot ();

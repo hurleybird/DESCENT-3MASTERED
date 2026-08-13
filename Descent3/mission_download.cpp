@@ -32,6 +32,7 @@
 #include "grtext.h"
 #include "Mission.h"
 #include "mission_download.h"
+#include "enginebrand.h"
 #include "gameloop.h"
 #include "renderer.h"
 #include "inetgetfile.h"
@@ -999,7 +1000,7 @@ int CheckGetD3M(char* d3m)
 	char* fixedd3m = NULL;
 
 
-	ddio_MakePath(pathname, LocalD3Dir, "Netgames", d3m, NULL);
+	ddio_MakePath(pathname, LocalD3Dir, ENGINE_NETGAMES_DIRECTORY, d3m, NULL);
 	if (cfexist(d3m) || cfexist(pathname))
 	{
 		return 1;
@@ -1107,12 +1108,12 @@ int ModDownloadWithStatus(char* url, char* filename)
 		while(*s_ptr && *s_ptr!='.'){ *d_ptr = *s_ptr; s_ptr++; d_ptr++;}
 		*d_ptr = '\0';
 		strcat(fname,".zip");
-		ddio_MakePath(qualfile, LocalD3Dir, "Netgames", fname, NULL);
+		ddio_MakePath(qualfile, LocalD3Dir, ENGINE_NETGAMES_DIRECTORY, fname, NULL);
 		//ddio_MakePath(qualfile,D3MissionsDir,fname,NULL);
 	}else
 	{
 		//ddio_MakePath(qualfile,D3MissionsDir,filename,NULL);
-		ddio_MakePath(qualfile, LocalD3Dir, "Netgames", filename, NULL);
+		ddio_MakePath(qualfile, LocalD3Dir, ENGINE_NETGAMES_DIRECTORY, filename, NULL);
 	}
 	InetGetFile *getmsnfile;
 	if(Proxy_server[0])

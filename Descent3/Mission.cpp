@@ -1318,6 +1318,7 @@ bool GetMissionInfo(const char* msnfile, tMissionInfo* msn)
 {
 	CFILE* fp;
 	bool indesc = false;						// are we in a multi-line block
+	memset(msn, 0, sizeof(*msn));
 	//	open mission file
 	if (IS_MN3_FILE(msnfile))
 		return mn3_GetInfo(msnfile, msn);
@@ -1577,6 +1578,8 @@ int MissionGetKeywords(char* mission, char* keywords)
 	mprintf((0, "MissionGetKeywords(%s,%s)\n", mission, keywords));
 	if (!GetMissionInfo(mission, &msn_info))
 		return -1;
+	const bool implicit_legacy_coop = !msn_info.keywords[0] &&
+		msn_info.single && msn_info.multi && msn_info.n_levels > 1;
 
 	if (!*parse_keys)
 		return MAX_NET_PLAYERS;
@@ -1633,7 +1636,8 @@ int MissionGetKeywords(char* mission, char* keywords)
 		}
 		else
 		{
-			bool found_keyword = false;
+			bool found_keyword = implicit_legacy_coop &&
+				strcmpi("COOP", mod_keywords[i]) == 0;
 			//Loop through looking for matches
 			for (int a = 0; a < NUM_KEYWORDS; a++)
 			{

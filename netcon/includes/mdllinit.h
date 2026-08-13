@@ -136,6 +136,7 @@
 	DLLddio_GetTempFileName = (ddio_GetTempFileName_fp)API.fp[111];
 	DLLgspy_GetGamePort = (gspy_GetGamePort_fp)API.fp[112];
 	DLLMultiChooseHostRules = (MultiChooseHostRules_fp)API.fp[113];
+	DLLGetGameModuleInfo = (GetGameModuleInfo_fp)API.fp[114];
 
 	DLLMPlayers = (player *)API.players;
 	DLLNetgame = (netgame_info *)API.netgame;

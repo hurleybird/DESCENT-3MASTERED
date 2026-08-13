@@ -265,6 +265,7 @@
 
 #include "ship.h"
 #include "pstypes.h"
+#include "enginebrand.h"
 
 #ifdef __LINUX__
 #include <string.h>
@@ -663,6 +664,9 @@ MultiGameOptionsMenu_fp DLLMultiGameOptionsMenu;
 typedef bool (*MultiChooseHostRules_fp) (void);
 MultiChooseHostRules_fp DLLMultiChooseHostRules;
 
+typedef bool (*GetGameModuleInfo_fp) (char *module_name, char *display_name, int display_name_size);
+GetGameModuleInfo_fp DLLGetGameModuleInfo;
+
 //Loads a dynamic module into memory for use.  
 //Returns true on success, false otherwise
 //typedef bool (*mod_LoadModule_fp)(module *handle,char *modfilename,int flags=MODF_NOW);
@@ -941,6 +945,7 @@ void MultiplayerOptionsMenu ();
 // Returns true if we are starting a game
 #define MAX_DLLS	40
 char dll_text[MAX_DLLS][_MAX_PATH];
+char dll_display_text[MAX_DLLS][_MAX_PATH];
 
 int StartMultiplayerGameMenu ()
 {
@@ -1027,18 +1032,39 @@ int StartMultiplayerGameMenu ()
 
 #if (!(defined(OEM) || defined(DEMO)))
 	char search[256];
-	DLLddio_MakePath(search,DLLLocalD3Dir,"netgames","*.d3m",NULL);
+	DLLddio_MakePath(search,DLLLocalD3Dir,ENGINE_NETGAMES_DIRECTORY,"*.d3m",NULL);
 	if(DLLddio_FindFileStart(search,buffer))
 	{
-		dllcount = 1;
-		buffer[strlen(buffer)-4] = '\0';//Strip out the extention
-		strcpy(dll_text[dllcount-1],buffer);
-		while( (DLLddio_FindNextFile(buffer)) && (dllcount<MAX_DLLS) )
+		dllcount = 0;
+		do
 		{
-			buffer[strlen(buffer)-4] = '\0';//Strip out the extention
-			strcpy(dll_text[dllcount],buffer);
-			dllcount++;
-		}
+			const size_t module_name_len = strlen(buffer);
+			if (module_name_len <= 4)
+				continue;
+
+			buffer[module_name_len-4] = '\0';//Strip out the extension
+			char display_name[_MAX_PATH];
+			if (!DLLGetGameModuleInfo(buffer, display_name, sizeof(display_name)))
+				continue;
+
+			bool duplicate = false;
+			for (int existing = 0; existing < dllcount; existing++)
+			{
+				if (!stricmp(dll_text[existing], buffer))
+				{
+					duplicate = true;
+					break;
+				}
+			}
+			if (!duplicate)
+			{
+				strncpy(dll_text[dllcount], buffer, _MAX_PATH-1);
+				dll_text[dllcount][_MAX_PATH-1] = '\0';
+				strncpy(dll_display_text[dllcount], display_name, _MAX_PATH-1);
+				dll_display_text[dllcount][_MAX_PATH-1] = '\0';
+				dllcount++;
+			}
+		} while (dllcount < MAX_DLLS && DLLddio_FindNextFile(buffer));
 	}
 	else
 	{
@@ -1048,6 +1074,8 @@ int StartMultiplayerGameMenu ()
 #else
 	strcpy(dll_text[0],"Anarchy");
 	strcpy(dll_text[1],"Capture The Flag");
+	strcpy(dll_display_text[0],dll_text[0]);
+	strcpy(dll_display_text[1],dll_text[1]);
 	dllcount = 2;
 #endif
 	DLLListRemoveAll(script_list);
@@ -1056,7 +1084,7 @@ int StartMultiplayerGameMenu ()
 		
 	for(index=0;index<dllcount;index++)
 	{
-		dll_txt_items[index] = DLLCreateNewUITextItem(dll_text[index],UICOL_LISTBOX_LO,-1);
+		dll_txt_items[index] = DLLCreateNewUITextItem(dll_display_text[index],UICOL_LISTBOX_LO,-1);
 		DLLListAddItem(script_list,dll_txt_items[index]);
 
 	}
@@ -1180,7 +1208,8 @@ int StartMultiplayerGameMenu ()
 #endif
 		for(index=0;index<dllcount;index++)
 		{
-			if(stricmp(dll_text[index],DLLNetgame->scriptname)==0)
+			if(stricmp(dll_text[index],DLLNetgame->scriptname)==0 ||
+				stricmp(dll_display_text[index],DLLNetgame->scriptname)==0)
 			{
 				DLLListSelectItem(script_list,dll_txt_items[index]);
 				break;
@@ -1241,26 +1270,10 @@ int StartMultiplayerGameMenu ()
 			//strcpy(DLLNetgame->name,DLLListGetSelectedIndex(list_1)?"The Core":"Polaris");
 #endif
 			// Get script
-			strcpy(buffer,DLLListGetItem(script_list,DLLListGetSelectedIndex(script_list)));
-			if(strcmp(buffer,"None"))
+			const int selected_script = DLLListGetSelectedIndex(script_list);
+			if(selected_script >= 0 && selected_script < dllcount)
 			{
-				//remove file extension
-				for(int d=strlen(buffer)-1;d>=0;d--)
-				{
-					if(buffer[d]=='.')
-					{
-						buffer[d]='\0';
-						break;
-					}
-				}
-
-#if (defined(OEM) || defined(DEMO))
-				if(!stricmp(buffer,"Capture The Flag"))
-					strcpy(buffer,"CTF");
-#endif
-
-				strcpy(DLLNetgame->scriptname,buffer);
-
+				strcpy(DLLNetgame->scriptname,dll_text[selected_script]);
 			}
 
 			// Actually start the game
@@ -1302,21 +1315,10 @@ int StartMultiplayerGameMenu ()
 			strcpy(DLLNetgame->mission,mi->msn_file);
 #endif
 			// Get script
-			strcpy(buffer,DLLListGetItem(script_list,DLLListGetSelectedIndex(script_list)));
-			if(strcmp(buffer,"None"))
+			const int selected_script = DLLListGetSelectedIndex(script_list);
+			if(selected_script >= 0 && selected_script < dllcount)
 			{
-				//remove file extension
-				for(int d=strlen(buffer)-1;d>=0;d--)
-				{
-					if(buffer[d]=='.')
-					{
-						buffer[d]='\0';
-						break;
-					}
-				}
-
-				strcpy(DLLNetgame->scriptname,buffer);
-
+				strcpy(DLLNetgame->scriptname,dll_text[selected_script]);
 			}
 			DLLMultiDoConfigSave();
 		}
@@ -1331,21 +1333,10 @@ int StartMultiplayerGameMenu ()
 			strcpy(DLLNetgame->mission,mi->msn_file);
 #endif
 			// Get script
-			strcpy(buffer,DLLListGetItem(script_list,DLLListGetSelectedIndex(script_list)));
-			if(strcmp(buffer,"None"))
+			const int selected_script = DLLListGetSelectedIndex(script_list);
+			if(selected_script >= 0 && selected_script < dllcount)
 			{
-				//remove file extension
-				for(int d=strlen(buffer)-1;d>=0;d--)
-				{
-					if(buffer[d]=='.')
-					{
-						buffer[d]='\0';
-						break;
-					}
-				}
-
-				strcpy(DLLNetgame->scriptname,buffer);
-
+				strcpy(DLLNetgame->scriptname,dll_text[selected_script]);
 			}
 			DLLMultiDoConfigLoad();
 			if(!Use_netgame_flags)
@@ -1361,7 +1352,8 @@ int StartMultiplayerGameMenu ()
 #endif
 			for(index=0;index<dllcount;index++)
 			{
-				if(strcmpi(dll_text[index],DLLNetgame->scriptname)==0)
+				if(strcmpi(dll_text[index],DLLNetgame->scriptname)==0 ||
+					strcmpi(dll_display_text[index],DLLNetgame->scriptname)==0)
 				{
 					DLLListSelectItem(script_list,dll_txt_items[index]);
 					break;

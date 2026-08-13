@@ -244,7 +244,7 @@ void DLLFUNCCALL DLLGetGameInfo (tDLLOptions *options)
 	options->flags		= DOF_MAXTEAMS|DOF_MINTEAMS;
 	options->max_teams	= 4;
 	options->min_teams	= 2;
-	strcpy(options->game_name,TXT_CTF);
+	strcpy(options->game_name,"Capture The Flag");
 	strcpy(options->requirements,"MINGOALS2,GOALPERTEAM");
 }
 

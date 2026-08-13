@@ -60,6 +60,7 @@
 #include "module.h"
 #include "mem.h"
 #include "args.h"
+#include "game2dll.h"
 //#define USE_DIRECTPLAY
 
 #ifdef USE_DIRECTPLAY
@@ -68,7 +69,7 @@
 
 //[ISB] Signature for Piccu engine connectors
 constexpr int PICCU_SIG = 0x55434950;
-constexpr int PICCU_CONNECT_API_VER = 1;
+constexpr int PICCU_CONNECT_API_VER = 2;
 
 void* callback = NULL;
 module MultiDLLHandle = { NULL };
@@ -81,6 +82,20 @@ extern void UpdateAndPackGameList(void);
 extern bool Multi_Gamelist_changed;
 int CheckMissionForScript(char* mission, char* script, int dedicated_server_num_teams);
 void ShowNetgameInfo(network_game* game);
+
+static bool GetGameModuleInfo(char* module_name, char* display_name, int display_name_size)
+{
+	if (!module_name || !display_name || display_name_size <= 0)
+		return false;
+
+	tDLLOptions options;
+	if (!GetDLLGameInfo(module_name, &options))
+		return false;
+
+	strncpy(display_name, options.game_name, display_name_size - 1);
+	display_name[display_name_size - 1] = '\0';
+	return display_name[0] != '\0';
+}
 
 // The exported DLL function call prototypes
 #if defined(__LINUX__)
@@ -289,6 +304,7 @@ void GetMultiAPI(multi_api* api)
 	api->fp[111] = (int*)ddio_GetTempFileName;
 	api->fp[112] = (int*)gspy_GetGamePort;
 	api->fp[113] = (int*)MultiChooseHostRules;
+	api->fp[114] = (int*)GetGameModuleInfo;
 
 	// Variable pointers
 	api->vp[0] = (int*)&Player_num;
@@ -424,7 +440,7 @@ loaddll:
 	}
 
 	int expected_version = DLLMultiGetPiccuAPIVer();
-	if (expected_version != PICCU_CONNECT_API_VER)
+	if (expected_version < 1 || expected_version > PICCU_CONNECT_API_VER)
 	{
 		FreeMultiDLL();
 		if (!Dedicated_server)

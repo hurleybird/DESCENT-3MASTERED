@@ -297,6 +297,7 @@ if (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8)
 endif()
 
 add_library(dmfc SHARED ${DMFC_SOURCES})
+set_target_properties(dmfc PROPERTIES OUTPUT_NAME "dmfc3m")
 target_compile_definitions(dmfc PUBLIC -DOUTRAGE_VERSION)
 target_compile_definitions(dmfc PRIVATE -DDMFC_DLL)
 target_include_directories(dmfc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/netgames/includes")

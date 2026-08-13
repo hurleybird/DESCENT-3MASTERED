@@ -20,6 +20,7 @@
 #include "pserror.h"
 #include "game.h"
 #include "game2dll.h"
+#include "enginebrand.h"
 #include "room.h"
 #include "object.h"
 #include "terrain.h"
@@ -72,6 +73,7 @@ extern int Camera_view_mode[NUM_CAMERA_VIEWS];
 void Osiris_CreateModuleInitStruct(tOSIRISModuleInit* mi);
 module GameDLLHandle = { NULL };
 static bool GameDLL_initialized = false;
+static int Multi_game_library_handle = 0;
 extern ddgr_color Player_colors[];
 struct game_api
 {
@@ -567,6 +569,11 @@ void CloseGameModule(module* mod)
 		if (!ddio_DeleteFile(Multi_game_dll_name)) {
 			mprintf((0, "Couldn't delete the tmp dll"));
 		}
+		Multi_game_dll_name[0] = '\0';
+	}
+	if (Multi_game_library_handle) {
+		cf_CloseLibrary(Multi_game_library_handle);
+		Multi_game_library_handle = 0;
 	}
 	mod->handle = NULL;
 }
@@ -577,8 +584,9 @@ bool InitGameModule(char* name, module* mod)
 	char lib_name[_MAX_PATH * 2];
 	char dll_name[_MAX_PATH * 2];
 	char tmp_dll_name[_MAX_PATH * 2];
+	Multi_game_dll_name[0] = '\0';
 	//Make the hog filename
-	ddio_MakePath(lib_name, Base_directory, "netgames", name, NULL);
+	ddio_MakePath(lib_name, Base_directory, ENGINE_NETGAMES_DIRECTORY, name, NULL);
 	strcat(lib_name, ".d3m");
 	//Make the dll filename
 #if defined (WIN32)
@@ -587,10 +595,11 @@ bool InitGameModule(char* name, module* mod)
 	sprintf(dll_name, "%s.so", name);
 #endif
 
-	//Open the hog file
-	if (!cf_OpenLibrary(lib_name))
+	// Open a legacy packaged module, or fall back to a native module file.
+	const int library_handle = cf_OpenLibrary(lib_name);
+	if (!library_handle)
 	{
-		ddio_MakePath(tmp_dll_name, Base_directory, "netgames", name, NULL);
+		ddio_MakePath(tmp_dll_name, Base_directory, ENGINE_NETGAMES_DIRECTORY, name, NULL);
 		strcat(tmp_dll_name, ".d3m");
 		Multi_game_dll_name[0] = NULL;
 		goto loaddll;
@@ -598,12 +607,15 @@ bool InitGameModule(char* name, module* mod)
 	//get a temp file name
 	if (!ddio_GetTempFileName(Descent3_temp_directory, "d3m", tmp_dll_name))
 	{
+		cf_CloseLibrary(library_handle);
 		return false;
 	}
 	//Copy the DLL
 	if (!cf_CopyFile(tmp_dll_name, dll_name))
 	{
 		mprintf((0, "DLL copy failed!\n"));
+		cf_CloseLibrary(library_handle);
+		ddio_DeleteFile(tmp_dll_name);
 		return false;
 	}
 	strcpy(Multi_game_dll_name, tmp_dll_name);
@@ -614,8 +626,16 @@ loaddll:
 	{
 		int err = mod_GetLastError();
 		mprintf((0, "You are missing the DLL %s!\n", name));
+		if (library_handle) {
+			cf_CloseLibrary(library_handle);
+			if (Multi_game_dll_name[0] != '\0') {
+				ddio_DeleteFile(Multi_game_dll_name);
+				Multi_game_dll_name[0] = '\0';
+			}
+		}
 		return false;
 	}
+	Multi_game_library_handle = library_handle;
 	return true;
 }
 // Frees the dll if its in memory

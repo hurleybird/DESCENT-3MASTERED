@@ -229,7 +229,7 @@ void DLLFUNCCALL DLLGetGameInfo (tDLLOptions *options)
 	options->flags		= DOF_MAXTEAMS|DOF_MINTEAMS;
 	options->max_teams	= NUM_TEAMS;
 	options->min_teams	= NUM_TEAMS;
-	strcpy(options->game_name,TXT_GAMENAME);
+	strcpy(options->game_name,"Entropy");
 	strcpy(options->requirements,"ENTROPY");
 }
 

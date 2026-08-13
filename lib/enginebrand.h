@@ -22,6 +22,7 @@
 
 #define ENGINE_NAME "Descent 3MASTERED"
 #define ENGINE_EXECUTABLE_NAME ENGINE_NAME ".exe"
+#define ENGINE_NETGAMES_DIRECTORY "netgames3mastered"
 
 // This is the product version of Descent 3MASTERED.  Keep it independent of
 // D3_MAJORVER/D3_MINORVER: those values describe the legacy Descent 3 protocol

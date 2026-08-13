@@ -165,7 +165,7 @@ $requiredFiles = @(
     "OsirisHost32.exe",
     "OpenAL32.dll",
     "wooting_analog_sdk_dist.dll",
-    "dmfc.dll",
+    "dmfc3m.dll",
     "descent3mastered.hog",
     "descent3mastered-win.hog",
     "README.md",
@@ -174,15 +174,15 @@ $requiredFiles = @(
     "THIRD-PARTY-LICENSES.txt",
     "online\Direct TCP~IP.piccucon",
     "online\Tracker.piccucon",
-    "netgames\anarchy.d3m",
-    "netgames\coop.d3m",
-    "netgames\ctf.d3m",
-    "netgames\entropy.d3m",
-    "netgames\hoard.d3m",
-    "netgames\hyperanarchy.d3m",
-    "netgames\monsterball.d3m",
-    "netgames\roboanarchy.d3m",
-    "netgames\tanarchy.d3m"
+    "netgames3mastered\anarchy.d3m",
+    "netgames3mastered\coop.d3m",
+    "netgames3mastered\ctf.d3m",
+    "netgames3mastered\entropy.d3m",
+    "netgames3mastered\hoard.d3m",
+    "netgames3mastered\hyperanarchy.d3m",
+    "netgames3mastered\monsterball.d3m",
+    "netgames3mastered\roboanarchy.d3m",
+    "netgames3mastered\tanarchy.d3m"
 )
 foreach ($relativePath in $requiredFiles) {
     $candidate = Join-Path $stageRoot $relativePath

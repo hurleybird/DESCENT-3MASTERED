@@ -265,21 +265,25 @@ void SetGamemodeScript(const char* scrfilename, int num_teams)
 
 void RenderBlankScreen(void);
 
-static const char* ResolveCompatibleGameModule(const char* advertised_name)
+const char* ResolveCompatibleGameModule(const char* advertised_name)
 {
-	// Official 1.5 advertises the modern filenames below, while Piccu's compatible
-	// implementations retain the historical package names.  Keep the advertised
-	// name in Netgame and translate only the module loaded by this process.
+	// Keep the advertised name in Netgame, but load the current native module when
+	// an older peer or saved configuration uses a historical package name.
 	struct game_module_alias
 	{
 		const char* advertised;
 		const char* local;
 	};
 	static const game_module_alias aliases[] = {
-		{ "coop", "Co-op" },
-		{ "tanarchy", "Team Anarchy" },
-		{ "hyperanarchy", "Hyper-Anarchy" },
-		{ "roboanarchy", "Robo-Anarchy" },
+		{ "Anarchy", "anarchy" },
+		{ "Co-op", "coop" },
+		{ "CTF", "ctf" },
+		{ "Entropy", "entropy" },
+		{ "Hoard", "hoard" },
+		{ "Team Anarchy", "tanarchy" },
+		{ "Hyper-Anarchy", "hyperanarchy" },
+		{ "Monsterball", "monsterball" },
+		{ "Robo-Anarchy", "roboanarchy" },
 	};
 
 	for (const game_module_alias& alias : aliases)

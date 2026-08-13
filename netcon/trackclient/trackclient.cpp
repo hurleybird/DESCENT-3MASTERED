@@ -102,7 +102,7 @@ extern "C"
 
 int DLLFUNCCALL DLLMultiGetPiccuAPIVer()
 {
-	return 1;
+	return 2;
 }
 
 static bool All_ok = true;

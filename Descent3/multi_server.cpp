@@ -235,7 +235,9 @@ void MultiStartServer(int playing, char* scriptname, int dedicated_server_num_te
 int CheckMissionForScript(char* mission, char* script, int dedicated_server_num_teams)
 {
 	char mod_keys[MAX_KEYWORDLEN];
-	if (!GetDLLRequirements(script, mod_keys, MAX_KEYWORDLEN))
+	const char* module_name = ResolveCompatibleGameModule(script);
+	if (GetDLLRequirements(const_cast<char*>(module_name), mod_keys,
+		MAX_KEYWORDLEN) < 0)
 	{
 		return SCRIPTBADFORMISSION;
 	}
@@ -261,7 +263,7 @@ int CheckMissionForScript(char* mission, char* script, int dedicated_server_num_
 	int desired_teams = 1;
 	int max_teams, min_teams;
 
-	GetDLLNumTeamInfo(script, &min_teams, &max_teams);
+	GetDLLNumTeamInfo(const_cast<char*>(module_name), &min_teams, &max_teams);
 
 	if (min_teams > teams)
 	{

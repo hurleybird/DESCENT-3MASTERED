@@ -169,7 +169,7 @@ void DLLFUNCCALL DLLGetGameInfo (tDLLOptions *options)
 {
 	options->flags		= DOF_MAXTEAMS;
 	options->max_teams	= 1;
-	strcpy(options->game_name,TXT_COOP);
+	strcpy(options->game_name,"Co-op");
 	strcpy(options->requirements,"COOP");
 }
 
