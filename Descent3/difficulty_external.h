@@ -39,7 +39,7 @@ enum gameplay_rules_mode : ubyte
 };
 
 #define GAMEPLAY_RULES_VANILLA_PROTOCOL_VERSION 10
-#define GAMEPLAY_RULES_ENHANCED_REVISION 2
+#define GAMEPLAY_RULES_ENHANCED_REVISION 3
 
 // A uniform profile is exactly equivalent to the original monolithic
 // difficulty setting.  Multiplayer enhanced sessions may select the four
