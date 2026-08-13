@@ -3198,6 +3198,7 @@ void GL4Renderer::CompositePendingModalUI()
 	glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
 	rend_ClearBoundTextures();
 	ShaderProgram::ClearBinding();
+	RestoreLegacy();
 }
 
 void GL4Renderer::SetModalUIGamma(bool enabled)
