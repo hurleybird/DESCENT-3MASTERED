@@ -4839,10 +4839,6 @@ void AlmostPageInShip(int id)
 			AlmostPageInLevelTexture(pm->textures[t]);
 	}
 
-	// Match PageInShip: multiplayer modes may remove all level generics, so the
-	// starter laser cannot rely on being discovered indirectly through one.
-	AlmostPageInWeapon(LASER_INDEX);
-
 	// Try and load the various weapons
 	for (int i = 0; i < MAX_PLAYER_WEAPONS; i++)
 	{

@@ -396,7 +396,7 @@ int GL4Renderer::MakeBitmapCurrent(int handle, int map_type, int tn)
 		else
 		{
 			texnum = OpenGL_bitmap_remap[handle];
-			if (GameBitmaps[handle].flags & BF_CHANGED)
+			if (GameBitmaps[handle].flags & (BF_CHANGED | BF_BRAND_NEW))
 			{
 				char marker[128];
 				snprintf(marker, sizeof(marker), "Texture.Upload.Bitmap handle=%d new=0 name=%s",
@@ -427,8 +427,12 @@ int GL4Renderer::MakeBitmapCurrent(int handle, int map_type, int tn)
 
 void GL4Renderer::UpdateBitmapTextureRegion(int handle, int x, int y, int width, int height)
 {
+	// A recycled bitmap handle can still have an old GL remap.  A brand-new
+	// bitmap must replace that texture's storage in full before sub-updates are
+	// legal; leave BF_CHANGED set so MakeBitmapCurrent performs that upload.
 	if (handle <= BAD_BITMAP_HANDLE || handle >= MAX_BITMAPS ||
 		!GameBitmaps[handle].used || OpenGL_bitmap_remap[handle] == 65535 ||
+		(GameBitmaps[handle].flags & BF_BRAND_NEW) ||
 		bm_mipped(handle) || bm_data_truecolor(handle) != nullptr)
 	{
 		return;
