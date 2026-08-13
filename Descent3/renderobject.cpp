@@ -2695,8 +2695,8 @@ void DrawPlayerNameOnHud(object* obj)
 			font_scale = 1.0f;
 		font_scale *= ConfigNormalizeHudTextScale(Hud_text_scale);
 		QueuePostProcessHUDText(Players[slot].callsign,
-			Game_window_x + (int)pnt.p3_sx,
-			Game_window_y + (int)pnt.p3_sy,
+			(int)pnt.p3_sx,
+			(int)pnt.p3_sy,
 			true, HUD_FONT, font_scale, color, 255, 0);
 	}
 }
