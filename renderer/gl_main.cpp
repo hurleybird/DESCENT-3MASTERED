@@ -2799,7 +2799,7 @@ void GL4Renderer::CompositeDeferredBloomOverPostPresent()
 			bloom.compositeshader.Use();
 			glUniform1f(bloom.composite_gamma, deferred_display_gamma);
 			glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
-			glUniform1i(bloom.composite_use_alpha_mask, 1);
+			glUniform1i(bloom.composite_use_alpha_mask, 0);
 			glUniform1i(bloom.composite_use_protection_mask,
 				deferred_bloom_protection_mask_texture != 0 ? 1 : 0);
 			GLuint deferred_bloom_depth_texture =
@@ -3021,18 +3021,16 @@ void GL4Renderer::EndCockpitFrame()
 	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_DRAW);
 	ClearPostPresentAlpha();
 	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_ALPHA_CLEAR);
+	ApplyDeferredBloom(0);
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_BLOOM_APPLY);
+	CompositeDeferredBloomOverPostPresent();
+	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_BLOOM_COMPOSITE);
 	const bool cockpit_layer_resolved = cockpit_scene_frame_active && ResolveCockpitLayerToPostComposite();
 	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_RESOLVE);
-	GLuint cockpit_alpha_mask_texture = cockpit_layer_resolved ?
-		post_composite_framebuffer.ColorTextureForRead() : 0;
-	ApplyDeferredBloom(cockpit_alpha_mask_texture);
-	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_BLOOM_APPLY);
 	if (cockpit_layer_resolved)
 		BlendPostCompositeOverPostPresent();
 	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_BLEND);
 	cockpit_scene_frame_active = false;
-	CompositeDeferredBloomOverPostPresent();
-	GL4PerfGpuSplitMark(GL4_GPU_SPLIT_COCKPIT_AFTER_BLOOM_COMPOSITE);
 	UseDrawVAO();
 }
 

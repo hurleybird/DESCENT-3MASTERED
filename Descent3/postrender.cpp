@@ -139,6 +139,10 @@ void DrawPostrenderFace(int roomnum, int facenum, bool change_z)
 	}
 	const bool material_fog = BeginRoomMaterialFog(rp, &Viewer_eye,
 		Viewer_roomnum, Room_light_val);
+	const bool fog_portal_boundary = material_fog && fp->portal_num >= 0 &&
+		(rp->portals[fp->portal_num].flags & PF_RENDER_FACES);
+	if (fog_portal_boundary)
+		EndRoomMaterialFog();
 	const texture& face_texture = GameTextures[fp->tmap];
 	const bool translucent_water = (face_texture.flags & TF_WATER) != 0 &&
 		face_texture.alpha < 1.0f;
@@ -167,10 +171,14 @@ void DrawPostrenderFace(int roomnum, int facenum, bool change_z)
 	if (Num_fog_faces_to_render > 0)
 	{
 		PERF_MARKER_SCOPE("PostRenderFace.Fog");
+		if (fog_portal_boundary)
+			BeginRoomMaterialFog(rp, &Viewer_eye, Viewer_roomnum, Room_light_val);
 		RenderFogFaces(rp);
+		if (fog_portal_boundary)
+			EndRoomMaterialFog();
 		Num_fog_faces_to_render = 0;
 	}
-	if (material_fog)
+	if (material_fog && !fog_portal_boundary)
 		EndRoomMaterialFog();
 
 	// Restore statelimited setting

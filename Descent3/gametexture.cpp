@@ -318,7 +318,7 @@ static bool BloomProtectedTextureName(const char* name)
 		"OHQ_Monitor05", "OHQ_DebugMonitor", "M02_Ready", "M02_Scanning",
 		"M02_Cleared", "M02_Aborted", "M06_ForcefieldDisabled", "M06_ForcefieldEnabled",
 		"PTMCminingmanage", "PTMCLogoON", "PTMClogooff", "M06_FailsafeMonitor",
-		"AlienWhiteLight"
+		"AlienWhiteLight", "PStore-CrossLight03"
 	};
 	for (const char* candidate : names)
 		if (!stricmp(name, candidate))
