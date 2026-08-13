@@ -609,9 +609,9 @@ void LoadGameSettings()
 	Render_preferred_state.vsync = false;
 	Render_vrr_diagnostics = FindArg("-vrr-status") != 0;
 	Render_preferred_state.bloom_threshold = 0.75f;
-	Render_preferred_state.bloom_intensity = 1.25f;
+	Render_preferred_state.bloom_intensity = 1.0f;
 	Render_preferred_state.bloom_spread = 0.75f;
-	Render_preferred_state.bloom_texture_protection = 0.75f;
+	Render_preferred_state.bloom_texture_protection = 0.6f;
 	Render_preferred_state.bloom_texture_protection_range = 150.0f;
 	Render_preferred_state.ao_enabled = true;
 	Render_preferred_state.ao_resolution = AO_RESOLUTION_FULL;

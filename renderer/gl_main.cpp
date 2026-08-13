@@ -21,6 +21,7 @@
 #include "game.h"
 #include "rtperformance.h"
 #include <math.h>
+#include <cmath>
 #include <chrono>
 #include <climits>
 #include <cstdlib>
@@ -1302,7 +1303,7 @@ static bool GL4StateWantsPixelMotionVectors(const renderer_preferred_state& stat
 int GL4Renderer::FramebufferWidth() const
 {
 	if (modal_ui_frame_active)
-		return modal_ui_width;
+		return modal_ui_framebuffer.Width();
 
 	int logical_width = OpenGL_state.screen_width;
 	const int overscan_percent = GL4OverscanPercent(OpenGL_preferred_state);
@@ -1314,7 +1315,7 @@ int GL4Renderer::FramebufferWidth() const
 int GL4Renderer::FramebufferHeight() const
 {
 	if (modal_ui_frame_active)
-		return modal_ui_height;
+		return modal_ui_framebuffer.Height();
 
 	int logical_height = OpenGL_state.screen_height;
 	const int overscan_percent = GL4OverscanPercent(OpenGL_preferred_state);
@@ -1326,7 +1327,8 @@ int GL4Renderer::FramebufferHeight() const
 int GL4Renderer::ScaledX(int x) const
 {
 	if (modal_ui_frame_active)
-		return x - modal_ui_origin_x;
+		return (int)std::lround((double)(x - modal_ui_origin_x) *
+			FramebufferWidth() / modal_ui_width);
 
 	return (x + framebuffer_logical_offset_x) * SupersamplingFactor();
 }
@@ -1334,7 +1336,8 @@ int GL4Renderer::ScaledX(int x) const
 int GL4Renderer::ScaledY(int y) const
 {
 	if (modal_ui_frame_active)
-		return y - modal_ui_origin_y;
+		return (int)std::lround((double)(y - modal_ui_origin_y) *
+			FramebufferHeight() / modal_ui_height);
 
 	return (y + framebuffer_logical_offset_y) * SupersamplingFactor();
 }
@@ -1342,7 +1345,7 @@ int GL4Renderer::ScaledY(int y) const
 int GL4Renderer::ScaledW(int w) const
 {
 	if (modal_ui_frame_active)
-		return w;
+		return (int)std::lround((double)w * FramebufferWidth() / modal_ui_width);
 
 	return w * SupersamplingFactor();
 }
@@ -1350,7 +1353,7 @@ int GL4Renderer::ScaledW(int w) const
 int GL4Renderer::ScaledH(int h) const
 {
 	if (modal_ui_frame_active)
-		return h;
+		return (int)std::lround((double)h * FramebufferHeight() / modal_ui_height);
 
 	return h * SupersamplingFactor();
 }
@@ -2903,6 +2906,7 @@ void GL4Renderer::EndPostPresentFrame()
 		GL4PerfGpuSplitMark(GL4_GPU_SPLIT_AFTER_BACKBUFFER_BLIT);
 		ShaderProgram::ClearBinding();
 	}
+	CompositePendingModalUI();
 
 	GL4PerfGpuSplitEndBeforeSwap();
 	GL4PerfGpuFrameEndBeforeSwap();
@@ -3054,6 +3058,12 @@ bool GL4Renderer::BeginModalUIFrame(int reference_height)
 	glGetIntegerv(GL_DRAW_BUFFER, &modal_ui_destination_draw_buffer);
 	glGetIntegerv(GL_VIEWPORT, modal_ui_destination_viewport);
 
+	// The canvas keeps the game's displayed aspect so it stays aligned with the
+	// pillarboxed/letterboxed scene. Only its raster density comes from the real
+	// drawable; internal resolution must not determine UI sharpness.
+	const int presentation_height = framebuffer_blit_h > 0 ?
+		(int)framebuffer_blit_h : (OpenGL_state.view_height > 0 ?
+			OpenGL_state.view_height : OpenGL_state.screen_height);
 	modal_ui_height = reference_height;
 	modal_ui_width = (OpenGL_state.screen_width * reference_height +
 		OpenGL_state.screen_height / 2) / OpenGL_state.screen_height;
@@ -3062,12 +3072,25 @@ bool GL4Renderer::BeginModalUIFrame(int reference_height)
 	modal_ui_origin_x = (OpenGL_state.screen_width - modal_ui_width) / 2;
 	modal_ui_origin_y = (OpenGL_state.screen_height - modal_ui_height) / 2;
 
-	modal_ui_framebuffer.Update(modal_ui_width, modal_ui_height,
+	// Keep every legacy UI vertex on an integer multiple of its 720p layout
+	// coordinate. A fractional native-resolution transform makes bitmap fonts
+	// and one-pixel borders break into uneven subpixels, while rendering only
+	// 720 lines makes the final enlargement soft. Rasterize at the smallest
+	// whole multiple which is not below the display, then resolve once.
+	// Size the UI raster from the actual presentation rectangle, not the
+	// selected internal game resolution. The latter may be deliberately low
+	// while the window/backbuffer remains native resolution.
+	const int modal_ui_raster_scale = std::max(1,
+		(presentation_height + reference_height - 1) / reference_height);
+	modal_ui_framebuffer.Update(modal_ui_width * modal_ui_raster_scale,
+		modal_ui_height * modal_ui_raster_scale,
 		GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
 	if (modal_ui_framebuffer.Handle() == 0)
 		return false;
 
 	modal_ui_frame_active = true;
+	modal_ui_apply_gamma = false;
+	modal_ui_composite_pending = false;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, modal_ui_framebuffer.Handle());
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
@@ -3099,17 +3122,23 @@ void GL4Renderer::EndModalUIFrame()
 	modal_ui_frame_active = false;
 	if (ui_texture == 0)
 		return;
+	modal_ui_composite_pending = true;
 
-	blitshader.Use();
-	if (blitshader_gamma != -1)
-		glUniform1f(blitshader_gamma, 1.0f);
-	if (blitshader_uv_origin != -1)
-		glUniform2f(blitshader_uv_origin, 0.0f, 0.0f);
-	if (blitshader_uv_scale != -1)
-		glUniform2f(blitshader_uv_scale, 1.0f, 1.0f);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, modal_ui_destination_framebuffer);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, modal_ui_destination_read_framebuffer);
+	glDrawBuffer(modal_ui_destination_draw_buffer);
+	glViewport(modal_ui_destination_viewport[0], modal_ui_destination_viewport[1],
+		modal_ui_destination_viewport[2], modal_ui_destination_viewport[3]);
 	rend_ClearBoundTextures();
-	GL_BindFramebufferTexture(ui_texture, 0, GL_LINEAR);
+	RestoreLegacy();
+}
 
+void GL4Renderer::CompositePendingModalUI()
+{
+	if (!modal_ui_composite_pending || modal_ui_framebuffer.ColorTextureForRead() == 0)
+		return;
+
+	modal_ui_composite_pending = false;
 	const GLboolean blend_was_enabled = glIsEnabled(GL_BLEND);
 	const GLboolean depth_was_enabled = glIsEnabled(GL_DEPTH_TEST);
 	const GLboolean cull_was_enabled = glIsEnabled(GL_CULL_FACE);
@@ -3120,21 +3149,34 @@ void GL4Renderer::EndModalUIFrame()
 	GLint old_dst_rgb = GL_ZERO;
 	GLint old_src_alpha = GL_ONE;
 	GLint old_dst_alpha = GL_ZERO;
+	GLint old_viewport[4];
 	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
 	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
 	glGetIntegerv(GL_BLEND_SRC_RGB, &old_src_rgb);
 	glGetIntegerv(GL_BLEND_DST_RGB, &old_dst_rgb);
 	glGetIntegerv(GL_BLEND_SRC_ALPHA, &old_src_alpha);
 	glGetIntegerv(GL_BLEND_DST_ALPHA, &old_dst_alpha);
+	glGetIntegerv(GL_VIEWPORT, old_viewport);
 
+	blitshader.Use();
+	if (blitshader_gamma != -1)
+	{
+		const float modal_gamma = modal_ui_apply_gamma && OpenGL_preferred_state.gamma != 0.0f ?
+			1.0f / OpenGL_preferred_state.gamma : 1.0f;
+		glUniform1f(blitshader_gamma, modal_gamma);
+	}
+	if (blitshader_uv_origin != -1)
+		glUniform2f(blitshader_uv_origin, 0.0f, 0.0f);
+	if (blitshader_uv_scale != -1)
+		glUniform2f(blitshader_uv_scale, 1.0f, 1.0f);
+	rend_ClearBoundTextures();
+	GL_BindFramebufferTexture(modal_ui_framebuffer.ColorTextureForRead(), 0, GL_LINEAR);
 	glBindVertexArray(GL_GetFramebufferVAO());
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, modal_ui_destination_framebuffer);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-	if (modal_ui_destination_framebuffer != 0)
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	else
-		glDrawBuffer(GL_BACK);
-	glViewport(0, 0, OpenGL_state.screen_width, OpenGL_state.screen_height);
+	glDrawBuffer(GL_BACK);
+	glViewport(framebuffer_blit_x, framebuffer_blit_y,
+		framebuffer_blit_w, framebuffer_blit_h);
 	glEnable(GL_BLEND);
 	glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA,
 		GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
@@ -3146,11 +3188,6 @@ void GL4Renderer::EndModalUIFrame()
 	rend_RecordDrawCall(RENDERER_DRAW_CALL_POSTPROCESS);
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, modal_ui_destination_framebuffer);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, modal_ui_destination_read_framebuffer);
-	glDrawBuffer(modal_ui_destination_draw_buffer);
-	glViewport(modal_ui_destination_viewport[0], modal_ui_destination_viewport[1],
-		modal_ui_destination_viewport[2], modal_ui_destination_viewport[3]);
 	glBlendFuncSeparate(old_src_rgb, old_dst_rgb, old_src_alpha, old_dst_alpha);
 	if (blend_was_enabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
 	if (depth_was_enabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
@@ -3158,8 +3195,15 @@ void GL4Renderer::EndModalUIFrame()
 	if (scissor_was_enabled) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
 	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
 	glDepthMask(depth_mask);
+	glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
 	rend_ClearBoundTextures();
-	RestoreLegacy();
+	ShaderProgram::ClearBinding();
+}
+
+void GL4Renderer::SetModalUIGamma(bool enabled)
+{
+	if (modal_ui_frame_active)
+		modal_ui_apply_gamma = enabled;
 }
 
 void GL4Renderer::MapModalUIInput(int* x, int* y)
@@ -4615,6 +4659,7 @@ void GL4Renderer::CloseFramebuffer(void)
 	motion_blur_framebuffer.Destroy();
 	modal_ui_framebuffer.Destroy();
 	modal_ui_frame_active = false;
+	modal_ui_composite_pending = false;
 	soft_particle_depth_copy_valid = false;
 	soft_particle_depth_source_framebuffer = 0;
 	bloom_source_valid = false;

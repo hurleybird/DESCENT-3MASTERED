@@ -163,7 +163,7 @@ static void WBAdvanceFireTime(object* obj, otype_wb_info* static_wb,
 #include "stringtable.h"
 
 // Allows for multiple configurations of a single wb
-void WBFireBattery(object* obj, otype_wb_info* static_wb, int poly_wb_index, int dynamic_wb_index, float damage_scalar)
+int WBFireBattery(object* obj, otype_wb_info* static_wb, int poly_wb_index, int dynamic_wb_index, float damage_scalar)
 {
 	int cur_m_bit;
 	poly_model* pm = &Poly_models[obj->rtype.pobj_info.model_num];
@@ -351,11 +351,13 @@ void WBFireBattery(object* obj, otype_wb_info* static_wb, int poly_wb_index, int
 			}
 		}
 	}
+
+	return num_fired;
 }
 
-void WBFireBattery(object* obj, otype_wb_info* static_wb, int wb_index)
+int WBFireBattery(object* obj, otype_wb_info* static_wb, int wb_index)
 {
-	WBFireBattery(obj, static_wb, wb_index, wb_index);
+	return WBFireBattery(obj, static_wb, wb_index, wb_index);
 }
 
 void WBClearInfo(object* obj)

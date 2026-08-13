@@ -709,6 +709,7 @@ void rend_EndCockpitFrame();
 bool rend_BeginModalUIFrame(int reference_height);
 void rend_EndModalUIFrame();
 void rend_MapModalUIInput(int *x, int *y);
+void rend_SetModalUIGamma(bool enabled);
 
 // Init our renderer, pass the application object also.
 int rend_Init (renderer_type state, oeApplication *app,renderer_preferred_state *pref_state);

@@ -142,6 +142,8 @@ class GL4Renderer : public IRenderer
 	int modal_ui_height = 0;
 	int modal_ui_origin_x = 0;
 	int modal_ui_origin_y = 0;
+	bool modal_ui_apply_gamma = false;
+	bool modal_ui_composite_pending = false;
 	GLint modal_ui_destination_framebuffer = 0;
 	GLint modal_ui_destination_read_framebuffer = 0;
 	GLint modal_ui_destination_draw_buffer = GL_COLOR_ATTACHMENT0;
@@ -641,6 +643,7 @@ private:
 	void ApplyDeferredBloom(GLuint alpha_occlusion_mask_texture);
 	void CompositeDeferredBloomOverPostPresent();
 	void GammaCorrectPostPresent();
+	void CompositePendingModalUI();
 	void BindScreenshotSourceForRead(int& read_x, int& read_y);
 	int SupersamplingFactor() const;
 	int FramebufferWidth() const;
@@ -898,6 +901,7 @@ public:
 	bool BeginModalUIFrame(int reference_height) override;
 	void EndModalUIFrame() override;
 	void MapModalUIInput(int* x, int* y) override;
+	void SetModalUIGamma(bool enabled) override;
 
 	// Draws a line using the states of the renderer
 	void DrawSpecialLine(g3Point* p0, g3Point* p1) override;

@@ -290,6 +290,7 @@ public:
 	virtual bool BeginModalUIFrame(int reference_height) { return false; }
 	virtual void EndModalUIFrame() {}
 	virtual void MapModalUIInput(int* x, int* y) {}
+	virtual void SetModalUIGamma(bool enabled) {}
 
 	// Draws a line using the states of the renderer
 	virtual void DrawSpecialLine(g3Point* p0, g3Point* p1) = 0;

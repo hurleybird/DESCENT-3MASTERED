@@ -512,10 +512,15 @@ void ConfigSetDetailLevel(int level)
 void gamma_callback(newuiTiledWindow* wnd, void* data)
 {
 	int bm_handle = *((int*)data);
+	// Gameplay menus normally composite after display gamma so their colors are
+	// not processed twice.  This calibration target is the exception: it must
+	// respond to the value being calibrated.
+	rend_SetModalUIGamma(true);
 
 	g3Point pnts[4], * pntlist[4];
 	rend_SetColorModel(CM_RGB);
 	rend_SetAlphaType(AT_ALWAYS);
+	rend_SetAlphaValue(255);
 	rend_SetTextureType(TT_LINEAR);
 	rend_SetLighting(LS_NONE);
 	rend_SetOverlayType(OT_NONE);
@@ -542,12 +547,12 @@ void gamma_callback(newuiTiledWindow* wnd, void* data)
 
 	pnts[1].p3_sx = startx + GAMMA_SLICE_WIDTH;
 	pnts[1].p3_sy = GAMMA_SLICE_Y;
-	pnts[1].p3_u = 2;
+	pnts[1].p3_u = 1;
 	pnts[1].p3_v = 0;
 
 	pnts[2].p3_sx = startx + GAMMA_SLICE_WIDTH;
 	pnts[2].p3_sy = GAMMA_SLICE_Y + GAMMA_SLICE_HEIGHT;
-	pnts[2].p3_u = 2;
+	pnts[2].p3_u = 1;
 	pnts[2].p3_v = 1;
 
 	pnts[3].p3_sx = startx;
@@ -556,25 +561,6 @@ void gamma_callback(newuiTiledWindow* wnd, void* data)
 	pnts[3].p3_v = 1;
 
 	rend_DrawPolygon2D(bm_handle, pntlist, 4);
-
-	// Now draw grey in the center
-	int int_val = 8;
-	rend_SetFlatColor(GR_RGB(int_val, int_val, int_val));
-	rend_SetTextureType(TT_FLAT);
-
-	pnts[0].p3_sx += 64;
-	pnts[0].p3_sy += 32;
-
-	pnts[1].p3_sx -= 64;
-	pnts[1].p3_sy += 32;
-
-	pnts[2].p3_sx -= 64;
-	pnts[2].p3_sy -= 32;
-
-	pnts[3].p3_sx += 64;
-	pnts[3].p3_sy -= 32;
-
-	rend_DrawPolygon2D(0, pntlist, 4);
 
 	rend_SetWrapType(WT_CLAMP);
 	rend_SetZBufferState(1);
@@ -592,28 +578,24 @@ void config_gamma()
 	float init_gamma;
 
 	// Make gamma bitmap
-	gamma_bitmap = bm_AllocBitmap(128, 128, 0);
+	gamma_bitmap = bm_AllocBitmap(GAMMA_SLICE_WIDTH, GAMMA_SLICE_HEIGHT, 0);
 	if (gamma_bitmap <= 0) {
 		gamma_bitmap = 0;
 	}
 	else {
 		ushort* dest_data = (ushort*)bm_data(gamma_bitmap, 0);
-		int addval = 0;
-		int i, t;
-
-		// This loop makes the checkerboard
-		for (i = 0; i < 128; i++)
+		const ushort dark_gray = OPAQUE_FLAG | (4 << 10) | (4 << 5) | 4;
+		for (int y = 0; y < GAMMA_SLICE_HEIGHT; y++)
 		{
-			addval = (i & 1) ? 1 : 0;
-
-			for (t = 0; t < 128; t++)
+			for (int x = 0; x < GAMMA_SLICE_WIDTH; x++)
 			{
-				if (((t + addval) % 2) == 0) {
-					dest_data[i * 128 + t] = OPAQUE_FLAG | (1 << 10) | (1 << 5) | (1);
-				}
-				else {
-					dest_data[i * 128 + t] = OPAQUE_FLAG;
-				}
+				const bool center = x >= 64 && x < GAMMA_SLICE_WIDTH - 64 &&
+					y >= 32 && y < GAMMA_SLICE_HEIGHT - 32;
+				// The center is deliberately lighter than the checker average.
+				// Keep the entire target in one opaque texture so modal-layer
+				// blending cannot erase the legacy flat center polygon.
+				dest_data[y * GAMMA_SLICE_WIDTH + x] = center || ((x + y) & 1) == 0 ?
+					dark_gray : OPAQUE_FLAG;
 			}
 		}
 	}
@@ -690,9 +672,6 @@ void config_gamma()
 #define IDV_DRAW_CALL_STATS 19
 #define IDV_AO_OVERSCAN 20
 #define IDV_ANISOTROPY 26
-#define IDV_BLOOM_STRENGTH 42
-#define IDV_BLOOM_PROTECTION 43
-#define IDV_BLOOM_RANGE 44
 #define IDD_MOTION_BLUR_STRENGTH 41
 #define UID_RESOLUTION 110
 #define UID_ASPECT 111
@@ -1378,9 +1357,6 @@ struct video_menu
 
 	short* fov;
 	short* frame_limit;
-	short* bloom_strength;
-	short* bloom_protection;
-	short* bloom_range;
 	char* buffer;
 	char* aspect_buffer;
 	bool* fullscreen;
@@ -1391,25 +1367,6 @@ struct video_menu
 	int window_width, window_height;
 	int window_aspect;
 	int display_width, display_height;
-
-	static float BloomValue(short value) { return (float)value * 0.05f; }
-	static short BloomPosition(float value)
-	{
-		int position = (int)floorf(value / 0.05f + 0.5f);
-		return (short)(position < 0 ? 0 : (position > 80 ? 80 : position));
-	}
-	static float BloomProtectionValue(short value) { return (float)value * 0.05f; }
-	static short BloomProtectionPosition(float value)
-	{
-		int position = (int)floorf(value / 0.05f + 0.5f);
-		return (short)(position < 0 ? 0 : (position > 20 ? 20 : position));
-	}
-	static float BloomRangeValue(short value) { return (float)value * 0.5f; }
-	static short BloomRangePosition(float value)
-	{
-		int position = (int)floorf(value / 0.5f + 0.5f);
-		return (short)(position < 0 ? 0 : (position > 1000 ? 1000 : position));
-	}
 
 	void update_display_text()
 	{
@@ -1648,17 +1605,6 @@ struct video_menu
 			ApplySamplingQualityPreset(*sampling_quality);
 			changed = true;
 		}
-		if ((bloom_strength && sheet->HasChanged(bloom_strength)) ||
-			(bloom_protection && sheet->HasChanged(bloom_protection)) ||
-			(bloom_range && sheet->HasChanged(bloom_range)))
-		{
-			Render_preferred_state.bloom_intensity = BloomValue(*bloom_strength);
-			Render_preferred_state.bloom_texture_protection =
-				BloomProtectionValue(*bloom_protection);
-			Render_preferred_state.bloom_texture_protection_range =
-				BloomRangeValue(*bloom_range);
-			changed = true;
-		}
 		if (fov && sheet->HasChanged(fov))
 		{
 			Render_FOV_desired = fov[0] + D3_DEFAULT_FOV;
@@ -1716,9 +1662,6 @@ struct video_menu
 		ao_overscan = NULL;
 		fov = NULL;
 		frame_limit = NULL;
-		bloom_strength = NULL;
-		bloom_protection = NULL;
-		bloom_range = NULL;
 		buffer = NULL;
 		aspect_buffer = NULL;
 		fullscreen = NULL;
@@ -1794,30 +1737,8 @@ struct video_menu
 		bloom_enabled = sheet->AddLongCheckBox("Bloom", Render_preferred_state.bloom_enabled);
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
 
-		tSliderSettings bloom_settings = {};
-		bloom_settings.min_val.f = 0.0f;
-		bloom_settings.max_val.f = 4.0f;
-		bloom_settings.type = SLIDER_UNITS_FLOAT;
-		sheet->NewGroup("Bloom", 0, 255);
-		bloom_strength = sheet->AddSlider("Strength", 80,
-			BloomPosition(Render_preferred_state.bloom_intensity),
-			&bloom_settings, IDV_BLOOM_STRENGTH);
-		tSliderSettings protection_settings = {};
-		protection_settings.min_val.f = 0.0f;
-		protection_settings.max_val.f = 1.0f;
-		protection_settings.type = SLIDER_UNITS_FLOAT;
-		bloom_protection = sheet->AddSlider("Protection", 20,
-			BloomProtectionPosition(Render_preferred_state.bloom_texture_protection),
-			&protection_settings, IDV_BLOOM_PROTECTION);
-		tSliderSettings range_settings = {};
-		range_settings.min_val.f = 0.0f;
-		range_settings.max_val.f = 500.0f;
-		range_settings.type = SLIDER_UNITS_FLOAT;
-		bloom_range = sheet->AddSlider("Range", 1000,
-			BloomRangePosition(Render_preferred_state.bloom_texture_protection_range),
-			&range_settings, IDV_BLOOM_RANGE);
 #ifndef RELEASE
-		sheet->NewGroup("Debug", 0, 350);
+		sheet->NewGroup("Debug", 0, 255);
 		motion_vector_debug = sheet->AddLongCheckBox("Vector debug", Render_preferred_state.motion_vector_debug_preview);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
@@ -1872,14 +1793,6 @@ struct video_menu
 			Render_preferred_state.per_pixel_lighting = ConfigCanUsePerPixelLighting() && *per_pixel_lighting;
 		if (bloom_enabled)
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
-		if (bloom_strength)
-			Render_preferred_state.bloom_intensity = BloomValue(*bloom_strength);
-		if (bloom_protection)
-			Render_preferred_state.bloom_texture_protection =
-				BloomProtectionValue(*bloom_protection);
-		if (bloom_range)
-			Render_preferred_state.bloom_texture_protection_range =
-				BloomRangeValue(*bloom_range);
 		if (ao)
 		{
 			if (ConfigCanUseAO())

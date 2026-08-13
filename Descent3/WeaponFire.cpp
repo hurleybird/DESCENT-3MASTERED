@@ -2602,6 +2602,8 @@ void StopOnOffWeapon(object* obj)
 	}
 }
 
+static int Vauss_alternating_player_handle = OBJECT_HANDLE_NONE;
+
 // Starts an on/off weapon firing
 void StartOnOffWeapon(object* obj, ubyte wb_index)
 {
@@ -2609,7 +2611,19 @@ void StartOnOffWeapon(object* obj, ubyte wb_index)
 	obj->weapon_fire_flags |= WFF_ON_OFF;
 
 	dynamic_wb_info* p_dwb = &obj->dynamic_wb[wb_index];
-	p_dwb->cur_firing_mask = 0;
+	// Vauss has alternating gunpoint masks just like EMD. Seed the first burst
+	// from the authored left mask, then preserve the battery's mask progression
+	// across later clicks. A replacement player object starts a fresh sequence.
+	if (wb_index == VAUSS_INDEX)
+	{
+		if (Vauss_alternating_player_handle != obj->handle)
+		{
+			p_dwb->cur_firing_mask = 0;
+			Vauss_alternating_player_handle = obj->handle;
+		}
+	}
+	else
+		p_dwb->cur_firing_mask = 0;
 
 
 	if (Demo_flags == DF_RECORDING)
@@ -2845,8 +2859,9 @@ void FireWeaponFromPlayer(object* objp, int weapon_type, int down_count, bool do
 	// fraction of the frame for which it was held.  That residual time is not
 	// a second activation: only a new down edge or the current held state keeps
 	// a normal weapon firing.  Preserve the residual charge time for weapons
-	// which intentionally fire on release.
-	if ((down_count == 0) && !down_state)
+	// which intentionally fire on release. A complete fire-on-release click is
+	// handled after the resource checks below.
+	if (!down_state && down_count == 0)
 	{
 		if (fire_on_release && down_time > 0.0f)
 			pw->firing_time += down_time;
@@ -2861,6 +2876,7 @@ void FireWeaponFromPlayer(object* objp, int weapon_type, int down_count, bool do
 		//Check for fire-on-release weapon
 		if (fire_on_release)
 		{
+			bool fired = false;
 			if (can_fire_now)
 			{
 				float scalar = 1.0;
@@ -2876,34 +2892,37 @@ void FireWeaponFromPlayer(object* objp, int weapon_type, int down_count, bool do
 				{
 					MultiSendRequestToFire(weapon_battery_index, p_dwb->cur_firing_mask, scalar);
 					DoPermissableWeaponMask(weapon_battery_index);
+					fired = true;
 				}
 				else
-					WBFireBattery(objp, wb, 0, weapon_battery_index, scalar);
+					fired = WBFireBattery(objp, wb, 0, weapon_battery_index, scalar) > 0;
 
-				player->energy -= energy_usage * ammo_scalar;
-				if (player->energy < 0)
-					player->energy = 0;
-
-				if (player->weapon_ammo[weapon_battery_index] < (wb->ammo_usage * ammo_scalar))
-					player->weapon_ammo[weapon_battery_index] = 0;
-				else
-					player->weapon_ammo[weapon_battery_index] -= (wb->ammo_usage * ammo_scalar);
-
-				player->num_discharges_level++;
-
-				if (ship->fire_flags[weapon_battery_index] & SFF_ZOOM)
+				if (fired)
 				{
-					AddToShakeMagnitude(ship->phys_info.mass * 2);
+					player->energy -= energy_usage * ammo_scalar;
+					if (player->energy < 0)
+						player->energy = 0;
+
+					if (player->weapon_ammo[weapon_battery_index] < (wb->ammo_usage * ammo_scalar))
+						player->weapon_ammo[weapon_battery_index] = 0;
+					else
+						player->weapon_ammo[weapon_battery_index] -= (wb->ammo_usage * ammo_scalar);
+
+					player->num_discharges_level++;
+
+					if (ship->fire_flags[weapon_battery_index] & SFF_ZOOM)
+						AddToShakeMagnitude(ship->phys_info.mass * 2);
 				}
 			}
-		}
 
-		//Play cut-off sound if one (but not if in permissable game)
-		if (!(Game_mode & GM_MULTI) || !(Netgame.flags & NF_PERMISSABLE))
-		{
-			int cutoff_sound = ship->firing_release_sound[weapon_battery_index];
-			if (cutoff_sound != -1)
-				Sound_system.Play2dSound(cutoff_sound, SND_PRIORITY_HIGHEST);
+			// A release sound describes a completed discharge, not merely an
+			// input edge or a failed muzzle spawn.
+			if (fired && (!(Game_mode & GM_MULTI) || !(Netgame.flags & NF_PERMISSABLE)))
+			{
+				int cutoff_sound = ship->firing_release_sound[weapon_battery_index];
+				if (cutoff_sound != -1)
+					Sound_system.Play2dSound(cutoff_sound, SND_PRIORITY_HIGHEST);
+			}
 		}
 
 		//Stop the weapon sound & visual effects
@@ -2953,10 +2972,54 @@ void FireWeaponFromPlayer(object* objp, int weapon_type, int down_count, bool do
 	if (!can_fire_now)
 		return;
 
-	//If continous sound weapon, start the sound if wasn't firing last frame
+	// Press and release can both occur between two control samples.  Treat that
+	// as a short, valid charge-and-release instead of starting charge audio for
+	// a weapon which will no longer be held on the next sample.
+	if (fire_on_release && down_count > 0 && !down_state)
+	{
+		pw->firing_time += down_time;
+		float scalar = 1.0f;
+		if (ship->fire_flags[weapon_battery_index] & SFF_FUSION)
+			scalar += (pw->firing_time / FUSION_RAMP_TIME) * 3.0f;
+
+		bool fired = false;
+		if ((Game_mode & GM_MULTI) && (Netgame.flags & NF_PERMISSABLE))
+		{
+			MultiSendRequestToFire(weapon_battery_index, p_dwb->cur_firing_mask, scalar);
+			DoPermissableWeaponMask(weapon_battery_index);
+			fired = true;
+		}
+		else
+			fired = WBFireBattery(objp, wb, 0, weapon_battery_index, scalar) > 0;
+
+		if (fired)
+		{
+			player->energy -= energy_usage * ammo_scalar;
+			if (player->energy < 0.0f)
+				player->energy = 0.0f;
+			player->weapon_ammo[weapon_battery_index] -= wb->ammo_usage * ammo_scalar;
+			if (player->weapon_ammo[weapon_battery_index] < 0.0f)
+				player->weapon_ammo[weapon_battery_index] = 0.0f;
+			player->num_discharges_level++;
+
+			if (!(Game_mode & GM_MULTI) || !(Netgame.flags & NF_PERMISSABLE))
+			{
+				const int cutoff_sound = ship->firing_release_sound[weapon_battery_index];
+				if (cutoff_sound != -1)
+					Sound_system.Play2dSound(cutoff_sound, SND_PRIORITY_HIGHEST);
+			}
+		}
+
+		if (weapon_type == PW_PRIMARY)
+			StopWeapon(objp, pw, wb);
+		return;
+	}
+
+	// Fire-on-release weapons use this as a genuine charge/zoom sound.  Normal
+	// batteries start it only after a projectile has actually been created.
 	int firing_sound = ship->firing_sound[weapon_battery_index];
 
-	if (can_fire_now && (firing_sound != -1) && (pw->firing_time == 0.0))
+	if (fire_on_release && (firing_sound != -1) && (pw->firing_time == 0.0))
 		pw->sound_handle = Sound_system.Play2dSound(firing_sound, SND_PRIORITY_HIGHEST);
 
 	//Set spray flag if spray weapon
@@ -2976,14 +3039,22 @@ void FireWeaponFromPlayer(object* objp, int weapon_type, int down_count, bool do
 
 	//If not a fire-on-release weapon, then fire if ready
 	if (!fire_on_release && can_fire_now) {
+		bool fired = false;
 
 		if ((Game_mode & GM_MULTI) && (Netgame.flags & NF_PERMISSABLE))
 		{
 			MultiSendRequestToFire(weapon_battery_index, p_dwb->cur_firing_mask);
 			DoPermissableWeaponMask(weapon_battery_index);
+			fired = true;
 		}
 		else
-			WBFireBattery(objp, wb, 0, weapon_battery_index);
+			fired = WBFireBattery(objp, wb, 0, weapon_battery_index) > 0;
+
+		if (!fired)
+			return;
+
+		if (firing_sound != -1 && pw->firing_time == 0.0)
+			pw->sound_handle = Sound_system.Play2dSound(firing_sound, SND_PRIORITY_HIGHEST);
 
 		// Continuous fire deliberately preserves sub-frame scheduling
 		// overshoot, but a released and re-pressed input starts a new burst.
