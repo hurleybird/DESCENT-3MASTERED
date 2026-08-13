@@ -30,6 +30,8 @@
 #include <memory.h>
 #include "gamespyutils.h"
 #include "gamespy.h"
+#include "enginebrand.h"
+#include "builtin_connectors.h"
 
 extern short Multi_kills[MAX_NET_PLAYERS];
 extern short Multi_deaths[MAX_NET_PLAYERS];
@@ -39,7 +41,8 @@ char gspy_d3_secret[10];// = "feWh2G";
 const char origstring[] = {(const char)0x50,(const char)0xf8,(const char)0xa4,(const char)0xba,(const char)0xc7,(const char)0x7c};
 char gspy_cfgfilename[_MAX_PATH];
 
-#define MAX_GAMESPY_SERVERS	5
+#define MAX_CONFIGURED_GAMESPY_SERVERS 5
+#define MAX_GAMESPY_SERVERS	(MAX_CONFIGURED_GAMESPY_SERVERS + 1)
 #define MAX_GAMESPY_BUFFER	1400
 #define MAX_HOSTNAMELEN	300
 #define GSPY_HEARBEAT_INTERVAL	300			//Seconds between heartbeats.
@@ -65,10 +68,90 @@ int gspy_packetnumber = 0;
 int gspy_queryid = 0;
 char gspy_validate[MAX_GAMESPY_BUFFER] = "";
 unsigned short gspy_listenport;
+static int gspy_automatic_server = -1;
+
+static bool gspy_AddressIsUnset(const SOCKADDR_IN& address)
+{
+#if defined(WIN32)
+	return address.sin_addr.S_un.S_addr == INADDR_NONE;
+#else
+	return address.sin_addr.s_addr == INADDR_NONE;
+#endif
+}
+
+static bool gspy_SetServerAddress(SOCKADDR_IN& address, const char* hostname, unsigned short port)
+{
+	address.sin_family = AF_INET;
+	address.sin_port = htons(port);
+	const unsigned long numeric_address = inet_addr(hostname);
+	if (numeric_address != INADDR_NONE)
+	{
+		INADDR_SET_SUN_SADDR(&address.sin_addr, numeric_address);
+		return true;
+	}
+
+	mprintf((0, "Resolving hostname for gamespy: %s\n", hostname));
+	HOSTENT* host = gethostbyname(hostname);
+	if (!host)
+	{
+		mprintf((0, "Unable to resolve %s\n", hostname));
+		INADDR_SET_SUN_SADDR(&address.sin_addr, INADDR_NONE);
+		return false;
+	}
+	memcpy(&address.sin_addr, host->h_addr_list[0], sizeof(unsigned int));
+	return true;
+}
+
+static void gspy_EnableTsetseflyForTracker()
+{
+	if (gspy_automatic_server >= 0)
+	{
+		INADDR_SET_SUN_SADDR(&gspy_server[gspy_automatic_server].sin_addr, INADDR_NONE);
+		gspy_server[gspy_automatic_server].sin_port = htons(GAMESPY_PORT);
+		gspy_automatic_server = -1;
+	}
+	if (stricmp(Netgame.connection_name, BUILTIN_TRACKER_NAME))
+		return;
+
+	SOCKADDR_IN tsetsefly = {};
+	INADDR_SET_SUN_SADDR(&tsetsefly.sin_addr, INADDR_NONE);
+	if (!gspy_SetServerAddress(tsetsefly, "tsetsefly.de", GAMESPY_PORT))
+		return;
+	for (int i = 0; i < MAX_CONFIGURED_GAMESPY_SERVERS; i++)
+	{
+		if (!gspy_AddressIsUnset(gspy_server[i]) &&
+			gspy_server[i].sin_addr.s_addr == tsetsefly.sin_addr.s_addr &&
+			gspy_server[i].sin_port == tsetsefly.sin_port)
+		{
+			mprintf((0, "Tracker hosting will advertise to configured Tsetsefly endpoint.\n"));
+			return;
+		}
+	}
+	for (int i = 0; i < MAX_GAMESPY_SERVERS; i++)
+	{
+		if (!gspy_AddressIsUnset(gspy_server[i]))
+			continue;
+		gspy_server[i] = tsetsefly;
+		gspy_automatic_server = i;
+		mprintf((0, "Tracker hosting will advertise to tsetsefly.de:%d\n", GAMESPY_PORT));
+		return;
+	}
+	mprintf((0, "All GameSpy tracker slots are configured; unable to add automatic Tsetsefly advertisement.\n"));
+}
+
+static void gspy_BuildAdvertisedVersion(char* output, size_t output_size)
+{
+	snprintf(output, output_size, "3MASTERED v%s, %s", ENGINE_VERSION_STRING,
+		MultiProtocolIsEnhanced(Netgame.server_version) ? "Enhanced" : "Vanilla");
+}
 
 //Register a game with this library so we will tell the servers about it...
 void gspy_StartGame(char *name)
 {
+	gspy_EnableTsetseflyForTracker();
+	char advertised_version[128];
+	gspy_BuildAdvertisedVersion(advertised_version, sizeof(advertised_version));
+	mprintf((0, "GameSpy advertised engine identity: %s\n", advertised_version));
 	gspy_last_heartbeat = timer_GetTime()-GSPY_HEARBEAT_INTERVAL;
 	gspy_game_running = true;
 }
@@ -158,7 +241,7 @@ int gspy_Init(void)
 		mprintf((0,"Found a gamespy config file!\n"));
 		char hostn[MAX_HOSTNAMELEN];
 
-		for (int i = 0; i < MAX_GAMESPY_SERVERS; i++)
+		for (int i = 0; i < MAX_CONFIGURED_GAMESPY_SERVERS; i++)
 		{
 			//First in the config file is the region, which is a number from 0-12 (currently)
 			if (cf_ReadString(hostn, MAX_HOSTNAMELEN - 1, cfp))
@@ -186,31 +269,7 @@ int gspy_Init(void)
 					//get the port number
 					gspy_server[i].sin_port = htons(atoi(port));
 				}
-				if (INADDR_NONE == inet_addr(hostn))
-				{
-					//This is a name we must resolve
-					HOSTENT *he;
-					mprintf((0,"Resolving hostname for gamespy: %s\n",hostn));
-					he = gethostbyname(hostn);
-					if (!he)
-					{
-						mprintf((0,"Unable to resolve %s\n",hostn));
-						//gspy_server[i].sin_addr.S_un.S_addr = INADDR_NONE;
-						INADDR_SET_SUN_SADDR(&gspy_server[i].sin_addr, INADDR_NONE);
-					}
-					else
-					{
-						//memcpy(&gspy_server[i].sin_addr.S_un.S_addr,he->h_addr_list[0],sizeof(unsigned int));
-						memcpy(&gspy_server[i].sin_addr, he->h_addr_list[0], sizeof(unsigned int));
-					}
-				}
-				else
-				{
-					//This is just a number
-					//gspy_server[i].sin_addr.S_un.S_addr = inet_addr(hostn);
-					INADDR_SET_SUN_SADDR(&gspy_server[i].sin_addr, inet_addr(hostn));
-					//break;
-				}
+				gspy_SetServerAddress(gspy_server[i], hostn, ntohs(gspy_server[i].sin_port));
 			}
 			#if defined(WIN32)
 			if (gspy_server[i].sin_addr.S_un.S_addr != INADDR_NONE)
@@ -474,7 +533,9 @@ int gspy_DoBasic(SOCKADDR_IN *addr)
 	sprintf(buf,"\\gamename\\%s",THISGAMENAME);
 	gspy_AddToBuffer(addr,buf);
 	//sprintf(buf,"\\gamever\\%d.%d",Program_version.major,Program_version.minor);
-	sprintf(buf,"\\gamever\\%s %.1d.%.1d.%.1d",THISGAMEVER,Program_version.major,Program_version.minor,Program_version.build);
+	char advertised_version[128];
+	gspy_BuildAdvertisedVersion(advertised_version, sizeof(advertised_version));
+	snprintf(buf, sizeof(buf), "\\gamever\\%s", advertised_version);
 	gspy_AddToBuffer(addr,buf);
 	sprintf(buf,"\\location\\%d",gspy_region);
 	gspy_AddToBuffer(addr,buf);

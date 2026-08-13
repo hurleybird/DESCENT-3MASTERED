@@ -8,7 +8,7 @@ MARK_AS_ADVANCED(CMAKE_BACKWARDS_COMPATIBILITY)
 # allow more human readable "if then else" constructs
 SET( CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS TRUE )
 
-PROJECT(Descent3Mastered VERSION 0.9.0)
+PROJECT(Descent3Mastered VERSION 0.9.1)
 
 function(add_hog_file HOG_NAME HOG_SRC_DIR)
 	string( REPLACE "." "_" HOG_TARGET ${HOG_NAME} )
@@ -264,6 +264,21 @@ ENDIF()
 
 add_executable(Descent3Mastered ${DESCENT3_SOURCES})
 set_target_properties(Descent3Mastered PROPERTIES OUTPUT_NAME "Descent 3MASTERED")
+
+if(WIN32)
+	set(BUILTIN_CONNECTOR_RC "${CMAKE_CURRENT_BINARY_DIR}/builtin_connectors.rc")
+	add_custom_command(
+		OUTPUT "${BUILTIN_CONNECTOR_RC}"
+		COMMAND ${CMAKE_COMMAND}
+			-DOUTPUT=${BUILTIN_CONNECTOR_RC}
+			-DLAN_CONNECTOR=$<TARGET_FILE:TCP-IP>
+			-DTRACKER_CONNECTOR=$<TARGET_FILE:Tracker>
+			-P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateBuiltinConnectors.cmake"
+		DEPENDS TCP-IP Tracker
+		VERBATIM)
+	set_source_files_properties("${BUILTIN_CONNECTOR_RC}" PROPERTIES GENERATED TRUE)
+	target_sources(Descent3Mastered PRIVATE "${BUILTIN_CONNECTOR_RC}")
+endif()
 	
 IF (WIN32)
 	if (USE_SDL) #for convenience SDL will compile as a console app, and dump mono there

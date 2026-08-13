@@ -29,8 +29,8 @@
 // and data compatibility level and must not be repurposed as release branding.
 #define ENGINE_VERSION_MAJOR 0
 #define ENGINE_VERSION_MINOR 9
-#define ENGINE_VERSION_PATCH 0
-#define ENGINE_VERSION_STRING "0.9.0 Pre-3"
+#define ENGINE_VERSION_PATCH 1
+#define ENGINE_VERSION_STRING "0.9.1 Pre"
 
 // Read-only migration aliases.  New files and settings must use ENGINE_NAME.
 #define ENGINE_LEGACY_NAME "Piccu Engine"

@@ -61,6 +61,7 @@
 #include "mem.h"
 #include "args.h"
 #include "game2dll.h"
+#include "builtin_connectors.h"
 //#define USE_DIRECTPLAY
 
 #ifdef USE_DIRECTPLAY
@@ -117,6 +118,50 @@ DLLMultiCall_fp DLLMultiCall = nullptr;
 DLLMultiInit_fp DLLMultiInit = nullptr;
 DLLMultiClose_fp DLLMultiClose = nullptr;
 DLLMultiGetPiccuAPIVer_fp DLLMultiGetPiccuAPIVer = nullptr;
+
+#ifdef WIN32
+static int GetBuiltinConnectorResourceId(const char* name)
+{
+	if (!stricmp(name, BUILTIN_DIRECT_TCPIP_NAME))
+		return IDR_BUILTIN_DIRECT_TCPIP;
+	if (!stricmp(name, BUILTIN_TRACKER_NAME))
+		return IDR_BUILTIN_TRACKER;
+	return 0;
+}
+
+static bool ExtractBuiltinConnector(const char* name, char* output_path)
+{
+	const int resource_id = GetBuiltinConnectorResourceId(name);
+	if (!resource_id)
+		return false;
+
+	HRSRC resource = FindResource(GetModuleHandle(NULL), MAKEINTRESOURCE(resource_id), RT_RCDATA);
+	if (!resource)
+		return false;
+	HGLOBAL loaded_resource = LoadResource(GetModuleHandle(NULL), resource);
+	const DWORD resource_size = SizeofResource(GetModuleHandle(NULL), resource);
+	const void* resource_data = loaded_resource ? LockResource(loaded_resource) : NULL;
+	if (!resource_data || !resource_size)
+		return false;
+	if (!ddio_GetTempFileName(Descent3_temp_directory, "3mcon", output_path))
+		return false;
+
+	HANDLE output = CreateFile(output_path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+		FILE_ATTRIBUTE_TEMPORARY, NULL);
+	if (output == INVALID_HANDLE_VALUE)
+		return false;
+	DWORD bytes_written = 0;
+	const BOOL wrote = WriteFile(output, resource_data, resource_size, &bytes_written, NULL);
+	CloseHandle(output);
+	if (!wrote || bytes_written != resource_size)
+	{
+		ddio_DeleteFile(output_path);
+		return false;
+	}
+
+	return true;
+}
+#endif
 
 //dllmultiiInfo DLLMultiInfo;
 //The DLL needs these too.
@@ -389,6 +434,20 @@ int LoadMultiDLL(char* name)
 
 	ddio_MakePath(dll_path_name, Base_directory, "online", "*.tmp", NULL);
 	ddio_DeleteFile(dll_path_name);
+
+#ifdef WIN32
+	if (GetBuiltinConnectorResourceId(name))
+	{
+		if (!ExtractBuiltinConnector(name, tmp_dll_name))
+		{
+			mprintf((0, "Unable to extract built-in connector %s!\n", name));
+			return 0;
+		}
+		strcpy(Multi_conn_dll_name, tmp_dll_name);
+		goto loaddll;
+	}
+#endif
+
 	//Make the hog filename
 	ddio_MakePath(lib_name, Base_directory, "online", name, NULL);
 	strcat(lib_name, ".piccucon");
@@ -426,6 +485,11 @@ loaddll:
 	{
 		int err = mod_GetLastError();
 		mprintf((0, "You are missing the DLL %s!\n", name));
+		if (Multi_conn_dll_name[0])
+		{
+			ddio_DeleteFile(Multi_conn_dll_name);
+			Multi_conn_dll_name[0] = '\0';
+		}
 		return 0;
 	}
 
@@ -510,6 +574,8 @@ loaddll:
 			Supports_score_api = false;
 		}
 	}
+	strncpy(Netgame.connection_name, name, sizeof(Netgame.connection_name) - 1);
+	Netgame.connection_name[sizeof(Netgame.connection_name) - 1] = '\0';
 	return 1;
 }
 // The chokepoint function to call the dll function

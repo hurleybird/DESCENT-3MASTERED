@@ -52,6 +52,7 @@
 #include "multi_save_settings.h"
 #include "difficulty.h"
 #include "gameloop.h"
+#include "builtin_connectors.h"
 
 #define MAIN_MULTI_MENU_W		384
 #define MAIN_MULTI_MENU_H		256
@@ -131,7 +132,7 @@ int MainMultiplayerMenu()
 	Database->read("DefaultNetConn", sznetgame, &netgamelen);
 	if (*sznetgame == '\0')
 	{
-		strcpy(sznetgame, "HEAT.NET");
+		strcpy(sznetgame, "Direct TCP/IP");
 		Database->write("DefaultNetConn", sznetgame, strlen(sznetgame) + 1);
 	}
 
@@ -162,6 +163,18 @@ int MainMultiplayerMenu()
 
 	int dftidx = -1;
 	dllcount = 0;
+
+	// 3MASTERED's standard connectors are embedded in the executable. Keep
+	// third-party connectors discoverable below without depending on colliding
+	// Piccu connector files in the installation directory.
+	lists->AddItem("Direct TCP/IP");
+	if (!stricmp(sznetgame, "Direct TCP/IP"))
+		dftidx = dllcount;
+	dllcount++;
+	lists->AddItem(BUILTIN_TRACKER_NAME);
+	if (!stricmp(sznetgame, BUILTIN_TRACKER_NAME))
+		dftidx = dllcount;
+	dllcount++;
 
 	//Put the HEAT on top.
 	if (ddio_FindFileStart(search, buffer))
@@ -225,7 +238,8 @@ int MainMultiplayerMenu()
 				fname[j] = '/';
 		}
 
-		if ((stricmp(HEAT_NAME, fname) != 0) && (stricmp(PXO_NAME, fname) != 0))
+		if ((stricmp(HEAT_NAME, fname) != 0) && (stricmp(PXO_NAME, fname) != 0) &&
+			(stricmp("Direct TCP/IP", fname) != 0) && (stricmp(BUILTIN_TRACKER_NAME, fname) != 0))
 		{
 			lists->AddItem(fname);
 			if (!stricmp(sznetgame, fname))
@@ -248,7 +262,8 @@ int MainMultiplayerMenu()
 				
 			}
 
-			if ((stricmp(HEAT_NAME, fname) != 0) && (stricmp(PXO_NAME, fname) != 0))
+			if ((stricmp(HEAT_NAME, fname) != 0) && (stricmp(PXO_NAME, fname) != 0) &&
+				(stricmp("Direct TCP/IP", fname) != 0) && (stricmp(BUILTIN_TRACKER_NAME, fname) != 0))
 			{
 				lists->AddItem(fname);
 				if (!stricmp(sznetgame, fname))
@@ -258,8 +273,6 @@ int MainMultiplayerMenu()
 			}
 		}
 	}
-	else
-		dllcount = 0;
 	
 	ddio_FindFileClose();
 

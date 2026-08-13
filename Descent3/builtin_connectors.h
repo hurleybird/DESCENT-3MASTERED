@@ -1,0 +1,7 @@
+#pragma once
+
+#define IDR_BUILTIN_DIRECT_TCPIP 301
+#define IDR_BUILTIN_TRACKER 302
+
+#define BUILTIN_DIRECT_TCPIP_NAME "Direct TCP~IP"
+#define BUILTIN_TRACKER_NAME "Tracker"

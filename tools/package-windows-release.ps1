@@ -172,8 +172,6 @@ $requiredFiles = @(
     "INSTALL-WINDOWS.txt",
     "LICENSE.txt",
     "THIRD-PARTY-LICENSES.txt",
-    "online\Direct TCP~IP.piccucon",
-    "online\Tracker.piccucon",
     "netgames3mastered\anarchy.d3m",
     "netgames3mastered\coop.d3m",
     "netgames3mastered\ctf.d3m",
