@@ -63,7 +63,7 @@
 
 #define ENHANCED_SOUND_INVESTIGATION_GUID 0x334D534E
 #define ENHANCED_SOUND_INVESTIGATION_LEVEL 3
-#define ENHANCED_SOUND_INVESTIGATION_TIME 25.0f
+#define ENHANCED_SOUND_INVESTIGATION_TIME 8.0f
 
 static const float Enhanced_hearing_distance_scale[5] = {
 	0.40f, 0.55f, 0.60f, 0.85f, 1.00f
@@ -1579,10 +1579,7 @@ static void AIInvestigateEnhancedSound(object *robot, const object *source)
 
 	// Do not displace a level-authored or non-flushable high-priority goal.
 	if (investigation.used && investigation.guid != ENHANCED_SOUND_INVESTIGATION_GUID)
-	{
-		ai_info->last_hear_target_time = Gametime;
 		return;
-	}
 
 	AIClearEnhancedSoundInvestigation(robot);
 
@@ -1603,7 +1600,31 @@ static void AIInvestigateEnhancedSound(object *robot, const object *source)
 
 	if (ai_info->awareness < AWARE_MOSTLY)
 		ai_info->awareness = AWARE_MOSTLY;
-	ai_info->last_hear_target_time = Gametime;
+}
+
+static bool AIHasClearRayToSoundSource(object *robot, object *source)
+{
+	if (!robot || !source)
+		return false;
+	if (!BOA_IsVisible(robot->roomnum, source->roomnum))
+		return false;
+
+	fvi_query query{};
+	fvi_info hit_info{};
+	query.p0 = &robot->pos;
+	query.p1 = &source->pos;
+	query.startroom = robot->roomnum;
+	query.rad = 0.0f;
+	query.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS |
+		FQ_NO_RELINK;
+	query.thisobjnum = -1;
+	int ignore_objects[2] = { static_cast<int>(OBJNUM(robot)), -1 };
+	query.ignore_obj_list = ignore_objects;
+
+	const int fate = fvi_FindIntersection(&query, &hit_info);
+	return fate == HIT_NONE ||
+		((fate == HIT_OBJECT || fate == HIT_SPHERE_2_POLY_OBJECT) &&
+			hit_info.hit_object[0] == OBJNUM(source));
 }
 
 static bool AIRecentlySawOrHeardTarget(const ai_frame *ai_info, float interval)
@@ -1611,8 +1632,7 @@ static bool AIRecentlySawOrHeardTarget(const ai_frame *ai_info, float interval)
 	if (Gametime - ai_info->last_see_target_time < interval)
 		return true;
 
-	return !GameplayRulesAreEnhanced() &&
-		Gametime - ai_info->last_hear_target_time < interval;
+	return Gametime - ai_info->last_hear_target_time < interval;
 }
 
 void AISeeTarget(object *obj, bool f_see)
@@ -1956,36 +1976,50 @@ bool AINotify(object *obj, ubyte notify_type, void *info)
 			if(hptr->f_directly_player)
 			{
 				const bool enhanced_hearing = GameplayRulesAreEnhanced();
-				const float difficulty_scale = enhanced_hearing ?
-					Enhanced_hearing_distance_scale[DIFF_AI_LEVEL] : 1.0f;
-				const float search_distance = hptr->max_dist * difficulty_scale;
 				short heard_noise_obj[50];
-				int num_objs = fvi_QuickDistObjectList(&obj->pos, obj->roomnum, search_distance, heard_noise_obj, 50, false, true, false, true);
+				// Clear-line hearing retains the legacy invariant range. Occluded
+				// investigation applies the enhanced difficulty scale below.
+				int num_objs = fvi_QuickDistObjectList(&obj->pos, obj->roomnum,
+					hptr->max_dist, heard_noise_obj, 50, false, true, false, true);
 
 				for(i = 0; i < num_objs; i++)
 				{
 					if(Objects[heard_noise_obj[i]].control_type == CT_AI)
 					{
 						object *robot = &Objects[heard_noise_obj[i]];
-						const float hearing_distance = search_distance * robot->ai_info->hearing;
-						bool heard = vm_VectorDistance(&obj->pos, &robot->pos) < hearing_distance;
+						const float legacy_hearing_distance =
+							hptr->max_dist * robot->ai_info->hearing;
+						const float direct_distance = vm_VectorDistance(&obj->pos, &robot->pos);
+						if (direct_distance >= legacy_hearing_distance)
+							continue;
 
-						if (heard && enhanced_hearing && obj->roomnum != robot->roomnum)
+						if (!enhanced_hearing)
 						{
-							float path_distance = 0.0f;
-							heard = BOA_IsSoundAudible(obj->roomnum, robot->roomnum) &&
-								BOA_ComputeMinDist(obj->roomnum, robot->roomnum,
-									hearing_distance, &path_distance) &&
-								path_distance < hearing_distance;
+							AISeeTarget(robot, false);
+							continue;
 						}
 
-						if(heard)
+						if (AIHasClearRayToSoundSource(robot, obj))
 						{
-							if (enhanced_hearing)
-								AIInvestigateEnhancedSound(robot, obj);
-							else
-								AISeeTarget(robot, false);
+							AIClearEnhancedSoundInvestigation(robot);
+							AISeeTarget(robot, false);
+							continue;
 						}
+
+						const float investigation_distance = legacy_hearing_distance *
+							Enhanced_hearing_distance_scale[DIFF_AI_LEVEL];
+						if (direct_distance >= investigation_distance)
+							continue;
+
+						float path_distance = 0.0f;
+						const bool heard_around_obstruction =
+							(obj->roomnum == robot->roomnum ||
+								BOA_IsSoundAudible(obj->roomnum, robot->roomnum)) &&
+							BOA_ComputeMinDist(obj->roomnum, robot->roomnum,
+								investigation_distance, &path_distance) &&
+							path_distance < investigation_distance;
+						if (heard_around_obstruction)
+							AIInvestigateEnhancedSound(robot, obj);
 					}
 				}
 			}
