@@ -549,6 +549,7 @@ class GL4Renderer : public IRenderer
 
 	//if false, never, ever do anything with framebuffers while I try to get out of here.
 	bool framebuffer_ok = false;
+	int pipeline_warmup_next = 0;
 
 private:
 	//DRAW
@@ -657,6 +658,7 @@ private:
 
 	//Shader
 	void InitShaders();
+	void WarmUpScenePipelines();
 	void UpdateLegacyBlock(float* projection, float* modelview);
 
 public:

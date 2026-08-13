@@ -19,6 +19,7 @@
 #include "gl_local.h"
 #include "gameloop.h"
 #include "game.h"
+#include "descent.h"
 #include "rtperformance.h"
 #include <math.h>
 #include <cmath>
@@ -1882,11 +1883,15 @@ void GL4Renderer::Flip()
 	if (post_present_pending_swap)
 	{
 		EndPostPresentFrame();
+		if (GetFunctionMode() == MENU_MODE)
+			WarmUpScenePipelines();
 		return;
 	}
 
 	if (BeginPostPresentFrame())
 		EndPostPresentFrame();
+	if (GetFunctionMode() == MENU_MODE)
+		WarmUpScenePipelines();
 }
 
 void GL4Renderer::DestroyFramePacingFences()

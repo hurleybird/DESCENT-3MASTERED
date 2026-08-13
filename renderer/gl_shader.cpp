@@ -22,6 +22,7 @@
 #include "pserror.h"
 #include "renderer.h"
 #include "gl_local.h"
+#include "gameloop.h"
 
 constexpr int TERRAIN_FOG_COUNTER_MAX = 100;
 
@@ -188,9 +189,42 @@ ShaderDefinition gl_shaderdefs[] =
 
 ShaderProgram gl_shaderprogs[NUM_SHADERDEFS];
 
+struct GL4PipelineWarmupVertex
+{
+	float attributes[15][4];
+	int retained_source_vertex;
+};
+
+static void GL4SetPipelineWarmupVertex(GL4PipelineWarmupVertex& vertex,
+	float x, float y)
+{
+	memset(&vertex, 0, sizeof(vertex));
+	vertex.attributes[0][0] = x;
+	vertex.attributes[0][1] = y;
+	vertex.attributes[0][2] = 0.0f;
+	vertex.attributes[0][3] = 1.0f;
+	vertex.attributes[1][0] = 1.0f;
+	vertex.attributes[1][1] = 1.0f;
+	vertex.attributes[1][2] = 1.0f;
+	vertex.attributes[1][3] = 1.0f;
+	vertex.attributes[2][0] = 0.5f;
+	vertex.attributes[2][1] = 0.5f;
+	vertex.attributes[2][2] = 1.0f;
+	vertex.attributes[3][0] = 0.5f;
+	vertex.attributes[3][1] = 0.5f;
+	vertex.attributes[3][2] = 1.0f;
+	vertex.attributes[4][2] = 1.0f;
+	vertex.attributes[4][3] = 1.0f;
+	vertex.attributes[5][3] = 1.0f;
+	vertex.attributes[6][3] = 1.0f;
+	for (int attribute = 7; attribute < 15; attribute++)
+		vertex.attributes[attribute][3] = 1.0f;
+}
+
 void GL4Renderer::InitShaders()
 {
 	lastshaderprog = nullptr;
+	pipeline_warmup_next = 0;
 	glGenBuffers(1, &commonbuffername);
 	glBindBuffer(GL_COPY_WRITE_BUFFER, commonbuffername);
 	glBufferData(GL_COPY_WRITE_BUFFER, sizeof(CommonBlock) * 35, nullptr, GL_DYNAMIC_DRAW);
@@ -252,6 +286,227 @@ void GL4Renderer::InitShaders()
 	for (int i = 0; i < NUM_SHADERDEFS; i++)
 	{
 		gl_shaderprogs[i].AttachSourceFromDefiniton(gl_shaderdefs[i]);
+	}
+}
+
+void GL4Renderer::WarmUpScenePipelines()
+{
+	const int pipeline_count = DRAW_SHADER_COUNT + (int)NUM_SHADERDEFS;
+	if (pipeline_warmup_next >= pipeline_count)
+		return;
+
+	GLint old_draw_framebuffer = 0;
+	GLint old_read_framebuffer = 0;
+	GLint old_vertex_array = 0;
+	GLint old_array_buffer = 0;
+	GLint old_active_texture = 0;
+	GLint old_viewport[4] = {};
+	GLboolean blend_was_enabled = glIsEnabled(GL_BLEND);
+	GLboolean cull_was_enabled = glIsEnabled(GL_CULL_FACE);
+	GLboolean scissor_was_enabled = glIsEnabled(GL_SCISSOR_TEST);
+	GLboolean depth_was_enabled = glIsEnabled(GL_DEPTH_TEST);
+	GLboolean multisample_was_enabled = glIsEnabled(GL_MULTISAMPLE);
+	GLboolean color_mask[4] = {};
+	GLboolean depth_mask = GL_TRUE;
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw_framebuffer);
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read_framebuffer);
+	glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &old_vertex_array);
+	glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &old_array_buffer);
+	glGetIntegerv(GL_ACTIVE_TEXTURE, &old_active_texture);
+	glGetIntegerv(GL_VIEWPORT, old_viewport);
+	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+
+	GLuint framebuffer = 0;
+	GLuint color_textures[3] = {};
+	GLuint object_id_texture = 0;
+	GLuint depth_texture = 0;
+	GLuint dummy_2d = 0;
+	GLuint dummy_2d_array = 0;
+	GLuint vertex_array = 0;
+	GLuint vertex_buffer = 0;
+	GLuint terrain_vertex_array = 0;
+	GLuint terrain_vertex_buffer = 0;
+
+	glGenFramebuffers(1, &framebuffer);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+	glGenTextures(3, color_textures);
+	for (int attachment = 0; attachment < 3; attachment++)
+	{
+		glBindTexture(GL_TEXTURE_2D, color_textures[attachment]);
+		glTexImage2D(GL_TEXTURE_2D, 0, attachment == 1 ? GL_RG16F : GL_RGBA8,
+			4, 4, 0, attachment == 1 ? GL_RG : GL_RGBA,
+			attachment == 1 ? GL_FLOAT : GL_UNSIGNED_BYTE, nullptr);
+		glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + attachment,
+			GL_TEXTURE_2D, color_textures[attachment], 0);
+	}
+	glGenTextures(1, &object_id_texture);
+	glBindTexture(GL_TEXTURE_2D, object_id_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, 4, 4, 0, GL_RED_INTEGER,
+		GL_UNSIGNED_INT, nullptr);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT4,
+		GL_TEXTURE_2D, object_id_texture, 0);
+	glGenTextures(1, &depth_texture);
+	glBindTexture(GL_TEXTURE_2D, depth_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, 4, 4, 0,
+		GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+		GL_TEXTURE_2D, depth_texture, 0);
+	const GLenum draw_buffers[5] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1,
+		GL_COLOR_ATTACHMENT2, GL_NONE, GL_COLOR_ATTACHMENT4 };
+	glDrawBuffers(5, draw_buffers);
+
+	glGenTextures(1, &dummy_2d);
+	glBindTexture(GL_TEXTURE_2D, dummy_2d);
+	const unsigned int white_pixel = 0xffffffffu;
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA,
+		GL_UNSIGNED_BYTE, &white_pixel);
+	glGenTextures(1, &dummy_2d_array);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, dummy_2d_array);
+	glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, 1, 1, 1, 0, GL_RGBA,
+		GL_UNSIGNED_BYTE, &white_pixel);
+	for (int unit = 0; unit <= 1; unit++)
+	{
+		glActiveTexture(GL_TEXTURE0 + unit);
+		glBindTexture(GL_TEXTURE_2D, dummy_2d);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, dummy_2d_array);
+	}
+
+	GL4PipelineWarmupVertex vertices[3];
+	GL4SetPipelineWarmupVertex(vertices[0], -1.0f, -1.0f);
+	GL4SetPipelineWarmupVertex(vertices[1], 3.0f, -1.0f);
+	GL4SetPipelineWarmupVertex(vertices[2], -1.0f, 3.0f);
+	glGenVertexArrays(1, &vertex_array);
+	glBindVertexArray(vertex_array);
+	glGenBuffers(1, &vertex_buffer);
+	glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+	for (int attribute = 0; attribute < 15; attribute++)
+	{
+		glEnableVertexAttribArray(attribute);
+		glVertexAttribPointer(attribute, 4, GL_FLOAT, GL_FALSE,
+			sizeof(GL4PipelineWarmupVertex),
+			(const void*)offsetof(GL4PipelineWarmupVertex, attributes[attribute]));
+	}
+	glEnableVertexAttribArray(15);
+	glVertexAttribIPointer(15, 1, GL_INT, sizeof(GL4PipelineWarmupVertex),
+		(const void*)offsetof(GL4PipelineWarmupVertex, retained_source_vertex));
+
+	const float identity[16] = {
+		1, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1
+	};
+	CommonBlock common = {};
+	memcpy(common.projection, identity, sizeof(identity));
+	memcpy(common.modelview, identity, sizeof(identity));
+	glBindBuffer(GL_COPY_WRITE_BUFFER, commonbuffername);
+	glBufferSubData(GL_COPY_WRITE_BUFFER, 0, sizeof(common), &common);
+	glBindBuffer(GL_COPY_WRITE_BUFFER, legacycommonbuffername);
+	glBufferSubData(GL_COPY_WRITE_BUFFER, 0, sizeof(common), &common);
+	SpecularBlock specular = {};
+	specular.exponent = 4;
+	specular.strength = 1.0f;
+	glBindBuffer(GL_COPY_WRITE_BUFFER, specularbuffername);
+	glBufferSubData(GL_COPY_WRITE_BUFFER, 0, sizeof(specular), &specular);
+	RoomBlock room = {};
+	room.brightness = 1.0f;
+	room.fog_distance = 1.0f;
+	room.fog_plane[2] = 1.0f;
+	glBindBuffer(GL_COPY_WRITE_BUFFER, fogbuffername);
+	glBufferSubData(GL_COPY_WRITE_BUFFER, 0, sizeof(room), &room);
+	TerrainFogBlock terrain_fog = {};
+	terrain_fog.end_dist = 1.0f;
+	glBindBuffer(GL_COPY_WRITE_BUFFER, terrainfogbuffername);
+	glBufferSubData(GL_COPY_WRITE_BUFFER, 0, sizeof(terrain_fog), &terrain_fog);
+	glViewport(0, 0, 4, 4);
+	glDisable(GL_BLEND);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_SCISSOR_TEST);
+	glDisable(GL_DEPTH_TEST);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_FALSE);
+
+	if (pipeline_warmup_next < DRAW_SHADER_COUNT)
+	{
+		drawshaders[pipeline_warmup_next].Use();
+		glDrawArrays(GL_TRIANGLES, 0, 3);
+	}
+	else
+	{
+		const int shader = pipeline_warmup_next - DRAW_SHADER_COUNT;
+		if (shader == 7 || shader == 8)
+		{
+			// Retained terrain expands one packed cell into six vertices using
+			// gl_VertexID, so exercise it with its actual input shape.
+			struct TerrainWarmupCell
+			{
+				unsigned int packed[4];
+				float height[4];
+			};
+			const TerrainWarmupCell terrain_cell = {
+				{ 0, 0, 0, 0 },
+				{ -1.0f, -1.0f, -1.0f, -1.0f }
+			};
+			glGenVertexArrays(1, &terrain_vertex_array);
+			glBindVertexArray(terrain_vertex_array);
+			glGenBuffers(1, &terrain_vertex_buffer);
+			glBindBuffer(GL_ARRAY_BUFFER, terrain_vertex_buffer);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(terrain_cell), &terrain_cell, GL_STATIC_DRAW);
+			glEnableVertexAttribArray(0);
+			glVertexAttribIPointer(0, 4, GL_UNSIGNED_INT, sizeof(TerrainWarmupCell), nullptr);
+			glEnableVertexAttribArray(1);
+			glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(TerrainWarmupCell),
+				(const void*)offsetof(TerrainWarmupCell, height));
+			gl_shaderprogs[shader].Use();
+			glDrawArraysInstanced(GL_TRIANGLES, 0, 6, 1);
+		}
+		else
+		{
+			gl_shaderprogs[shader].Use();
+			glDrawArrays(GL_TRIANGLES, 0, 3);
+		}
+	}
+	pipeline_warmup_next++;
+
+	glDeleteBuffers(1, &terrain_vertex_buffer);
+	glDeleteVertexArrays(1, &terrain_vertex_array);
+	glDeleteBuffers(1, &vertex_buffer);
+	glDeleteVertexArrays(1, &vertex_array);
+	glDeleteTextures(1, &dummy_2d_array);
+	glDeleteTextures(1, &dummy_2d);
+	glDeleteTextures(1, &depth_texture);
+	glDeleteTextures(1, &object_id_texture);
+	glDeleteTextures(3, color_textures);
+	glDeleteFramebuffers(1, &framebuffer);
+
+	ShaderProgram::ClearBinding();
+	lastdrawshader = -1;
+	legacy_draw_uniforms_dirty = true;
+	Last_texel_unit_set = -1;
+	for (int unit = 0; unit < 4; unit++)
+		OpenGL_last_bound[unit] = 9999999;
+	glBindVertexArray(old_vertex_array);
+	glBindBuffer(GL_ARRAY_BUFFER, old_array_buffer);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw_framebuffer);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_framebuffer);
+	glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
+	glActiveTexture(old_active_texture);
+	if (blend_was_enabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+	if (cull_was_enabled) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+	if (scissor_was_enabled) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+	if (depth_was_enabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+	if (multisample_was_enabled) glEnable(GL_MULTISAMPLE); else glDisable(GL_MULTISAMPLE);
+	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+	glDepthMask(depth_mask);
+	SetViewport();
+	if (pipeline_warmup_next == pipeline_count)
+	{
+		mprintf((0, "GL4 scene pipelines warmed up incrementally.\n"));
+		AutomatedCaptureLog("GL4 scene pipelines warmed up incrementally count=%d",
+			pipeline_count);
 	}
 }
 
