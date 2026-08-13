@@ -291,14 +291,17 @@ int PlayerGetRandomStartPosition(int slot)
 		{
 			// Check to see if there are any other players in this room
 			int objnum = -1;
-			if (Players[num].start_roomnum >= 0)
+			const int start_roomnum = Players[num].start_roomnum;
+			if (!ROOMNUM_OUTSIDE(start_roomnum))
 			{
-				room* rp = &Rooms[Players[num].start_roomnum];
+				room* rp = &Rooms[start_roomnum];
 				objnum = rp->objects;
 			}
 			else
 			{
-				objnum = Terrain_seg[Players[num].start_roomnum].objects;
+				const int cellnum = CELLNUM(start_roomnum);
+				ASSERT(cellnum >= 0 && cellnum < TERRAIN_WIDTH * TERRAIN_DEPTH);
+				objnum = Terrain_seg[cellnum].objects;
 			}
 			bool bad = false;
 			for (; objnum != -1 && !bad; objnum = Objects[objnum].next)

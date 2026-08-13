@@ -717,6 +717,8 @@ int MainMultiplayerMenu ()
 		case 7:
 			//Start a new game
 			// Start a netgame
+			if (!DLLMultiChooseHostRules())
+				break;
 			DLLNewUIWindowClose(main_wnd);
 			*DLLGame_is_master_tracker_game = 0;
 			if (StartMultiplayerGameMenu())

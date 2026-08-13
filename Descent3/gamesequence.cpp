@@ -1562,6 +1562,10 @@ void PageInShip(int id)
 			PageInLevelTexture(pm->textures[t]);
 	}
 	LoadLevelProgress(LOAD_PROGRESS_PAGING_DATA, PAGED_IN_CALC);
+	// The starter laser is intentionally skipped by the battery walk below to
+	// avoid paging it once per gunpoint.  Page it explicitly: multiplayer game
+	// modes can remove every level generic that used to page it incidentally.
+	PageInWeapon(LASER_INDEX);
 	// Try and load the various weapons
 	int j;
 	if (shippointer->static_wb)

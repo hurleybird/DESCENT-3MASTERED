@@ -949,9 +949,6 @@ char dll_display_text[MAX_DLLS][_MAX_PATH];
 
 int StartMultiplayerGameMenu ()
 {
-	if (!DLLMultiChooseHostRules())
-		return 0;
-
 	void * game_name_text = DLLCreateNewUITextItem(TXT(10), UICOL_TEXT_NORMAL,-1);//TXT_LC_GAMENAME
 	void * mission_name_text = DLLCreateNewUITextItem(TXT(11), UICOL_TEXT_NORMAL,-1);//TXT_LC_MSNNAME
 	void * script_name_text = DLLCreateNewUITextItem(TXT(12), UICOL_TEXT_NORMAL,-1);//TXT_LC_SCRIPTNAME
