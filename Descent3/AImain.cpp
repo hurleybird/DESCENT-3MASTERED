@@ -1589,7 +1589,7 @@ static void AIInvestigateEnhancedSound(object *robot, const object *source)
 
 	int goal_index = GoalAddGoal(robot, AIG_GET_TO_POS, &sound_goal,
 		ENHANCED_SOUND_INVESTIGATION_LEVEL, 1.0f,
-		GF_SPEED_NORMAL | GF_ORIENT_PATH_NODE | GF_FORCE_AWARENESS,
+		GF_SPEED_NORMAL | GF_ORIENT_VELOCITY | GF_FORCE_AWARENESS,
 		ENHANCED_SOUND_INVESTIGATION_GUID);
 	if (goal_index != AI_INVALID_INDEX)
 	{
