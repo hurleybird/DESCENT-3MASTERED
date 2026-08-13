@@ -2928,6 +2928,19 @@ void FireWeaponFromPlayer(object* objp, int weapon_type, int down_count, bool do
 		//Stop the weapon sound & visual effects
 		if (weapon_type == PW_PRIMARY)
 			StopWeapon(objp, pw, wb);
+		else
+		{
+			// Secondary batteries do not own the primary weapon's global
+			// on/off and spray state, but they still need a real burst end.
+			// Leaving firing_time set made a later click inherit the previous
+			// missile's sub-frame cadence phase and could shorten its interval.
+			if (pw->sound_handle != -1)
+			{
+				Sound_system.StopSoundImmediate(pw->sound_handle);
+				pw->sound_handle = -1;
+			}
+			pw->firing_time = 0.0f;
+		}
 
 		//We're done
 		return;

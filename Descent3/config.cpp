@@ -500,7 +500,6 @@ void ConfigSetDetailLevel(int level)
 #define	GAMMA_MENU_H	320
 #define	GAMMA_MENU_W	416
 
-#define GAMMA_SLICES			32
 #define GAMMA_SLICE_WIDTH	256
 #define GAMMA_SLICE_HEIGHT 128
 #define GAMMA_SLICE_X		((GAMMA_MENU_W - GAMMA_SLICE_WIDTH)/2);
@@ -509,101 +508,84 @@ void ConfigSetDetailLevel(int level)
 
 #define IDV_AUTOGAMMA	6
 
-void gamma_callback(newuiTiledWindow* wnd, void* data)
+static void DrawGammaCalibrationTarget()
 {
-	int bm_handle = *((int*)data);
-	// Gameplay menus normally composite after display gamma so their colors are
-	// not processed twice.  This calibration target is the exception: it must
-	// respond to the value being calibrated.
-	rend_SetModalUIGamma(true);
+	auto draw_rect = [](int left, int top, int right, int bottom, ddgr_color color) {
+		g3Point points[4];
+		g3Point* point_list[4];
+		points[0].p3_sx = left;
+		points[0].p3_sy = top;
+		points[1].p3_sx = right;
+		points[1].p3_sy = top;
+		points[2].p3_sx = right;
+		points[2].p3_sy = bottom;
+		points[3].p3_sx = left;
+		points[3].p3_sy = bottom;
+		for (int i = 0; i < 4; ++i)
+		{
+			points[i].p3_z = 0.0f;
+			points[i].p3_flags = PF_PROJECTED;
+			point_list[i] = &points[i];
+		}
 
-	g3Point pnts[4], * pntlist[4];
-	rend_SetColorModel(CM_RGB);
+		rend_SetFlatColor(color);
+		rend_DrawPolygon2D(0, point_list, 4);
+	};
+
+	rend_SetColorModel(CM_MONO);
 	rend_SetAlphaType(AT_ALWAYS);
 	rend_SetAlphaValue(255);
-	rend_SetTextureType(TT_LINEAR);
+	rend_SetTextureType(TT_FLAT);
 	rend_SetLighting(LS_NONE);
 	rend_SetOverlayType(OT_NONE);
-	rend_SetWrapType(WT_WRAP);
+	rend_SetWrapType(WT_CLAMP);
 	rend_SetZBufferState(0);
 
-	// First draw checkboard
-	int startx = GAMMA_SLICE_X;
-
-	for (int i = 0; i < 4; i++)
+	const int startx = GAMMA_SLICE_X;
+	int inner_gray = 8;
+	if (GetFunctionMode() == GAME_MODE && GetScreenMode() == SM_GAME)
 	{
-		pntlist[i] = &pnts[i];
-		pnts[i].p3_z = 0;
-		pnts[i].p3_r = 1;
-		pnts[i].p3_g = 1;
-		pnts[i].p3_b = 1;
-		pnts[i].p3_flags = PF_PROJECTED;
+		// Main-menu UI receives display gamma during normal presentation. The
+		// gameplay modal is deliberately composited afterward, so encode this
+		// calibration patch to the same displayed value without changing the
+		// rest of the menu layer.
+		const float gamma = Render_preferred_state.gamma > 0.0f ?
+			Render_preferred_state.gamma : 1.0f;
+		inner_gray = (int)(powf(8.0f / 255.0f, 1.0f / gamma) * 255.0f + 0.5f);
 	}
+	draw_rect(startx, GAMMA_SLICE_Y,
+		startx + GAMMA_SLICE_WIDTH, GAMMA_SLICE_Y + GAMMA_SLICE_HEIGHT,
+		GR_BLACK);
+	draw_rect(startx + 64, GAMMA_SLICE_Y + 32,
+		startx + GAMMA_SLICE_WIDTH - 64, GAMMA_SLICE_Y + GAMMA_SLICE_HEIGHT - 32,
+		GR_RGB(inner_gray, inner_gray, inner_gray));
 
-	pnts[0].p3_sx = startx;
-	pnts[0].p3_sy = GAMMA_SLICE_Y;
-	pnts[0].p3_u = 0;
-	pnts[0].p3_v = 0;
-
-	pnts[1].p3_sx = startx + GAMMA_SLICE_WIDTH;
-	pnts[1].p3_sy = GAMMA_SLICE_Y;
-	pnts[1].p3_u = 1;
-	pnts[1].p3_v = 0;
-
-	pnts[2].p3_sx = startx + GAMMA_SLICE_WIDTH;
-	pnts[2].p3_sy = GAMMA_SLICE_Y + GAMMA_SLICE_HEIGHT;
-	pnts[2].p3_u = 1;
-	pnts[2].p3_v = 1;
-
-	pnts[3].p3_sx = startx;
-	pnts[3].p3_sy = GAMMA_SLICE_Y + GAMMA_SLICE_HEIGHT;
-	pnts[3].p3_u = 0;
-	pnts[3].p3_v = 1;
-
-	rend_DrawPolygon2D(bm_handle, pntlist, 4);
-
-	rend_SetWrapType(WT_CLAMP);
 	rend_SetZBufferState(1);
 }
+
+class GammaCalibrationWindow : public newuiTiledWindow
+{
+protected:
+	void OnDraw() override
+	{
+		newuiTiledWindow::OnDraw();
+		DrawGammaCalibrationTarget();
+	}
+};
 
 
 void config_gamma()
 {
-	newuiTiledWindow gamma_wnd;
+	GammaCalibrationWindow gamma_wnd;
 	newuiSheet* sheet;
 	tSliderSettings slider_set;
 	short* gamma_slider;
 	short curpos;
-	int res, gamma_bitmap = -1;
+	int res;
 	float init_gamma;
-
-	// Make gamma bitmap
-	gamma_bitmap = bm_AllocBitmap(GAMMA_SLICE_WIDTH, GAMMA_SLICE_HEIGHT, 0);
-	if (gamma_bitmap <= 0) {
-		gamma_bitmap = 0;
-	}
-	else {
-		ushort* dest_data = (ushort*)bm_data(gamma_bitmap, 0);
-		const ushort dark_gray = OPAQUE_FLAG | (4 << 10) | (4 << 5) | 4;
-		for (int y = 0; y < GAMMA_SLICE_HEIGHT; y++)
-		{
-			for (int x = 0; x < GAMMA_SLICE_WIDTH; x++)
-			{
-				const bool center = x >= 64 && x < GAMMA_SLICE_WIDTH - 64 &&
-					y >= 32 && y < GAMMA_SLICE_HEIGHT - 32;
-				// The center is deliberately lighter than the checker average.
-				// Keep the entire target in one opaque texture so modal-layer
-				// blending cannot erase the legacy flat center polygon.
-				dest_data[y * GAMMA_SLICE_WIDTH + x] = center || ((x + y) & 1) == 0 ?
-					dark_gray : OPAQUE_FLAG;
-			}
-		}
-	}
 
 	// create ui.
 	gamma_wnd.Create(TXT_AUTO_GAMMA, 0, 0, GAMMA_MENU_W, GAMMA_MENU_H);
-	gamma_wnd.SetData(&gamma_bitmap);
-	gamma_wnd.SetOnDrawCB(gamma_callback);
 
 	sheet = gamma_wnd.GetSheet();
 
@@ -656,9 +638,6 @@ void config_gamma()
 	gamma_wnd.Close();
 	gamma_wnd.Destroy();
 
-	if (gamma_bitmap != 0) {
-		bm_FreeBitmap(gamma_bitmap);
-	}
 }
 
 //////////////////////////////////////////////////////////////////
