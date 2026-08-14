@@ -3689,6 +3689,12 @@ void GameFrame(void)
 	// Do our fourth quaterframe of IntelliVIBE
 	VIBE_DoQuaterFrame(false);
 
+	// Make the current simulation state recoverable before graphics-driver work.
+	// This is a stdio flush, not a physical disk sync, so it avoids stalling on
+	// storage while ensuring a process or driver failure does not strand it in
+	// the C runtime's write buffer.
+	DemoFlushRecording();
+
 #ifdef USE_RTP
 	RTP_GETCLOCK(curr_time);	//update the current time, since something has happened since ENDFTIME
 #endif

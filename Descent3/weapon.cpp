@@ -185,6 +185,8 @@ float WeaponGameplayDirectDamage(object *weapon_obj, bool target_is_player)
 	if (!GameplayRulesAreEnhanced())
 		return damage;
 
+	if (WeaponGameplayMatchesPlayerSlot(weapon_obj, MICROWAVE_INDEX))
+		return damage * (2.0f / 3.0f);
 	if (WeaponGameplayMatchesPlayerSlot(weapon_obj, NAPALM_INDEX))
 		return damage * (60.0f / 53.0f);
 	if (WeaponGameplayMatchesPlayerSlot(weapon_obj, EMD_INDEX))
@@ -196,6 +198,12 @@ float WeaponGameplayPlayerHomingScalar(object *weapon_obj)
 {
 	return GameplayRulesAreEnhanced() &&
 		WeaponGameplayMatchesPlayerSlot(weapon_obj, EMD_INDEX) ? 1.5f : 1.0f;
+}
+
+bool WeaponGameplayAppliesMicrowaveVulnerability(object *weapon_obj)
+{
+	return GameplayRulesAreEnhanced() &&
+		WeaponGameplayMatchesPlayerSlot(weapon_obj, MICROWAVE_INDEX);
 }
 
 // Sets all weapons to unused

@@ -47,6 +47,7 @@
 #include "localization.h"
 #include "mem.h"
 #include "gameloop.h"
+#include "demofile.h"
 
 //	---------------------------------------------------------------------------
 //	Variables
@@ -222,6 +223,9 @@ void Descent3()
 		AutomatedCaptureLog("descent main loop start");
 		MainLoop();
 		AutomatedCaptureLog("descent main loop complete");
+		// A window close can leave gameplay without taking the normal level-exit
+		// path. Finalize an active recording before CFILE shutdown.
+		DemoAbort();
 
 		//delete the lock file in the temp directory (as long as it belongs to us)
 		ddio_DeleteLockFile(Descent3_temp_directory);

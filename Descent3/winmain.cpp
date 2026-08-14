@@ -35,6 +35,7 @@
 #include "ddio.h"
 #include "gameloop.h"
 #include "newui_core.h"
+#include "demofile.h"
 
 static bool GetWindowPositionArgument(int *x, int *y)
 {
@@ -217,6 +218,7 @@ public:
 			// Alt-F4 is intercepted at WM_SYSKEYDOWN when gameplay needs a
 			// confirmation.  A WM_CLOSE that reaches here is the native close
 			// button or an unconfirmed close from outside gameplay.
+			DemoFlushRecording();
 			PostQuitMessage(0);
 			return 0;
 		case WM_SYSKEYDOWN:
@@ -231,6 +233,7 @@ public:
 				if (Last_alt_f4_keydown_ms &&
 					now - Last_alt_f4_keydown_ms <= 1000)
 				{
+					DemoFlushRecording();
 					PostQuitMessage(0);
 					return 0;
 				}
@@ -242,6 +245,7 @@ public:
 					return 0;
 				}
 
+				DemoFlushRecording();
 				PostQuitMessage(0);
 				return 0;
 			}

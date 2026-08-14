@@ -1689,7 +1689,7 @@ void ObjDoEffects(object* obj)
 		if (obj->effect_info->deform_time <= 0.0f)
 		{
 			// Stop deforming
-			obj->effect_info->type_flags &= ~EF_DEFORM;
+			obj->effect_info->type_flags &= ~(EF_DEFORM | EF_MICROWAVE_VULNERABLE);
 		}
 	}
 

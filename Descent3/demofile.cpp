@@ -246,6 +246,12 @@ void DemoWriteChangedObj(object* op)
 	}
 }
 
+void DemoFlushRecording()
+{
+	if (Demo_flags == DF_RECORDING && Demo_cfp)
+		cfflush(Demo_cfp);
+}
+
 void DemoWriteWeaponFire(unsigned short objectnum, vector* pos, vector* dir, unsigned short weaponnum, unsigned short weapobjnum, short gunnum)
 {
 	uint uniqueid = MultiGetMatchChecksum(OBJ_WEAPON, weaponnum);
@@ -1038,6 +1044,25 @@ void DemoReadObjCreate()
 
 ubyte DemoLastOpcode = 0;
 
+static void DemoFinishPlayback()
+{
+	strcpy(Old_demo_fname, Demo_fname);
+	DemoAbort();
+	if (Demo_looping)
+	{
+		Game_interface_mode = GAME_DEMO_LOOP;
+		strcpy(Demo_fname, Old_demo_fname);
+	}
+	else if (FindArg("-demoexit"))
+	{
+		SetFunctionMode(QUIT_MODE);
+	}
+	else
+	{
+		Game_interface_mode = GAME_POST_DEMO;
+	}
+}
+
 void DemoFrame()
 {
 	ubyte opcode;
@@ -1090,126 +1115,107 @@ void DemoFrame()
 		{
 			//End of file, so we're done playing the demo
 			mprintf((0, "End of demo file!"));
-			strcpy(Old_demo_fname, Demo_fname);
-			DemoAbort();
-			//Do some cool stuff here, like end of demo stats or exit to the main menu
-			if (Demo_looping)
-			{
-				Game_interface_mode = GAME_DEMO_LOOP;
-				strcpy(Demo_fname, Old_demo_fname);
-			}
-			else if (FindArg("-demoexit"))
-			{
-				SetFunctionMode(QUIT_MODE);
-			}
-			else
-			{
-				Game_interface_mode = GAME_POST_DEMO;
-			}
+			DemoFinishPlayback();
 			return;
 		}
-		switch (opcode)
+		try
 		{
-		case DT_NEW_FRAME:
-			DemoReadNewFrame();
-			exit_loop = 1;
-			break;
-		case DT_OBJ:
-			DemoReadObj();
-			break;
-		case DT_WEAPON_FIRE:
-			DemoReadWeaponFire();
-			break;
-		case DT_HUD_MESSAGE:
-			DemoReadHudMessage();
-			break;
-		case DT_3D_SOUND:
-			DemoRead3DSound();
-			break;
-		case DT_2D_SOUND:
-			DemoRead2DSound();
-			break;
-		case DT_OBJ_CREATE:
-			DemoReadObjCreate();
-			break;
-		case DT_OBJ_ANIM:
-			DemoReadObjAnimChanged();
-			break;
-		case DT_OBJ_TURRET:
-			DemoReadTurretChanged();
-			break;
-		case DT_OBJ_EXPLODE:
-			DemoReadKillObject();
-			break;
-		case DT_PLAYER_DEATH:
-			DemoReadPlayerDeath();
-			break;
-		case DT_COLLIDE_PLR:
-			DemoReadCollidePlayerWeapon();
-			break;
-		case DT_COLLIDE_GEN:
-			DemoReadCollideGenericWeapon();
-			break;
-		case DT_ATTACH:
-			DemoReadAttachObj();
-			break;
-		case DT_ATTACH_RAD:
-			DemoReadAttachObjRad();
-			break;
-		case DT_UNATTACH:
-			DemoReadUnattachObj();
-			break;
-		case DT_WEAP_FIRE_FLAG:
-			DemoReadObjWeapFireFlagChanged();
-			break;
-		case DT_PLAYER_INFO:
-			DemoReadPlayerInfo();
-			break;
-		case DT_MSAFE:
-			DemoReadMSafe();
-			break;
-		case DT_POWERUP:
-			DemoReadPowerups();
-			break;
-		case DT_CINEMATICS:
-			DemoReadCinematics();
-			break;
-		case DT_PERSISTANT_HUD:
-			DemoReadPersistantHUDMessage();
-			break;
-		case DT_SETOBJDEAD:
-			DemoReadSetObjDead();
-			break;
-		case DT_PLAYERBALLS:
-			DemoReadPlayerBalls();
-			break;
-		case DT_PLAYERTYPECHNG:
-			DemoReadPlayerTypeChange();
-			break;
-		case DT_SETOBJLIFELEFT:
-			DemoReadObjLifeLeft();
-			break;
-		default:
-			mprintf((0, "ERROR! Unknown opcode in demo file!(%d) last code: %d\n", opcode, DemoLastOpcode));
-			//Int3();
-			DemoAbort();
-			if (Demo_looping)
+			switch (opcode)
 			{
-				Game_interface_mode = GAME_DEMO_LOOP;
-				strcpy(Demo_fname, Old_demo_fname);
+			case DT_NEW_FRAME:
+				DemoReadNewFrame();
+				exit_loop = 1;
+				break;
+			case DT_OBJ:
+				DemoReadObj();
+				break;
+			case DT_WEAPON_FIRE:
+				DemoReadWeaponFire();
+				break;
+			case DT_HUD_MESSAGE:
+				DemoReadHudMessage();
+				break;
+			case DT_3D_SOUND:
+				DemoRead3DSound();
+				break;
+			case DT_2D_SOUND:
+				DemoRead2DSound();
+				break;
+			case DT_OBJ_CREATE:
+				DemoReadObjCreate();
+				break;
+			case DT_OBJ_ANIM:
+				DemoReadObjAnimChanged();
+				break;
+			case DT_OBJ_TURRET:
+				DemoReadTurretChanged();
+				break;
+			case DT_OBJ_EXPLODE:
+				DemoReadKillObject();
+				break;
+			case DT_PLAYER_DEATH:
+				DemoReadPlayerDeath();
+				break;
+			case DT_COLLIDE_PLR:
+				DemoReadCollidePlayerWeapon();
+				break;
+			case DT_COLLIDE_GEN:
+				DemoReadCollideGenericWeapon();
+				break;
+			case DT_ATTACH:
+				DemoReadAttachObj();
+				break;
+			case DT_ATTACH_RAD:
+				DemoReadAttachObjRad();
+				break;
+			case DT_UNATTACH:
+				DemoReadUnattachObj();
+				break;
+			case DT_WEAP_FIRE_FLAG:
+				DemoReadObjWeapFireFlagChanged();
+				break;
+			case DT_PLAYER_INFO:
+				DemoReadPlayerInfo();
+				break;
+			case DT_MSAFE:
+				DemoReadMSafe();
+				break;
+			case DT_POWERUP:
+				DemoReadPowerups();
+				break;
+			case DT_CINEMATICS:
+				DemoReadCinematics();
+				break;
+			case DT_PERSISTANT_HUD:
+				DemoReadPersistantHUDMessage();
+				break;
+			case DT_SETOBJDEAD:
+				DemoReadSetObjDead();
+				break;
+			case DT_PLAYERBALLS:
+				DemoReadPlayerBalls();
+				break;
+			case DT_PLAYERTYPECHNG:
+				DemoReadPlayerTypeChange();
+				break;
+			case DT_SETOBJLIFELEFT:
+				DemoReadObjLifeLeft();
+				break;
+			default:
+				mprintf((0, "ERROR! Unknown opcode in demo file!(%d) last code: %d\n", opcode, DemoLastOpcode));
+				DemoFinishPlayback();
+				return;
 			}
-			else if (FindArg("-demoexit"))
-			{
-				SetFunctionMode(QUIT_MODE);
-			}
-			else
-			{
-				Game_interface_mode = GAME_POST_DEMO;
-
-			}
+			DemoLastOpcode = opcode;
+		}
+		catch (cfile_error *)
+		{
+			// An interrupted recording can end in the payload of its last opcode.
+			// Everything before it is still a valid and useful replay.
+			mprintf((0, "End of interrupted demo file during opcode %d!", opcode));
+			DemoFinishPlayback();
 			return;
 		}
-		DemoLastOpcode = opcode;
 	} while (!exit_loop);
 
 

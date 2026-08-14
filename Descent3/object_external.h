@@ -80,6 +80,7 @@
 #define EF_BUMPMAPPED		16384	// This object is sparking
 #define EF_NEGATIVE_LIGHT	32768	// This object subtracts light that it gives off
 #define EF_VIRUS_INFECTED	65536	// This object shows signs of being infected
+#define EF_MICROWAVE_VULNERABLE 131072 // Enhanced Microwave damage amplification is active
 
 //Control types - what tells this object what do do
 #define CT_NONE				0	//doesn't move (or change movement)

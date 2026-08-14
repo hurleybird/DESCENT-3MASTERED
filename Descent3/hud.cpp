@@ -1958,7 +1958,10 @@ void RenderHUDItems(tStatMask stat_mask)
 	RenderHUDItemList(stat_mask, Small_hud_flag ? 0 : -1);
 	if (Demo_flags == DF_RECORDING)
 	{
-		RenderHUDTextFlags(HUDTEXT_CENTERED, GR_BLUE, HUD_ALPHA, 0, 10, 300, TXT_RECORDINGDEMO);
+		const int recording_text_height = grtext_GetHeight(TXT_RECORDINGDEMO);
+		const int bottom_padding = (recording_text_height + 1) / 2;
+		const int recording_y = Game_window_y + Game_window_h - recording_text_height - bottom_padding;
+		RenderHUDTextFlags(HUDTEXT_CENTERED, GR_BLUE, HUD_ALPHA, 0, 0, recording_y, TXT_RECORDINGDEMO);
 	}
 	else if (Demo_flags == DF_PLAYBACK)
 	{

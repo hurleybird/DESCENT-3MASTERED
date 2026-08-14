@@ -922,6 +922,18 @@ void cfclose( CFILE * cfp )
 	mem_free(cfp);
 }
 
+//Flushes pending writes for an open disk CFILE.
+int cfflush(CFILE *cfp)
+{
+	if (!cfp || !cfp->file || !(cfp->flags & CF_WRITING))
+		return EOF;
+
+	const int result = fflush(cfp->file);
+	if (result != 0)
+		ThrowCFileError(CFE_WRITING, cfp, strerror(errno));
+	return result;
+}
+
 //Just like stdio fgetc(), except works on a CFILE
 //Returns a char or EOF
 int cfgetc( CFILE * cfp )

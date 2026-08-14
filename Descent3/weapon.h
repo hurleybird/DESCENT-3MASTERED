@@ -161,6 +161,7 @@ extern int Static_weapon_ckpt_names[][2];
 float WeaponGameplayEnergyUsage(int player_weapon_slot, float authored_usage);
 float WeaponGameplayDirectDamage(object *weapon_obj, bool target_is_player);
 float WeaponGameplayPlayerHomingScalar(object *weapon_obj);
+bool WeaponGameplayAppliesMicrowaveVulnerability(object *weapon_obj);
 
 // Sets all weapons to unused
 void InitWeapons ();

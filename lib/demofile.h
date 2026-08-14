@@ -72,6 +72,10 @@ void DemoWriteHeader();
 
 void DemoStartNewFrame();
 
+//Flushes a recording after simulation and before rendering so a graphics crash
+//leaves the latest complete gameplay state available for playback.
+void DemoFlushRecording();
+
 void DemoWriteHudMessage(unsigned int color,bool blink,char *msg);
 
 void DemoWriteChangedObjects();

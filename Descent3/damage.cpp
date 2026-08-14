@@ -55,14 +55,26 @@ static matrix Old_player_orient;
 float Shake_magnitude=0.0;
 
 // Causes an object to deform
-void SetDeformDamageEffect (object *obj)
+void SetDeformDamageEffect(object *obj, bool microwave_vulnerability)
 {
 	if (obj->effect_info)
 	{
 		obj->effect_info->type_flags|=EF_DEFORM;
+		if (microwave_vulnerability)
+			obj->effect_info->type_flags |= EF_MICROWAVE_VULNERABLE;
 		obj->effect_info->deform_time=1.0;
 		obj->effect_info->deform_range=.3f;
 	}
+}
+
+static float ApplyEnhancedMicrowaveVulnerability(object *obj, float damage)
+{
+	if (GameplayRulesAreEnhanced() && obj && obj->effect_info &&
+		(obj->effect_info->type_flags & EF_MICROWAVE_VULNERABLE))
+	{
+		return damage * 1.5f;
+	}
+	return damage;
 }
 
 #define MAX_NAPALM_DAMAGE_TIME	10.0f
@@ -328,6 +340,7 @@ bool ApplyDamageToPlayer(object *playerobj, object *killer, int damage_type, flo
 	{
 		if (!(Game_mode & GM_MULTI))
 		{
+			damage_amount = ApplyEnhancedMicrowaveVulnerability(playerobj, damage_amount);
 			damage_amount*=Players[playerobj->id].armor_scalar;
 			damage_amount*=Ships[Players[playerobj->id].ship_index].armor_scalar;
 
@@ -345,7 +358,8 @@ bool ApplyDamageToPlayer(object *playerobj, object *killer, int damage_type, flo
 			if (weapon_id!=255)
 			{
 				if (Weapons[weapon_id].flags & WF_MICROWAVE)
-					SetDeformDamageEffect (playerobj);
+					SetDeformDamageEffect(playerobj,
+						WeaponGameplayAppliesMicrowaveVulnerability(weapon_obj));
 				if (Weapons[weapon_id].flags & WF_FREEZE)
 					ApplyFreezeDamageEffect (playerobj);
 				if (Weapons[weapon_id].flags & WF_NAPALM)
@@ -391,6 +405,7 @@ bool ApplyDamageToPlayer(object *playerobj, object *killer, int damage_type, flo
 						damage_amount*=Players[killer->id].damage_scalar;
 					}
 
+					damage_amount = ApplyEnhancedMicrowaveVulnerability(playerobj, damage_amount);
 					damage_amount*=Players[playerobj->id].armor_scalar;
 					damage_amount*=Ships[Players[playerobj->id].ship_index].armor_scalar;
 				}
@@ -407,7 +422,8 @@ bool ApplyDamageToPlayer(object *playerobj, object *killer, int damage_type, flo
 				if (weapon_id!=255)
 				{
 					if (Weapons[weapon_id].flags & WF_MICROWAVE)
-						SetDeformDamageEffect (playerobj);
+						SetDeformDamageEffect(playerobj,
+							WeaponGameplayAppliesMicrowaveVulnerability(weapon_obj));
 					if (Weapons[weapon_id].flags & WF_NAPALM)
 						SetNapalmDamageEffect (playerobj,killer,weapon_id);
 					if (Weapons[weapon_id].flags & WF_FREEZE)
@@ -897,6 +913,8 @@ bool ApplyDamageToGeneric(object *hit_obj, object *killer, int damage_type, floa
 			{
 				return false;
 			}
+			if (!(Game_mode & GM_MULTI) || Netgame.local_role == LR_SERVER)
+				damage = ApplyEnhancedMicrowaveVulnerability(hit_obj, damage);
 
 			hit_obj->shields -= damage;
 
@@ -965,7 +983,8 @@ bool ApplyDamageToGeneric(object *hit_obj, object *killer, int damage_type, floa
 			if (weapon_id!=255)
 			{
 				if (Weapons[weapon_id].flags & WF_MICROWAVE)
-					SetDeformDamageEffect (hit_obj);
+					SetDeformDamageEffect(hit_obj,
+						WeaponGameplayAppliesMicrowaveVulnerability(weapon_obj));
 				if (Weapons[weapon_id].flags & WF_NAPALM)
 					SetNapalmDamageEffect (hit_obj,killer,weapon_id);
 				if (Weapons[weapon_id].flags & WF_FREEZE)

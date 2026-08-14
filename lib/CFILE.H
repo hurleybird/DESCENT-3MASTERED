@@ -103,6 +103,10 @@ int cfilelength( CFILE *cfp );
 //Parameters:  cfile - the file pointer returned by cfopen()
 void cfclose( CFILE * cfp );
 
+//Flushes pending writes for an open disk CFILE.
+//Throws an exception of type (cfile_error *) if the OS returns an error on write.
+int cfflush(CFILE *cfp);
+
 //Just like stdio fgetc(), except works on a CFILE
 //Returns a char or EOF
 int cfgetc( CFILE * cfp );
