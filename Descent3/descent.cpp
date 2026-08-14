@@ -479,7 +479,7 @@ void D3DebugResumeHandler()
 {
 //	reopen all systems for gameplay.
 	if (rend_initted) 
-		rend_initted = rend_Init (PreferredRenderer, Descent,&Render_preferred_state);
+		rend_initted = rend_Init(Descent, &Render_preferred_state);
 	
 	if (rend_initted!=0)
 		rend_initted=1;	

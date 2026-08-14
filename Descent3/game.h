@@ -152,7 +152,6 @@ extern int Game_do_ai_vis;
 #endif
 
 extern bool UseHardware;
-extern renderer_type PreferredRenderer;
 // State variables for our renderer
 extern rendering_state Render_state;
 extern renderer_preferred_state Render_preferred_state;

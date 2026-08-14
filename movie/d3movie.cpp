@@ -106,7 +106,7 @@ void mve_SetSoundSystem(llsSystem* system)
 }
 
 // used to tell movie library how to render movies.
-void mve_SetRenderProperties( short x, short y, short w, short h, renderer_type type, bool hicolor )
+void mve_SetRenderProperties(short x, short y, short w, short h, bool hicolor)
 {
 }
 

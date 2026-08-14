@@ -69,14 +69,14 @@ bool InitCinematics()
 	return true;
 }
 
-void SetMovieProperties(int x, int y, int w, int h, renderer_type type)
+void SetMovieProperties(int x, int y, int w, int h)
 {
 	const bool kHiColorEnabled = true;
 	Cinematic_x = x;
 	Cinematic_y = y;
 	Cinematic_w = w;
 	Cinematic_h = h;
-	mve_SetRenderProperties(x, y, w, h, type, kHiColorEnabled);
+	mve_SetRenderProperties(x, y, w, h, kHiColorEnabled);
 }
 
 extern void mve_SetSoundSystem(llsSystem* system);
@@ -124,7 +124,7 @@ bool PlayMovie(const char* moviename)
 	// Initializes the subtitles for a given movie file
 	SubtInitSubtitles(moviename);
 
-	SetMovieProperties(0, 0, Max_window_w, Max_window_h, Renderer_type);
+	SetMovieProperties(0, 0, Max_window_w, Max_window_h);
 
 	int mveerr = mve_PlayMovie(filename, Descent);
 
@@ -160,7 +160,7 @@ tCinematic* StartMovie(const char* moviename, bool looping)
 		filename[sizeof(filename) - 1] = 0;
 	}
 
-	SetMovieProperties(0, 0, Max_window_w, Max_window_h, Renderer_type);
+	SetMovieProperties(0, 0, Max_window_w, Max_window_h);
 
 	int filehandle;
 	unsigned int hMovie = mve_SequenceStart(filename, &filehandle, Descent, looping);

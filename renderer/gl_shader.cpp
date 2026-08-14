@@ -168,7 +168,7 @@ static bool InvertMatrix4(const float m[16], float out[16])
 }
 
 //Shader pipeline system.
-//Contains a table of all shader definitions used by newrender. Renderer will request shader handles by name.
+// Contains the named shader definitions requested by retained GL4 rendering.
 ShaderDefinition gl_shaderdefs[] =
 {
 	{"lightmap", SF_HASCOMMON, "lightmap.vert", "lightmap.frag"},

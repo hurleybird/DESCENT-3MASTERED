@@ -31,7 +31,7 @@ struct tCinematic
 };
 
 bool InitCinematics();
-void SetMovieProperties(int x, int y, int w, int h, renderer_type type);
+void SetMovieProperties(int x, int y, int w, int h);
 bool PlayMovie(const char *moviename);
 tCinematic *StartMovie(const char *moviename, bool looping=false);
 bool FrameMovie(tCinematic *mve, int x, int y, bool sequence=true);

@@ -84,13 +84,7 @@ GLuint GL_GetFramebufferVAO()
 
 void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter)
 {
-	if (OpenGLProfile == GLPROFILE_COMPAT)
-		glClientActiveTextureARB(GL_TEXTURE0 + unit);
-
 	glActiveTexture(GL_TEXTURE0 + unit);
-	if (OpenGLProfile == GLPROFILE_COMPAT)
-		glEnable(GL_TEXTURE_2D);
-
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
@@ -111,16 +105,12 @@ void GL_UnbindFramebufferTextures()
 
 	for (int unit = 0; unit < max_units; unit++)
 	{
-		if (OpenGLProfile == GLPROFILE_COMPAT)
-			glClientActiveTextureARB(GL_TEXTURE0 + unit);
 		glActiveTexture(GL_TEXTURE0 + unit);
 		glBindTexture(GL_TEXTURE_2D, 0);
 		if (glTexImage2DMultisample != nullptr)
 			glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
 	}
 
-	if (OpenGLProfile == GLPROFILE_COMPAT)
-		glClientActiveTextureARB(old_active_texture);
 	glActiveTexture(old_active_texture);
 	glBindRenderbuffer(GL_RENDERBUFFER, 0);
 	rend_ClearBoundTextures();
@@ -138,16 +128,10 @@ static void GL_RestoreFramebufferTextureState()
 {
 	for (int unit = 3; unit >= 1; unit--)
 	{
-		if (OpenGLProfile == GLPROFILE_COMPAT)
-			glClientActiveTextureARB(GL_TEXTURE0 + unit);
 		glActiveTexture(GL_TEXTURE0 + unit);
 		glBindTexture(GL_TEXTURE_2D, 0);
-		if (OpenGLProfile == GLPROFILE_COMPAT)
-			glDisable(GL_TEXTURE_2D);
 	}
 
-	if (OpenGLProfile == GLPROFILE_COMPAT)
-		glClientActiveTextureARB(GL_TEXTURE0);
 	glActiveTexture(GL_TEXTURE0);
 	rend_ClearBoundTextures();
 }
@@ -676,15 +660,9 @@ void Framebuffer::BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned
 
 
 	rend_ClearBoundTextures();
-	if (OpenGLProfile == GLPROFILE_COMPAT)
-		glClientActiveTextureARB(GL_TEXTURE0);
-
 	glActiveTexture(GL_TEXTURE0);
 
 	GLuint sourcename = (m_samples >= 2) ? m_subcolorname : m_colorname;
-	if (OpenGLProfile == GLPROFILE_COMPAT)
-		glEnable(GL_TEXTURE_2D);
-
 	glBindTexture(GL_TEXTURE_2D, sourcename);
 	GLint filter = linear_filter ? GL_LINEAR : GL_NEAREST;
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
@@ -756,15 +734,9 @@ void Framebuffer::DownsampleTo(GLuint target, unsigned int x, unsigned int y, un
 #endif
 
 	rend_ClearBoundTextures();
-	if (OpenGLProfile == GLPROFILE_COMPAT)
-		glClientActiveTextureARB(GL_TEXTURE0);
-
 	glActiveTexture(GL_TEXTURE0);
 
 	GLuint sourcename = (m_samples >= 2) ? m_subcolorname : m_colorname;
-	if (OpenGLProfile == GLPROFILE_COMPAT)
-		glEnable(GL_TEXTURE_2D);
-
 	glBindTexture(GL_TEXTURE_2D, sourcename);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

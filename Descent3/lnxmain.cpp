@@ -74,11 +74,6 @@ typedef struct
 
 static cmdLineArg d3ArgTable[] =
 {
-    #ifdef  __PERMIT_LINUX_GLIDE
-    {"rend_opengl",    'G', "Use OpenGL for 3D rendering."},
-    {"rend_glide",     'L', "Use Glide for 3D rendering."},
-    #endif
-
     #ifdef __PERMIT_PLAYMVE
     {"playmve",        'p', "Play a specified movie."},
     #endif
@@ -160,19 +155,10 @@ void ddio_MarkDefaultCDDrive(char *drive);
 void ddio_InternalClose();          // needed for emergency cleanup.
 void cdrom_system_shutdown(void);   // needed for emergency cleanup.
 
-#ifdef  __PERMIT_LINUX_GLIDE
-void glide_Close(void);
-#endif
-
 void just_exit(void)
 {
     ddio_InternalClose();  // try to reset serial port.
     cdrom_system_shutdown();
-
-    #ifdef  __PERMIT_LINUX_GLIDE
-    if (Renderer_type == RENDERER_GLIDE)
-        glide_Close();
-    #endif
 
     SDL_Quit();
     sync();  // just in case.
@@ -708,40 +694,6 @@ int main(int argc,char *argv[])
    		    	fprintf(stderr,"Error: Both windowed and fullscreen mode requested.");
    			    return 0;
    			}
-
-            #ifdef __PERMIT_LINUX_GLIDE
-    			int opengl_rend = (FindArgChar("+rend_opengl", 'G'))?1:0;
-    			int glide_rend = (FindArgChar("+rend_glide", 'L'))?1:0;
-			
-    			if(!glide_rend && !opengl_rend)
-    			{
-    				//fprintf(stderr,"Error: --dedicated or renderer flag required\n");
-       				//return 0;
-
-                        // ryan sez: Glide by default, beeyatch.
-                    glide_rend = 1;
-    			}
-
-	    		//check for multiple renderers defined
-    			if(glide_rend+opengl_rend>1)
-		    	{
-			    	fprintf(stderr,"Error: Too many renderer's defined, use only one\n");
-				    return 0;
-    			}
-
-                /*
-    			//print out renderer
-	    		if(glide_rend)
-		    	{
-			    	fprintf(stderr,"Renderer: GLiDE\n");
-    			}
-	    		if(opengl_rend)
-		    	{
-			    	fprintf(stderr,"Renderer: OpenGL\n");
-    			}
-                */
-            #endif
-
 			if(FindArgChar("-nomousegrab", 'm'))
 			{
 				flags |= APPFLAG_NOMOUSECAPTURE;
@@ -754,14 +706,7 @@ int main(int argc,char *argv[])
 				flags |= APPFLAG_NOSHAREDMEMORY;
 			}
 
-            #ifdef __PERMIT_LINUX_GLIDE
-    			if(FindArgChar("+rend_opengl", 'G'))
-	    		{
-		    		flags |= APPFLAG_WINDOWEDMODE;
-			    }
-            #else
-		    		flags |= APPFLAG_WINDOWEDMODE;
-            #endif
+			flags |= APPFLAG_WINDOWEDMODE;
 
 			if(!FindArg("-nodgamouse"))
 			{

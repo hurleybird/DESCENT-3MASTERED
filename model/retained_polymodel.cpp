@@ -106,7 +106,7 @@ static void SetIdentity(float matrix[16])
 
 bool RetainedPolymodelEnabled()
 {
-	return UseHardware && !StateLimited && rend_CanUseNewrender();
+	return UseHardware && !StateLimited;
 }
 
 static bool BuildRetainedPolymodel(poly_model *pm, RetainedPolymodelCache& cache)

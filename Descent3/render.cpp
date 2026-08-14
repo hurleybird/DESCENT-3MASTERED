@@ -62,7 +62,6 @@
 #include "psrand.h"
 #include "player.h"
 #include "args.h"
-#include "newrender.h"
 #include "retained_room.h"
 #ifdef EDITOR
 #include "editor\d3edit.h"
@@ -281,8 +280,6 @@ ubyte Mirrored_room_checked[MAX_ROOMS];
 short Mirror_rooms[MAX_ROOMS];
 int Num_mirror_rooms = 0;
 
-bool Render_use_newrender = false; //debug
-
 //used during rendering as count of items in render_list[]
 int N_render_rooms;
 int first_terminal_room;
@@ -326,7 +323,7 @@ static bool SplitSpecularTexturePathEnabled()
 {
 	return (Render_split_specular_textures || Render_per_pixel_field_static_specular) &&
 		Render_preferred_state.per_pixel_lighting &&
-		UseHardware && rend_CanUseNewrender();
+		UseHardware;
 }
 
 static SplitSpecularTexturePair ComputeSplitSpecularTexturePair(int tmap)
@@ -1057,7 +1054,7 @@ static bool Room_depth_prepass_color_pass_active = false;
 static bool BeginRoomRenderScissor(int roomnum, int viewer_roomnum,
 	rendTEMP_ScissorState& state)
 {
-	if (!rend_CanUseNewrender() || !Room_render_window_valid[roomnum] ||
+	if (!Room_render_window_valid[roomnum] ||
 		roomnum == viewer_roomnum || (!Called_from_terrain &&
 			RoomsShareRenderCluster(roomnum, viewer_roomnum)))
 	{
@@ -2282,7 +2279,7 @@ static bool SpecularCanUseFieldStaticFace(room* rp, face* fp)
 {
 	if (!Render_per_pixel_field_static_specular)
 		return false;
-	if (!Render_preferred_state.per_pixel_lighting || !UseHardware || !rend_CanUseNewrender())
+	if (!Render_preferred_state.per_pixel_lighting || !UseHardware)
 		return false;
 	if (rp->flags & RF_EXTERNAL)
 		return false;
@@ -4406,7 +4403,7 @@ void RenderSpecularFacesFlat(room* rp)
 	rend_SetZBufferWriteMask(0);
 
 	const bool per_pixel_shader_specular = Render_preferred_state.per_pixel_lighting &&
-		UseHardware && rend_CanUseNewrender();
+		UseHardware;
 	if (per_pixel_shader_specular)
 	{
 		std::vector<RetainedRoomFieldSpecularBatch> retained_field_batches;
@@ -4563,7 +4560,7 @@ void RenderSpecularFacesFlat(room* rp)
 
 		renderer_per_pixel_light dynamic_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
 		int dynamic_light_count = 0;
-		if (Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender())
+		if (Render_preferred_state.per_pixel_lighting && UseHardware)
 		{
 			dynamic_light_count = GetPerPixelLightmapLights(fp->lmi_handle, dynamic_lights,
 				RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
@@ -4917,7 +4914,7 @@ bool BeginRoomMaterialFog(room* rp, const vector* eye, int viewer_room,
 	float intensity)
 {
 	if (!rp || !eye || !(rp->flags & RF_FOG) || !Detail_settings.Fog_enabled ||
-		!UseHardware || !rend_CanUseNewrender() || In_editor_mode ||
+		!UseHardware || In_editor_mode ||
 		rp->fog_depth <= 0.0f)
 	{
 		return false;
@@ -5111,7 +5108,7 @@ void RenderFogFaces(room* rp, bool suppress_ao)
 	std::vector<RoomFogBatchedFace> batched_faces;
 	std::vector<int> retained_faces;
 	ubyte retained_clip_codes = 0;
-	const bool batch_fog = UseHardware && rend_CanUseNewrender();
+	const bool batch_fog = UseHardware;
 	if (Room_material_fog_active)
 		rend_SetRoomFogOverlay(1);
 	rend_SetOverlayType(OT_NONE);
@@ -5705,7 +5702,7 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 		return false;
 	int dynamic_lightmap_lmi = -1;
 	if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting &&
-		UseHardware && rend_CanUseNewrender())
+		UseHardware)
 	{
 		if (GetPerPixelLightmapLightCount(fp->lmi_handle) > 0)
 			dynamic_lightmap_lmi = GetPerPixelLightmapCanonicalLightKey(fp->lmi_handle);
@@ -6098,7 +6095,7 @@ void RenderFace(room* rp, int facenum)
 	}
 
 	//Draw the damn thing
-	if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting && UseHardware && rend_CanUseNewrender())
+	if (!NoLightmaps && (fp->flags & FF_LIGHTMAP) && Render_preferred_state.per_pixel_lighting && UseHardware)
 	{
 		per_pixel_light_count = GetPerPixelLightmapLights(fp->lmi_handle, per_pixel_lights,
 			RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
@@ -6385,7 +6382,7 @@ void RenderRoomUnsorted(room* rp)
 {
 	int rcount = 0;
 	thread_local RoomBaseFaceBatcher base_face_batcher;
-	const bool batch_room_faces = UseHardware && rend_CanUseNewrender();
+	const bool batch_room_faces = UseHardware;
 	ASSERT(rp->num_faces <= MAX_FACES_PER_ROOM);
 
 	// Rotate points in this room if need be
@@ -7005,9 +7002,6 @@ g3Point mirror_save_points[MAX_VERTS_PER_ROOM];
 // Renders a mirror flipped about the mirrored plane
 void RenderMirroredRoom(room* rp)
 {
-	if (Render_use_newrender)
-		return; //Need new mirroring pipeline
-
 	ushort save_flags[MAX_FACES_PER_ROOM];
 	bool restore_index = true;
 	int save_index = Global_buffer_index;
@@ -7525,9 +7519,6 @@ void RenderMirrorRooms()
 	if (Num_mirror_rooms == 0)
 		return;
 
-	if (Render_use_newrender)
-		return; 
-
 	for (int i = 0; i < Num_mirror_rooms; i++)
 	{
 		room* rp = &Rooms[Mirror_rooms[i]];
@@ -7692,13 +7683,6 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 	//Assume no terrain
 	Must_render_terrain = 0;
 
-	if (Render_use_newrender)
-	{
-		PERF_MARKER_SCOPE("RenderMine.NewRender");
-		NewRender_Render(Viewer_eye, Viewer_orient, viewer_roomnum);
-		return;
-	}
-
 	//Get the width & height of the render window
 	rend_GetProjectionParameters(&Render_width, &Render_height);
 	if (!Called_from_terrain)
@@ -7751,17 +7735,13 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 
 	Num_mirror_rooms = 0;
 
-	if (Render_use_newrender)
-	{
-	}
-	else
 	{
 		PERF_MARKER_SCOPE("RenderMine.RenderRooms");
 		const uint32_t room_draw_calls_before = rend_GetCurrentDrawCallCount();
 		Room_base_batch_count = 0;
 		Room_base_batched_face_count = 0;
 		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_BEFORE_ROOM_DEPTH);
-		if (UseHardware && rend_CanUseNewrender() && !In_editor_mode)
+		if (UseHardware && !In_editor_mode)
 		{
 			PERF_MARKER_SCOPE("RenderMine.RoomDepthPrepass");
 			rend_SetZBufferState(1);
@@ -7804,26 +7784,19 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 #endif
 			if (roomnum != -1)
 			{
-				if (Render_use_newrender)
-				{
-					RenderRoom(&Rooms[roomnum]);
+				ASSERT(Rooms_visited[roomnum] != 255);
+				rendTEMP_ScissorState room_scissor_state = {};
+				const bool use_room_scissor = BeginRoomRenderScissor(
+					roomnum, viewer_roomnum, room_scissor_state);
+				if (Outline_release_mode & 1) {
+					RenderRoomOutline(&Rooms[roomnum]);
 				}
-				else
-				{
-					ASSERT(Rooms_visited[roomnum] != 255);
-					rendTEMP_ScissorState room_scissor_state = {};
-					const bool use_room_scissor = BeginRoomRenderScissor(
-						roomnum, viewer_roomnum, room_scissor_state);
-					if (Outline_release_mode & 1) {
-						RenderRoomOutline(&Rooms[roomnum]);
-					}
-					RenderRoom(&Rooms[roomnum]);
-					if (use_room_scissor)
-						rendTEMP_RestoreScissorState(&room_scissor_state);
-					Rooms_visited[roomnum] = (char)255;
-					// Stuff objects into our postrender list
-					CheckToRenderMineObjects(roomnum);
-				}
+				RenderRoom(&Rooms[roomnum]);
+				if (use_room_scissor)
+					rendTEMP_RestoreScissorState(&room_scissor_state);
+				Rooms_visited[roomnum] = (char)255;
+				// Stuff objects into our postrender list
+				CheckToRenderMineObjects(roomnum);
 			}
 		}
 		Room_depth_prepass_color_pass_active = false;

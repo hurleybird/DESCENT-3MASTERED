@@ -146,19 +146,6 @@ tGameToggles Game_toggles =
 	true
 };
 
-int DesiredOpenGLProfile = GLPROFILE_CORE; //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
-bool DesiredOpenGLProfileExplicit = false;
-
-static bool ConfigCanUsePerPixelLighting()
-{
-	return OpenGLProfile == GLPROFILE_CORE;
-}
-
-static bool ConfigCanUseAO()
-{
-	return OpenGLProfile == GLPROFILE_CORE;
-}
-
 int ConfigNormalizeSupersamplingFactor(int factor)
 {
 	if (factor >= 4)
@@ -1180,7 +1167,7 @@ static int ConfigNormalizePixelMotionBlurSamples(int samples)
 
 static bool ConfigAOTemporalWantsMotionVectors()
 {
-	return ConfigCanUseAO() && Render_preferred_state.ao_enabled &&
+	return Render_preferred_state.ao_enabled &&
 		(Render_preferred_state.ao_temporal_blend > 0.0f ||
 			Render_preferred_state.ao_temporal_debug_preview);
 }
@@ -1500,12 +1487,7 @@ struct video_menu
 		}
 		if (per_pixel_lighting && sheet->HasChanged(per_pixel_lighting))
 		{
-			Render_preferred_state.per_pixel_lighting = ConfigCanUsePerPixelLighting() && *per_pixel_lighting;
-			if (*per_pixel_lighting != Render_preferred_state.per_pixel_lighting)
-			{
-				*per_pixel_lighting = Render_preferred_state.per_pixel_lighting;
-				sheet->UpdateChanges();
-			}
+			Render_preferred_state.per_pixel_lighting = *per_pixel_lighting;
 			changed = true;
 		}
 		if (bloom_enabled && sheet->HasChanged(bloom_enabled))
@@ -1515,20 +1497,8 @@ struct video_menu
 		}
 		if (ao && sheet->HasChanged(ao))
 		{
-			if (ConfigCanUseAO())
-			{
-				ApplyAOPresetFromIndex(*ao);
-				ConfigEnsureAOTemporalVectorMode();
-			}
-			else
-			{
-				ApplyAOPresetFromIndex(0);
-				if (*ao != 0)
-				{
-					*ao = 0;
-					sheet->UpdateChanges();
-				}
-			}
+			ApplyAOPresetFromIndex(*ao);
+			ConfigEnsureAOTemporalVectorMode();
 			if (!ConfigAOTemporalWantsMotionVectors())
 				ConfigFinalizeMotionVectorUse();
 			sheet->SetGadgetVisible(IDV_AO_OVERSCAN, *ao != 0);
@@ -1613,8 +1583,7 @@ struct video_menu
 		if (!ao)
 			return;
 
-		*ao = ConfigCanUseAO() ?
-			AOPresetToIndex(Render_preferred_state.ao_enabled, Render_preferred_state.ao_resolution) : 0;
+		*ao = AOPresetToIndex(Render_preferred_state.ao_enabled, Render_preferred_state.ao_resolution);
 		if (sheet)
 		{
 			sheet->SetGadgetVisible(IDV_AO_OVERSCAN, *ao != 0);
@@ -1712,7 +1681,7 @@ struct video_menu
 		anisotropy->SetCurrentIndex(AnisotropyFactorToIndex(selected_anisotropy));
 		sheet->NewGroup(NULL, 0, 183);
 		per_pixel_lighting = sheet->AddLongCheckBox("Per-pixel lighting",
-			ConfigCanUsePerPixelLighting() && Render_preferred_state.per_pixel_lighting);
+			Render_preferred_state.per_pixel_lighting);
 		bloom_enabled = sheet->AddLongCheckBox("Bloom", Render_preferred_state.bloom_enabled);
 		soft_vis_effects = sheet->AddLongCheckBox("Soft particles", Render_soft_vis_effects);
 
@@ -1744,8 +1713,7 @@ struct video_menu
 		sheet->AddRadioButton(TXT_LOW);
 		sheet->AddRadioButton(TXT_CFG_MEDIUM);
 		sheet->AddRadioButton(TXT_CFG_HIGH);
-		*ao = ConfigCanUseAO() ?
-			AOPresetToIndex(Render_preferred_state.ao_enabled, Render_preferred_state.ao_resolution) : 0;
+		*ao = AOPresetToIndex(Render_preferred_state.ao_enabled, Render_preferred_state.ao_resolution);
 		sheet->NewGroup(NULL, 184, 189);
 		ao_overscan = sheet->AddCheckBox("Ovrscn",
 			Render_preferred_state.ao_overscan_percent > AO_OVERSCAN_DISABLED_PERCENT,
@@ -1769,16 +1737,11 @@ struct video_menu
 			Render_preferred_state.anisotropy =
 				(ubyte)AnisotropyIndexToFactor(anisotropy->GetCurrentIndex());
 		if (per_pixel_lighting)
-			Render_preferred_state.per_pixel_lighting = ConfigCanUsePerPixelLighting() && *per_pixel_lighting;
+			Render_preferred_state.per_pixel_lighting = *per_pixel_lighting;
 		if (bloom_enabled)
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
 		if (ao)
-		{
-			if (ConfigCanUseAO())
-				ApplyAOPresetFromIndex(*ao);
-			else
-				ApplyAOPresetFromIndex(0);
-		}
+			ApplyAOPresetFromIndex(*ao);
 		if (ao_overscan && ao && *ao != 0)
 		{
 			Render_preferred_state.ao_overscan_percent = *ao_overscan ?

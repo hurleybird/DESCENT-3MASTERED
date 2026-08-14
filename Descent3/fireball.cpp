@@ -58,7 +58,7 @@
 
 static bool FireballUseSoftParticles()
 {
-	return Render_soft_vis_effects && rend_CanUseNewrender();
+	return Render_soft_vis_effects;
 }
 
 static void MarkCloseScreenEffectForObject(int visnum, object* obj)

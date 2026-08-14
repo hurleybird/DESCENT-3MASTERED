@@ -70,26 +70,6 @@ class oeApplication;
 
 extern int Triangles_drawn;
 
-// Is this hardware or software rendered?
-enum renderer_type
-{
-	RENDERER_SOFTWARE_8BIT,
-	RENDERER_SOFTWARE_16BIT,
-	RENDERER_OPENGL,
-	RENDERER_DIRECT3D,
-	RENDERER_GLIDE,
-	RENDERER_NONE,
-};
-
-enum opengl_profile
-{
-	GLPROFILE_COMPAT,
-	GLPROFILE_CORE
-};
-
-//TODO: Need to excise the legacy renderer selector from the code entirely. 
-extern renderer_type Renderer_type;
-extern opengl_profile OpenGLProfile;
 extern int RendererOpenGLMajorVersion;
 extern int RendererOpenGLMinorVersion;
 extern char RendererOpenGLVersionString[128];
@@ -120,9 +100,6 @@ extern bool UseWBuffer;
 
 // various state setting functions
 //------------------------------------
-
-// Sets our renderer
-void rend_SetRendererType (renderer_type state);
 
 #define MAP_TYPE_BITMAP			0
 #define MAP_TYPE_LIGHTMAP		1
@@ -712,7 +689,7 @@ void rend_MapModalUIInput(int *x, int *y);
 void rend_SetModalUIGamma(bool enabled);
 
 // Init our renderer, pass the application object also.
-int rend_Init (renderer_type state, oeApplication *app,renderer_preferred_state *pref_state);
+int rend_Init(oeApplication *app, renderer_preferred_state *pref_state);
 
 // de-init the renderer
 void rend_Close ();
@@ -1008,14 +985,11 @@ void rend_BindLightmap(int handle);
 //only needed for Core backend. 
 void rend_RestoreLegacy();
 
-//[ISB] Returns true if Newrender is capable of using the current backend.
-bool rend_CanUseNewrender();
-
 void rend_GetScreenSize(int& screen_width, int& screen_height);
 double rend_GetDisplayRefreshRate();
 
 //[ISB] This should hopefully be a temporary interface, but this resets all the texture binding state.
-//Needed so that the generic framebuffer class can clear both backend's state
+// Resets GL4 texture binding state after direct framebuffer operations.
 void rend_ClearBoundTextures();
 
 #include <vecmat.h>
@@ -1066,7 +1040,7 @@ struct RendVertex
 	float u1, v1;
 	float u2, v2;
 	float uslide, vslide; //only slide uv1 for the moment
-	// Retained polymodel data.  Standard/newrender layouts leave these unused.
+	// Retained polymodel data. Standard layouts leave these unused.
 	vector face_normal;
 	int source_vertex;
 };

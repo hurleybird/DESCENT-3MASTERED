@@ -233,10 +233,9 @@ void PostRender(int roomnum)
 	ubyte separated_object_polymodel_late_mask[MAX_POSTRENDERS] = {};
 	unsigned int separated_object_random_state[MAX_POSTRENDERS] = {};
 	// GL4 depth consumers (AO, motion vectors, and soft particles) all require
-	// the same stable set of opaque polygon depth.  Keep the split independent of
-	// the soft-particle toggle so changing one effect cannot remove object depth
-	// from another.  Compatibility GL keeps its legacy one-pass ordering.
-	const bool separate_polygon_objects = rend_CanUseNewrender();
+	// the same stable set of opaque polygon depth. Keep the split independent of
+	// the soft-particle toggle so changing one effect cannot remove object depth.
+	const bool separate_polygon_objects = true;
 	if (separate_polygon_objects)
 	{
 		PERF_MARKER_SCOPE("PostRender.ObjectOpaquePass");

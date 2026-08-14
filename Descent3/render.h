@@ -44,7 +44,6 @@ extern bool Render_inside_only;
 #endif
 extern short use_opengl_1555_format;				//DAJ
 
-extern bool Render_use_newrender;
 
 #ifndef RELEASE
 extern int Mine_depth;

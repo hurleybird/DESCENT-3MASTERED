@@ -1974,19 +1974,6 @@ void ProcessTestKeys(int key)
 		}
 		break;
 
-	case KEY_N:
-		if (!rend_CanUseNewrender())
-		{
-			AddHUDMessage("newrender is incompatible with GL compatibility backend.");
-			break;
-		}
-		Render_use_newrender = !Render_use_newrender;
-		if (Render_use_newrender)
-			AddHUDMessage("Using newrender.");
-		else
-			AddHUDMessage("Using legacy render");
-		break;
-
 	case KEY_O:
 		Outline_mode ^= OM_ON;
 		AddHUDMessage("Outline mode turned %s", OUTLINE_ON(0) ? "ON" : "OFF");

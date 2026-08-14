@@ -50,7 +50,7 @@ unsigned int mve_SequenceFrame( unsigned int handle, int fhandle, bool sequence,
 bool mve_SequenceClose( unsigned int handle, int fhandle );
 
 //	sets render frame boundaries.
-void mve_SetRenderProperties( short x, short y, short w, short h, renderer_type type, bool hicolor );
+void mve_SetRenderProperties(short x, short y, short w, short h, bool hicolor);
 
 // called every frame.
 typedef void (*MovieFrameCallback_fp)( int x, int y, int movieFrameNum );

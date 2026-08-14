@@ -21,12 +21,7 @@
 #include "IRenderer.h"
 #include "pserror.h"
 #include "gl_local.h"
-#include "gl1_local.h"
 
-//TODO: Remove
-renderer_type Renderer_type = RENDERER_OPENGL;
-
-opengl_profile OpenGLProfile = GLPROFILE_CORE;
 int RendererOpenGLMajorVersion = 0;
 int RendererOpenGLMinorVersion = 0;
 char RendererOpenGLVersionString[128] = "";
@@ -62,16 +57,7 @@ float Z_bias;
 
 static IRenderer* rend_CreateRendererInstance()
 {
-	switch (OpenGLProfile)
-	{
-	case GLPROFILE_CORE:
-		return new GL4Renderer();
-	case GLPROFILE_COMPAT:
-		return new GLCompatibilityRenderer();
-	default:
-		Error("Unsupported backend");
-		return nullptr;
-	}
+	return new GL4Renderer();
 }
 
 static bool rend_PreferredStateRequiresFreshRenderer(const renderer_preferred_state& old_state,
@@ -117,11 +103,10 @@ static int rend_RecreateRenderer(renderer_preferred_state* pref_state)
 }
 
 // Init our renderer
-int rend_Init(renderer_type state, oeApplication* app, renderer_preferred_state* pref_state)
+int rend_Init(oeApplication* app, renderer_preferred_state* pref_state)
 {
 #ifndef DEDICATED_ONLY
 	int retval = 0;
-	rend_SetRendererType(state);
 	if (!Renderer_initted)
 	{
 		if (!Renderer_close_flag)
@@ -199,12 +184,6 @@ void rend_RegisterResourceReleaseCallback(renderer_resource_release_callback cal
 			return;
 		}
 	}
-}
-
-void rend_SetRendererType(renderer_type state)
-{
-	Renderer_type = state;
-	mprintf((0, "RendererType is set to %d.\n", state));
 }
 
 void rend_GetStatistics(tRendererStats* stats)
@@ -1477,16 +1456,6 @@ void rend_SetColorModel(color_model model)
 		return;
 
 	renderer_inst->SetColorModel(model);
-}
-
-bool rend_CanUseNewrender()
-{
-	if (!Renderer_initted)
-	{
-		Error("rend_CanUseNewrender: Called in dedicated!");
-	}
-
-	return OpenGLProfile == GLPROFILE_CORE;
 }
 
 void rend_ClearBoundTextures()

@@ -504,7 +504,7 @@ static RetainedRoomCache* GetRetainedRoom(room* rp)
 
 void RetainedRoomPrecacheAll(bool include_specular)
 {
-	if (!UseHardware || StateLimited || !rend_CanUseNewrender() || NoLightmaps)
+	if (!UseHardware || StateLimited || NoLightmaps)
 		return;
 
 	RegisterRetainedRoomReleaseCallback();
@@ -568,7 +568,7 @@ void RetainedRoomEnsureLightmaps()
 
 bool RetainedRoomCanDrawBaseFace(room* rp, int facenum)
 {
-	if (!UseHardware || StateLimited || !rend_CanUseNewrender() || NoLightmaps ||
+	if (!UseHardware || StateLimited || NoLightmaps ||
 		!rp || !rp->used || facenum < 0 || facenum >= rp->num_faces)
 	{
 		return false;

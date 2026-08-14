@@ -103,9 +103,7 @@ static void RestorePolymodelDepthWriteMask()
 
 static bool PolymodelUseSoftGlowEffects(const poly_model* pm)
 {
-	// The compatibility renderer has no soft-depth path, so preserve its legacy
-	// radius bias even if the shared preference happens to be enabled.
-	if (!Render_soft_vis_effects || !rend_CanUseNewrender() || !pm)
+	if (!Render_soft_vis_effects || !pm)
 		return false;
 
 	// This asset places large glow planes inside a tight mechanical housing.
@@ -117,7 +115,7 @@ static bool PolymodelUseSoftGlowEffects(const poly_model* pm)
 static bool PolymodelFacingUsesSoftIntersection(const poly_model* pm,
 	const char* texture_name)
 {
-	if (!Render_soft_vis_effects || !rend_CanUseNewrender() || !pm ||
+	if (!Render_soft_vis_effects || !pm ||
 		!texture_name || stricmp(pm->name, "gyro.OOF") != 0)
 	{
 		return false;
@@ -2234,7 +2232,7 @@ void DoneLightInstance();
 
 static bool UsePerPixelPolymodelLighting()
 {
-	return UseHardware && Render_preferred_state.per_pixel_lighting && rend_CanUseNewrender();
+	return UseHardware && Render_preferred_state.per_pixel_lighting;
 }
 
 static light_state GetPolymodelGouraudLightingState()

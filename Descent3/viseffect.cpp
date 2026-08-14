@@ -277,9 +277,7 @@ static EnhancedSnowRenderParams VisEffectEnhancedSnowRenderParams(const vis_effe
 
 static bool VisEffectCanUseLateCloseScreenPass()
 {
-	return Renderer_type == RENDERER_OPENGL &&
-		OpenGLProfile == GLPROFILE_CORE &&
-		VisEffectViewerIsFirstPersonLocalPlayerView();
+	return VisEffectViewerIsFirstPersonLocalPlayerView();
 }
 
 bool VisEffectViewerIsFirstPersonLocalPlayerView()
@@ -1853,7 +1851,7 @@ static bool VisEffectShouldUseSoftParticles()
 	if (Close_screen_rendering_late)
 		return false;
 
-	return Render_soft_vis_effects && rend_CanUseNewrender();
+	return Render_soft_vis_effects;
 }
 
 static bool VisEffectShouldUseSoftParticlesForEffect(const vis_effect* vis)
@@ -1884,7 +1882,7 @@ static bool VisEffectShouldUseSoftSnowParticles(bool zbuffer_state)
 	if (Close_screen_rendering_late)
 		return false;
 
-	return Render_soft_vis_effects && zbuffer_state && rend_CanUseNewrender();
+	return Render_soft_vis_effects && zbuffer_state;
 }
 
 struct VisEffectVClipFrameBlend
@@ -2806,7 +2804,7 @@ static bool VisEffectBuildFastFireballBatchItem(vis_effect* vis, VisFireballBatc
 	renderer_weather_quad& blend_item, bool& has_blend_item)
 {
 	has_blend_item = false;
-	if (!rend_CanUseNewrender() || vis->type != VIS_FIREBALL ||
+	if (vis->type != VIS_FIREBALL ||
 		VisEffectIsSpecialFireball(vis->id))
 	{
 		return false;

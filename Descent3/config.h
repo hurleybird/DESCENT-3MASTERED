@@ -91,8 +91,6 @@ extern float Render_per_pixel_specular_field_sample_distance;
 extern bool Render_per_pixel_field_static_specular;
 extern bool Cockpit_alt_mode;
 //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
-extern int DesiredOpenGLProfile;
-extern bool DesiredOpenGLProfileExplicit;
 int ConfigNormalizeSupersamplingFactor(int factor);
 int ConfigGetDesktopRefreshRate();
 int ConfigNormalizeFrameLimitFps(int fps);

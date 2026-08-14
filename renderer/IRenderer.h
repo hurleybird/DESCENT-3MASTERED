@@ -30,7 +30,6 @@ public:
 	//INITIALIZATION
 
 	// Init our renderer, pass the application object also.
-	//virtual int Init(renderer_type state, oeApplication* app, renderer_preferred_state* pref_state) = 0;
 	virtual int Init(oeApplication* app, renderer_preferred_state* pref_state) = 0;
 	// de-init the renderer
 	virtual void Close() = 0;

@@ -500,9 +500,8 @@ void SaveGameSettings()
 	WRITE_FLOAT_SETTING("WootingAnalogStartDeadzone", Wooting_analog_start_deadzone);
 	WRITE_FLOAT_SETTING("WootingAnalogEndDeadzone", Wooting_analog_end_deadzone);
 
-#ifndef RELEASE			// never save this value out in release.
+#ifndef RELEASE
 	Database->write("SoundMixer", Sound_mixer);
-	Database->write("PreferredRenderer",PreferredRenderer);
 #endif
 	
 	tempint = Sound_quality;
@@ -654,11 +653,8 @@ void LoadGameSettings()
 	Render_preferred_state.pixel_motion_blur_samples = 9;
 	Render_preferred_state.afterburner_fov_multiplier = 0.08f;
 	Render_preferred_state.afterburner_pixel_blur_multiplier = 2.0f;
-	DesiredOpenGLProfile = GLPROFILE_CORE;
-	DesiredOpenGLProfileExplicit = false;
 	Terrain_renderer_mode = TERRAIN_RENDERER_RETAINED;
 	Hud_text_scale = 1.0f;
-	PreferredRenderer = RENDERER_NONE;
 
 
 	Sound_system.SetLLSoundQuantity(MAX_SOUNDS_MIXED);
@@ -1130,31 +1126,10 @@ void LoadGameSettings()
 		Wooting_analog_enabled = true;
 	else if (FindArg("-no-wooting-analog"))
 		Wooting_analog_enabled = false;
-	Database->read_int("PreferredRenderer",&PreferredRenderer);
 	Database->read_int("MissileView",&Missile_camera_window);
 	Database->read("FastHeadlight",&Detail_settings.Fast_headlight_on);
 	Database->read("MirrorSurfaces",&Detail_settings.Mirrored_surfaces);
-	// GL4 is always the normal renderer. GL1 compatibility is intentionally
-	// available only as an explicit command-line troubleshooting path.
-	DesiredOpenGLProfile = GLPROFILE_CORE;
-	DesiredOpenGLProfileExplicit = false;
-	if (FindArg("-glcompat") || FindArg("-gl1") || FindArg("-openglcompat"))
-	{
-		DesiredOpenGLProfile = GLPROFILE_COMPAT;
-		DesiredOpenGLProfileExplicit = true;
-	}
-	if (FindArg("-glcore") || FindArg("-gl4") || FindArg("-gl45") || FindArg("-openglcore"))
-	{
-		DesiredOpenGLProfile = GLPROFILE_CORE;
-		DesiredOpenGLProfileExplicit = true;
-	}
-	Terrain_renderer_mode = DesiredOpenGLProfile == GLPROFILE_CORE ?
-		TERRAIN_RENDERER_RETAINED : TERRAIN_RENDERER_LEGACY;
-	if (DesiredOpenGLProfile != GLPROFILE_CORE)
-	{
-		Render_preferred_state.per_pixel_lighting = false;
-		Render_preferred_state.ao_enabled = false;
-	}
+	Terrain_renderer_mode = TERRAIN_RENDERER_RETAINED;
 
 //@@	// Base missile camera if in wrong window
 //@@	if (Missile_camera_window==SVW_CENTER)
@@ -1302,9 +1277,9 @@ void LoadGameSettings()
 		Render_hires_skies = true;
 
 	AutomatedCaptureLog(
-		"render state resolution=%dx%d fullscreen=%d profile=%d framecap=%d vsync=%d msaa=%u ssaa=%u filtering=%d mipping=%d anisotropy=%u per_pixel=%d bloom=%d ao=%d ao_resolution=%u ao_overscan=%u motion_blur=%d combined_blur=%d soft_particles=%d enhanced_weather=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
+		"render state resolution=%dx%d fullscreen=%d renderer=GL4 framecap=%d vsync=%d msaa=%u ssaa=%u filtering=%d mipping=%d anisotropy=%u per_pixel=%d bloom=%d ao=%d ao_resolution=%u ao_overscan=%u motion_blur=%d combined_blur=%d soft_particles=%d enhanced_weather=%d dynamic_lights=%d specular=%d mirrors=%d fog=%d coronas=%d procedurals=%d halos=%d scorches=%d",
 		Game_window_res_width, Game_window_res_height, Game_fullscreen ? 1 : 0,
-		DesiredOpenGLProfile, GetFrameLimitFps(),
+		GetFrameLimitFps(),
 		Render_preferred_state.vsync ? 1 : 0,
 		(unsigned)Render_preferred_state.msaa_samples,
 		(unsigned)Render_preferred_state.supersampling_factor,
@@ -1355,8 +1330,6 @@ void LoadGameSettings()
 		Detail_settings.Procedurals_enabled = 0;
 	}
 
-	// We only support OpenGL now...
-	PreferredRenderer = RENDERER_OPENGL;
 }
 
 

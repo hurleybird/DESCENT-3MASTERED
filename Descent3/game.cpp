@@ -84,9 +84,6 @@ float force_field_bounce_multiplier[MAX_FORCE_FIELD_BOUNCE_TEXTURES] = { 1.0f, 1
 
 bool Level_powerups_ignore_wind = false;
 
-//what renderer?
-renderer_type PreferredRenderer = RENDERER_OPENGL;
-
 // Rendering options
 rendering_state Render_state;
 renderer_preferred_state Render_preferred_state;
@@ -502,10 +499,8 @@ void SetScreenMode(int sm, bool force_res_change)
 	if (old_sm == sm && !force_res_change)
 		return;
 
-	//	close down any systems previously opened and that must be closed (like software->hardware, etc.)
-	//	make sure renderer is initialized
-	//	also set any preferred renderer states.
-	if (sm == SM_NULL) // || (sm == SM_CINEMATIC && Renderer_type == RENDERER_OPENGL)) {
+	// Close down any systems previously opened and ensure GL4 is initialized.
+	if (sm == SM_NULL)
 	{
 		if (rend_initted)
 		{
@@ -513,7 +508,7 @@ void SetScreenMode(int sm, bool force_res_change)
 			rend_initted = 0;
 		}
 	}
-	else if (sm == SM_CINEMATIC)// && (Renderer_type == RENDERER_OPENGL || Renderer_type == RENDERER_DIRECT3D)) {
+	else if (sm == SM_CINEMATIC)
 	{
 		if (rend_initted)
 		{
@@ -521,14 +516,6 @@ void SetScreenMode(int sm, bool force_res_change)
 			rend_initted = 0;
 		}
 	}
-	//#ifdef RELEASE
-	//	else if (sm == SM_CINEMATIC && (Renderer_type == RENDERER_GLIDE) ) {
-	//		if (rend_initted) {
-	//			rend_Close();
-	//			rend_initted = 0;
-	//		}
-	//	}
-	//#endif
 	else
 	{
 		int scr_width, scr_height, scr_bitdepth;
@@ -558,8 +545,7 @@ void SetScreenMode(int sm, bool force_res_change)
 			Render_preferred_state.window_height = Game_window_res_height;
 			Render_preferred_state.fullscreen = Game_fullscreen;
 
-			OpenGLProfile = (opengl_profile)DesiredOpenGLProfile;
-			rend_initted = rend_Init(PreferredRenderer, Descent, &Render_preferred_state);
+			rend_initted = rend_Init(Descent, &Render_preferred_state);
 			rend_width = rend_height = 0;
 		}
 		else
@@ -688,7 +674,7 @@ void SetScreenMode(int sm, bool force_res_change)
 
 	case SM_CINEMATIC:
 	{
-		SetMovieProperties(0, 0, FIXED_SCREEN_WIDTH, FIXED_SCREEN_HEIGHT, (rend_initted) ? Renderer_type : RENDERER_NONE);
+		SetMovieProperties(0, 0, FIXED_SCREEN_WIDTH, FIXED_SCREEN_HEIGHT);
 		break;
 	}
 

@@ -825,7 +825,6 @@ static bool TerrainRetainedCanRender(bool from_automap, bool draw_lightmap)
 		return false;
 #endif
 	if (from_automap || !draw_lightmap || !UseHardware ||
-		OpenGLProfile != GLPROFILE_CORE ||
 		Terrain_renderer_mode != TERRAIN_RENDERER_RETAINED)
 	{
 		return false;
@@ -849,7 +848,7 @@ static bool TerrainRetainedUsesFullGrid()
 		return false;
 
 	return Terrain_renderer_mode == TERRAIN_RENDERER_RETAINED &&
-		UseHardware && OpenGLProfile == GLPROFILE_CORE;
+		UseHardware;
 }
 
 static float TerrainGpuCellHeight(int seg)
@@ -1317,8 +1316,7 @@ void TerrainRenderer_ResetLevelState()
 void TerrainRenderer_PrecacheLevel()
 {
 	EnsureTerrainRetainedRendererGeneration();
-	Terrain_renderer_mode = (UseHardware && OpenGLProfile == GLPROFILE_CORE) ?
-		TERRAIN_RENDERER_RETAINED : TERRAIN_RENDERER_LEGACY;
+	Terrain_renderer_mode = TERRAIN_RENDERER_RETAINED;
 	if (!TerrainRetainedCanRender(false, true) ||
 		!EnsureTerrainRetainedResources())
 		return;
@@ -1816,8 +1814,7 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 
 	rend_SetFlatColor(Terrain_sky.sky_color);
 	View_mode = GetFunctionMode();
-	Terrain_renderer_mode = (UseHardware && OpenGLProfile == GLPROFILE_CORE) ?
-		TERRAIN_RENDERER_RETAINED : TERRAIN_RENDERER_LEGACY;
+	Terrain_renderer_mode = TERRAIN_RENDERER_RETAINED;
 
 	// Set this so we don't do reentrant rendering between terrain/mine
 	Terrain_from_mine = from_mine;
