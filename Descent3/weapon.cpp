@@ -1168,6 +1168,20 @@ int SwitchPlayerWeapon(int weapon_type, int direction)
 	setwpnfunc = (weapon_type == PW_SECONDARY) ? SetSecondaryWeapon : SetPrimaryWeapon;
 	sel_list = (weapon_type == PW_SECONDARY) ? SecondaryWpnSelectList : PrimaryWpnSelectList;
 	direction = direction < 0 ? -1 : 1;
+	bool skip_basic_laser = false;
+	if (weapon_type == PW_PRIMARY &&
+		(plr->weapon_flags & HAS_FLAG(SUPER_LASER_INDEX)))
+	{
+		for (int primary = 0; primary < MAX_PRIMARY_WEAPONS; primary++)
+		{
+			if (primary != LASER_INDEX && primary != SUPER_LASER_INDEX &&
+				(plr->weapon_flags & HAS_FLAG(primary)))
+			{
+				skip_basic_laser = true;
+				break;
+			}
+		}
+	}
 
 	new_index = 0;
 	while (WPNINDEX(new_index) != plr_wpn_index && WPNINDEX(new_index) != SELLIST_END)
@@ -1195,6 +1209,8 @@ int SwitchPlayerWeapon(int weapon_type, int direction)
 			new_index = end_index - 1;
 
 		ushort wpn_index = WPNINDEX(new_index);
+		if (skip_basic_laser && wpn_index == LASER_INDEX)
+			continue;
 		otype_wb_info* wb = &ship->static_wb[wpn_index];
 		int slot = (weapon_type == PW_SECONDARY) ? (((wpn_index - SECONDARY_INDEX) % NUM_SECONDARY_SLOTS) + NUM_PRIMARY_SLOTS) : (wpn_index % NUM_PRIMARY_SLOTS);
 

@@ -569,6 +569,8 @@ void newuiCore_ReleaseBitmaps()
 
 // does a UI loop
 static const char* UI_screenshot_and_quit_filename = NULL;
+static bool UI_defer_modal_frame_end = false;
+static bool UI_deferred_modal_frame = false;
 
 int DoUI()
 {
@@ -660,7 +662,12 @@ void DoUIFrame()
 		UI_frame_result = ui_DoFrame();
 		DebugBlockPrint("UN");
 		if (modal_ui_frame)
-			rend_EndModalUIFrame();
+		{
+			if (UI_defer_modal_frame_end)
+				UI_deferred_modal_frame = true;
+			else
+				rend_EndModalUIFrame();
+		}
 
 		if (UI_screenshot_and_quit_filename)
 		{
@@ -5370,7 +5377,9 @@ int newuiTiledWindow::DoUI()
 		DebugBlockPrint("UA");
 
 		Descent->defer();
+		UI_defer_modal_frame_end = m_draw_cb != NULL;
 		DoUIFrame();
+		UI_defer_modal_frame_end = false;
 		if (m_onframe_cb)
 			(*m_onframe_cb)(this, m_data);
 		
@@ -5381,6 +5390,11 @@ int newuiTiledWindow::DoUI()
 			ui_EndDraw();
 			rend_FlushTextLayer();
 			ui_DoCursor();
+		}
+		if (UI_deferred_modal_frame)
+		{
+			UI_deferred_modal_frame = false;
+			rend_EndModalUIFrame();
 		}
 		DebugBlockPrint("UZ");
 		rend_Flip();
