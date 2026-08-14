@@ -40,12 +40,6 @@
 // Defines the headlight cone of light
 #define HEADLIGHT_DOT		.75f
 
-// How big the fast headlight is
-#define FAST_HEADLIGHT_SIZE	20.0f
-
-// Defines the headlight cone of light
-#define FAST_HEADLIGHT_DOT		.80f
-
 // returns true if this light point is visible
 bool IsLightPointVisible(vector* pos, float size, object* obj)
 {
@@ -155,56 +149,10 @@ void DoObjectLight(object* obj)
 	{
 		if ((Players[obj->id].flags) & PLAYER_FLAGS_HEADLIGHT)
 		{
-
-			if (Detail_settings.Fast_headlight_on)
-			{
-				// Do fast headlight
-				fvi_info hit_info;
-				fvi_query fq;
-
-				// shoot a ray from the light position to the current vertex
-				vector end_pos = obj->pos + (obj->orient.fvec * HEADLIGHT_DISTANCE * 2);
-				fq.p0 = &obj->pos;
-				fq.p1 = &end_pos;
-
-				fq.startroom = obj->roomnum;
-
-				fq.rad = 0.0f;
-				fq.flags = FQ_CHECK_OBJS;
-				fq.thisobjnum = -1;
-				fq.ignore_obj_list = NULL;
-
-				fvi_FindIntersection(&fq, &hit_info);
-
-				hit_info.hit_pnt -= obj->orient.fvec / 4;
-
-				float dist = vm_VectorDistanceQuick(&hit_info.hit_pnt, &obj->pos);
-
-				// Now light up the hit area
-				ApplyLightingToWorld(&hit_info.hit_pnt, hit_info.hit_room,
-					FAST_HEADLIGHT_SIZE, negative_light * 1.0,
-					negative_light * 1.0, negative_light * 1.0, NULL,
-					0.0f, true, &obj->pos);
-				if (!ROOMNUM_OUTSIDE(hit_info.hit_room))
-				{
-					// Do stupid easter egg trick
-					face* fp = &Rooms[hit_info.hit_room].faces[hit_info.hit_face[0]];
-					if (Gametime > EASTER_EGG_TIMER && hit_info.hit_type[0] == HIT_WALL && GameTextures[fp->tmap].flags & (TF_PROCEDURAL | TF_WATER_PROCEDURAL))
-					{
-						EasterEgg = 1;
-					}
-				}
-			}
-			else
-			{
-				// Do slow headlight
-
-				ApplyLightingToWorld(&obj->pos, obj->roomnum,
-					HEADLIGHT_DISTANCE, negative_light * 1.0,
-					negative_light * 1.0, negative_light * 1.0,
-					&obj->orient.fvec, HEADLIGHT_DOT, true);
-			}
-
+			ApplyLightingToWorld(&obj->pos, obj->roomnum,
+				HEADLIGHT_DISTANCE, negative_light * 1.0,
+				negative_light * 1.0, negative_light * 1.0,
+				&obj->orient.fvec, HEADLIGHT_DOT, true);
 		}
 
 

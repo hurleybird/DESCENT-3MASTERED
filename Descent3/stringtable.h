@@ -371,7 +371,6 @@ char *GetStringFromTableWithFallback(int index, const char *fallback);
 #define TXT_LOADGAME						TXT(340)	//"Load Game"
 #define TXT_SAVEGAME						TXT(341)	//"Save Game"
 #define TXT_DESCRIPTION					TXT(342)	//"Description"
-#define TXT_FASTHEADLIGHT				TXT(343)	//"Fast Headlight"
 #define TXT_MIRRORSURF					TXT(344)	//"Mirrored Surfaces"
 #define TXI_KB_PREVINV					345		//"Prev Inven Item"
 #define TXI_KB_NEXTINV					346		//"Next Inven Item"

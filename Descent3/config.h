@@ -125,7 +125,6 @@ struct tDetailSettings
 	float Pixel_error;				//PixelErrorTolerance
 	bool Specular_lighting;			//DoSpecularPass
 	bool Dynamic_lighting;			//Enable_dynamic_lighting
-	bool Fast_headlight_on;
 	bool Mirrored_surfaces;
 	bool Fog_enabled;
 	bool Coronas_enabled;

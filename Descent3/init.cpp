@@ -459,7 +459,6 @@ void SaveGameSettings()
 	Database->write("RoomLeveling",Default_player_room_leveling);
 	//Database->write("Terrain_casting",Detail_settings.Terrain_casting);
 	Database->write("Specmapping",Detail_settings.Specular_lighting);
-	Database->write("FastHeadlight",Detail_settings.Fast_headlight_on);
 	Database->write("MirrorSurfaces",Detail_settings.Mirrored_surfaces);
 	Database->write("MissileView",Missile_camera_window);
 	Database->write("DetailScorchMarks",Detail_settings.Scorches_enabled);
@@ -588,7 +587,6 @@ void LoadGameSettings()
 
 	Detail_settings.Specular_lighting = true;
 	Detail_settings.Dynamic_lighting = true;
-	Detail_settings.Fast_headlight_on = false;
 	Detail_settings.Mirrored_surfaces = true;
 	Detail_settings.Scorches_enabled = true;
 	Detail_settings.Weapon_coronas_enabled = true;
@@ -1127,7 +1125,6 @@ void LoadGameSettings()
 	else if (FindArg("-no-wooting-analog"))
 		Wooting_analog_enabled = false;
 	Database->read_int("MissileView",&Missile_camera_window);
-	Database->read("FastHeadlight",&Detail_settings.Fast_headlight_on);
 	Database->read("MirrorSurfaces",&Detail_settings.Mirrored_surfaces);
 	Terrain_renderer_mode = TERRAIN_RENDERER_RETAINED;
 
@@ -1227,7 +1224,6 @@ void LoadGameSettings()
 	// intentionally follows legacy preset/database loading so old profiles
 	// cannot silently disable parts of the remastered presentation.
 	Detail_settings.Specular_lighting = true;
-	Detail_settings.Fast_headlight_on = false;
 	Detail_settings.Mirrored_surfaces = true;
 	Detail_settings.Dynamic_lighting = true;
 	Detail_settings.Fog_enabled = true;
