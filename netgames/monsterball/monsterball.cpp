@@ -1709,7 +1709,7 @@ void DisplayHUDScores(struct tHUDItem *hitem)
 	if(!monsterball_info_set || !players_sorted || DisplayScoreScreen)	//interval hasn't been called yet or we are display the stats
 		return;
 
-	int height = DLLgrfont_GetHeight((DMFCBase->GetGameFontTranslateArray())[HUD_FONT_INDEX]) + 3;
+	int height = DLLgrfont_GetHeight((DMFCBase->GetGameFontTranslateArray())[HUD_FONT_INDEX]) + 5;
 	int y,x,team,p;
 
 	ubyte alpha = DMFCBase->ConvertHUDAlpha((ubyte)255);

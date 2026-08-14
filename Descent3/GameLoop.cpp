@@ -2784,6 +2784,11 @@ void GameRenderWorld(object* viewer, vector* viewer_eye, int viewer_roomnum, mat
 		PERF_MARKER_SCOPE("PostRender.World");
 		PostRender(viewer_roomnum);
 	}
+	if (Rendering_main_view)
+	{
+		PERF_MARKER_SCOPE("QueueMultiplayerPlayerNamesOnHud");
+		QueueMultiplayerPlayerNamesOnHud();
+	}
 	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_WORLD_POSTRENDER);
 	{
 		PERF_MARKER_SCOPE("g3_EndFrame.World");

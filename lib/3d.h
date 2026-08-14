@@ -182,7 +182,12 @@ void g3_StartFrame(vector *view_pos,matrix *view_matrix,float zoom);
 
 //start the frame with an anchored projection inside a larger viewport
 void g3_StartFrameAnchored(vector *view_pos,matrix *view_matrix,float zoom,
-						   int anchor_x,int anchor_y,int anchor_w,int anchor_h);
+	int anchor_x,int anchor_y,int anchor_w,int anchor_h);
+
+// Returns the center of the active projection in its render-target coordinates.
+// This can differ from the visible viewport center when the world is rendered
+// with overscan and cropped during composition.
+void g3_GetProjectionCenter(float *x, float *y);
 
 //end the frame
 void g3_EndFrame(void);

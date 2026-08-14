@@ -1733,7 +1733,7 @@ void DisplayHUDScores(struct tHUDItem *hitem)
 
 
 	int font = (DMFCBase->GetGameFontTranslateArray())[HUD_FONT_INDEX];
-	int height = DLLgrfont_GetHeight(font) + 3;
+	int height = DLLgrfont_GetHeight(font) + 5;
 	DLLgrtext_SetFont(font);
 
 	int y = (DMFCBase->GetGameWindowH()/2) - ((height*3)/2);

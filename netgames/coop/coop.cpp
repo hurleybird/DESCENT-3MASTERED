@@ -590,8 +590,12 @@ void DisplayHUDScores(struct tHUDItem *hitem)
 	int start_y;
 	int i;
 
-	DLLgrtext_SetFont((DMFCBase->GetGameFontTranslateArray())[HUD_FONT_INDEX]);
-	int height = DLLRenderHUDGetTextHeight("X") + 1;
+	const int hud_font = (DMFCBase->GetGameFontTranslateArray())[HUD_FONT_INDEX];
+	DLLgrtext_SetFont(hud_font);
+	// This list is positioned in native screen pixels.  RenderHUDGetTextHeight
+	// reports virtual 640x480 HUD units, which compresses rows at resolutions
+	// above 480p and can make callsigns overlap.
+	int height = DLLgrfont_GetHeight(hud_font) + 3;
 	int players_in_game = 0;
 
 	for(i=0;i<DLLMAX_PLAYERS;i++){

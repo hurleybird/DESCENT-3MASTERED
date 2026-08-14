@@ -1514,7 +1514,6 @@ static bool RenderObjectInternal(object* obj)
 		{
 			DrawPlayerDamageDisk(obj);
 			DrawPlayerRotatingBall(obj);
-			DrawPlayerNameOnHud(obj);
 			DrawPlayerTypingIndicator(obj);
 			DrawPlayerInvulSphere(obj);
 		}
@@ -2685,6 +2684,13 @@ void DrawPlayerNameOnHud(object* obj)
 		g3Point pnt;
 		g3_RotatePoint(&pnt, fq.p1);
 		g3_ProjectPoint(&pnt);
+		float projection_center_x;
+		float projection_center_y;
+		g3_GetProjectionCenter(&projection_center_x, &projection_center_y);
+		const int hud_x = Game_window_x + Game_window_w / 2 +
+			(int)(pnt.p3_sx - projection_center_x);
+		const int hud_y = Game_window_y + Game_window_h / 2 +
+			(int)(pnt.p3_sy - projection_center_y);
 		float font_scale;
 		const float font_aspect_x = (float)Game_window_w / Max_window_w;
 		if (font_aspect_x <= 0.60f)
@@ -2695,9 +2701,22 @@ void DrawPlayerNameOnHud(object* obj)
 			font_scale = 1.0f;
 		font_scale *= ConfigNormalizeHudTextScale(Hud_text_scale);
 		QueuePostProcessHUDText(Players[slot].callsign,
-			(int)pnt.p3_sx,
-			(int)pnt.p3_sy,
+			hud_x,
+			hud_y,
 			true, HUD_FONT, font_scale, color, 255, 0);
+	}
+}
+
+void QueueMultiplayerPlayerNamesOnHud()
+{
+	if (!(Game_mode & GM_MULTI))
+		return;
+
+	for (int objnum = 0; objnum <= Highest_object_index; ++objnum)
+	{
+		object* obj = &Objects[objnum];
+		if (obj->type == OBJ_PLAYER)
+			DrawPlayerNameOnHud(obj);
 	}
 }
 

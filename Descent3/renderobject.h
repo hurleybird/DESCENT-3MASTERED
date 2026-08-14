@@ -42,6 +42,11 @@ void RenderObjectTransparents(object *obj, unsigned int random_state,
 void RenderObjectPerfReset();
 void RenderObjectPerfFlush();
 
+// Queue multiplayer callsigns for the active main-world projection.  Keeping
+// this independent of model submission prevents unrelated object culling from
+// suppressing an otherwise visible HUD label.
+void QueueMultiplayerPlayerNamesOnHud();
+
 // Sets the polygon render object type to static (one lightval for whole object)
 void RenderObject_SetStatic (float r,float g,float b);
 

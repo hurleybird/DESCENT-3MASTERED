@@ -200,6 +200,14 @@ void g3_StartFrameAnchored(vector *view_pos,matrix *view_matrix,float zoom,
 	g3_StartFrameInternal(view_pos, view_matrix, zoom, anchor_x, anchor_y, anchor_w, anchor_h);
 }
 
+void g3_GetProjectionCenter(float *x, float *y)
+{
+	if (x)
+		*x = Window_cx;
+	if (y)
+		*y = Window_cy;
+}
+
 //this doesn't do anything, but is here for completeness
 void g3_EndFrame(void)
 {

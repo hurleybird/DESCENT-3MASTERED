@@ -233,6 +233,14 @@ int MainMenu()
 
 			mprintf((0, "Returning to Multiplayer!\n"));
 
+			// A disconnect can occur while gameplay is rendering rather than while a
+			// modal UI is active.  MultiLeaveGame raises this flag to eject any such
+			// UI, but once PlayGame has unwound it must not leak into the newly opened
+			// connector menu.  Otherwise its first frame is treated as a forced quit
+			// and a client dropped by the host is left on the cleared game screen.
+			Multi_bail_ui_menu = false;
+			ui_ClearForceQuitRequest();
+
 			if (ReturnMultiplayerGameMenu())
 			{
 				exit_menu = 1;

@@ -912,7 +912,7 @@ void DisplayHUDScores(struct tHUDItem *hitem)
 	if(DisplayScoreScreen)
 		return;
 
-	int height = DLLgrfont_GetHeight((DMFCBase->GetGameFontTranslateArray())[HUD_FONT_INDEX]) + 3;
+	int height = DLLgrfont_GetHeight((DMFCBase->GetGameFontTranslateArray())[HUD_FONT_INDEX]) + 5;
 	int y = (DMFCBase->GetGameWindowH()/2) - ((height*NUM_TEAMS)/2);
 	int x = 520;
 	ubyte alpha = DMFCBase->ConvertHUDAlpha((ubyte)((DisplayScoreScreen)?128:255));

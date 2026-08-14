@@ -1141,6 +1141,10 @@ void RenderHUDFrame(float zoom)
 				PERF_MARKER_SCOPE("HUD.StartDeferredTextFrame");
 				rend_StartPostPresentFrame(0, 0, Max_window_w, Max_window_h,
 					RF_CLEAR_ZBUFFER);
+				// The direct renderer frame does not update grtext's clip rectangle.
+				// The preceding HUD frame may have left it at the centered 4:3
+				// cockpit width, while deferred world labels use full-screen coords.
+				grtext_SetParameters(0, 0, Max_window_w, Max_window_h);
 			}
 			else
 			{
