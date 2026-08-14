@@ -847,6 +847,11 @@ static bool RoomClusterPortalCurrentlyOpen(const RoomRenderClusterEdge& edge)
 	{
 		return false;
 	}
+	if (!a.portals || !b.portals || edge.portal_a < 0 || edge.portal_b < 0 ||
+		edge.portal_a >= a.num_portals || edge.portal_b >= b.num_portals)
+	{
+		return false;
+	}
 	const portal& ap = a.portals[edge.portal_a];
 	const portal& bp = b.portals[edge.portal_b];
 	const int blocking_flags = PF_RENDER_FACES | PF_BLOCK | PF_BLOCK_REMOVABLE;
@@ -944,6 +949,15 @@ static uint64_t RoomRenderClusterStateHash()
 		hash *= 1099511628211ull;
 	}
 	return hash;
+}
+
+void RenderRoomClustersFreeLevel()
+{
+	Room_render_clusters_prepared = false;
+	Room_render_cluster_state = UINT64_MAX;
+	Room_render_cluster_edges.clear();
+	Room_render_clusters.clear();
+	Room_render_cluster.fill(-1);
 }
 
 void RenderRoomClustersInitNewLevel()

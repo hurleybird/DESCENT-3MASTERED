@@ -115,6 +115,7 @@ void RenderMine(int viewer_roomnum,int flag_automap=0,int called_from_terrain=0)
 // Compile renderer-only Euclidean room clusters for the newly loaded level.
 // The authored portal graph remains authoritative for gameplay systems.
 void RenderRoomClustersInitNewLevel();
+void RenderRoomClustersFreeLevel();
 
 // True when the most recent main mine view reached an exterior portal.
 // Consumers can use this as a cheap rejection before doing precise portal

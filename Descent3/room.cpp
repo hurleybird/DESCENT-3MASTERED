@@ -343,6 +343,7 @@ void FreeAllRooms()
 	int rn;
 	room* rp;
 	mprintf((1, "Freeing rooms...Higest_room_index %d\n", Highest_room_index));
+	RenderRoomClustersFreeLevel();
 	for (rn = 0, rp = Rooms; rn <= Highest_room_index; rn++, rp++)
 	{
 		if (rp->used)
