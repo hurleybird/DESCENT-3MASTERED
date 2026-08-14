@@ -617,7 +617,11 @@ void mem_Init()
 #endif
 	
 	GlobalMemoryStatus(&ms);
-	Heap = HeapCreate(HEAP_NO_SERIALIZE,16000000,0);//GetProcessHeap();
+	// The engine heap is shared by the main thread and asynchronous subsystems
+	// such as networking and audio.  Let Windows serialize access to its heap
+	// metadata; HEAP_NO_SERIALIZE is only valid when the caller provides its own
+	// mutual exclusion, which this allocator does not.
+	Heap = HeapCreate(0,16000000,0);//GetProcessHeap();
 	if(!Heap)
 	{
 		mprintf((0,"Unable to create memory heap! error: %d\n",GetLastError()));
@@ -772,9 +776,9 @@ void *mem_malloc_sub (int size, const char *file, int line)
 		
 	}
 #ifndef MEM_DEBUG
-	mi->ptr = HeapAlloc(Heap,HEAP_NO_SERIALIZE,size);
+	mi->ptr = HeapAlloc(Heap,0,size);
 #else			
-	mi->ptr = HeapAlloc(Heap,HEAP_NO_SERIALIZE,size+2);
+	mi->ptr = HeapAlloc(Heap,0,size+2);
 	mi->len = size;
 	unsigned short mem_sig = MEM_GAURDIAN_SIG;
 	memcpy(((char *)mi->ptr)+size,(void *)&mem_sig,2);
@@ -858,18 +862,18 @@ void mem_free_sub (void *memblock)
 			Int3();				
 		}
 		Total_mem_used-=freemem->len;
-		HeapFree(Heap,HEAP_NO_SERIALIZE,memblock);
+		HeapFree(Heap,0,memblock);
 		deleteNode(mynode->data);
 		return;
 	}
 	else
 	{
 		mprintf((0,"Warning, hash lookup of memory block failed!\n"));
-		HeapFree(Heap,HEAP_NO_SERIALIZE,memblock);	
+		HeapFree(Heap,0,memblock);
 		return;
 	}
 #endif
-	HeapFree(Heap,HEAP_NO_SERIALIZE,memblock);	
+	HeapFree(Heap,0,memblock);
 #endif
 }
 int handle_program_memory_depletion( size_t size )
@@ -941,8 +945,8 @@ void * mem_realloc_sub(void * memblock,int size)
 	}
 #endif
 #ifdef MACINTOSH
-	HeapFree(Heap, HEAP_NO_SERIALIZE, memblock);
-	void *retp = HeapAlloc(Heap, HEAP_NO_SERIALIZE, size);
+	HeapFree(Heap, 0, memblock);
+	void *retp = HeapAlloc(Heap, 0, size);
 #else
 	void *retp = HeapReAlloc(Heap,0,memblock,size);
 #endif
