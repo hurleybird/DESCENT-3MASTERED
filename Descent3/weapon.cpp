@@ -195,7 +195,7 @@ float WeaponGameplayDirectDamage(object *weapon_obj, bool target_is_player)
 float WeaponGameplayPlayerHomingScalar(object *weapon_obj)
 {
 	return GameplayRulesAreEnhanced() &&
-		WeaponGameplayMatchesPlayerSlot(weapon_obj, EMD_INDEX) ? 1.25f : 1.0f;
+		WeaponGameplayMatchesPlayerSlot(weapon_obj, EMD_INDEX) ? 1.5f : 1.0f;
 }
 
 // Sets all weapons to unused
