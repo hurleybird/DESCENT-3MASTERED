@@ -1229,6 +1229,12 @@ int StartMultiplayerGameMenu ()
 		}	
 		else if (res==start_button)
 		{
+			if (dllcount <= 0)
+			{
+				DLLDoMessageBox("Multiplayer", "No 3MASTERED game-mode modules were found.",
+					MSGBOX_OK, UICOL_WINDOW_TITLE, UICOL_TEXT_NORMAL);
+				continue;
+			}
 			// Get Game name
 			DLLEditGetText(mission_name_edit,DLLNetgame->name,NETGAME_NAME_LEN);
 			// Get mission name
