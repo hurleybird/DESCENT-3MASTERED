@@ -100,7 +100,18 @@ static bool PrepareTrackerHostingOrFallback()
 	AutomatedCaptureLog("tracker host fallback status=0x%x gameplay_port=%u query_port=%u",
 		gspy_host_status, (unsigned int)gspy_GetGameplayPort(),
 		(unsigned int)gspy_GetQueryPort());
-	if (Dedicated_server || FindArg("-capture-host-mission"))
+	const int blocking_status = gspy_host_status &
+		(GSPY_HOST_QUERY_SOCKET_UNAVAILABLE | GSPY_HOST_TRACKER_UNAVAILABLE);
+	if (blocking_status == GSPY_HOST_OK)
+	{
+		// UPnP is only an attempt to make hosting automatic. Its failure does
+		// not invalidate an existing manual forward and does not prevent the
+		// tracker heartbeat/query path from operating.
+		AutomatedCaptureLog("tracker host continuing without automatic port mapping");
+		return true;
+	}
+	if (Dedicated_server ||
+		(FindArg("-capture-host-mission") && !FindArg("-capture-host-show-fallback")))
 		return true;
 
 	char tracker_message[768];
@@ -113,23 +124,13 @@ static bool PrepareTrackerHostingOrFallback()
 			"or cancel and correct the problem.",
 			(unsigned int)gspy_GetQueryPort());
 	}
-	else if (gspy_host_status & GSPY_HOST_TRACKER_UNAVAILABLE)
+	else
 	{
 		snprintf(tracker_message, sizeof(tracker_message),
 			"3MASTERED could not reach tsetsefly.de. Players can still join a Direct TCP/IP game "
 			"by IP address.\n\n"
 			"This is a tracker or Internet-connectivity problem; port forwarding is not necessarily "
 			"the cause. You can continue as Direct TCP/IP, or cancel and try again later.");
-	}
-	else
-	{
-		snprintf(tracker_message, sizeof(tracker_message),
-			"Automatic router setup for tsetsefly.de hosting failed. If your router is not already "
-			"configured, public listing or joining may not work.\n\n"
-			"Forward only UDP %u to this PC and allow 3MASTERED through your firewall. Remove the forward "
-			"when you no longer want to host publicly. You can continue as Direct TCP/IP, or cancel and "
-			"configure your network.",
-			(unsigned int)gspy_GetGameplayPort());
 	}
 
 	if (ShowTrackerHostingNotice(tracker_message))
