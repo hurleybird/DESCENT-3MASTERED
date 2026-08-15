@@ -59,6 +59,7 @@ bool IsAltEnterFullscreenEnabled();
 bool IsAltEnterFullscreenKey(int key);
 bool IsAltF4QuitKey(int key);
 bool IsAltPrintScreenKey(int key);
+bool IsCtrlPrintScreenKey(int key);
 bool ShouldConfirmAltF4QuitInGame();
 void RequestAltF4QuitConfirmation();
 bool IsAltF4QuitConfirmationPending();
@@ -238,6 +239,7 @@ const char *ResolveCompatibleGameModule(const char *advertised_name);
 
 // Does a screenshot and tells the bitmap lib to save out the picture
 void DoScreenshot ();
+void RequestDoubleResolutionScreenshot();
 
 // Requests a gameplay comparison screenshot without transient HUD or modal UI.
 void RequestCleanGameplayScreenshot();

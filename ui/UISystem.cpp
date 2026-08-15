@@ -206,6 +206,8 @@ void ToggleFullscreenMode();
 bool IsAltEnterFullscreenEnabled();
 bool IsAltEnterFullscreenKey(int key);
 bool IsAltPrintScreenKey(int key);
+bool IsCtrlPrintScreenKey(int key);
+void RequestDoubleResolutionScreenshot();
 void RequestCleanGameplayScreenshot();
 //////////////////////////////////////////////////////////////////////////////
 //	FUNCTIONS
@@ -381,9 +383,12 @@ bool ui_KeyPoll()
 		ui_KeyFlush();
 		return false;
 	}
+	const bool double_resolution_screenshot = IsCtrlPrintScreenKey(key);
+	if (double_resolution_screenshot)
+		RequestDoubleResolutionScreenshot();
 	if (IsAltPrintScreenKey(key))
 		RequestCleanGameplayScreenshot();
-	else if (key == KEY_PRINT_SCREEN || key == KEY_SHIFTED + KEY_PRINT_SCREEN)
+	else if ((key & 0xff) == KEY_PRINT_SCREEN)
 		UI_input.printscreen = true;
 	UI_input.last_key = UI_input.key;
 	UI_input.last_key_status = UI_input.key_status;

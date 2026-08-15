@@ -410,6 +410,15 @@ bool IsAltPrintScreenKey(int key)
 	return IsAltKeyDown(key);
 }
 
+bool IsCtrlPrintScreenKey(int key)
+{
+	if ((key & 0xff) != KEY_PRINT_SCREEN)
+		return false;
+
+	return (key & KEY_CTRLED) ||
+		ddio_GetAdjKeyState(KEY_LCTRL) || ddio_GetAdjKeyState(KEY_RCTRL);
+}
+
 bool ShouldConfirmAltF4QuitInGame()
 {
 	return GetFunctionMode() == GAME_MODE &&
@@ -885,6 +894,13 @@ static bool UseTGAScreenshots()
 	return use_tga != 0;
 }
 
+static bool Double_resolution_screenshot_requested = false;
+
+void RequestDoubleResolutionScreenshot()
+{
+	Double_resolution_screenshot_requested = true;
+}
+
 // Does a screenshot and tells the bitmap lib to save out the picture.
 void DoScreenshot()
 {
@@ -894,6 +910,8 @@ void DoScreenshot()
 	CFILE* infile;
 	int done = 0;
 	int width = 640, height = 480;
+	const int output_scale = Double_resolution_screenshot_requested ? 2 : 1;
+	Double_resolution_screenshot_requested = false;
 
 	if (UseHardware)
 	{
@@ -928,7 +946,7 @@ void DoScreenshot()
 
 	StopTime();
 
-	int saved = (!use_tga && UseHardware) ? rend_SaveScreenshotPNG(filename) : 0;
+	int saved = (!use_tga && UseHardware) ? rend_SaveScreenshotPNG(filename, output_scale) : 0;
 	if (!saved)
 	{
 		bm_handle = bm_AllocBitmap(width, height, 0);
@@ -941,10 +959,39 @@ void DoScreenshot()
 
 		// Tell our renderer lib to take a screen shot
 		rend_Screenshot(bm_handle);
-		strcpy(GameBitmaps[bm_handle].name, str);
+
+		int output_handle = bm_handle;
+		if (output_scale == 2)
+		{
+			output_handle = bm_AllocBitmap(width * 2, height * 2, 0);
+			if (output_handle >= 0)
+			{
+				const ushort* src = bm_data(bm_handle, 0);
+				ushort* dst = bm_data(output_handle, 0);
+				for (int y = 0; y < height; ++y)
+				{
+					for (int x = 0; x < width; ++x)
+					{
+						const ushort pixel = src[y * width + x];
+						const int dst_offset = (y * 2) * (width * 2) + x * 2;
+						dst[dst_offset] = pixel;
+						dst[dst_offset + 1] = pixel;
+						dst[dst_offset + width * 2] = pixel;
+						dst[dst_offset + width * 2 + 1] = pixel;
+					}
+				}
+			}
+			else
+			{
+				output_handle = bm_handle;
+			}
+		}
+		strcpy(GameBitmaps[output_handle].name, str);
 
 		// Now save it
-		saved = use_tga ? bm_SaveBitmapTGA(filename, bm_handle) : bm_SaveBitmapPNG(filename, bm_handle);
+		saved = use_tga ? bm_SaveBitmapTGA(filename, output_handle) : bm_SaveBitmapPNG(filename, output_handle);
+		if (output_handle != bm_handle)
+			bm_FreeBitmap(output_handle);
 		bm_FreeBitmap(bm_handle);
 	}
 

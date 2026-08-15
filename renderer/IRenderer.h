@@ -312,7 +312,7 @@ public:
 	virtual void Screenshot(int bm_handle) = 0;
 
 	// Saves a screenshot without routing through the 16-bit bitmap manager.
-	virtual int SaveScreenshotPNG(const char* filename) { return 0; }
+	virtual int SaveScreenshotPNG(const char* filename, int output_scale = 1) { return 0; }
 
 	//NEW STATE
 

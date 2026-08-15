@@ -920,7 +920,7 @@ public:
 
 	// Takes a screenshot of the current frame and puts it into the handle passed
 	void Screenshot(int bm_handle) override;
-	int SaveScreenshotPNG(const char* filename) override;
+	int SaveScreenshotPNG(const char* filename, int output_scale = 1) override;
 
 	//NEW STATE
 

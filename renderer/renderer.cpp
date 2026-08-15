@@ -904,12 +904,12 @@ void rend_Screenshot(int bm_handle)
 	renderer_inst->Screenshot(bm_handle);
 }
 
-int rend_SaveScreenshotPNG(const char* filename)
+int rend_SaveScreenshotPNG(const char* filename, int output_scale)
 {
 	if (!Renderer_initted)
 		return 0;
 
-	return renderer_inst->SaveScreenshotPNG(filename);
+	return renderer_inst->SaveScreenshotPNG(filename, output_scale);
 }
 
 // Adds a bias to each coordinates z value.  This is useful for making 2d bitmaps

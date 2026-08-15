@@ -1410,7 +1410,16 @@ void ProcessNormalKey(int key)
 	if (IsAltPrintScreenKey(key))
 	{
 		mprintf((0, "Doing clean gameplay screenshot!\n"));
+		if (IsCtrlPrintScreenKey(key))
+			RequestDoubleResolutionScreenshot();
 		RequestCleanGameplayScreenshot();
+		return;
+	}
+	if (IsCtrlPrintScreenKey(key))
+	{
+		mprintf((0, "Doing double-resolution screenshot!\n"));
+		RequestDoubleResolutionScreenshot();
+		Screenshot_requested = true;
 		return;
 	}
 

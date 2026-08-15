@@ -4407,17 +4407,20 @@ void GL4Renderer::Screenshot(int bm_handle)
 	mem_free(temp_data);
 }
 
-int GL4Renderer::SaveScreenshotPNG(const char* filename)
+int GL4Renderer::SaveScreenshotPNG(const char* filename, int output_scale)
 {
 	int w = OpenGL_state.screen_width;
 	int h = OpenGL_state.screen_height;
 	int total = w * h;
+	output_scale = output_scale == 2 ? 2 : 1;
+	const int output_w = w * output_scale;
+	const int output_h = h * output_scale;
 
 	uint* temp_data = (uint*)mem_malloc(total * 4);
 	if (!temp_data)
 		return 0;
 
-	ubyte* rgba_data = (ubyte*)mem_malloc(total * 4);
+	ubyte* rgba_data = (ubyte*)mem_malloc(output_w * output_h * 4);
 	if (!rgba_data)
 	{
 		mem_free(temp_data);
@@ -4436,15 +4439,22 @@ int GL4Renderer::SaveScreenshotPNG(const char* filename)
 		for (int x = 0; x < w; x++)
 		{
 			uint spix = temp_data[((h - 1) - y) * w + x];
-			ubyte* dest = &rgba_data[(y * w + x) * 4];
-			dest[0] = (ubyte)(spix & 0xff);
-			dest[1] = (ubyte)((spix >> 8) & 0xff);
-			dest[2] = (ubyte)((spix >> 16) & 0xff);
-			dest[3] = 255;
+			for (int oy = 0; oy < output_scale; ++oy)
+			{
+				for (int ox = 0; ox < output_scale; ++ox)
+				{
+					ubyte* dest = &rgba_data[(((y * output_scale + oy) * output_w) +
+						(x * output_scale + ox)) * 4];
+					dest[0] = (ubyte)(spix & 0xff);
+					dest[1] = (ubyte)((spix >> 8) & 0xff);
+					dest[2] = (ubyte)((spix >> 16) & 0xff);
+					dest[3] = 255;
+				}
+			}
 		}
 	}
 
-	int saved = bm_SaveRawRGBA32PNG(filename, w, h, rgba_data);
+	int saved = bm_SaveRawRGBA32PNG(filename, output_w, output_h, rgba_data);
 	mem_free(rgba_data);
 	mem_free(temp_data);
 	return saved;
