@@ -21,6 +21,7 @@ obtained installation of Descent 3 is required.
 - Ultra-widescreen support
 - High (>60FPS) framerate
 - Native Wooting analog keyboard support
+- "Vanilla" and "Enhanced" rulesets, the later featuring improved balance, custom/jagged difficulty settings, improved robot AI, and more.
 
 ## Goals
 
