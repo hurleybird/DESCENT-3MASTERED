@@ -1130,8 +1130,13 @@ void GL_ConfigurePostMaskBlend()
 	glBlendFunci(1, GL_ONE, GL_ZERO);
 	glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	glEnablei(GL_BLEND, 2);
-	glBlendEquationSeparatei(2, GL_MAX, GL_FUNC_ADD);
-	glBlendFuncSeparatei(2, GL_ONE, GL_ONE, GL_ONE, GL_ZERO);
+	// Each RGB channel stores independent post-effect coverage.  Compose it as
+	// the union of successive translucent layers instead of retaining only the
+	// strongest individual layer: src + dst * (1 - src).  The alpha channel is
+	// an encoded AO material class rather than coverage, so it remains a direct
+	// replacement when writes to that channel are enabled.
+	glBlendEquationSeparatei(2, GL_FUNC_ADD, GL_FUNC_ADD);
+	glBlendFuncSeparatei(2, GL_ONE, GL_ONE_MINUS_SRC_COLOR, GL_ONE, GL_ZERO);
 	glDisablei(GL_BLEND, 3);
 	glColorMaski(3, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	glDisablei(GL_BLEND, 4);
