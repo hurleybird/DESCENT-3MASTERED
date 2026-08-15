@@ -202,8 +202,29 @@ int Get60HzVisualEventAges(int object_index, int object_handle,
 }
 
 static bool Screenshot_requested = false;
+static bool Clean_screenshot_requested = false;
+static bool Clean_screenshot_active = false;
 extern bool Skip_render_game_frame;
 extern bool Menu_interface_mode;
+
+void RequestCleanGameplayScreenshot()
+{
+	Clean_screenshot_requested = true;
+}
+
+bool IsCleanGameplayScreenshotActive()
+{
+	return Clean_screenshot_active;
+}
+
+static void CaptureCleanGameplayScreenshot()
+{
+	if (!Clean_screenshot_active)
+		return;
+
+	DoScreenshot();
+	Clean_screenshot_active = false;
+}
 
 // Deterministic renderer-comparison capture. The frame index is relative to
 // the first fully rendered gameplay frame, not the save's persisted global
@@ -1384,6 +1405,12 @@ void ProcessNormalKey(int key)
 	if (IsAltF4QuitKey(key) && ShouldConfirmAltF4QuitInGame())
 	{
 		RequestAltF4QuitConfirmation();
+		return;
+	}
+	if (IsAltPrintScreenKey(key))
+	{
+		mprintf((0, "Doing clean gameplay screenshot!\n"));
+		RequestCleanGameplayScreenshot();
 		return;
 	}
 
@@ -2954,7 +2981,8 @@ void GameDrawHud()
 static void GameDrawPostPresentFrame(bool force_backbuffer_frame)
 {
 	const bool draw_cockpit = !HUD_disabled && CockpitHasPostPostElements();
-	const bool draw_message_consoles = !HUD_disabled && AreHUDMessageConsolesOpen();
+	const bool draw_message_consoles = !HUD_disabled &&
+		!IsCleanGameplayScreenshotActive() && AreHUDMessageConsolesOpen();
 	VisEffectRenderCloseScreenEffectsPostAO();
 	if (!force_backbuffer_frame && !draw_cockpit && !draw_message_consoles)
 		return;
@@ -3089,12 +3117,13 @@ void GameRenderFrame(void)
 		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_CINEMATIC);
 
 		// Process the debug visual graph
+		if (!IsCleanGameplayScreenshotActive())
 		{
 			PERF_MARKER_SCOPE("DebugGraph_Render");
 			DebugGraph_Render();
 		}
 
-		if (Display_renderer_stats)
+		if (Display_renderer_stats && !IsCleanGameplayScreenshotActive())
 		{
 			PERF_MARKER_SCOPE("DisplayRendererStats");
 			//display some rendering stats
@@ -3702,6 +3731,11 @@ void GameFrame(void)
 	RTP_tSTARTTIME(renderframe_time, curr_time);
 	if (automated_perf_active)
 		automated_perf_render_begin = timer_GetTime64();
+	if (Clean_screenshot_requested && !Skip_render_game_frame && !Dedicated_server)
+	{
+		Clean_screenshot_requested = false;
+		Clean_screenshot_active = true;
+	}
 	if (!Skip_render_game_frame)
 		//Render the frame
 		GameRenderFrame();
@@ -3712,6 +3746,11 @@ void GameFrame(void)
 		{
 			GameDrawPostPresentFrame(true);
 		}
+	}
+	if (Clean_screenshot_active &&
+		(Game_interface_mode != GAME_INTERFACE || Menu_interface_mode))
+	{
+		CaptureCleanGameplayScreenshot();
 	}
 	if (automated_perf_active)
 		automated_perf_render_end = timer_GetTime64();
@@ -3740,6 +3779,7 @@ void GameFrame(void)
 				{
 					GameDrawPostPresentFrame(false);
 					CaptureAutomatedFrameIfRequested();
+					CaptureCleanGameplayScreenshot();
 					if (Screenshot_requested)
 					{
 						DoScreenshot();
@@ -3750,6 +3790,7 @@ void GameFrame(void)
 				else
 				{
 					CaptureAutomatedFrameIfRequested();
+					CaptureCleanGameplayScreenshot();
 					if (Screenshot_requested)
 					{
 						DoScreenshot();

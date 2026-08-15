@@ -205,6 +205,8 @@ void ui_UpdateWindows();
 void ToggleFullscreenMode();
 bool IsAltEnterFullscreenEnabled();
 bool IsAltEnterFullscreenKey(int key);
+bool IsAltPrintScreenKey(int key);
+void RequestCleanGameplayScreenshot();
 //////////////////////////////////////////////////////////////////////////////
 //	FUNCTIONS
 //	call this function to initialize the UI system. pass a surface where all UI will occur
@@ -379,7 +381,9 @@ bool ui_KeyPoll()
 		ui_KeyFlush();
 		return false;
 	}
-	if (key == KEY_PRINT_SCREEN) 
+	if (IsAltPrintScreenKey(key))
+		RequestCleanGameplayScreenshot();
+	else if (key == KEY_PRINT_SCREEN || key == KEY_SHIFTED + KEY_PRINT_SCREEN)
 		UI_input.printscreen = true;
 	UI_input.last_key = UI_input.key;
 	UI_input.last_key_status = UI_input.key_status;

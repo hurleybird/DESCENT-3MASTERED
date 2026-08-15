@@ -990,6 +990,7 @@ void LoadHUDConfig(const char* filename, bool (*fn)(const char*, const char*, vo
 void RenderHUDFrame(float zoom)
 {
 	extern bool Guided_missile_smallview;			// from smallviews.cpp
+	const bool clean_screenshot = IsCleanGameplayScreenshotActive();
 
 	//	Start frame and 3d frame
 
@@ -1134,7 +1135,7 @@ void RenderHUDFrame(float zoom)
 			PERF_MARKER_SCOPE("HUD.CloseScreenEffectsPostAO");
 			VisEffectRenderCloseScreenEffectsPostAO();
 		}
-		if (HasPostProcessHUDText())
+		if (!clean_screenshot && HasPostProcessHUDText())
 		{
 			if (post_world_frame)
 			{
@@ -1201,7 +1202,7 @@ void RenderHUDFrame(float zoom)
 				RenderHUDItems(post_world_hud_stat_mask);
 			}
 
-			if (render_game_dll_after_world_post)
+			if (render_game_dll_after_world_post && !clean_screenshot)
 			{
 				PERF_MARKER_SCOPE("HUD.CallGameDLL.PostWorld");
 				CallGameDLL(EVT_CLIENT_HUD_INTERVAL, &DLLInfo);
@@ -1260,7 +1261,7 @@ void RenderHUDFrame(float zoom)
 				PERF_MARKER_SCOPE("HUD.EndCockpitFrame");
 				rend_EndCockpitFrame();
 			}
-			if (render_game_dll_after_cockpit_bloom)
+			if (render_game_dll_after_cockpit_bloom && !clean_screenshot)
 			{
 				PERF_MARKER_SCOPE("HUD.CallGameDLL.FinalCockpitLayer");
 				rend_StartPostPresentFrame(post_world_hud_window_x, post_world_hud_window_y,
@@ -1281,18 +1282,21 @@ void RenderHUDFrame(float zoom)
 void RenderPreHUDFrame()
 {
 	extern void RenderHUDMsgDirtyRects();
+	const tStatMask stat_mask = IsCleanGameplayScreenshotActive() ?
+		(Hud_stat_mask & (STAT_PRIMARYLOAD | STAT_SECONDARYLOAD | STAT_SHIELDS |
+			STAT_ENERGY | STAT_AFTERBURN)) : Hud_stat_mask;
 
 	// render any dirty rectangles if small hud flag is set
 	if (Small_hud_flag)
 	{
 		for (int i = 0; i < MAX_HUD_ITEMS; i++)
 		{
-			if ((Hud_stat_mask & HUD_array[i].stat) && (HUD_array[i].flags & HUD_FLAG_SMALL))
+			if ((stat_mask & HUD_array[i].stat) && (HUD_array[i].flags & HUD_FLAG_SMALL))
 				HUD_array[i].dirty_rect.fill(GR_BLACK);
 		}
 
 		// messages.
-		if ((Hud_stat_mask & STAT_MESSAGES))
+		if ((stat_mask & STAT_MESSAGES))
 			RenderHUDMsgDirtyRects();
 	}
 }
@@ -1310,6 +1314,11 @@ void RenderAuxHUDFrame()
 		int cur_game_win_x = Game_window_x;
 		int cur_game_win_y = Game_window_y;
 		ushort stat_mask = Hud_stat_mask;
+		if (IsCleanGameplayScreenshotActive())
+		{
+			stat_mask &= STAT_PRIMARYLOAD | STAT_SECONDARYLOAD | STAT_SHIELDS |
+				STAT_ENERGY | STAT_AFTERBURN;
+		}
 
 		// emulating hud that takes up entire screen
 		Game_window_w = Max_window_w;
@@ -1875,6 +1884,15 @@ void RenderHUDItems(tStatMask stat_mask)
 		hud_font_scale = extra_scale * ConfigNormalizeHudTextScale(Hud_text_scale);
 
 	grtext_SetFontScale(hud_font_scale);
+
+	if (IsCleanGameplayScreenshotActive())
+	{
+		stat_mask &= STAT_PRIMARYLOAD | STAT_SECONDARYLOAD | STAT_SHIELDS |
+			STAT_ENERGY | STAT_AFTERBURN;
+		RenderHUDItemList(stat_mask, Small_hud_flag ? 0 : -1);
+		grtext_Flush();
+		return;
+	}
 
 	// Use wall time rather than the simulation Frametime. The simulation timer is
 	// paused while an in-game menu is open, but rendering continues.

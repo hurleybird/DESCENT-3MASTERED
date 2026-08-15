@@ -402,6 +402,14 @@ bool IsAltF4QuitKey(int key)
 	return IsAltKeyDown(key);
 }
 
+bool IsAltPrintScreenKey(int key)
+{
+	if ((key & 0xff) != KEY_PRINT_SCREEN)
+		return false;
+
+	return IsAltKeyDown(key);
+}
+
 bool ShouldConfirmAltF4QuitInGame()
 {
 	return GetFunctionMode() == GAME_MODE &&

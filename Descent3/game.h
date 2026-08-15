@@ -58,6 +58,7 @@ void PersistCurrentPilotGameWindowSize(bool flush_now = false);
 bool IsAltEnterFullscreenEnabled();
 bool IsAltEnterFullscreenKey(int key);
 bool IsAltF4QuitKey(int key);
+bool IsAltPrintScreenKey(int key);
 bool ShouldConfirmAltF4QuitInGame();
 void RequestAltF4QuitConfirmation();
 bool IsAltF4QuitConfirmationPending();
@@ -237,6 +238,10 @@ const char *ResolveCompatibleGameModule(const char *advertised_name);
 
 // Does a screenshot and tells the bitmap lib to save out the picture
 void DoScreenshot ();
+
+// Requests a gameplay comparison screenshot without transient HUD or modal UI.
+void RequestCleanGameplayScreenshot();
+bool IsCleanGameplayScreenshotActive();
 
 // [ISB] Create one of these to force the mouse to capture. Will free when all go out of scope. 
 class MouseForceCapture
