@@ -2231,11 +2231,17 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 		const bool ao_temporal_wants_motion =
 			OpenGL_preferred_state.ao_temporal_blend > 0.0f ||
 			OpenGL_preferred_state.ao_temporal_debug_preview;
-		const bool ao_reset_temporal_history = MotionVectorsFrozen();
+		// A paused modal menu leaves the rendered scene fixed in screen space.
+		// Preserve temporal AO at those same coordinates; clearing its history
+		// here made AO snap to the zero-jitter sample pattern as F2 opened.
+		// Motion data from the last live frame is stale while paused, so exclude
+		// both dynamic and reconstructed motion rather than reprojecting it.
+		const bool ao_motion_frozen = MotionVectorsFrozen();
+		const bool ao_reset_temporal_history = false;
 		GLuint ao_velocity_texture = 0;
 		GLuint ao_object_id_texture = 0;
 		bool ao_has_dynamic_velocity = false;
-		if (ao_temporal_wants_motion && MotionVectorTargetEnabled() &&
+		if (ao_temporal_wants_motion && !ao_motion_frozen && MotionVectorTargetEnabled() &&
 			motion_vectors.width > 0 && motion_vectors.height > 0 && motion_vectors_dirty)
 		{
 			ao_velocity_texture = motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
@@ -2250,7 +2256,7 @@ bool GL4Renderer::BeginPostPresentFrameInternal(bool defer_bloom_composite)
 			(captured_scene_inverse_modelview_valid ? captured_scene_inverse_modelview : current_inverse_modelview);
 		const float* ao_motion_previous_view_projection = use_frozen_static_motion ?
 			frozen_static_motion_previous_view_projection : previous_view_projection;
-		const bool ao_has_static_reconstruction = ao_temporal_wants_motion &&
+		const bool ao_has_static_reconstruction = ao_temporal_wants_motion && !ao_motion_frozen &&
 			(use_frozen_static_motion || have_previous_view_projection) &&
 			(use_frozen_static_motion ||
 				(captured_scene_projection_valid && captured_scene_inverse_modelview_valid) ||
