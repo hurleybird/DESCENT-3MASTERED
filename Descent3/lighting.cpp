@@ -142,6 +142,60 @@ static void AddPerPixelLightmapLight(ushort lmi_handle, const vector *pos, float
 		red_scale, green_scale, blue_scale, light_direction, dot_range, per_pixel_headlight, specular_position);
 }
 
+int EnsurePerPixelPlayerHeadlight(const object *player_object,
+	renderer_per_pixel_light *lights, int count, int max_lights)
+{
+	if (!player_object || !lights || max_lights <= 0)
+		return count;
+	if (count < 0)
+		count = 0;
+	else if (count > max_lights)
+		count = max_lights;
+
+	renderer_per_pixel_light headlight = {};
+	headlight.position[0] = player_object->pos.x;
+	headlight.position[1] = player_object->pos.y;
+	headlight.position[2] = player_object->pos.z;
+	headlight.color[0] = PER_PIXEL_HEADLIGHT_STRENGTH;
+	headlight.color[1] = PER_PIXEL_HEADLIGHT_STRENGTH;
+	headlight.color[2] = PER_PIXEL_HEADLIGHT_STRENGTH;
+	headlight.radius = PLAYER_HEADLIGHT_DISTANCE * PER_PIXEL_HEADLIGHT_RADIUS;
+	headlight.falloff = PER_PIXEL_HEADLIGHT_FALLOFF;
+	headlight.direction[0] = player_object->orient.fvec.x;
+	headlight.direction[1] = player_object->orient.fvec.y;
+	headlight.direction[2] = player_object->orient.fvec.z;
+	headlight.dot_range = PLAYER_HEADLIGHT_DOT;
+	headlight.directional = true;
+	headlight.headlight = true;
+	headlight.specular_scalar = 1.0f;
+
+	for (int index = 0; index < count; index++)
+	{
+		if (PerPixelLightMatches(lights[index], headlight))
+			return count;
+	}
+	if (count < max_lights)
+	{
+		lights[count] = headlight;
+		return count + 1;
+	}
+
+	int weakest = 0;
+	float weakest_importance = PerPixelLightImportance(lights[0]);
+	for (int index = 1; index < count; index++)
+	{
+		const float importance = PerPixelLightImportance(lights[index]);
+		if (importance < weakest_importance)
+		{
+			weakest = index;
+			weakest_importance = importance;
+		}
+	}
+	if (PerPixelLightImportance(headlight) > weakest_importance)
+		lights[weakest] = headlight;
+	return count;
+}
+
 static void AddPerPixelLightmapTextureLight(int lm_handle, const vector *pos, float light_dist,
 	float red_scale, float green_scale, float blue_scale, const vector *light_direction, float dot_range,
 	bool per_pixel_headlight, const vector *specular_position)

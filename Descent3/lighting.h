@@ -53,6 +53,9 @@ struct dynamic_cell
 
 struct renderer_per_pixel_light;
 
+constexpr float PLAYER_HEADLIGHT_DISTANCE = 150.0f;
+constexpr float PLAYER_HEADLIGHT_DOT = 0.75f;
+
 // Sets up our dynamic lighting maps
 void InitDynamicLighting ();
 
@@ -84,6 +87,8 @@ int GetPerPixelLightmapLights(ushort lmi_handle, renderer_per_pixel_light *light
 int GetPerPixelLightmapLightCount(ushort lmi_handle);
 int GetPerPixelLightmapCanonicalLightKey(ushort lmi_handle);
 int GetPerPixelLightmapTextureLights(int lm_handle, renderer_per_pixel_light *lights, int max_lights);
+int EnsurePerPixelPlayerHeadlight(const object *player_object,
+	renderer_per_pixel_light *lights, int count, int max_lights);
 void UpdatePerPixelLightmapRendererData();
 
 // Changes the terrain shading to approximate lighting

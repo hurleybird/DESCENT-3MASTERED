@@ -5650,6 +5650,10 @@ static bool TryBatchRoomBaseFace(room* rp, int facenum, RoomBaseFaceBatcher& bat
 {
 	if (In_editor_mode)
 		return false;
+	// Mirror-visible rooms need a per-face light set so the viewer headlight can
+	// be evaluated continuously even when ordinary portal traversal omits it.
+	if (Render_mirror_for_room)
+		return false;
 
 	face* fp = &rp->faces[facenum];
 	if (fp->num_verts < 3 || fp->num_verts > MAX_VERTS_PER_FACE)
@@ -6113,6 +6117,14 @@ void RenderFace(room* rp, int facenum)
 	{
 		per_pixel_light_count = GetPerPixelLightmapLights(fp->lmi_handle, per_pixel_lights,
 			RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+		if (Render_mirror_for_room && Viewer_object && Viewer_object->type == OBJ_PLAYER &&
+			Viewer_object->id >= 0 && Viewer_object->id < MAX_PLAYERS &&
+			(Players[Viewer_object->id].flags & PLAYER_FLAGS_HEADLIGHT))
+		{
+			per_pixel_light_count = EnsurePerPixelPlayerHeadlight(Viewer_object,
+				per_pixel_lights, per_pixel_light_count,
+				RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+		}
 		if (per_pixel_light_count > 0)
 			rend_SetPerPixelDynamicLighting(&fp->normal, per_pixel_light_count, per_pixel_lights);
 	}

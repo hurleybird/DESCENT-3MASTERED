@@ -35,11 +35,6 @@
 #include "psrand.h"
 #include "../model/retained_polymodel.h"
 
-// How far the headlight casts light
-#define HEADLIGHT_DISTANCE	150.0f
-// Defines the headlight cone of light
-#define HEADLIGHT_DOT		.75f
-
 // returns true if this light point is visible
 bool IsLightPointVisible(vector* pos, float size, object* obj)
 {
@@ -150,9 +145,9 @@ void DoObjectLight(object* obj)
 		if ((Players[obj->id].flags) & PLAYER_FLAGS_HEADLIGHT)
 		{
 			ApplyLightingToWorld(&obj->pos, obj->roomnum,
-				HEADLIGHT_DISTANCE, negative_light * 1.0,
+				PLAYER_HEADLIGHT_DISTANCE, negative_light * 1.0,
 				negative_light * 1.0, negative_light * 1.0,
-				&obj->orient.fvec, HEADLIGHT_DOT, true);
+				&obj->orient.fvec, PLAYER_HEADLIGHT_DOT, true);
 		}
 
 
