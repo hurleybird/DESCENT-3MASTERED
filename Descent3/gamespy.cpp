@@ -67,6 +67,7 @@ int gspy_region = 0;
 char gspy_outgoingbuffer[MAX_GAMESPY_BUFFER] = "";
 float gspy_last_heartbeat;
 bool gspy_game_running = false;
+static bool gspy_initialized = false;
 int gspy_packetnumber = 0;
 int gspy_queryid = 0;
 char gspy_validate[MAX_GAMESPY_BUFFER] = "";
@@ -77,7 +78,6 @@ static int gspy_automatic_server = -1;
 static IStaticPortMappingCollection* gspy_upnp_mappings = nullptr;
 static bool gspy_upnp_com_initialized = false;
 static bool gspy_upnp_game_port_added = false;
-static bool gspy_upnp_query_port_added = false;
 
 static bool gspy_GetLocalIPv4(char* output, size_t output_size)
 {
@@ -140,15 +140,12 @@ static void gspy_RemoveUPnPMappings()
 	if (gspy_upnp_mappings)
 	{
 		BSTR protocol = SysAllocString(L"UDP");
-		if (gspy_upnp_query_port_added)
-			gspy_upnp_mappings->Remove(ntohs(gspy_listenport), protocol);
 		if (gspy_upnp_game_port_added)
 			gspy_upnp_mappings->Remove(Gameport, protocol);
 		SysFreeString(protocol);
 		gspy_upnp_mappings->Release();
 		gspy_upnp_mappings = nullptr;
 	}
-	gspy_upnp_query_port_added = false;
 	gspy_upnp_game_port_added = false;
 	if (gspy_upnp_com_initialized)
 	{
@@ -157,17 +154,18 @@ static void gspy_RemoveUPnPMappings()
 	}
 }
 
-static void gspy_EnableUPnPForTracker()
+static bool gspy_EnableUPnPForTracker()
 {
 	gspy_RemoveUPnPMappings();
-	if (stricmp(Netgame.connection_name, BUILTIN_TRACKER_NAME))
-		return;
+	if (stricmp(Netgame.connection_name, BUILTIN_TRACKER_NAME) &&
+		stricmp(Netgame.connection_name, BUILTIN_TRACKER_LEGACY_NAME))
+		return true;
 
 	HRESULT result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 	if (SUCCEEDED(result))
 		gspy_upnp_com_initialized = true;
 	else if (result != RPC_E_CHANGED_MODE)
-		return;
+		return false;
 
 	IUPnPNAT* nat = nullptr;
 	result = CoCreateInstance(CLSID_UPnPNAT, nullptr, CLSCTX_INPROC_SERVER,
@@ -178,15 +176,16 @@ static void gspy_EnableUPnPForTracker()
 		nat->Release();
 	}
 	if (FAILED(result) || !gspy_upnp_mappings ||
-		!gspy_AddUPnPMapping(Gameport, &gspy_upnp_game_port_added) ||
-		!gspy_AddUPnPMapping(ntohs(gspy_listenport), &gspy_upnp_query_port_added))
+		!gspy_AddUPnPMapping(Gameport, &gspy_upnp_game_port_added))
 	{
-		mprintf((0, "Tracker hosting could not establish UPnP mappings. Forward UDP %u and %u manually for public listing and joins.\n",
-			(unsigned int)Gameport, (unsigned int)ntohs(gspy_listenport)));
+		mprintf((0, "Tracker hosting could not establish its UPnP mapping. Forward UDP %u manually for public joins.\n",
+			(unsigned int)Gameport));
+		return false;
 	}
+	return true;
 }
 #else
-static void gspy_EnableUPnPForTracker() {}
+static bool gspy_EnableUPnPForTracker() { return false; }
 static void gspy_RemoveUPnPMappings() {}
 #endif
 
@@ -222,7 +221,7 @@ static bool gspy_SetServerAddress(SOCKADDR_IN& address, const char* hostname, un
 	return true;
 }
 
-static void gspy_EnableTsetseflyForTracker()
+static bool gspy_EnableTsetseflyForTracker()
 {
 	if (gspy_automatic_server >= 0)
 	{
@@ -230,13 +229,14 @@ static void gspy_EnableTsetseflyForTracker()
 		gspy_server[gspy_automatic_server].sin_port = htons(GAMESPY_PORT);
 		gspy_automatic_server = -1;
 	}
-	if (stricmp(Netgame.connection_name, BUILTIN_TRACKER_NAME))
-		return;
+	if (stricmp(Netgame.connection_name, BUILTIN_TRACKER_NAME) &&
+		stricmp(Netgame.connection_name, BUILTIN_TRACKER_LEGACY_NAME))
+		return true;
 
 	SOCKADDR_IN tsetsefly = {};
 	INADDR_SET_SUN_SADDR(&tsetsefly.sin_addr, INADDR_NONE);
 	if (!gspy_SetServerAddress(tsetsefly, "tsetsefly.de", GAMESPY_PORT))
-		return;
+		return false;
 	for (int i = 0; i < MAX_CONFIGURED_GAMESPY_SERVERS; i++)
 	{
 		if (!gspy_AddressIsUnset(gspy_server[i]) &&
@@ -244,7 +244,7 @@ static void gspy_EnableTsetseflyForTracker()
 			gspy_server[i].sin_port == tsetsefly.sin_port)
 		{
 			mprintf((0, "Tracker hosting will advertise to configured Tsetsefly endpoint.\n"));
-			return;
+			return true;
 		}
 	}
 	for (int i = 0; i < MAX_GAMESPY_SERVERS; i++)
@@ -254,9 +254,10 @@ static void gspy_EnableTsetseflyForTracker()
 		gspy_server[i] = tsetsefly;
 		gspy_automatic_server = i;
 		mprintf((0, "Tracker hosting will advertise to tsetsefly.de:%d\n", GAMESPY_PORT));
-		return;
+		return true;
 	}
 	mprintf((0, "All GameSpy tracker slots are configured; unable to add automatic Tsetsefly advertisement.\n"));
+	return false;
 }
 
 static void gspy_BuildAdvertisedVersion(char* output, size_t output_size)
@@ -269,15 +270,33 @@ static void gspy_BuildAdvertisedVersion(char* output, size_t output_size)
 }
 
 //Register a game with this library so we will tell the servers about it...
-void gspy_StartGame(char *name)
+int gspy_StartGame(char *name)
 {
-	gspy_EnableTsetseflyForTracker();
-	gspy_EnableUPnPForTracker();
+	const bool tracker_host = !stricmp(Netgame.connection_name, BUILTIN_TRACKER_NAME) ||
+		!stricmp(Netgame.connection_name, BUILTIN_TRACKER_LEGACY_NAME);
+	int result = GSPY_HOST_OK;
+	if (!gspy_EnableTsetseflyForTracker() && tracker_host)
+		result |= GSPY_HOST_TRACKER_UNAVAILABLE;
+	if (!gspy_EnableUPnPForTracker() && tracker_host)
+		result |= GSPY_HOST_AUTOMATIC_PORT_MAPPING_UNAVAILABLE;
+	if (tracker_host && !gspy_initialized)
+		result |= GSPY_HOST_QUERY_SOCKET_UNAVAILABLE;
 	char advertised_version[128];
 	gspy_BuildAdvertisedVersion(advertised_version, sizeof(advertised_version));
 	mprintf((0, "GameSpy advertised engine identity: %s\n", advertised_version));
 	gspy_last_heartbeat = timer_GetTime()-GSPY_HEARBEAT_INTERVAL;
-	gspy_game_running = true;
+	gspy_game_running = gspy_initialized;
+	return result;
+}
+
+unsigned short gspy_GetQueryPort()
+{
+	return gspy_listenport ? ntohs(gspy_listenport) : GAMESPY_LISTENPORT;
+}
+
+unsigned short gspy_GetGameplayPort()
+{
+	return Gameport;
 }
 
 // Let the servers know that the game is over
@@ -291,6 +310,7 @@ void gspy_EndGame()
 int gspy_Init(void)
 {
 #ifndef OEM
+	gspy_initialized = false;
 	char cfgpath[_MAX_PATH*2];
 	int argnum = FindArg("-gspyfile");
 	if(argnum)
@@ -360,6 +380,16 @@ int gspy_Init(void)
 #elif defined(__LINUX__)
 	error = ioctl(gspy_socket,FIONBIO,&arg);
 #endif
+	if (error == SOCKET_ERROR)
+	{
+	#ifdef WIN32
+		mprintf((0, "Unable to make gamespy socket non-blocking (%d)!\n", WSAGetLastError()));
+	#else
+		mprintf((0, "Unable to make gamespy socket non-blocking!\n"));
+	#endif
+		return 0;
+	}
+	gspy_initialized = true;
 	CFILE *cfp = cfopen(cfgpath,"rt");
 	if(cfp)
 	{

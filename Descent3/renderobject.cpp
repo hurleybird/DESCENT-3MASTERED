@@ -2674,7 +2674,10 @@ void DrawPlayerNameOnHud(object* obj)
 	fq.startroom = Player_object->roomnum;
 	fq.p1 = &obj->pos;
 	fq.rad = 0;
-	fq.thisobjnum = -1;
+	// The visibility ray originates inside the local player's collision model.
+	// Ignore it so a small angle or distance change cannot block the ray before
+	// it reaches the remote player.
+	fq.thisobjnum = OBJNUM(Player_object);
 	fq.ignore_obj_list = NULL;
 	fq.flags = FQ_CHECK_OBJS | FQ_IGNORE_POWERUPS | FQ_IGNORE_WEAPONS;
 	fate = fvi_FindIntersection(&fq, &hit_data);

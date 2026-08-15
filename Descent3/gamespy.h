@@ -19,7 +19,17 @@
 #ifndef GAMESPY_H
 #define GAMESPY_H
 
-void gspy_StartGame(char *name);
+enum gspy_host_result
+{
+	GSPY_HOST_OK = 0,
+	GSPY_HOST_TRACKER_UNAVAILABLE = 1 << 0,
+	GSPY_HOST_QUERY_SOCKET_UNAVAILABLE = 1 << 1,
+	GSPY_HOST_AUTOMATIC_PORT_MAPPING_UNAVAILABLE = 1 << 2
+};
+
+int gspy_StartGame(char *name);
+unsigned short gspy_GetGameplayPort();
+unsigned short gspy_GetQueryPort();
 void gspy_EndGame();
 int gspy_Init(void);
 void gspy_DoFrame();

@@ -1297,8 +1297,11 @@ int StartMultiplayerGameMenu ()
 					{
 						DLLmprintf ((0,"Mission loaded successfully!\n"));
 						DLLMultiStartServer(1,DLLNetgame->scriptname,teams);
-						exit_menu=1;
-						ret=1;	
+						if (DLLNetgame->local_role == LR_SERVER)
+						{
+							exit_menu=1;
+							ret=1;
+						}
 					}
 				}
 			}

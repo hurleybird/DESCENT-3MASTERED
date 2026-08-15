@@ -63,6 +63,81 @@
 #include "gamespy.h"
 #include "difficulty.h"
 #include "gameloop.h"
+#include "textaux.h"
+#include "gamefont.h"
+
+static bool ShowTrackerHostingNotice(const char* message)
+{
+	constexpr int window_width = 520;
+	constexpr int window_height = 300;
+	constexpr int text_width = 470;
+	char wrapped_message[1024];
+	textaux_WordWrap(message, wrapped_message, text_width, MONITOR9_NEWUI_FONT);
+
+	newuiTiledWindow window;
+	window.Create("tsetsefly.de hosting", 0, 0, window_width, window_height);
+	newuiSheet* sheet = window.GetSheet();
+	sheet->NewGroup(NULL, 10, 10);
+	sheet->AddText(wrapped_message);
+	sheet->NewGroup(NULL, 125, 220, NEWUI_ALIGN_HORIZ);
+	sheet->AddLongButton("Continue TCP/IP", UID_OK);
+	sheet->AddButton(TXT_CANCEL, UID_CANCEL);
+	window.AddAcceleratorKey(KEY_ESC, UID_CANCEL);
+	window.Open();
+	ddio_MouseQueueFlush();
+	const int result = window.DoUI();
+	window.Close();
+	window.Destroy();
+	return result == UID_OK;
+}
+
+static bool PrepareTrackerHostingOrFallback()
+{
+	const int gspy_host_status = gspy_StartGame(Netgame.name);
+	if (gspy_host_status == GSPY_HOST_OK)
+		return true;
+
+	AutomatedCaptureLog("tracker host fallback status=0x%x gameplay_port=%u query_port=%u",
+		gspy_host_status, (unsigned int)gspy_GetGameplayPort(),
+		(unsigned int)gspy_GetQueryPort());
+	if (Dedicated_server || FindArg("-capture-host-mission"))
+		return true;
+
+	char tracker_message[768];
+	if (gspy_host_status & GSPY_HOST_QUERY_SOCKET_UNAVAILABLE)
+	{
+		snprintf(tracker_message, sizeof(tracker_message),
+			"3MASTERED could not open the tsetsefly.de query socket on UDP %u, so this game "
+			"cannot be listed on tsetsefly.de.\n\n"
+			"Another program may already be using that port. You can continue as Direct TCP/IP, "
+			"or cancel and correct the problem.",
+			(unsigned int)gspy_GetQueryPort());
+	}
+	else if (gspy_host_status & GSPY_HOST_TRACKER_UNAVAILABLE)
+	{
+		snprintf(tracker_message, sizeof(tracker_message),
+			"3MASTERED could not reach tsetsefly.de. Players can still join a Direct TCP/IP game "
+			"by IP address.\n\n"
+			"This is a tracker or Internet-connectivity problem; port forwarding is not necessarily "
+			"the cause. You can continue as Direct TCP/IP, or cancel and try again later.");
+	}
+	else
+	{
+		snprintf(tracker_message, sizeof(tracker_message),
+			"Automatic router setup for tsetsefly.de hosting failed. If your router is not already "
+			"configured, public listing or joining may not work.\n\n"
+			"Forward only UDP %u to this PC and allow 3MASTERED through your firewall. Remove the forward "
+			"when you no longer want to host publicly. You can continue as Direct TCP/IP, or cancel and "
+			"configure your network.",
+			(unsigned int)gspy_GetGameplayPort());
+	}
+
+	if (ShowTrackerHostingNotice(tracker_message))
+		return true;
+	gspy_EndGame();
+	AutomatedCaptureLog("tracker host canceled after fallback warning");
+	return false;
+}
 
 void MultiProcessShipChecksum(MD5* md5, int ship_index);
 
@@ -104,6 +179,13 @@ unsigned int Secret_net_id = 0;
 // Server only
 void MultiStartServer(int playing, char* scriptname, int dedicated_server_num_teams)
 {
+	Netgame.server_version = MultiGetHostProtocolVersion();
+	if (!PrepareTrackerHostingOrFallback())
+	{
+		Netgame.local_role = LR_CLIENT;
+		return;
+	}
+
 	// Clear out some stuff
 	for (int i = 0; i < MAX_NET_PLAYERS; i++)
 	{
@@ -160,7 +242,6 @@ void MultiStartServer(int playing, char* scriptname, int dedicated_server_num_te
 	Netgame.local_role = LR_SERVER;
 	Netgame.server_sequence = 0;
 	ASSERT(Multi_host_protocol == MULTI_PROTOCOL_ENHANCED || DifficultyProfileIsUniform(Multiplayer_difficulty));
-	Netgame.server_version = MultiGetHostProtocolVersion();
 	AutomatedCaptureLog("network server started protocol=0x%04x difficulty=%u,%u,%u,%u mission=%s script=%s teams=%d",
 		(unsigned int)Netgame.server_version, (unsigned int)Multiplayer_difficulty.enemy_ai,
 		(unsigned int)Multiplayer_difficulty.enemy_speed, (unsigned int)Multiplayer_difficulty.enemy_hp,
@@ -211,7 +292,6 @@ void MultiStartServer(int playing, char* scriptname, int dedicated_server_num_te
 	dp_StartGame(Netgame.name);
 #endif
 
-	gspy_StartGame(Netgame.name);
 	//We use this to identify clients....
 	PSRand prand(timer_GetMSTime());
 	Secret_net_id = prand() * prand();

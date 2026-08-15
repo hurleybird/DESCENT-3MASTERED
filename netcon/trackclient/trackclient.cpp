@@ -537,6 +537,7 @@ int MainMultiplayerMenu ()
 	float lastpoll = DLLtimer_GetTime();
 	float lastping = DLLtimer_GetTime();
 	StartDirectTracking();
+	DLLSearchForLocalGamesTCP(0xffffffffl, htons(DEFAULT_GAME_PORT));
 
 	// Menu loop
 	while (!exit_menu) 

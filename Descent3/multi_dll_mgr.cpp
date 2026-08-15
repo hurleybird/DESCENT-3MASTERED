@@ -124,7 +124,8 @@ static int GetBuiltinConnectorResourceId(const char* name)
 {
 	if (!stricmp(name, BUILTIN_DIRECT_TCPIP_NAME))
 		return IDR_BUILTIN_DIRECT_TCPIP;
-	if (!stricmp(name, BUILTIN_TRACKER_NAME))
+	if (!stricmp(name, BUILTIN_TRACKER_NAME) ||
+		!stricmp(name, BUILTIN_TRACKER_LEGACY_NAME))
 		return IDR_BUILTIN_TRACKER;
 	return 0;
 }

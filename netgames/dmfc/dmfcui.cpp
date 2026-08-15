@@ -248,10 +248,13 @@ void TeamPlacementCallback(void)
 void TeamPlacementChangeTeam(int old_team,int new_team)
 {
 	int sel = DLLListGetSelectedIndex(tpdi.lb[old_team]);
-	if(sel<0)
+	if(sel<0 || sel>=DLLMAX_PLAYERS)
 		return;
 
 	int pnum = tpdi.trans[old_team][sel];
+	if(pnum<0 || pnum>=DLLMAX_PLAYERS)
+		return;
+
 	if(!basethis->CheckPlayerNum(pnum)){
 		TeamDlgInitialTeamSettings[pnum] = TeamDlgFinalTeamSettings[pnum] = TS_NOTINGAME;
 		return;

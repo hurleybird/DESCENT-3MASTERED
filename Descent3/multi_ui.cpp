@@ -172,7 +172,8 @@ int MainMultiplayerMenu()
 		dftidx = dllcount;
 	dllcount++;
 	lists->AddItem(BUILTIN_TRACKER_NAME);
-	if (!stricmp(sznetgame, BUILTIN_TRACKER_NAME))
+	if (!stricmp(sznetgame, BUILTIN_TRACKER_NAME) ||
+		!stricmp(sznetgame, BUILTIN_TRACKER_LEGACY_NAME))
 		dftidx = dllcount;
 	dllcount++;
 
@@ -239,7 +240,8 @@ int MainMultiplayerMenu()
 		}
 
 		if ((stricmp(HEAT_NAME, fname) != 0) && (stricmp(PXO_NAME, fname) != 0) &&
-			(stricmp("Direct TCP/IP", fname) != 0) && (stricmp(BUILTIN_TRACKER_NAME, fname) != 0))
+			(stricmp("Direct TCP/IP", fname) != 0) && (stricmp(BUILTIN_TRACKER_NAME, fname) != 0) &&
+			(stricmp(BUILTIN_TRACKER_LEGACY_NAME, fname) != 0))
 		{
 			lists->AddItem(fname);
 			if (!stricmp(sznetgame, fname))
@@ -263,7 +265,8 @@ int MainMultiplayerMenu()
 			}
 
 			if ((stricmp(HEAT_NAME, fname) != 0) && (stricmp(PXO_NAME, fname) != 0) &&
-				(stricmp("Direct TCP/IP", fname) != 0) && (stricmp(BUILTIN_TRACKER_NAME, fname) != 0))
+				(stricmp("Direct TCP/IP", fname) != 0) && (stricmp(BUILTIN_TRACKER_NAME, fname) != 0) &&
+				(stricmp(BUILTIN_TRACKER_LEGACY_NAME, fname) != 0))
 			{
 				lists->AddItem(fname);
 				if (!stricmp(sznetgame, fname))
