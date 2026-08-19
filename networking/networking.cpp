@@ -547,7 +547,7 @@ void nw_SetSocketOptions( SOCKET sock )
 unsigned short nw_ListenPort = 0;
 
 // Inits the sockets that the application will be using
-void nw_InitSockets(ushort port)
+ushort nw_InitSockets(ushort port, bool find_available_port)
 {
 	#ifdef MACINTOSH
 	OSStatus err;
@@ -564,10 +564,10 @@ void nw_InitSockets(ushort port)
 				//Just to play it safe we'll try anyway
 				break;
 			case kOTTCPDialTCPDisabled:
-				return;//No TCPIP, so why bother?
+				return port;//No TCPIP, so why bother?
 				break;
 			case kOTTCPDialYes:
-				return;//We don't want to do anything to cause the modem to dial.
+				return port;//We don't want to do anything to cause the modem to dial.
 				break;
 			case kOTTCPDialNo:
 				//Good to go!
@@ -628,14 +628,20 @@ init_tcp:
 	//TCP_reliable_socket = INVALID_SOCKET;
 	TCP_listen_socket = INVALID_SOCKET;
 
-	// Initialize the UDP socket
-	TCP_socket = socket( AF_INET, SOCK_DGRAM,IPPROTO_UDP);
-	
 	//Initialize all reliable sockets, IPX and TCP
 	nw_InitReliableSocket();
-	
-	if ( TCP_socket != INVALID_SOCKET )	
+
+	const int max_port_attempts = find_available_port ? 32 : 1;
+	for (int port_attempt = 0; port_attempt < max_port_attempts; ++port_attempt)
 	{
+		const ushort candidate_port = (ushort)(port + port_attempt);
+		TCP_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		if (TCP_socket == INVALID_SOCKET)
+		{
+			mprintf((0, "Cannot create TCP socket (%d)!\n", WSAGetLastError()));
+			break;
+		}
+
 		// bind the socket
 		memset(&sock_addr,0,sizeof(SOCKADDR_IN));
 		sock_addr.sin_family = AF_INET; 
@@ -646,19 +652,27 @@ init_tcp:
 
 		memcpy(&sock_addr.sin_addr.s_addr,&my_ip,sizeof(uint));
 
-		sock_addr.sin_port = htons( port );
+		sock_addr.sin_port = htons(candidate_port);
 		if ( bind(TCP_socket, (SOCKADDR*)&sock_addr, sizeof (sock_addr)) == SOCKET_ERROR)
-		{	
-			mprintf((0,"Couldn't bind TCP socket (%d)! Invalidating TCP\n", WSAGetLastError() )); 
-			goto tcp_done;
+		{
+			const int bind_error = WSAGetLastError();
+			closesocket(TCP_socket);
+			TCP_socket = INVALID_SOCKET;
+			if (!find_available_port)
+			{
+				mprintf((0,"Couldn't bind TCP socket (%d)! Invalidating TCP\n", bind_error));
+				break;
+			}
+			continue;
 		}
 
+		nw_ListenPort = candidate_port;
+		if (candidate_port != port)
+			mprintf((0, "UDP port %u was busy; using %u for this instance\n",
+				(unsigned int)port, (unsigned int)candidate_port));
 		nw_SetSocketOptions( TCP_socket );
 		TCP_active = 1;
-	} 
-	else 
-	{
-		mprintf((0, "Cannot create TCP socket (%d)!\n", WSAGetLastError() ));
+		break;
 	}
 
 	
@@ -708,6 +722,7 @@ init_tcp:
 				
 	nw_psnet_buffer_init();
 	nw_RegisterCallback((NetworkReceiveCallback)nw_HandleUnreliableData,NWT_UNRELIABLE);
+	return TCP_active ? nw_ListenPort : port;
 
 }
 

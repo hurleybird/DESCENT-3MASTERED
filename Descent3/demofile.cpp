@@ -49,6 +49,7 @@
 //We borrow a lot of code from the savegame system
 #include "gamesave.h"
 #include "demofile.h"
+#include "multi_instance.h"
 
 extern bool is_multi_demo;
 CFILE* Demo_cfp = NULL;
@@ -85,6 +86,7 @@ extern bool Game_paused;
 extern bool Game_gauge_do_time_test;
 
 bool Demo_play_fast = false;
+static MultiInstanceFileLock Demo_recording_lock;
 
 void PageInAllData(void);
 
@@ -97,6 +99,7 @@ void DemoToggleRecording()
 	{
 		//Stop recording and close the file
 		cfclose(Demo_cfp);
+		Demo_recording_lock.Release();
 		Demo_flags = DF_NONE;
 		AddBlinkingHUDMessage(TXT_DEMOSAVED);
 
@@ -119,6 +122,14 @@ void DemoToggleRecording()
 		}
 		ddio_MakePath(Demo_fname, User_directory, "demo", szfile, NULL);
 		mprintf((0, "Saving demo to file: %s\n", Demo_fname));
+		char demo_lock_path[_MAX_PATH * 2];
+		snprintf(demo_lock_path, sizeof(demo_lock_path), "%s.lock", Demo_fname);
+		if (!Demo_recording_lock.TryAcquire(demo_lock_path))
+		{
+			AddBlinkingHUDMessage(TXT_DEMOCANTCREATE);
+			Demo_fname[0] = NULL;
+			return;
+		}
 		//Try to create the file
 		Demo_cfp = cfopen(Demo_fname, "wb");
 		if (Demo_cfp)
@@ -138,6 +149,7 @@ void DemoToggleRecording()
 		else
 		{
 			//cfopen failed
+			Demo_recording_lock.Release();
 			AddBlinkingHUDMessage(TXT_DEMOCANTCREATE);
 			Demo_fname[0] = NULL;
 			return;
@@ -1383,6 +1395,7 @@ void DemoAbort(bool deletefile)
 		LGSFreeXlateTables();
 
 		cfclose(Demo_cfp);
+		Demo_recording_lock.Release();
 		Demo_flags = DF_NONE;
 		if (deletefile)
 			ddio_DeleteFile(Demo_fname);

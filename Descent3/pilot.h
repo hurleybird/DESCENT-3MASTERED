@@ -145,6 +145,10 @@ void PltMakeFNValid(char *name);
 
 void PilotInit(void);
 
+// Atomically claims a pilot for this process and makes it current. A pilot
+// claimed by another live process is never loaded or written.
+bool PilotSetCurrentPilot(const char* filename, bool keyconfig = false, bool missiondata = false);
+
 void PltClearList(void);
 char **PltGetPilots(int *count,char *ignore_filename=NULL,int display_default_configs=0);
 void PltGetPilotsFree(void);

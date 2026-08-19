@@ -75,6 +75,7 @@ extern char* User_directory;
 extern oeApplication *Descent;		// The Descent object
 extern oeAppDatabase *Database;		// The Database
 extern char Descent3_temp_directory[_MAX_PATH];	//temp directory to put temp files
+extern bool Descent3_temp_directory_is_automatic;
 extern bool Portable;		// [ISB] True if the paths should be portable. 
 extern bool Katmai;			// whether or not katmai is detected
 //	---------------------------------------------------------------------------

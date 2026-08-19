@@ -269,6 +269,13 @@ class oeD3Win32Database: public oeWin32AppDatabase
 {
 public:
 	oeD3Win32Database();
+	~oeD3Win32Database() override;
+	bool write(const char* label, const char* entry, int entrylen) override;
+	bool write(const char* label, int entry) override;
+
+private:
+	HANDLE m_settings_instance_handle = nullptr;
+	bool m_can_persist_settings = false;
 };
 
 static void MigrateLegacyRegistrySettings()
@@ -311,6 +318,16 @@ oeD3Win32Database::oeD3Win32Database():
 {
 	char path[_MAX_PATH];
 	bool res;
+
+	// All instances may read the common defaults, but only the first live
+	// instance may persist them. A secondary holds a reference to the named
+	// object so ownership never transfers to its stale snapshot mid-session.
+	m_settings_instance_handle = CreateMutexA(nullptr, FALSE,
+		"Local\\Descent3Mastered-GlobalSettings-v1");
+	if (m_settings_instance_handle)
+		m_can_persist_settings = GetLastError() != ERROR_ALREADY_EXISTS;
+	if (!m_can_persist_settings)
+		mprintf((0, "Secondary instance: global settings persistence disabled\n"));
 
 //	create descent III entry if it doesn't exit.
 
@@ -384,6 +401,29 @@ oeD3Win32Database::oeD3Win32Database():
 	write("net directory",netpath,lstrlen(netpath)+1);
 
 	Database = this;
+}
+
+oeD3Win32Database::~oeD3Win32Database()
+{
+	if (m_settings_instance_handle)
+	{
+		CloseHandle(m_settings_instance_handle);
+		m_settings_instance_handle = nullptr;
+	}
+}
+
+bool oeD3Win32Database::write(const char* label, const char* entry, int entrylen)
+{
+	if (!m_can_persist_settings)
+		return true;
+	return oeWin32AppDatabase::write(label, entry, entrylen);
+}
+
+bool oeD3Win32Database::write(const char* label, int entry)
+{
+	if (!m_can_persist_settings)
+		return true;
+	return oeWin32AppDatabase::write(label, entry);
 }
 
 

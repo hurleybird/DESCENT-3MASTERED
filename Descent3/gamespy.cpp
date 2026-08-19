@@ -342,13 +342,6 @@ int gspy_Init(void)
 	//Read the config, resolve the name if needed and setup the server addresses
 	ddio_MakePath(cfgpath,Base_directory,gspy_cfgfilename,NULL);
 
-	gspy_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if(SOCKET_ERROR == gspy_socket)
-	{
-		int lerror = WSAGetLastError();
-		mprintf((0,"Unable to init gamespy socket! (%d)\n",lerror));
-		return 0;
-	}
 	SOCKADDR_IN sock_addr;
 	memset(&sock_addr,0,sizeof(SOCKADDR_IN));
 	sock_addr.sin_family = AF_INET;
@@ -357,19 +350,33 @@ int gspy_Init(void)
 	memcpy(&sock_addr.sin_addr.s_addr, &my_ip, sizeof(uint));
 
 	int portarg = FindArg("-gamespyport");
-	if(portarg)
-		gspy_listenport = htons(atoi(GameArgs[portarg+1]));
-	else
-		gspy_listenport = htons(GAMESPY_LISTENPORT);
+	const unsigned short requested_port = (unsigned short)(portarg ?
+		atoi(GameArgs[portarg + 1]) : GAMESPY_LISTENPORT);
+	const int max_port_attempts = portarg ? 1 : 32;
+	gspy_socket = INVALID_SOCKET;
+	for (int attempt = 0; attempt < max_port_attempts; ++attempt)
+	{
+		gspy_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		if (gspy_socket == INVALID_SOCKET)
+			break;
+		const unsigned short candidate_port = (unsigned short)(requested_port + attempt);
+		sock_addr.sin_port = htons(candidate_port);
+		if (bind(gspy_socket, (SOCKADDR*)&sock_addr, sizeof(sock_addr)) == 0)
+		{
+			gspy_listenport = htons(candidate_port);
+			break;
+		}
+		closesocket(gspy_socket);
+		gspy_socket = INVALID_SOCKET;
+	}
 
-	mprintf((0, "Using port %d for gamespy requests.\n", GAMESPY_LISTENPORT));
-	sock_addr.sin_port = gspy_listenport;
-
-	if (bind(gspy_socket, (SOCKADDR*)&sock_addr, sizeof(sock_addr)) == SOCKET_ERROR)
+	if (gspy_socket == INVALID_SOCKET)
 	{
 		mprintf((0, "Couldn't bind gamespy socket (%d)!\n", WSAGetLastError()));
 		return 0;
 	}
+	mprintf((0, "Using port %u for gamespy requests.\n",
+		(unsigned int)ntohs(gspy_listenport)));
 
 	int error;
 	unsigned long arg = TRUE;

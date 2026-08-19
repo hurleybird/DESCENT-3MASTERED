@@ -304,7 +304,7 @@ int nw_InitReliableSocket();
 int nw_CheckListenSocket(network_address *from_addr);
 
 // Inits the sockets that the application will be using
-void nw_InitSockets(ushort port);
+ushort nw_InitSockets(ushort port, bool find_available_port = false);
 
 // Connects a client to a server
 void nw_ConnectToServer(SOCKET *socket, network_address *server_addr);

@@ -69,6 +69,7 @@ bool Portable = false;
 bool Katmai=true;
 
 char Descent3_temp_directory[_MAX_PATH];	//temp directory to put temp files
+bool Descent3_temp_directory_is_automatic = false;
 //	---------------------------------------------------------------------------
 //	Descent3: Choke 1
 //		Initializes game elements and invokes the MainLoop
@@ -227,8 +228,13 @@ void Descent3()
 		// path. Finalize an active recording before CFILE shutdown.
 		DemoAbort();
 
-		//delete the lock file in the temp directory (as long as it belongs to us)
-		ddio_DeleteLockFile(Descent3_temp_directory);
+		// Clean and retire this process's private temp directory. Failure to
+		// remove it is harmless; its existence never represents ownership.
+		DeleteTempFiles();
+		if (Descent3_temp_directory_is_automatic)
+			ddio_RemoveDir(Descent3_temp_directory);
+		else
+			ddio_DeleteLockFile(Descent3_temp_directory);
 
 		//Save settings to registry
 		if (!AutomatedCaptureSuppressesInput())

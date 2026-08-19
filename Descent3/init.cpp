@@ -71,6 +71,7 @@
 #include "args.h"
 #include "pilot.h"
 #include "gameloop.h"
+#include "multi_instance.h"
 #include "trigger.h"
 #include "PHYSICS.H"
 #include "special_face.h"
@@ -2170,7 +2171,7 @@ bool CheckCdForValidity(int cd);
 	if(!FindArg("-nonetwork"))
 	{
 		nw_InitNetworking();
-		nw_InitSockets(Gameport);
+		Gameport = nw_InitSockets(Gameport, gameportarg == 0);
 		
 		int tcplogarg;
 		tcplogarg = FindArg("-tcplog");
@@ -2313,10 +2314,22 @@ void SetupTempDirectory(void)
 	if(t_arg)
 	{
 		strcpy(Descent3_temp_directory,GameArgs[t_arg+1]);
+		Descent3_temp_directory_is_automatic = false;
 	}else
 	{
-		//initialize it to custom/cache
-		ddio_MakePath(Descent3_temp_directory,User_directory,"custom","cache",NULL);
+		char cache_directory[_MAX_PATH];
+		char instance_directory[64];
+		char custom_directory[_MAX_PATH];
+		ddio_MakePath(custom_directory, User_directory, "custom", NULL);
+		ddio_CreateDir(custom_directory);
+		ddio_MakePath(cache_directory, User_directory, "custom", "cache", NULL);
+		ddio_CreateDir(cache_directory);
+		MultiInstanceCleanupStaleProcessDirectories(cache_directory, "instance-");
+		snprintf(instance_directory, sizeof(instance_directory), "instance-%lu",
+			MultiInstanceProcessId());
+		ddio_MakePath(Descent3_temp_directory, cache_directory, instance_directory, NULL);
+		ddio_CreateDir(Descent3_temp_directory);
+		Descent3_temp_directory_is_automatic = true;
 	}
 
 	//verify that temp directory exists
@@ -2324,9 +2337,11 @@ void SetupTempDirectory(void)
 	{
 		if (t_arg == 0)
 		{
-			ddio_MakePath(Descent3_temp_directory, User_directory, "custom", NULL);
-			ddio_CreateDir(Descent3_temp_directory);
-			ddio_MakePath(Descent3_temp_directory, User_directory, "custom", "cache", NULL);
+			char directory[_MAX_PATH];
+			ddio_MakePath(directory, User_directory, "custom", NULL);
+			ddio_CreateDir(directory);
+			ddio_MakePath(directory, User_directory, "custom", "cache", NULL);
+			ddio_CreateDir(directory);
 			ddio_CreateDir(Descent3_temp_directory);
 			if (!ddio_SetWorkingDir(Descent3_temp_directory))
 			{
@@ -2393,39 +2408,32 @@ void SetupTempDirectory(void)
 	mprintf((0,"Temp Directory Set To: \"%s\"\n",Descent3_temp_directory));
 
 #ifndef MACINTOSH
-	// Lock the directory
-	int lock_res = ddio_CreateLockFile(Descent3_temp_directory);
-	switch(lock_res)
+	// A PID-named automatic directory cannot be shared by two live Windows
+	// processes, so it needs no persistent lock file. Keep the legacy guard for
+	// an explicitly supplied directory, where sharing remains possible.
+	if (!Descent3_temp_directory_is_automatic)
 	{
-	case 1:
-		mprintf((0,"Lock file created in temp dir\n"));
-		break;
-	case 2:
-		mprintf((0,"Lock file created in temp dir (deleted dead lock)\n"));
-		break;
-	case 3:
-		mprintf((0,"Lock file created in temp dir (lock already exists)\n"));
-		break;
-	case 0:
-		mprintf((0,"Lock file NOT created in temp dir\n"));
-		Error("Unable to set temporary directory to: \"%s\"\nThe directory is in use, please use -tempdir to set a different temp directory",Descent3_temp_directory);
-		exit(1);		
-		break;
-	case -1:
-		mprintf((0,"Illegal directory for Lock file\n"));
-		Error("Unable to set temporary directory to: \"%s\"\nIllegal directory for lock file",Descent3_temp_directory);
-		exit(1);		
-		break;
-	case -2:
-		mprintf((0,"Illegal Lock file, unable to create\n"));
-		Error("Unable to set temporary directory to: \"%s\"\nInvalid lock file located in directory",Descent3_temp_directory);
-		exit(1);		
-		break;
-	case -3:
- 		mprintf((0,"Error creating Lock file\n"));
-		Error("Unable to set temporary directory to: \"%s\"\nUnable to create lock file",Descent3_temp_directory);
-		exit(1);		
-		break;
+		int lock_res = ddio_CreateLockFile(Descent3_temp_directory);
+		switch(lock_res)
+		{
+		case 1:
+			mprintf((0,"Lock file created in temp dir\n"));
+			break;
+		case 2:
+			mprintf((0,"Lock file created in temp dir (deleted dead lock)\n"));
+			break;
+		case 3:
+			mprintf((0,"Lock file created in temp dir (lock already exists)\n"));
+			break;
+		case 0:
+			Error("Unable to set temporary directory to: \"%s\"\nThe directory is in use, please use -tempdir to set a different temp directory",Descent3_temp_directory);
+			exit(1);
+			break;
+		default:
+			Error("Unable to set temporary directory to: \"%s\"\nUnable to create a valid lock file",Descent3_temp_directory);
+			exit(1);
+			break;
+		}
 	}
 #endif
 	//restore working dir

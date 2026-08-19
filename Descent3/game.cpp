@@ -46,6 +46,7 @@ constexpr int D3M_VK_RMENU = 0xa5;
 #include "Mission.h"
 #include "CFILE.H"
 #include "gameloop.h"
+#include "multi_instance.h"
 #include "cockpit.h"
 #include "game2dll.h"
 #include "config.h"
@@ -908,7 +909,7 @@ void DoScreenshot()
 	int count;
 	char str[255], filename[255];
 	CFILE* infile;
-	int done = 0;
+	bool found_filename = false;
 	int width = 640, height = 480;
 	const int output_scale = Double_resolution_screenshot_requested ? 2 : 1;
 	Double_resolution_screenshot_requested = false;
@@ -926,27 +927,42 @@ void DoScreenshot()
 	count = 1;
 	const bool use_tga = UseTGAScreenshots();
 	const char* extension = use_tga ? "tga" : "png";
-	while (!done)
+	MultiInstanceFileLock screenshot_name_lock;
+	while (count <= 999)
 	{
 		sprintf(str, "Screenshot%.3d.%s", count, extension);
 		ddio_MakePath(filename, User_directory, str, NULL);
+		char lock_filename[sizeof(filename) + 16];
+		snprintf(lock_filename, sizeof(lock_filename), "%s.lock", filename);
+		if (!screenshot_name_lock.TryAcquire(lock_filename))
+		{
+			count++;
+			continue;
+		}
 		infile = (CFILE*)cfopen(filename, "rb");
 		if (infile == NULL)
 		{
-			done = 1;
-			continue;
+			found_filename = true;
+			break;
 		}
-		else
-			cfclose(infile);
+		cfclose(infile);
+		screenshot_name_lock.Release();
 
 		count++;
-		if (count > 999)
-			break;
+	}
+	if (!found_filename)
+	{
+		AddHUDMessage(TXT_ERRSCRNSHT);
+		return;
 	}
 
 	StopTime();
+	char temporary_filename[sizeof(filename) + 32];
+	snprintf(temporary_filename, sizeof(temporary_filename), "%s.tmp.%lu", filename,
+		MultiInstanceProcessId());
+	ddio_DeleteFile(temporary_filename);
 
-	int saved = (!use_tga && UseHardware) ? rend_SaveScreenshotPNG(filename, output_scale) : 0;
+	int saved = (!use_tga && UseHardware) ? rend_SaveScreenshotPNG(temporary_filename, output_scale) : 0;
 	if (!saved)
 	{
 		bm_handle = bm_AllocBitmap(width, height, 0);
@@ -989,11 +1005,16 @@ void DoScreenshot()
 		strcpy(GameBitmaps[output_handle].name, str);
 
 		// Now save it
-		saved = use_tga ? bm_SaveBitmapTGA(filename, output_handle) : bm_SaveBitmapPNG(filename, output_handle);
+		saved = use_tga ? bm_SaveBitmapTGA(temporary_filename, output_handle) :
+			bm_SaveBitmapPNG(temporary_filename, output_handle);
 		if (output_handle != bm_handle)
 			bm_FreeBitmap(output_handle);
 		bm_FreeBitmap(bm_handle);
 	}
+	if (saved && !MultiInstanceAtomicReplace(temporary_filename, filename))
+		saved = 0;
+	if (!saved)
+		ddio_DeleteFile(temporary_filename);
 
 	if (saved && Demo_flags != DF_PLAYBACK)
 	{

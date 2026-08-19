@@ -25,6 +25,7 @@
 #include "gamesequence.h"
 #include "gameevent.h"
 #include "gameloop.h"
+#include "multi_instance.h"
 #include "game.h"
 #include "stringtable.h"
 #include "object.h"
@@ -594,8 +595,19 @@ bool SaveGameState(const char* pathname, const char* description)
 	CFILE* fp;
 	char buf[GAMESAVE_DESCLEN + 1];
 	short pending_music_region;
+	char lockpath[_MAX_PATH * 2];
+	char temporary_path[_MAX_PATH * 2];
+	char backup_path[_MAX_PATH * 2];
+	snprintf(lockpath, sizeof(lockpath), "%s.lock", pathname);
+	snprintf(temporary_path, sizeof(temporary_path), "%s.tmp.%lu", pathname,
+		MultiInstanceProcessId());
+	snprintf(backup_path, sizeof(backup_path), "%s.bak", pathname);
+	MultiInstanceFileLock save_lock;
+	if (!save_lock.TryAcquire(lockpath))
+		return false;
+	ddio_DeleteFile(temporary_path);
 
-	fp = cfopen(pathname, "wb");
+	fp = cfopen(temporary_path, "wb");
 	if (!fp)
 		return false;
 
@@ -603,12 +615,20 @@ bool SaveGameState(const char* pathname, const char* description)
 	char countpath[_MAX_PATH * 2];
 	strcpy(countpath, pathname);
 	strcat(countpath, ".cnt");
+	char count_temporary_path[_MAX_PATH * 2];
+	snprintf(count_temporary_path, sizeof(count_temporary_path), "%s.tmp.%lu",
+		countpath, MultiInstanceProcessId());
+	ddio_DeleteFile(count_temporary_path);
 	CFILE* countfp;
-	countfp = cfopen(countpath, "wb");
+	bool count_file_ready = false;
+	countfp = cfopen(count_temporary_path, "wb");
 	if (countfp)
 	{
 		cf_WriteInt(countfp, Times_game_restored);
+		count_file_ready = MultiInstanceFlushFileToDisk(countfp->file);
 		cfclose(countfp);
+		if (!count_file_ready)
+			ddio_DeleteFile(count_temporary_path);
 	}
 
 	//	save out header
@@ -700,7 +720,25 @@ bool SaveGameState(const char* pathname, const char* description)
 
 	// end
 	END_VERIFY_SAVEFILE(fp, "Total save");
+	if (!MultiInstanceFlushFileToDisk(fp->file))
+	{
+		cfclose(fp);
+		ddio_DeleteFile(temporary_path);
+		ddio_DeleteFile(count_temporary_path);
+		return false;
+	}
 	cfclose(fp);
+	if (!MultiInstanceAtomicReplace(temporary_path, pathname, backup_path))
+	{
+		ddio_DeleteFile(temporary_path);
+		ddio_DeleteFile(count_temporary_path);
+		return false;
+	}
+	if (count_file_ready && cfexist(count_temporary_path) != CF_NOT_FOUND)
+	{
+		if (!MultiInstanceAtomicReplace(count_temporary_path, countpath))
+			ddio_DeleteFile(count_temporary_path);
+	}
 
 	return true;
 }

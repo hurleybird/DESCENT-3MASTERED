@@ -41,6 +41,7 @@ void IntroScreen();
 
 //Save game variables to the registry
 void SaveGameSettings();
+void DeleteTempFiles();
 
 //	This function shutdowns all game systems
 void ShutdownD3();

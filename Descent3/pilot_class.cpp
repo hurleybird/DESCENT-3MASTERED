@@ -29,6 +29,8 @@
 
 #include "application.h"
 #include "appdatabase.h"
+#include "multi_instance.h"
+#include "pilot_lock.h"
 
 #include "stringtable.h"
 
@@ -294,11 +296,22 @@ int pilot::flush(bool new_file)
 		return PLTW_NO_FILENAME;	//no filename was given
 	}
 
-	CFILE* file;
+	CFILE* file = nullptr;
 	char real_filename[_MAX_PATH];
 
 	//open and process file
 	ddio_MakePath(real_filename, User_directory, filename, NULL);
+	MultiInstanceFileLock operation_lock;
+	if (!PilotCurrentFileLockMatches(filename))
+	{
+		char lock_path[_MAX_PATH * 2];
+		PilotBuildLockPath(filename, lock_path);
+		if (!operation_lock.TryAcquire(lock_path))
+		{
+			mprintf((0, "PLTW: File (%s) is in use by another process\n", real_filename));
+			return PLTW_FILE_IN_USE;
+		}
+	}
 
 	if (new_file && cfexist(real_filename))
 	{
@@ -312,7 +325,11 @@ int pilot::flush(bool new_file)
 		verify();
 		fetch_state(); //Ensure pilot state is up to date. 
 
-		file = cfopen(real_filename, "wb");
+		char temporary_filename[_MAX_PATH * 2];
+		snprintf(temporary_filename, sizeof(temporary_filename), "%s.tmp.%lu",
+			real_filename, MultiInstanceProcessId());
+		ddio_DeleteFile(temporary_filename);
+		file = cfopen(temporary_filename, "wb");
 		if (!file)
 		{
 			mprintf((0, "PLTW: File (%s) can't be opened\n", real_filename));
@@ -340,7 +357,25 @@ int pilot::flush(bool new_file)
 		write_guidebot_name(file);
 		write_controls(file);
 
+		if (!MultiInstanceFlushFileToDisk(file->file))
+		{
+			cfclose(file);
+			file = nullptr;
+			ddio_DeleteFile(temporary_filename);
+			return PLTW_FILE_CANTOPEN;
+		}
 		cfclose(file);
+		file = nullptr;
+
+		char backup_filename[_MAX_PATH * 2];
+		snprintf(backup_filename, sizeof(backup_filename), "%s.bak", real_filename);
+		if (!MultiInstanceAtomicReplace(temporary_filename, real_filename,
+			new_file ? nullptr : backup_filename))
+		{
+			ddio_DeleteFile(temporary_filename);
+			mprintf((0, "PLTW: Atomic replacement of (%s) failed\n", real_filename));
+			return PLTW_FILE_CANTOPEN;
+		}
 
 	}
 	catch (cfile_error)
@@ -350,7 +385,8 @@ int pilot::flush(bool new_file)
 		Int3();
 		try
 		{
-			cfclose(file);
+			if (file)
+				cfclose(file);
 		}
 		catch (...)
 		{
@@ -365,7 +401,8 @@ int pilot::flush(bool new_file)
 		Int3();
 		try
 		{
-			cfclose(file);
+			if (file)
+				cfclose(file);
 		}
 		catch (...)
 		{

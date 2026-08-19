@@ -77,6 +77,7 @@
 #include "gamespy.h"
 #include "difficulty.h"
 #include "gameloop.h"
+#include "multi_instance.h"
 
 
 #include <string.h>
@@ -7016,6 +7017,8 @@ void MultiDoFileDenied(ubyte *data)
 
 void MultiDoFileData(ubyte *data)
 {
+	static char receive_final_path[MAX_NET_PLAYERS][_MAX_PATH * 2] = {};
+	static char receive_temp_path[MAX_NET_PLAYERS][_MAX_PATH * 2] = {};
 	//File data. We asked for it, now the server is sending it to us.
 	unsigned int total_len;	// Length of the entire file
 	unsigned int curr_len;  // Length of file sent so far
@@ -7045,14 +7048,20 @@ void MultiDoFileData(ubyte *data)
 			mprintf((0,"Creating file...\n"));
 			CFILE * cfp;
 			//char filename[_MAX_PATH];
-			char filewithpath[_MAX_PATH*2];
-			strcpy(filewithpath,GetFileNameFromPlayerAndID(playernum,file_id));
+			strcpy(receive_final_path[playernum], GetFileNameFromPlayerAndID(playernum,file_id));
+			if (!ddio_GetTempFileName(Descent3_temp_directory, "d3x",
+				receive_temp_path[playernum]))
+			{
+				MultiCancelFile(playernum,file_id,NetPlayers[playernum].file_xfer_who);
+				return;
+			}
 			//ddio_MakePath(filewithpath,LocalD3Dir,"custom","cache",filename,NULL);
 			
-			cfp = cfopen(filewithpath,"wb");
+			cfp = cfopen(receive_temp_path[playernum],"wb");
 			if(!cfp)
 			{
-				mprintf((0,"Can't create file %s\n",filewithpath));
+				mprintf((0,"Can't create temporary transfer file %s\n",
+					receive_temp_path[playernum]));
 				// We couldn't create the file, so cancel the attempt to transfer it.
 				MultiCancelFile(playernum,file_id,NetPlayers[playernum].file_xfer_who);
 				return;
@@ -7078,6 +7087,15 @@ void MultiDoFileData(ubyte *data)
 			cfclose(NetPlayers[playernum].file_xfer_cfile);
 			NetPlayers[playernum].file_xfer_cfile = NULL;
 			NetPlayers[playernum].file_xfer_pos = 0;
+			if (!MultiInstanceAtomicReplace(receive_temp_path[playernum],
+				receive_final_path[playernum]))
+			{
+				mprintf((0, "Unable to promote received custom file to %s\n",
+					receive_final_path[playernum]));
+				ddio_DeleteFile(receive_temp_path[playernum]);
+			}
+			receive_temp_path[playernum][0] = '\0';
+			receive_final_path[playernum][0] = '\0';
 			DoNextPlayerFile(playernum);		
 			mprintf((0,"Finished downloading file!\n"));
 			return; // Don't ack the last packet

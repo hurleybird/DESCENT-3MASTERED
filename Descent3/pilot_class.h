@@ -74,6 +74,7 @@ IIIIIIIII N       N P      OOOO  R   R    T    A    A NN   NN    T
 #define PLTW_FILE_CANTOPEN	3	//file couldn't be opened
 #define PLTW_CFILE_FATAL	4	//a CFILE error had occurred
 #define PLTW_UNKNOWN_FATAL	5	//an unknown exception occurred
+#define PLTW_FILE_IN_USE	6	//another process owns this pilot
 
 #define PLTR_NO_ERROR		0	//there was no error
 #define PLTR_NO_FILENAME	1	//no filename has been set

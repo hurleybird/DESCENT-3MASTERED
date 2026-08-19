@@ -1477,14 +1477,17 @@ void GL4Renderer::UpdateWindow()
 #ifdef SDL3
 		ParentApplication->set_sizepos(OEAPP_COORD_CENTERED, OEAPP_COORD_CENTERED, OpenGL_state.view_width, OpenGL_state.view_height);
 #elif WIN32
-		int mWidth = GetSystemMetrics(SM_CXSCREEN);
-		int mHeight = GetSystemMetrics(SM_CYSCREEN);
-
-		int orgX = (mWidth / 2 - OpenGL_state.view_width / 2);
-		int orgY = (mHeight / 2 - OpenGL_state.view_height / 2);
-		RECT rect = { orgX, orgY, orgX + OpenGL_state.view_width, orgY + OpenGL_state.view_height };
-		AdjustWindowRectEx(&rect, WS_CAPTION, FALSE, 0);
-		ParentApplication->set_sizepos(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+		// Screen-mode transitions (notably skipping an intro cinematic) may
+		// rebuild the framebuffer. Resize around the window's actual position;
+		// recentering here makes an ordinary Escape key unexpectedly move it.
+		RECT window_rect{};
+		GetWindowRect((HWND)hOpenGLWnd, &window_rect);
+		RECT client_rect = {0, 0, OpenGL_state.view_width, OpenGL_state.view_height};
+		const DWORD style = (DWORD)GetWindowLongPtr((HWND)hOpenGLWnd, GWL_STYLE);
+		const DWORD ex_style = (DWORD)GetWindowLongPtr((HWND)hOpenGLWnd, GWL_EXSTYLE);
+		AdjustWindowRectEx(&client_rect, style, FALSE, ex_style);
+		ParentApplication->set_sizepos(window_rect.left, window_rect.top,
+			client_rect.right - client_rect.left, client_rect.bottom - client_rect.top);
 #endif
 	}
 	else

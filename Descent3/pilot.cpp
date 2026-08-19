@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <utility>
 
 #include "pilot.h"
 #include "mono.h"
@@ -56,6 +57,8 @@
 #include "init.h"
 #include "gameloop.h"
 #include "args.h"
+#include "multi_instance.h"
+#include "pilot_lock.h"
 
 //some general defines
 #define	IDP_SAVE	10
@@ -99,6 +102,68 @@
 pilot Current_pilot;
 char Default_pilot[_MAX_PATH] = { " " };
 ubyte ingame_difficulty = 1;
+
+static MultiInstanceFileLock Current_pilot_file_lock;
+static char Current_pilot_lock_filename[_MAX_PATH * 2] = "";
+
+void PilotBuildLockPath(const char* pilot_filename, char* lock_path)
+{
+	char pilot_path[_MAX_PATH * 2];
+	ddio_MakePath(pilot_path, User_directory, pilot_filename, NULL);
+	snprintf(lock_path, _MAX_PATH * 2, "%s.lock", pilot_path);
+}
+
+bool PilotCurrentFileLockMatches(const char* pilot_filename)
+{
+	if (!Current_pilot_file_lock.IsHeld() || !pilot_filename)
+		return false;
+	char lock_path[_MAX_PATH * 2];
+	PilotBuildLockPath(pilot_filename, lock_path);
+	return stricmp(lock_path, Current_pilot_lock_filename) == 0;
+}
+
+bool PilotAcquireCurrentFileLock(const char* pilot_filename)
+{
+	if (PilotCurrentFileLockMatches(pilot_filename))
+		return true;
+
+	char lock_path[_MAX_PATH * 2];
+	PilotBuildLockPath(pilot_filename, lock_path);
+	MultiInstanceFileLock candidate;
+	if (!candidate.TryAcquire(lock_path))
+		return false;
+
+	Current_pilot_file_lock = std::move(candidate);
+	strncpy(Current_pilot_lock_filename, lock_path, sizeof(Current_pilot_lock_filename) - 1);
+	Current_pilot_lock_filename[sizeof(Current_pilot_lock_filename) - 1] = '\0';
+	return true;
+}
+
+void PilotReleaseCurrentFileLock()
+{
+	Current_pilot_file_lock.Release();
+	Current_pilot_lock_filename[0] = '\0';
+}
+
+bool PilotSetCurrentPilot(const char* filename, bool keyconfig, bool missiondata)
+{
+	if (!filename || !filename[0])
+		return false;
+
+	if (!PilotCurrentFileLockMatches(filename))
+	{
+		// Preserve the old pilot before atomically trying to claim the new one.
+		// The old lock remains held if acquisition fails.
+		Current_pilot.flush(false);
+		if (!PilotAcquireCurrentFileLock(filename))
+			return false;
+	}
+
+	Current_pilot.set_filename((char*)filename);
+	PltReadFile(&Current_pilot, keyconfig, missiondata);
+	Current_pilot.commit_state();
+	return true;
+}
 
 
 ///////////////////////////////////////////////
@@ -180,6 +245,7 @@ void PilotShutdown(void)
 {
 	if (!AutomatedCaptureSuppressesInput())
 		Current_pilot.flush(false);
+	PilotReleaseCurrentFileLock();
 	Current_pilot.clean(false);
 }
 
@@ -240,6 +306,7 @@ bool VerifyPilotData(pilot* Pilot)
 #define IDP_DIFFICULTY_INSANE 0x5F
 #define IDP_RULES_VANILLA 0x60
 #define IDP_RULES_ENHANCED 0x61
+#define IDP_COPY            0x62
 
 struct pilot_select_menu
 {
@@ -604,9 +671,8 @@ void PilotSelect(void)
 	if (cfexist(fullpath) != CF_NOT_FOUND)
 	{
 		//ok so the default pilot file is around, mark this as the current pilot
-		Current_pilot.set_filename(Default_pilot);
-		PltReadFile(&Current_pilot);
-		Current_pilot.commit_state();
+		if (!PilotSetCurrentPilot(Default_pilot))
+			mprintf((0, "Default pilot is in use by another game instance: %s\n", Default_pilot));
 	}
 
 	char pfilename[_MAX_FNAME];
@@ -617,6 +683,7 @@ void PilotSelect(void)
 	select.setup(&menu);						// setup pilot select menu IDP_SELECT
 	edit.setup(&menu);							// edit pilot
 	menu.AddSimpleOption(IDP_ADD, TXT_ADD);				// add
+	menu.AddSimpleOption(IDP_COPY, "Copy");				// copy currently highlighted pilot
 	menu.AddSimpleOption(IDP_DELETE, TXT_DELETE);		// delete currently selected pilot
 	menu.AddSimpleOption(UID_OK, TXT_OK);
 	menu.AddSimpleOption(UID_CANCEL, TXT_CANCEL);
@@ -667,8 +734,8 @@ void PilotSelect(void)
 	//use this in case they cancel out
 	Current_pilot.get_filename(pfilename);
 	ddio_MakePath(fullpath, User_directory, pfilename, NULL);
-	if (cfexist(fullpath) != CF_NOT_FOUND)
-		strcpy(old_file, fullpath);
+	if (pfilename[0] && cfexist(fullpath) != CF_NOT_FOUND)
+		strcpy(old_file, pfilename);
 	else
 		old_file[0] = '\0';
 
@@ -713,9 +780,13 @@ void PilotSelect(void)
 
 				char filename[PAGENAME_LEN];
 				working_pilot.get_filename(filename);
-				Current_pilot.set_filename(filename);
-				PltReadFile(&Current_pilot, true, true);
-				Current_pilot.commit_state(); //[ISB] set globals now
+				if (!PilotSetCurrentPilot(filename, true, true))
+				{
+					DoMessageBox(TXT_PLTERROR,
+						"That pilot is currently in use by another game instance.",
+						MSGBOX_OK, UICOL_WINDOW_TITLE, UICOL_TEXT_NORMAL);
+					break;
+				}
 
 				char pname[PILOT_STRING_SIZE];
 				Current_pilot.get_name(pname);
@@ -742,8 +813,25 @@ void PilotSelect(void)
 
 		case UID_CANCEL:
 		{
+			// Cancel from Configure returns to pilot selection. It must not be
+			// interpreted as an attempt to leave the initial picker without a
+			// usable pilot. Reload the working copy so unsaved edits are discarded.
+			if (menu.GetCurrentOption() == IDP_EDIT)
+			{
+				if (filecount)
+				{
+					PilotChooseDialogInfo.initial_call = true;
+					PilotListSelectChangeCallback(select.pilot_list->GetCurrentIndex());
+				}
+				menu.SetCurrentOption(IDP_SELECT);
+				break;
+			}
+
 			// Cancel out
-			bool found_old = (cfexist(old_file) != CF_NOT_FOUND);
+			char old_fullpath[_MAX_PATH * 2] = "";
+			if (old_file[0])
+				ddio_MakePath(old_fullpath, User_directory, old_file, NULL);
+			bool found_old = old_file[0] && (cfexist(old_fullpath) != CF_NOT_FOUND);
 			bool display_error;
 
 			if (filecount && found_old)
@@ -758,9 +846,13 @@ void PilotSelect(void)
 
 				if (found_old)
 				{
-					Current_pilot.set_filename(old_file);
-					PltReadFile(&Current_pilot, true, true);
-					Current_pilot.commit_state();
+					if (!PilotSetCurrentPilot(old_file, true, true))
+					{
+						DoMessageBox(TXT_PLTERROR,
+							"The previous pilot is currently in use by another game instance.",
+							MSGBOX_OK, UICOL_WINDOW_TITLE, UICOL_TEXT_NORMAL);
+						break;
+					}
 
 					char pname[PILOT_STRING_SIZE];
 					Current_pilot.get_name(pname);
@@ -851,6 +943,92 @@ void PilotSelect(void)
 				menu.SetCurrentOption(IDP_EDIT);
 			else
 				menu.SetCurrentOption(IDP_SELECT);
+		}break;
+
+		case IDP_COPY:
+		{
+			if (!filecount)
+				break;
+
+			const int source_index = select.pilot_list->GetCurrentIndex();
+			if (source_index < 0 || source_index >= filecount)
+				break;
+
+			pilot copied_pilot;
+			copied_pilot.set_filename(filelist[source_index]);
+			PltReadFile(&copied_pilot, true, true);
+			char source_name[PILOT_STRING_SIZE] = "";
+			copied_pilot.get_name(source_name);
+			char copy_prompt[128];
+			snprintf(copy_prompt, sizeof(copy_prompt), "New name for copy of \"%s\"",
+				source_name);
+
+			bool copied = false;
+			bool copy_failed = false;
+			char copied_filename[_MAX_FNAME] = "";
+			while (!copied)
+			{
+				char new_name[PILOT_STRING_SIZE] = "";
+				if (!DoEditDialog(copy_prompt, new_name,
+					PILOT_STRING_SIZE - 1))
+					break;
+
+				char* end = new_name + strlen(new_name);
+				while (end > new_name && (end[-1] == ' ' || end[-1] == '\t'))
+					*--end = '\0';
+				char* trimmed_name = new_name;
+				while (*trimmed_name == ' ' || *trimmed_name == '\t')
+					++trimmed_name;
+				if (!trimmed_name[0])
+				{
+					DoMessageBox(TXT_PLTERROR, TXT_PLTERRORNAME, MSGBOX_OK,
+						UICOL_WINDOW_TITLE, UICOL_TEXT_NORMAL);
+					continue;
+				}
+
+				strncpy(copied_filename, trimmed_name,
+					sizeof(copied_filename) - strlen(PLTEXTENSION) - 1);
+				copied_filename[sizeof(copied_filename) - strlen(PLTEXTENSION) - 1] = '\0';
+				PltMakeFNValid(copied_filename);
+				strcat(copied_filename, PLTEXTENSION);
+				copied_pilot.set_name(trimmed_name);
+				copied_pilot.set_filename(copied_filename);
+
+				switch (PltWriteFile(&copied_pilot, true))
+				{
+				case PLTW_NO_ERROR:
+					copied = true;
+					break;
+				case PLTW_FILE_EXISTS:
+					DoMessageBox(TXT_PLTERROR, TXT_PLTERREXISTS, MSGBOX_OK,
+						UICOL_WINDOW_TITLE, UICOL_TEXT_NORMAL);
+					break;
+				case PLTW_FILE_IN_USE:
+					DoMessageBox(TXT_PLTERROR,
+						"That pilot name is currently in use by another game instance.",
+						MSGBOX_OK, UICOL_WINDOW_TITLE, UICOL_TEXT_NORMAL);
+					break;
+				default:
+					DoMessageBox(TXT_FILEERROR, TXT_FILEERRPLT1, MSGBOX_OK,
+						UICOL_WINDOW_TITLE, UICOL_TEXT_NORMAL);
+					copy_failed = true;
+					break;
+				}
+				if (copy_failed)
+					break;
+			}
+
+			if (copied)
+			{
+				PltClearList();
+				PltGetPilotsFree();
+				filelist = PltGetPilots(&filecount);
+				NewPltUpdate(select.pilot_list, filelist, filecount,
+					filecount - 1, copied_filename);
+				PilotChooseDialogInfo.initial_call = true;
+				PilotListSelectChangeCallback(select.pilot_list->GetCurrentIndex());
+				menu.SetCurrentOption(IDP_SELECT);
+			}
 		}break;
 
 		case IDP_SHIPCONFIG:
@@ -957,9 +1135,13 @@ void PilotSelect(void)
 			char pfilename[_MAX_FNAME];
 			working_pilot.get_filename(pfilename);
 
-			Current_pilot.set_filename(pfilename);
-			PltReadFile(&Current_pilot, true, true);
-			Current_pilot.commit_state();
+			if (!PilotSetCurrentPilot(pfilename, true, true))
+			{
+				DoMessageBox(TXT_PLTERROR,
+					"That pilot is currently in use by another game instance.",
+					MSGBOX_OK, UICOL_WINDOW_TITLE, UICOL_TEXT_NORMAL);
+				break;
+			}
 			//configure the current pilot
 			// The same tabbed controls menu used by F2 contains keyboard,
 			// controller, and weapon-selection pages.
@@ -1146,6 +1328,13 @@ bool PilotCreate(pilot* Pilot, bool forceselection)
 			{
 				//pilot already exists so bring up error window
 				DoMessageBox(TXT_PLTERROR, TXT_PLTERREXISTS, MSGBOX_OK, UICOL_WINDOW_TITLE, UICOL_TEXT_NORMAL);
+			}break;
+
+			case PLTW_FILE_IN_USE:
+			{
+				DoMessageBox(TXT_PLTERROR,
+					"That pilot is currently in use by another game instance.",
+					MSGBOX_OK, UICOL_WINDOW_TITLE, UICOL_TEXT_NORMAL);
 			}break;
 
 			case PLTW_NO_ERROR:
@@ -1597,6 +1786,7 @@ int GetPilotShipPermissions(pilot* Pilot, const char* mission_name)
 bool PltDelete(pilot* Pilot)
 {
 	char filename[_MAX_PATH];
+	char lock_path[_MAX_PATH * 2];
 	char pfilename[_MAX_FNAME];
 	char pname[PILOT_STRING_SIZE];
 
@@ -1605,6 +1795,10 @@ bool PltDelete(pilot* Pilot)
 	if (pfilename[0] != 0)
 	{
 		ddio_MakePath(filename, User_directory, pfilename, NULL);
+		PilotBuildLockPath(pfilename, lock_path);
+		MultiInstanceFileLock delete_lock;
+		if (!PilotCurrentFileLockMatches(pfilename) && !delete_lock.TryAcquire(lock_path))
+			return false;
 		return (ddio_DeleteFile(filename) == 1);
 	}
 	else
@@ -1623,6 +1817,10 @@ bool PltDelete(pilot* Pilot)
 		strcpy(pfilename, pname);
 		strcat(pfilename, PLTEXTENSION);
 		ddio_MakePath(filename, User_directory, pfilename, NULL);
+		PilotBuildLockPath(pfilename, lock_path);
+		MultiInstanceFileLock delete_lock;
+		if (!PilotCurrentFileLockMatches(pfilename) && !delete_lock.TryAcquire(lock_path))
+			return false;
 		return (ddio_DeleteFile(filename) == 1);
 	}
 }

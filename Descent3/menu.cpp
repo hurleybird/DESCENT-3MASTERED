@@ -124,9 +124,11 @@ int MainMenu()
 			char pfilename[_MAX_FNAME];
 			strcpy(pfilename, GameArgs[pilotarg + 1]);
 			strcat(pfilename, ".plt");
-			Current_pilot.set_filename(pfilename);
-			PltReadFile(&Current_pilot, true);
-			Current_pilot.commit_state();
+			if (!PilotSetCurrentPilot(pfilename, true))
+			{
+				mprintf((0, "Requested pilot is in use by another game instance: %s\n", pfilename));
+				Current_pilot.clean(true);
+			}
 		}
 		first_time = false;
 	}

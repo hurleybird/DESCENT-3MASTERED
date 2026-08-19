@@ -211,6 +211,8 @@ SET (MAIN_SOURCES
 		Descent3/Mission.cpp
 		Descent3/mission_download.cpp
 		Descent3/mmItem.cpp
+		Descent3/multi_instance.cpp
+		Descent3/multi_instance.h
 		Descent3/multi.cpp
 		Descent3/multisafe.cpp
 		Descent3/multisafe_server.cpp
@@ -233,6 +235,7 @@ SET (MAIN_SOURCES
 		Descent3/osiris_bridge_client.h
 		Descent3/osiris_predefs.cpp
 		Descent3/pilot.cpp
+		Descent3/pilot_lock.h
 		Descent3/PilotPicsAPI.cpp
 		Descent3/pilot_class.cpp
 		Descent3/Player.cpp

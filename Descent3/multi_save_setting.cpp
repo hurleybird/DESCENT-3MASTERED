@@ -23,13 +23,24 @@
 #include "ship.h"
 #include "multi_save_settings.h"
 #include "difficulty.h"
+#include "ddio.h"
+#include "multi_instance.h"
 
 int MultiSaveSettings(char* filename)
 {
 	CFILE* cf;
 	char szoutput[MAX_MPS_LINE_LEN];
 	int i;
-	cf = cfopen(filename, "wt");
+	char lock_path[_MAX_PATH * 2];
+	char temporary_path[_MAX_PATH * 2];
+	snprintf(lock_path, sizeof(lock_path), "%s.lock", filename);
+	snprintf(temporary_path, sizeof(temporary_path), "%s.tmp.%lu", filename,
+		MultiInstanceProcessId());
+	MultiInstanceFileLock settings_lock;
+	if (!settings_lock.TryAcquire(lock_path))
+		return 0;
+	ddio_DeleteFile(temporary_path);
+	cf = cfopen(temporary_path, "wt");
 	if (!cf)
 		return NULL;
 	sprintf(szoutput, "NAME\t%s", Netgame.name);
@@ -99,7 +110,18 @@ int MultiSaveSettings(char* filename)
 			}
 		}
 	}
+	if (!MultiInstanceFlushFileToDisk(cf->file))
+	{
+		cfclose(cf);
+		ddio_DeleteFile(temporary_path);
+		return 0;
+	}
 	cfclose(cf);
+	if (!MultiInstanceAtomicReplace(temporary_path, filename))
+	{
+		ddio_DeleteFile(temporary_path);
+		return 0;
+	}
 	return 1;
 }
 
