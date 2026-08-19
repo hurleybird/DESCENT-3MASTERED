@@ -2211,8 +2211,15 @@ void DrawTexturedSky(void)
 	int dome_bm = GetTextureBitmap(Terrain_sky.dome_texture, 0);
 	dome_bm = GetHighResolutionSkyBitmap(Terrain_sky.dome_texture, dome_bm);
 
-	g3Point pnt[6], * pntlist[6];
-	g3UVL	uvls[10];
+	// These points are assembled directly rather than through g3_RotatePoint().
+	// Keep the newer specular and motion payload validity fields deterministic so
+	// clipping cannot interpret stack garbage as valid extended vertex data.
+	g3Point pnt[6] = {}, * pntlist[6];
+	g3UVL	uvls[10] = {};
+
+	// The sky can be the first legacy geometry submitted after menu and
+	// post-processing work.  Establish its VAO once for the whole sequence.
+	rend_RestoreLegacy();
 
 	rend_SetWrapType(WT_WRAP);
 	rend_SetTextureType(TT_PERSPECTIVE);
